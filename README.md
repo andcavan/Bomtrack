@@ -18,6 +18,25 @@ Aprire `index.html` in un browser (doppio click, oppure usare l'estensione "Live
 - **💶 Costificazione** — incidenza delle voci di costo e distinta esplosa; **export PDF ed Excel**.
 - **⚙ Gestione** — fornitori, centri di lavoro (tariffe €/h), impostazioni globali (spese generali %, margine %, valuta), **import massivo da Excel** e backup JSON (esporta/importa/ripristina).
 
+### Codifica automatica degli articoli
+
+Due schemi convivono, scelti in base al tipo di articolo:
+
+- **Codifica gerarchica** (macchina › gruppo › sottogruppo/parte). Ogni macchina ha una **sigla** (es. `TRN`) e definisce il proprio schema: numero e tipo di caratteri della sigla gruppo, cifre del progressivo `S##` e cifre della numerazione `###`. I codici si generano così:
+
+  ```
+  Macchina:     TRN-S00        progressivo a salire da 0
+  Gruppo:       TRN-BAS-S00    progressivo a salire da 0
+  Sottogruppo:  TRN-BAS-999    a SCENDERE da 999
+  Parte:        TRN-BAS-001    a SALIRE da 001
+  ```
+
+  Nella modale articolo si sceglie la macchina (e il gruppo) di appartenenza e il codice viene proposto automaticamente; sottogruppi e parti sono numerati indipendentemente pur condividendo il prefisso. Le sigle sono validate contro lo schema della macchina e devono essere univoche.
+
+- **Codifica per famiglia** — materie prime e commerciali (`MAT-ACC-LAM-001`, `CMM-MEC-CUS-001`), con prefissi e numero di cifre configurabili in *Gestione → Impostazioni*. Vale anche per le **parti non legate a una macchina**.
+
+Il codice proposto resta modificabile a mano: appena lo si edita, l'app smette di rigenerarlo.
+
 ### Import massivo da Excel (Gestione → ⬆ Import)
 
 - **Articoli** — carica un foglio con colonne `Tipo, Codice, Nome, UM, CostoUnitario, PrezzoAcquisto, Fornitore, Macrofamiglia, Sottofamiglia, Note`. Se il codice esiste l'articolo viene **aggiornato**, altrimenti creato (codice auto per materie prime/commerciali). Fornitori e famiglie mancanti vengono creati al volo.

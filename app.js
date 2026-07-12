@@ -74,8 +74,8 @@ function nextCodeForPrefix(prefix) {
   });
   return prefix + String(max + 1).padStart(codeDigits(), '0');
 }
-// Codice automatico per materie prime, commerciali e parti (vuoto per gli altri tipi)
-function genItemCode(type, familyId, subFamilyId) {
+// Codice per famiglia: materie prime, commerciali e parti non legate a una macchina
+function genFamilyCode(type, familyId, subFamilyId) {
   let base = '';
   if (type === 'materiale') base = (db.settings.codePrefixMateriale || 'MAT') + '-';
   else if (type === 'acquistato') base = (db.settings.codePrefixAcquistato || 'CMM') + '-';
@@ -87,6 +87,109 @@ function genItemCode(type, familyId, subFamilyId) {
     if (subFamilyId) prefix += subFamilySigla(familyId, subFamilyId) + '-';
   }
   return nextCodeForPrefix(prefix);
+}
+
+// ─── Codifica gerarchica macchina › gruppo › sottogruppo/parte ───
+// Es. TRN-S00 (macchina), TRN-BAS-S00 (gruppo), TRN-BAS-999 (sottogruppo, a scendere),
+// TRN-BAS-001 (parte, a salire). Lo schema (lunghezza sigle, cifre) è per macchina.
+const CODE_TYPES = { alpha: 'Alfabetico', num: 'Numerico', alnum: 'Alfanumerico' };
+// Default retrocompatibili: le macchine create prima non hanno schema
+function machineScheme(m) {
+  return {
+    gLen: (m && m.gCodeLen) || 3, gType: (m && m.gCodeType) || 'alpha',
+    incrS: (m && m.incrDigitsS) || 2,   // progressivo S## (macchina/gruppo)
+    incrN: (m && m.incrDigitsN) || 3,   // numerico ### (sottogruppo/parte)
+  };
+}
+function codeTypePattern(type) {
+  if (type === 'num') return /^[0-9]+$/;
+  if (type === 'alnum') return /^[A-Z0-9]+$/;
+  return /^[A-Z]+$/;
+}
+function validateCodeFormat(code, len, type) {
+  if (code.length !== len) return `La sigla deve essere esattamente ${len} caratteri`;
+  if (!codeTypePattern(type).test(code)) {
+    const t = type === 'num' ? 'numerici (0-9)' : type === 'alnum' ? 'alfanumerici (A-Z, 0-9)' : 'alfabetici (A-Z)';
+    return `La sigla deve contenere solo caratteri ${t}`;
+  }
+  return null;
+}
+function typeHint(len, type) { return `${len} car., ${(CODE_TYPES[type] || '').toLowerCase()}`; }
+function typeOptionsHtml(sel) {
+  return Object.keys(CODE_TYPES).map(v => `<option value="${v}" ${v === sel ? 'selected' : ''}>${CODE_TYPES[v]}</option>`).join('');
+}
+function machineItems() { return (db.items || []).filter(i => i.type === 'macchina'); }
+function groupItemsFor(machineId) { return (db.items || []).filter(i => i.type === 'gruppo' && i.machineItemId === machineId); }
+function itemSigla(id) { const it = getItem(id); return it ? (it.sigla || '') : ''; }
+// Numeri già usati dai codici degli articoli passati (parte finale numerica del codice)
+function usedCodeNumbers(items) {
+  return items
+    .map(i => { const m = String(i.code || '').match(/(\d+)$/); return m ? parseInt(m[1], 10) : null; })
+    .filter(n => n != null);
+}
+// Prossimo progressivo: sottogruppi a scendere da 10^incrN-1, gli altri a salire.
+// Restituisce null quando la numerazione è esaurita.
+function nextCodeNumber(type, siblings, sm) {
+  const used = usedCodeNumbers(siblings);
+  if (type === 'sottogruppo') {
+    const n = used.length ? Math.min(...used) - 1 : 10 ** sm.incrN - 1;
+    return n < 0 ? null : n;
+  }
+  if (type === 'parte') {
+    const n = used.length ? Math.max(...used) + 1 : 1;
+    return n > 10 ** sm.incrN - 1 ? null : n;
+  }
+  // macchina e gruppo: progressivo S## a salire da 0
+  const n = used.length ? Math.max(...used) + 1 : 0;
+  return n > 10 ** sm.incrS - 1 ? null : n;
+}
+// Codice automatico dell'articolo (bozza o esistente). '' quando non è generabile.
+function genItemCode(it) {
+  if (!it) return '';
+  const type = it.type;
+  if (type === 'materiale' || type === 'acquistato') return genFamilyCode(type, it.familyId, it.subFamilyId);
+
+  if (type === 'macchina') {
+    if (!it.sigla) return '';
+    const sm = machineScheme(it);
+    // Progressivo tra le macchine che condividono la stessa sigla (esclusa se stessa in modifica)
+    const siblings = machineItems().filter(m => m.sigla === it.sigla && m.id !== it.id);
+    const n = nextCodeNumber('macchina', siblings, sm);
+    if (n == null) { showToast('Numerazione macchine esaurita', 'error'); return ''; }
+    return `${it.sigla}-S${String(n).padStart(sm.incrS, '0')}`;
+  }
+
+  const mac = getItem(it.machineItemId);
+  if (type === 'gruppo') {
+    if (!mac || !it.sigla) return '';
+    const sm = machineScheme(mac);
+    const siblings = groupItemsFor(mac.id).filter(g => g.sigla === it.sigla && g.id !== it.id);
+    const n = nextCodeNumber('gruppo', siblings, sm);
+    if (n == null) { showToast('Numerazione gruppi esaurita', 'error'); return ''; }
+    return `${mac.sigla}-${it.sigla}-S${String(n).padStart(sm.incrS, '0')}`;
+  }
+
+  if (type === 'sottogruppo' || type === 'parte') {
+    const grp = getItem(it.groupItemId);
+    // La parte senza macchina/gruppo mantiene la codifica per famiglia
+    if (!mac || !grp) return type === 'parte' ? genFamilyCode(type, it.familyId, it.subFamilyId) : '';
+    const sm = machineScheme(mac);
+    const siblings = (db.items || []).filter(i =>
+      i.type === type && i.machineItemId === mac.id && i.groupItemId === grp.id && i.id !== it.id);
+    const n = nextCodeNumber(type, siblings, sm);
+    if (n == null) { showToast(`Numerazione ${type === 'parte' ? 'parti' : 'sottogruppi'} esaurita`, 'error'); return ''; }
+    return `${mac.sigla}-${grp.sigla}-${String(n).padStart(sm.incrN, '0')}`;
+  }
+  return '';
+}
+// Etichetta di appartenenza per il catalogo: "TRN › BAS"
+function codingLabel(it) {
+  if (!it) return '';
+  if (it.type === 'macchina') return it.sigla || '';
+  const ms = itemSigla(it.machineItemId);
+  if (!ms) return '';
+  const gs = it.type === 'gruppo' ? it.sigla : itemSigla(it.groupItemId);
+  return gs ? ms + ' › ' + gs : ms;
 }
 
 function showToast(m, t = 'success') {
@@ -603,23 +706,53 @@ function delOperation(idx) {
 
 // ─── Macchina / testata prodotto ───
 function newMachineModal() {
-  const nextNum = db.items.length + 1;
+  const sm = machineScheme(null);
   openModal(`<h3>🛠 Nuova macchina</h3>
     <div class="modal-grid">
-      <div class="modal-field"><label>Codice</label><input id="mac-code" value="MAC-${String(nextNum).padStart(3, '0')}"></div>
+      <div class="modal-field"><label>Sigla macchina</label>
+        <input id="mac-sigla" maxlength="10" placeholder="es. TRN" style="text-transform:uppercase;font-family:var(--mono);font-weight:700"
+          oninput="this.value=this.value.toUpperCase();refreshMachineCode()"></div>
+      <div class="modal-field"><label>Codice</label><input id="mac-code" placeholder="auto dalla sigla" oninput="markCodeManual()"></div>
       <div class="modal-field"><label>U.M.</label><input id="mac-uom" value="pz"></div>
     </div>
     <div class="modal-field"><label>Nome</label><input id="mac-name" placeholder="Es. Nastro Trasportatore NT-200"></div>
+    <div class="modal-grid">
+      <div class="modal-field"><label>N° car. sigla gruppo</label><input type="number" id="mac-glen" min="1" max="10" value="${sm.gLen}" onchange="refreshMachineCode()"></div>
+      <div class="modal-field"><label>Tipo car. sigla gruppo</label><select id="mac-gtype" onchange="refreshMachineCode()">${typeOptionsHtml(sm.gType)}</select></div>
+      <div class="modal-field"><label>Cifre progressivo S##</label><input type="number" id="mac-incrs" min="1" max="6" value="${sm.incrS}" onchange="refreshMachineCode()"></div>
+      <div class="modal-field"><label>Cifre numerazione ###</label><input type="number" id="mac-incrn" min="1" max="6" value="${sm.incrN}" onchange="refreshMachineCode()"></div>
+    </div>
     <div class="modal-field"><label>Note</label><textarea id="mac-notes" rows="2"></textarea></div>
     <div class="modal-actions"><button class="btn-ghost" onclick="closeModal()">Annulla</button>
       <button class="add-btn-sm" onclick="saveNewMachine()">Crea</button></div>`);
+  itemCodeAuto = true;
+}
+// Bozza macchina dai campi della modale "Nuova macchina"
+function machineDraftFromForm() {
+  return {
+    type: 'macchina', sigla: val('mac-sigla'),
+    gCodeLen: parseInt(val('mac-glen'), 10) || 3,
+    gCodeType: val('mac-gtype') || 'alpha',
+    incrDigitsS: parseInt(val('mac-incrs'), 10) || 2,
+    incrDigitsN: parseInt(val('mac-incrn'), 10) || 3,
+  };
+}
+function refreshMachineCode() {
+  if (!itemCodeAuto) return;
+  const el = document.getElementById('mac-code'); if (!el) return;
+  el.value = genItemCode(machineDraftFromForm());
 }
 function saveNewMachine() {
   const name = val('mac-name');
   if (!name) { showToast('Nome richiesto', 'error'); return; }
+  const d = machineDraftFromForm();
+  if (d.sigla && !/^[A-Z0-9]+$/.test(d.sigla)) { showToast('La sigla macchina ammette solo A-Z e 0-9', 'error'); return; }
+  if (d.sigla && machineItems().some(m => m.sigla === d.sigla)) { showToast(`Sigla macchina "${d.sigla}" già in uso`, 'error'); return; }
   const id = gid();
-  db.items.push(stampNew({ id, code: val('mac-code') || id, name, type: 'macchina', uom: val('mac-uom') || 'pz',
-    notes: val('mac-notes'), active: true, components: [], operations: [] }));
+  db.items.push(stampNew(Object.assign({
+    id, code: val('mac-code') || id, name, type: 'macchina', uom: val('mac-uom') || 'pz',
+    notes: val('mac-notes'), active: true, components: [], operations: [],
+  }, d)));
   currentBomId = id; bomExpanded = new Set();
   saveDB(); closeModal(); renderBom(); showToast('Macchina creata');
 }
@@ -704,7 +837,7 @@ function catalogRow(i) {
     <td style="font-family:var(--mono)">${esc(i.code)}</td>
     <td>${esc(i.name)}</td>
     <td><span class="bom-type-tag tt-${i.type}">${typeShort(i.type)}</span> ${typeLabel(i.type)}</td>
-    <td style="color:var(--text-dim)">${esc(familyLabel(i))}</td>
+    <td style="color:var(--text-dim)">${esc(codingLabel(i) || familyLabel(i))}</td>
     <td>${esc(i.uom || '')}</td>
     <td style="font-family:var(--mono)">${fmtN(unit)}</td>
     <td style="color:var(--text-dim)">${esc(meta)}</td>
@@ -778,6 +911,7 @@ function itemModalBody(it) {
       <div class="modal-field"><label>Macrofamiglia</label><select id="it-family" onchange="onItemFamilyChange()">${familyOptions(it ? it.familyId : '', usesFamily(t) ? t : '')}</select></div>
       <div class="modal-field"><label>Sottofamiglia</label><select id="it-subfamily" onchange="onItemSubFamilyChange()">${subFamilyOptions(it ? it.familyId : '', it ? it.subFamilyId : '')}</select></div>
     </div>
+    ${codingFieldsHtml(it)}
     <div class="modal-field" id="fld-cycle">
       <label>Ciclo di lavorazione</label>
       <div class="cycle-box">
@@ -792,6 +926,76 @@ function itemModalBody(it) {
     </div>
     <div class="modal-field"><label>Note</label><textarea id="it-notes" rows="2">${it ? esc(it.notes || '') : ''}</textarea></div>`;
 }
+// ─── Campi di codifica (macchina › gruppo) nella modale articolo ───
+function machineOptions(selectedId) {
+  return `<option value="">—</option>` + machineItems()
+    .map(m => `<option value="${m.id}" ${m.id === selectedId ? 'selected' : ''}>${esc((m.sigla ? m.sigla + ' — ' : '') + m.name)}</option>`).join('');
+}
+function groupOptions(machineId, selectedId) {
+  return `<option value="">—</option>` + groupItemsFor(machineId)
+    .map(g => `<option value="${g.id}" ${g.id === selectedId ? 'selected' : ''}>${esc((g.sigla ? g.sigla + ' — ' : '') + g.name)}</option>`).join('');
+}
+function codingFieldsHtml(it) {
+  const sm = machineScheme(it);
+  const macId = it ? (it.machineItemId || '') : '';
+  const grpId = it ? (it.groupItemId || '') : '';
+  const gsm = machineScheme(getItem(macId));
+  return `
+    <div id="fld-coding-mac" class="modal-grid">
+      <div class="modal-field"><label>Sigla macchina</label>
+        <input id="it-sigla-mac" maxlength="10" value="${it ? esc(it.sigla || '') : ''}" placeholder="es. TRN"
+          style="text-transform:uppercase;font-family:var(--mono);font-weight:700"
+          oninput="this.value=this.value.toUpperCase();refreshItemCode()"></div>
+      <div class="modal-field"><label>N° car. sigla gruppo</label>
+        <input type="number" id="it-glen" min="1" max="10" value="${sm.gLen}" onchange="refreshItemCode()"></div>
+      <div class="modal-field"><label>Tipo car. sigla gruppo</label>
+        <select id="it-gtype" onchange="refreshItemCode()">${typeOptionsHtml(sm.gType)}</select></div>
+      <div class="modal-field"><label>Cifre progressivo S## </label>
+        <input type="number" id="it-incrs" min="1" max="6" value="${sm.incrS}" onchange="refreshItemCode()"></div>
+      <div class="modal-field"><label>Cifre numerazione ###</label>
+        <input type="number" id="it-incrn" min="1" max="6" value="${sm.incrN}" onchange="refreshItemCode()"></div>
+    </div>
+    <div id="fld-coding-child" class="modal-grid">
+      <div class="modal-field"><label>Macchina</label>
+        <select id="it-machine" onchange="onItemMachineChange()">${machineOptions(macId)}</select></div>
+      <div class="modal-field" id="fld-coding-gsigla"><label id="it-sigla-grp-label">Sigla gruppo (${typeHint(gsm.gLen, gsm.gType)})</label>
+        <input id="it-sigla-grp" maxlength="${gsm.gLen}" value="${it && it.type === 'gruppo' ? esc(it.sigla || '') : ''}" placeholder="es. BAS"
+          style="text-transform:uppercase;font-family:var(--mono);font-weight:700"
+          oninput="this.value=this.value.toUpperCase();refreshItemCode()"></div>
+      <div class="modal-field" id="fld-coding-group"><label>Gruppo</label>
+        <select id="it-group" onchange="refreshItemCode()">${groupOptions(macId, grpId)}</select></div>
+    </div>`;
+}
+function onItemMachineChange() {
+  const macId = val('it-machine');
+  const gsm = machineScheme(getItem(macId));
+  const lbl = document.getElementById('it-sigla-grp-label');
+  const inp = document.getElementById('it-sigla-grp');
+  if (lbl) lbl.textContent = `Sigla gruppo (${typeHint(gsm.gLen, gsm.gType)})`;
+  if (inp) inp.maxLength = gsm.gLen;
+  const grpSel = document.getElementById('it-group');
+  if (grpSel) grpSel.innerHTML = groupOptions(macId, '');
+  refreshItemCode();
+}
+// Bozza dell'articolo con i soli campi che determinano il codice automatico
+function itemDraftFromForm() {
+  const t = val('it-type');
+  const draft = { id: window.__editingItemId || null, type: t, familyId: val('it-family'), subFamilyId: val('it-subfamily') };
+  if (t === 'macchina') {
+    draft.sigla = val('it-sigla-mac');
+    draft.gCodeLen = parseInt(val('it-glen'), 10) || 3;
+    draft.gCodeType = val('it-gtype') || 'alpha';
+    draft.incrDigitsS = parseInt(val('it-incrs'), 10) || 2;
+    draft.incrDigitsN = parseInt(val('it-incrn'), 10) || 3;
+  } else if (t === 'gruppo') {
+    draft.machineItemId = val('it-machine');
+    draft.sigla = val('it-sigla-grp');
+  } else if (t === 'sottogruppo' || t === 'parte') {
+    draft.machineItemId = val('it-machine');
+    draft.groupItemId = val('it-group');
+  }
+  return draft;
+}
 // Stato: true finché il codice è ancora "automatico" (non modificato a mano dall'utente)
 let itemCodeAuto = true;
 function markCodeManual() { itemCodeAuto = false; }
@@ -799,7 +1003,7 @@ function refreshItemCode() {
   if (!itemCodeAuto) return;
   const codeEl = document.getElementById('it-code');
   if (!codeEl) return;
-  codeEl.value = genItemCode(val('it-type'), val('it-family'), val('it-subfamily'));
+  codeEl.value = genItemCode(itemDraftFromForm());
 }
 function toggleItemFields() {
   const t = document.getElementById('it-type').value;
@@ -810,6 +1014,12 @@ function toggleItemFields() {
   document.getElementById('fld-family').style.display = showFam ? '' : 'none';
   document.getElementById('fld-assembly-note').style.display = isAssembly(t) ? '' : 'none';
   document.getElementById('fld-cycle').style.display = t === 'parte' ? '' : 'none';
+  // Codifica gerarchica: schema per la macchina, appartenenza per gli altri tipi
+  const isChild = t === 'gruppo' || t === 'sottogruppo' || t === 'parte';
+  document.getElementById('fld-coding-mac').style.display = t === 'macchina' ? '' : 'none';
+  document.getElementById('fld-coding-child').style.display = isChild ? '' : 'none';
+  document.getElementById('fld-coding-gsigla').style.display = t === 'gruppo' ? '' : 'none';
+  document.getElementById('fld-coding-group').style.display = (t === 'sottogruppo' || t === 'parte') ? '' : 'none';
   if (showFam) {
     // Ripopola le famiglie con quelle del tipo selezionato, preservando la selezione se compatibile
     const famSel = document.getElementById('it-family');
@@ -981,6 +1191,7 @@ function pickCycleOp() {
 function newItemModal() {
   itemCodeAuto = true;
   window.__dupSourceId = null;
+  window.__editingItemId = null;
   cycleDraft = [];
   openModal(`<h3>📦 Nuovo articolo</h3>${itemModalBody(null)}
     <div class="modal-actions"><button class="btn-ghost" onclick="closeModal()">Annulla</button>
@@ -1010,6 +1221,13 @@ function applyItemSource(id) {
     setVal('it-family', src.familyId || '');
     document.getElementById('it-subfamily').innerHTML = subFamilyOptions(src.familyId || '', src.subFamilyId || '');
   }
+  // Appartenenza copiata; la sigla della macchina no (deve restare univoca)
+  if (src.type === 'gruppo' || src.type === 'sottogruppo' || src.type === 'parte') {
+    setVal('it-machine', src.machineItemId || '');
+    onItemMachineChange();
+    if (src.type === 'gruppo') setVal('it-sigla-grp', src.sigla || '');
+    else setVal('it-group', src.groupItemId || '');
+  }
   setVal('it-name', src.name + ' (copia)');
   setVal('it-uom', src.uom || 'pz');
   setVal('it-unitcost', src.unitCost != null ? src.unitCost : '');
@@ -1034,11 +1252,43 @@ function readItemForm(it) {
   if (it.type === 'materiale' || it.type === 'parte') { it.unitCost = numVal('it-unitcost'); }
   if (it.type === 'acquistato') { it.purchasePrice = numVal('it-price'); it.supplierId = val('it-supplier'); }
   if (usesFamily(it.type)) { it.familyId = val('it-family'); it.subFamilyId = val('it-subfamily'); }
+  // Codifica gerarchica: schema sulla macchina, appartenenza sugli altri tipi
+  const d = itemDraftFromForm();
+  if (it.type === 'macchina') {
+    it.sigla = d.sigla; it.gCodeLen = d.gCodeLen; it.gCodeType = d.gCodeType;
+    it.incrDigitsS = d.incrDigitsS; it.incrDigitsN = d.incrDigitsN;
+  } else if (it.type === 'gruppo') {
+    it.machineItemId = d.machineItemId; it.sigla = d.sigla;
+  } else if (it.type === 'sottogruppo' || it.type === 'parte') {
+    it.machineItemId = d.machineItemId; it.groupItemId = d.groupItemId;
+  }
   // Il ciclo (con costo derivato) sostituisce il costo manuale quando ha almeno una riga.
   if (it.type === 'parte') it.cycle = cycleDraft.map(r => Object.assign({}, r));
 }
+// Controlli sulla codifica: sigle valide e univoche. Restituisce un messaggio o null.
+function validateItemCoding(id) {
+  const d = itemDraftFromForm();
+  if (d.type === 'macchina') {
+    if (!d.sigla) return null; // sigla facoltativa: senza, niente codice automatico
+    if (!/^[A-Z0-9]+$/.test(d.sigla)) return 'La sigla macchina ammette solo A-Z e 0-9';
+    if (machineItems().some(m => m.sigla === d.sigla && m.id !== id)) return `Sigla macchina "${d.sigla}" già in uso`;
+    if (!(d.gCodeLen >= 1 && d.gCodeLen <= 10)) return 'N° caratteri sigla gruppo non valido (1-10)';
+    if (!(d.incrDigitsS >= 1 && d.incrDigitsS <= 6)) return 'Cifre progressivo S## non valide (1-6)';
+    if (!(d.incrDigitsN >= 1 && d.incrDigitsN <= 6)) return 'Cifre numerazione ### non valide (1-6)';
+  } else if (d.type === 'gruppo') {
+    if (!d.machineItemId || !d.sigla) return null; // senza macchina+sigla il codice resta manuale
+    const sm = machineScheme(getItem(d.machineItemId));
+    const err = validateCodeFormat(d.sigla, sm.gLen, sm.gType);
+    if (err) return err;
+    if (groupItemsFor(d.machineItemId).some(g => g.sigla === d.sigla && g.id !== id))
+      return `Sigla gruppo "${d.sigla}" già usata su questa macchina`;
+  }
+  return null;
+}
 function saveNewItem() {
   const name = val('it-name'); if (!name) { showToast('Nome richiesto', 'error'); return; }
+  const codErr = validateItemCoding(null);
+  if (codErr) { showToast(codErr, 'error'); return; }
   const it = { id: gid(), type: val('it-type') };
   if (isAssembly(it.type)) { it.components = []; it.operations = []; }
   readItemForm(it);
@@ -1057,6 +1307,7 @@ function saveNewItem() {
 function editItemModal(id) {
   const it = getItem(id); if (!it) return;
   itemCodeAuto = false; // in modifica non si rigenera mai il codice esistente
+  window.__editingItemId = id;
   cycleDraft = (it.cycle || []).map(r => Object.assign({}, r));
   openModal(`<h3>✏ Modifica articolo</h3>${itemModalBody(it)}
     <div class="modal-actions"><button class="btn-ghost" onclick="closeModal()">Annulla</button>
@@ -1065,6 +1316,8 @@ function editItemModal(id) {
 }
 function saveItemEdit(id) {
   const it = getItem(id); if (!it) return;
+  const codErr = validateItemCoding(id);
+  if (codErr) { showToast(codErr, 'error'); return; }
   readItemForm(it);
   touch(it);
   saveDB(); closeModal(); renderCatalog(); showToast('Articolo aggiornato');
@@ -1435,7 +1688,7 @@ function renderSettings() {
       <div class="modal-field"><label>Prefisso codice — Materie prime</label><input id="set-pfx-mat" maxlength="10" value="${esc(s.codePrefixMateriale || 'MAT')}" placeholder="MAT"></div>
       <div class="modal-field"><label>Prefisso codice — Parti</label><input id="set-pfx-prt" maxlength="10" value="${esc(s.codePrefixParte || 'PRT')}" placeholder="PRT"></div>
     </div>
-    <p class="empty-text" style="text-align:left;padding:4px 0 12px">Le cifre della parte incrementale determinano lo zero-padding del progressivo (es. 3 → <span style="font-family:var(--mono)">${esc(s.codePrefixMateriale || 'MAT')}-ACC-LAM-001</span>). Il prefisso codice è la sigla iniziale usata nei codici automatici per commerciali, materie prime e parti.</p>
+    <p class="empty-text" style="text-align:left;padding:4px 0 12px">Le cifre della parte incrementale determinano lo zero-padding del progressivo (es. 3 → <span style="font-family:var(--mono)">${esc(s.codePrefixMateriale || 'MAT')}-ACC-LAM-001</span>). Il prefisso codice è la sigla iniziale usata nei codici automatici per commerciali, materie prime e parti.<br>Macchine, gruppi, sottogruppi e le parti legate a una macchina usano invece la <strong>codifica gerarchica</strong> (es. <span style="font-family:var(--mono)">TRN-BAS-001</span>), il cui schema si configura sulla singola macchina.</p>
 
     <button class="add-btn-sm" onclick="saveSettings()">Salva impostazioni</button></div>`;
 }
@@ -1594,7 +1847,7 @@ function importItems(rows) {
     }
     // Codice: dato esplicito, oppure auto per mat/acq, oppure id come fallback
     if (code) it.code = code;
-    else if (isNew) it.code = genItemCode(type, it.familyId, it.subFamilyId) || it.id;
+    else if (isNew) it.code = genItemCode(it) || it.id;
 
     if (isNew) { stampNew(it); report.created++; } else { touch(it); report.updated++; }
   });
