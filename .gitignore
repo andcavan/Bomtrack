@@ -1,0 +1,5 @@
+.claude/
+Thumbs.db
+desktop.ini
+*.bak
+node_modules/

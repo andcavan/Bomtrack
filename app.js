@@ -1,0 +1,1939 @@
+// ═══════════════════════════════════════════════════════════
+//  BOMTRACK — Distinte Base & Costificazione (DB locale)
+// ═══════════════════════════════════════════════════════════
+
+const DB_KEY = 'bomtrack_v1';
+
+const defaultDB = {
+  suppliers: [
+    { id: 's1', name: 'Bonfiglioli', referente: '', email: '', active: true },
+    { id: 's2', name: 'SKF', referente: '', email: '', active: true },
+    { id: 's3', name: 'Würth', referente: '', email: '', active: true },
+  ],
+  workCenters: [
+    { id: 'w1', name: 'Taglio laser', hourlyRate: 45, active: true },
+    { id: 'w2', name: 'Saldatura', hourlyRate: 38, active: true },
+    { id: 'w3', name: 'Tornitura', hourlyRate: 42, active: true },
+    { id: 'w4', name: 'Montaggio', hourlyRate: 30, active: true },
+  ],
+  families: [
+    { id: 'f1', name: 'Meccanico', subs: [
+      { id: 'f1s1', name: 'Riduttori' }, { id: 'f1s2', name: 'Cuscinetti' }, { id: 'f1s3', name: 'Viteria' },
+      { id: 'f1s4', name: 'Cinghie e pulegge' }, { id: 'f1s5', name: 'Guide lineari' } ] },
+    { id: 'f2', name: 'Pneumatico', subs: [
+      { id: 'f2s1', name: 'Cilindri' }, { id: 'f2s2', name: 'Valvole' }, { id: 'f2s3', name: 'Raccordi' }, { id: 'f2s4', name: 'Gruppi FRL' } ] },
+    { id: 'f3', name: 'Oleodinamico', subs: [
+      { id: 'f3s1', name: 'Pompe' }, { id: 'f3s2', name: 'Cilindri' }, { id: 'f3s3', name: 'Valvole' }, { id: 'f3s4', name: 'Tubi e raccordi' } ] },
+    { id: 'f4', name: 'Elettrico', subs: [
+      { id: 'f4s1', name: 'Motori' }, { id: 'f4s2', name: 'Cavi' }, { id: 'f4s3', name: 'Interruttori' }, { id: 'f4s4', name: 'Quadri' } ] },
+    { id: 'f5', name: 'Elettronico', subs: [
+      { id: 'f5s1', name: 'Sensori' }, { id: 'f5s2', name: 'PLC' }, { id: 'f5s3', name: 'Schede' }, { id: 'f5s4', name: 'Encoder' } ] },
+    // Famiglie materie prime
+    { id: 'fm1', name: 'Acciaio', kind: 'materiale', subs: [
+      { id: 'fm1s1', name: 'Lamiere' }, { id: 'fm1s2', name: 'Profilati' }, { id: 'fm1s3', name: 'Tubi' }, { id: 'fm1s4', name: 'Barre' }, { id: 'fm1s5', name: 'Tondi' } ] },
+    { id: 'fm2', name: 'Alluminio', kind: 'materiale', subs: [
+      { id: 'fm2s1', name: 'Lamiere' }, { id: 'fm2s2', name: 'Profilati' }, { id: 'fm2s3', name: 'Barre' }, { id: 'fm2s4', name: 'Tubi' } ] },
+    { id: 'fm3', name: 'Acciaio inox', kind: 'materiale', subs: [
+      { id: 'fm3s1', name: 'Lamiere' }, { id: 'fm3s2', name: 'Tubi' }, { id: 'fm3s3', name: 'Barre' }, { id: 'fm3s4', name: 'Profilati' } ] },
+    { id: 'fm4', name: 'Ottone e rame', kind: 'materiale', subs: [
+      { id: 'fm4s1', name: 'Barre' }, { id: 'fm4s2', name: 'Tubi' }, { id: 'fm4s3', name: 'Lamiere' } ] },
+    { id: 'fm5', name: 'Ghisa', kind: 'materiale', subs: [
+      { id: 'fm5s1', name: 'Barre' }, { id: 'fm5s2', name: 'Getti' } ] },
+    { id: 'fm6', name: 'Materie plastiche', kind: 'materiale', subs: [
+      { id: 'fm6s1', name: 'Nylon (PA)' }, { id: 'fm6s2', name: 'POM (Delrin)' }, { id: 'fm6s3', name: 'PTFE' }, { id: 'fm6s4', name: 'PVC' }, { id: 'fm6s5', name: 'Plexiglass (PMMA)' } ] },
+    { id: 'fm7', name: 'Gomma e guarnizioni', kind: 'materiale', subs: [
+      { id: 'fm7s1', name: 'Lastre' }, { id: 'fm7s2', name: 'O-ring' }, { id: 'fm7s3', name: 'Profili' } ] },
+    // Famiglie parti (lavorati interni)
+    { id: 'fp1', name: 'Lavorazioni meccaniche', kind: 'parte', subs: [
+      { id: 'fp1s1', name: 'Tornitura' }, { id: 'fp1s2', name: 'Fresatura' }, { id: 'fp1s3', name: 'Taglio laser' }, { id: 'fp1s4', name: 'Piegatura' }, { id: 'fp1s5', name: 'Saldatura' } ] },
+    { id: 'fp2', name: 'Carpenteria', kind: 'parte', subs: [
+      { id: 'fp2s1', name: 'Telai' }, { id: 'fp2s2', name: 'Fiancate' }, { id: 'fp2s3', name: 'Staffe' } ] },
+  ],
+  items: [
+    // Materie prime
+    { id: 'm1', code: 'MAT-001', name: 'Lamiera acciaio S235', type: 'materiale', uom: 'kg', unitCost: 1.20, notes: '', active: true },
+    { id: 'm2', code: 'MAT-002', name: 'Profilato alluminio', type: 'materiale', uom: 'kg', unitCost: 4.50, notes: '', active: true },
+    // Commerciali
+    { id: 'a1', code: 'CMM-001', name: 'Motoriduttore 1.5 kW', type: 'acquistato', uom: 'pz', supplierId: 's1', purchasePrice: 320, familyId: 'f1', subFamilyId: 'f1s1', notes: '', active: true },
+    { id: 'a2', code: 'CMM-002', name: 'Cuscinetto SKF 6204', type: 'acquistato', uom: 'pz', supplierId: 's2', purchasePrice: 12.5, familyId: 'f1', subFamilyId: 'f1s2', notes: '', active: true },
+    { id: 'a3', code: 'CMM-003', name: 'Kit viteria M8', type: 'acquistato', uom: 'pz', supplierId: 's3', purchasePrice: 8, familyId: 'f1', subFamilyId: 'f1s3', notes: '', active: true },
+    // Parti (foglie a costo diretto)
+    { id: 'pt1', code: 'PRT-001', name: 'Fiancata lavorata', type: 'parte', uom: 'pz', unitCost: 45, familyId: 'fp2', subFamilyId: 'fp2s2', notes: '', active: true },
+    { id: 'pt2', code: 'PRT-002', name: 'Albero tornito', type: 'parte', uom: 'pz', unitCost: 60, familyId: 'fp1', subFamilyId: 'fp1s1', notes: '', active: true },
+    // Sottogruppo
+    {
+      id: 'sg1', code: 'SGR-001', name: 'Gruppo motore', type: 'sottogruppo', uom: 'pz',
+      notes: '', active: true,
+      components: [
+        { itemId: 'a1', qty: 1, scrapPct: 0 },
+        { itemId: 'a2', qty: 2, scrapPct: 0 },
+      ],
+      operations: [
+        { workCenterId: 'w4', hours: 1, note: 'Montaggio motore' },
+      ],
+    },
+    // Gruppi
+    {
+      id: 'g1', code: 'GRP-001', name: 'Gruppo telaio', type: 'gruppo', uom: 'pz',
+      notes: '', active: true,
+      components: [
+        { itemId: 'pt1', qty: 2, scrapPct: 0 },
+        { itemId: 'm1', qty: 25, scrapPct: 5 },
+        { itemId: 'a3', qty: 1, scrapPct: 0 },
+      ],
+      operations: [
+        { workCenterId: 'w1', hours: 1.5, note: 'Taglio lamiere' },
+        { workCenterId: 'w2', hours: 2, note: 'Saldatura struttura' },
+      ],
+    },
+    {
+      id: 'g2', code: 'GRP-002', name: 'Gruppo trasmissione', type: 'gruppo', uom: 'pz',
+      notes: '', active: true,
+      components: [
+        { itemId: 'sg1', qty: 1, scrapPct: 0 },
+        { itemId: 'pt2', qty: 1, scrapPct: 0 },
+        { itemId: 'm2', qty: 8, scrapPct: 3 },
+      ],
+      operations: [
+        { workCenterId: 'w4', hours: 1.5, note: 'Montaggio trasmissione' },
+      ],
+    },
+    // Macchina (top-level)
+    {
+      id: 'mac1', code: 'NT-100', name: 'Nastro Trasportatore NT-100', type: 'macchina', uom: 'pz',
+      notes: 'Macchina esempio', active: true,
+      components: [
+        { itemId: 'g1', qty: 1, scrapPct: 0 },
+        { itemId: 'g2', qty: 1, scrapPct: 0 },
+      ],
+      operations: [
+        { workCenterId: 'w4', hours: 3, note: 'Montaggio finale' },
+      ],
+    },
+  ],
+  settings: { overheadPct: 12, marginPct: 20, currency: '€', codeDigits: 3, codePrefixAcquistato: 'CMM', codePrefixMateriale: 'MAT', codePrefixParte: 'PRT' },
+  nextId: 100,
+};
+
+let db;
+let currentBomId = null;     // articolo prodotto attualmente aperto nelle Distinte
+let reportBomId = null;      // articolo selezionato nel report
+let mgmtTab = 'suppliers';
+let bomExpanded = new Set(); // chiavi-percorso dei nodi espansi
+let activeView = 'bom';
+
+// ═══════════════════════════════════════════════════════════
+//  PERSISTENZA LOCALE
+// ═══════════════════════════════════════════════════════════
+function loadDB() {
+  try {
+    const r = localStorage.getItem(DB_KEY);
+    if (r) { db = JSON.parse(r); migrateDB(); return; }
+  } catch (e) { console.error('Errore lettura locale:', e); }
+  db = JSON.parse(JSON.stringify(defaultDB));
+  migrateDB();
+  saveDB();
+}
+function migrateDB() {
+  if (!db.suppliers) db.suppliers = [];
+  if (!db.workCenters) db.workCenters = [];
+  if (!db.families) db.families = JSON.parse(JSON.stringify(defaultDB.families));
+  if (!db.items) db.items = [];
+  if (!db.settings) db.settings = { overheadPct: 0, marginPct: 0, currency: '€' };
+  if (db.settings.codeDigits == null) db.settings.codeDigits = 3;
+  if (!db.settings.codePrefixAcquistato) db.settings.codePrefixAcquistato = 'CMM';
+  if (!db.settings.codePrefixMateriale) db.settings.codePrefixMateriale = 'MAT';
+  if (!db.settings.codePrefixParte) db.settings.codePrefixParte = 'PRT';
+  if (db.nextId == null) db.nextId = 100;
+  // Famiglie: tipizzazione (materie prime vs commerciali) + sigla per codifica automatica
+  (db.families || []).forEach(f => {
+    if (!f.kind) f.kind = 'acquistato'; // le famiglie storiche erano tutte commerciali
+    if (!f.sigla) f.sigla = siglaFromName(f.name);
+    (f.subs || []).forEach(s => { if (!s.sigla) s.sigla = siglaFromName(s.name); });
+  });
+  // Seed una-tantum delle famiglie materie prime predefinite mancanti (non ripristina quelle cancellate)
+  if (!db.settings.mpFamiliesSeeded) {
+    const existingIds = new Set((db.families || []).map(f => f.id));
+    defaultDB.families.filter(f => f.kind === 'materiale' && !existingIds.has(f.id))
+      .forEach(f => db.families.push(JSON.parse(JSON.stringify(f))));
+    db.settings.mpFamiliesSeeded = true;
+  }
+  // Seed una-tantum delle famiglie parti predefinite mancanti (non ripristina quelle cancellate)
+  if (!db.settings.partFamiliesSeeded) {
+    const existingIds = new Set((db.families || []).map(f => f.id));
+    defaultDB.families.filter(f => f.kind === 'parte' && !existingIds.has(f.id))
+      .forEach(f => db.families.push(JSON.parse(JSON.stringify(f))));
+    db.settings.partFamiliesSeeded = true;
+  }
+  db.items.forEach(it => {
+    // Migrazione vecchio tipo 'prodotto' + flag isMachine ai nuovi tipi
+    if (it.type === 'prodotto') {
+      it.type = it.isMachine ? 'macchina' : 'gruppo';
+      delete it.isMachine;
+    }
+    if (isAssembly(it.type)) {
+      if (!it.components) it.components = [];
+      if (!it.operations) it.operations = [];
+    }
+    if (it.type === 'parte' && !it.cycle) it.cycle = [];
+    // Righe lavorazione del ciclo: da ore × tariffa a costo fisso (conserva il valore già calcolato)
+    (it.cycle || []).forEach(row => {
+      if (row.kind !== 'op' || row.cost != null) return;
+      const wc = db.workCenters.find(w => w.id === row.workCenterId);
+      row.cost = (row.costOverride != null && row.costOverride !== '')
+        ? (Number(row.costOverride) || 0)
+        : (Number(row.hours) || 0) * (wc ? (Number(wc.hourlyRate) || 0) : 0);
+      delete row.hours; delete row.costOverride;
+    });
+  });
+}
+function saveDB() {
+  try { localStorage.setItem(DB_KEY, JSON.stringify(db)); }
+  catch (e) { console.error('Errore salvataggio locale:', e); showToast('Errore salvataggio', 'error'); }
+}
+
+// ═══════════════════════════════════════════════════════════
+//  UTILITY
+// ═══════════════════════════════════════════════════════════
+function gid() { return 'id' + (db.nextId++); }
+function cur() { return (db.settings && db.settings.currency) || '€'; }
+function fmtN(n) { return cur() + (Number(n) || 0).toFixed(2); }
+function esc(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
+function getItem(id) { return db.items.find(i => i.id === id); }
+// Tassonomia tipi articolo e regole di contenimento (distinta meccanica)
+const ALL_TYPES = ['macchina', 'gruppo', 'sottogruppo', 'parte', 'materiale', 'acquistato'];
+const ALLOWED_CHILDREN = {
+  macchina: ['gruppo', 'sottogruppo'],
+  gruppo: ['sottogruppo', 'parte', 'materiale', 'acquistato'],
+  sottogruppo: ['parte', 'materiale', 'acquistato'],
+  parte: [], materiale: [], acquistato: [],
+};
+// Tipi inseribili nel ciclo di lavorazione di una Parte (le lavorazioni sono a parte, dai centri di lavoro)
+const CYCLE_CHILD_TYPES = ['acquistato', 'materiale'];
+function isAssembly(t) { return t === 'macchina' || t === 'gruppo' || t === 'sottogruppo'; }
+const TYPE_LABELS = { macchina: 'Macchina', gruppo: 'Gruppo', sottogruppo: 'Sottogruppo', parte: 'Parte', materiale: 'Materia prima', acquistato: 'Commerciale' };
+const TYPE_SHORTS = { macchina: 'MAC', gruppo: 'GRP', sottogruppo: 'SGR', parte: 'PRT', materiale: 'MAT', acquistato: 'CMM' };
+function typeLabel(t) { return TYPE_LABELS[t] || t; }
+function typeShort(t) { return TYPE_SHORTS[t] || '?'; }
+
+// ─── Famiglie / sottofamiglie (materie prime e componenti commerciali) ───
+function getFamily(id) { return (db.families || []).find(f => f.id === id); }
+function familyName(id) { const f = getFamily(id); return f ? f.name : ''; }
+function subFamilyName(famId, subId) { const f = getFamily(famId); const s = f && (f.subs || []).find(x => x.id === subId); return s ? s.name : ''; }
+// Tipi articolo che usano famiglie/sottofamiglie e codifica per famiglia
+function usesFamily(t) { return t === 'acquistato' || t === 'materiale' || t === 'parte'; }
+function familyLabel(it) {
+  if (!it || !usesFamily(it.type) || !it.familyId) return '—';
+  const fn = familyName(it.familyId); const sn = subFamilyName(it.familyId, it.subFamilyId);
+  return sn ? fn + ' › ' + sn : (fn || '—');
+}
+function familyOptions(selectedId, kind) {
+  return `<option value="">—</option>` + (db.families || [])
+    .filter(f => !kind || (f.kind || 'acquistato') === kind)
+    .map(f => `<option value="${f.id}" ${f.id === selectedId ? 'selected' : ''}>${esc(f.name)}</option>`).join('');
+}
+function subFamilyOptions(familyId, selectedSubId) {
+  const f = getFamily(familyId);
+  return `<option value="">—</option>` + ((f && f.subs) || [])
+    .map(s => `<option value="${s.id}" ${s.id === selectedSubId ? 'selected' : ''}>${esc(s.name)}</option>`).join('');
+}
+// ─── Sigle famiglia/sottofamiglia + codifica automatica articoli ───
+function siglaFromName(name) {
+  return String(name || '').replace(/[^a-zA-Z]/g, '').toUpperCase().slice(0, 3) || 'XXX';
+}
+function familySigla(famId) { const f = getFamily(famId); return f ? (f.sigla || siglaFromName(f.name)) : ''; }
+function subFamilySigla(famId, subId) {
+  const f = getFamily(famId); const s = f && (f.subs || []).find(x => x.id === subId);
+  return s ? (s.sigla || siglaFromName(s.name)) : '';
+}
+function escapeRegExp(s) { return String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
+// Numero di cifre della parte incrementale (configurabile in Impostazioni)
+function codeDigits() {
+  const n = parseInt(db.settings && db.settings.codeDigits, 10);
+  return (n >= 1 && n <= 10) ? n : 3;
+}
+// Prossimo codice libero per un prefisso, es. 'MAT-ACC-LAM-' → 'MAT-ACC-LAM-003'
+function nextCodeForPrefix(prefix) {
+  const re = new RegExp('^' + escapeRegExp(prefix) + '(\\d+)$');
+  let max = 0;
+  (db.items || []).forEach(it => {
+    const m = it.code && String(it.code).match(re);
+    if (m) { const n = parseInt(m[1], 10); if (n > max) max = n; }
+  });
+  return prefix + String(max + 1).padStart(codeDigits(), '0');
+}
+// Codice automatico per materie prime, commerciali e parti (vuoto per gli altri tipi)
+function genItemCode(type, familyId, subFamilyId) {
+  let base = '';
+  if (type === 'materiale') base = (db.settings.codePrefixMateriale || 'MAT') + '-';
+  else if (type === 'acquistato') base = (db.settings.codePrefixAcquistato || 'CMM') + '-';
+  else if (type === 'parte') base = (db.settings.codePrefixParte || 'PRT') + '-';
+  if (!base) return '';
+  let prefix = base;
+  if (familyId) {
+    prefix += familySigla(familyId) + '-';
+    if (subFamilyId) prefix += subFamilySigla(familyId, subFamilyId) + '-';
+  }
+  return nextCodeForPrefix(prefix);
+}
+
+function showToast(m, t = 'success') {
+  const el = document.getElementById('toast');
+  el.textContent = m;
+  el.style.background = t === 'error' ? 'var(--red)' : 'var(--green)';
+  el.classList.add('show');
+  setTimeout(() => el.classList.remove('show'), 2500);
+}
+// Il click fuori dalla finestra non chiude: si esce solo con Salva/Annulla (o Chiudi).
+// wide = true per i form ampi, es. la scheda articolo col ciclo di lavorazione.
+function openModal(h, wide) {
+  document.getElementById('modal-root').innerHTML =
+    `<div class="modal-overlay"><div class="modal${wide ? ' modal-wide' : ''}">${h}</div></div>`;
+}
+function closeModal() { document.getElementById('modal-root').innerHTML = ''; }
+function val(id) { const e = document.getElementById(id); return e ? e.value.trim() : ''; }
+function setVal(id, v) { const e = document.getElementById(id); if (e) e.value = v; }
+function numVal(id) { const e = document.getElementById(id); return e ? (parseFloat(e.value) || 0) : 0; }
+
+// ═══════════════════════════════════════════════════════════
+//  MOTORE DI COSTIFICAZIONE (rollup ricorsivo)
+// ═══════════════════════════════════════════════════════════
+// Ritorna i costi unitari (per 1 unità) suddivisi in categorie.
+// material+purchased+labor+parts+overhead === total (= costo totale industriale).
+function costOf(itemId, visited) {
+  visited = visited || new Set();
+  const zero = { material: 0, purchased: 0, labor: 0, parts: 0, overhead: 0, base: 0, total: 0, cycle: false };
+  const it = getItem(itemId);
+  if (!it) return zero;
+  if (visited.has(itemId)) { return { ...zero, cycle: true }; }
+
+  if (it.type === 'materiale') {
+    const v = Number(it.unitCost) || 0;
+    return { ...zero, material: v, base: v, total: v };
+  }
+  if (it.type === 'acquistato') {
+    const v = Number(it.purchasePrice) || 0;
+    return { ...zero, purchased: v, base: v, total: v };
+  }
+  if (it.type === 'parte') {
+    // Senza ciclo il costo è quello manuale e resta nella voce "Parti".
+    if (!(it.cycle || []).length) {
+      const v = Number(it.unitCost) || 0;
+      return { ...zero, parts: v, base: v, total: v };
+    }
+    // Col ciclo il costo è derivato e ogni riga confluisce nella propria voce:
+    // materie prime → Materiale, commerciali → Commerciali, lavorazioni → Lavorazioni.
+    const next = new Set(visited); next.add(itemId);
+    let material = 0, purchased = 0, labor = 0;
+    it.cycle.forEach(row => {
+      const rowCost = cycleRowCost(row, next);
+      if (row.kind === 'op') { labor += rowCost; return; }
+      const ci = getItem(row.itemId);
+      if (!ci) return;
+      if (ci.type === 'materiale') material += rowCost;
+      else if (ci.type === 'acquistato') purchased += rowCost;
+      else labor += rowCost;   // tipo inatteso: non perdiamo il costo
+    });
+    const base = material + purchased + labor;
+    return { ...zero, material, purchased, labor, base, total: base };
+  }
+
+  // assieme (macchina/gruppo/sottogruppo): somma figli + lavorazioni
+  const next = new Set(visited); next.add(itemId);
+  let material = 0, purchased = 0, labor = 0, parts = 0, childOverhead = 0, cycle = false;
+  (it.components || []).forEach(c => {
+    const cc = costOf(c.itemId, next);
+    if (cc.cycle) cycle = true;
+    const factor = (Number(c.qty) || 0) * (1 + (Number(c.scrapPct) || 0) / 100);
+    material += cc.material * factor;
+    purchased += cc.purchased * factor;
+    labor += cc.labor * factor;
+    parts += cc.parts * factor;
+    childOverhead += cc.overhead * factor;
+  });
+  (it.operations || []).forEach(o => {
+    const wc = db.workCenters.find(w => w.id === o.workCenterId);
+    labor += (Number(o.hours) || 0) * (wc ? (Number(wc.hourlyRate) || 0) : 0);
+  });
+  const base = material + purchased + labor + parts;  // costo puro (figli a costo + manodopera)
+  const ovPct = it.overheadPctOverride != null ? it.overheadPctOverride : (db.settings.overheadPct || 0);
+  const ownOverhead = base * (Number(ovPct) || 0) / 100;
+  const overhead = childOverhead + ownOverhead;
+  const total = base + overhead;
+  return { material, purchased, labor, parts, overhead, base, total, cycle };
+}
+// ─── Ciclo di lavorazione (articoli tipo "parte") ───
+// Costo calcolato di una riga articolo (q.tà × costo unitario), ignorando l'eventuale override.
+function cycleRowComputed(row, visited) {
+  if (!row || row.kind === 'op') return 0;
+  return costOf(row.itemId, visited).total * (Number(row.qty) || 0);
+}
+// Costo effettivo della riga.
+// Lavorazione: costo fisso, non orario (le lavorazioni orarie restano solo negli assiemi).
+// Articolo: override se valorizzato, altrimenti q.tà × costo unitario.
+function cycleRowCost(row, visited) {
+  if (!row) return 0;
+  if (row.kind === 'op') return Number(row.cost) || 0;
+  if (row.costOverride != null && row.costOverride !== '') return Number(row.costOverride) || 0;
+  return cycleRowComputed(row, visited);
+}
+
+function sellingPrice(itemId) {
+  const it = getItem(itemId);
+  const c = costOf(itemId);
+  const mgPct = it && it.marginPctOverride != null ? it.marginPctOverride : (db.settings.marginPct || 0);
+  return c.total * (1 + (Number(mgPct) || 0) / 100);
+}
+
+// ═══════════════════════════════════════════════════════════
+//  NAVIGAZIONE
+// ═══════════════════════════════════════════════════════════
+const NAV = [
+  { id: 'bom', label: '🌳 Distinte base' },
+  { id: 'catalog', label: '📦 Catalogo' },
+  { id: 'report', label: '💶 Costificazione' },
+  { id: 'manage', label: '⚙ Gestione' },
+];
+function renderNav() {
+  document.getElementById('main-nav').innerHTML = NAV.map(n =>
+    `<button class="nav-btn ${activeView === n.id ? 'active' : ''}" onclick="setView('${n.id}')">${n.label}</button>`).join('');
+}
+function setView(v) {
+  activeView = v;
+  document.querySelectorAll('.view-panel').forEach(p => p.classList.remove('active'));
+  document.getElementById('view-' + v).classList.add('active');
+  renderNav();
+  if (v === 'bom') renderBom();
+  else if (v === 'catalog') renderCatalog();
+  else if (v === 'report') renderReport();
+  else if (v === 'manage') renderManage();
+}
+
+// ═══════════════════════════════════════════════════════════
+//  VISTA: DISTINTE BASE
+// ═══════════════════════════════════════════════════════════
+function productOptions(selectedId) {
+  const opt = (i) => `<option value="${i.id}" ${i.id === selectedId ? 'selected' : ''}>${esc(i.code)} — ${esc(i.name)}</option>`;
+  const groups = [['macchina', 'Macchine'], ['gruppo', 'Gruppi'], ['sottogruppo', 'Sottogruppi']];
+  let h = groups.map(([t, lbl]) => {
+    const items = db.items.filter(i => i.type === t);
+    return items.length ? `<optgroup label="${lbl}">${items.map(opt).join('')}</optgroup>` : '';
+  }).join('');
+  if (!h) h = '<option value="">— nessun assieme —</option>';
+  return h;
+}
+function ensureCurrentBom() {
+  const products = db.items.filter(i => isAssembly(i.type));
+  if (!currentBomId || !products.some(p => p.id === currentBomId)) {
+    const m = products.find(p => p.type === 'macchina') || products[0];
+    currentBomId = m ? m.id : null;
+  }
+}
+function onBomSelect() { currentBomId = val('bom-select'); bomExpanded = new Set(); renderBom(); }
+
+function renderBom() {
+  ensureCurrentBom();
+  document.getElementById('bom-select').innerHTML = productOptions(currentBomId);
+  const it = getItem(currentBomId);
+  const summary = document.getElementById('bom-cost-summary');
+  const tree = document.getElementById('bom-tree');
+  if (!it) {
+    summary.innerHTML = '';
+    tree.innerHTML = '<div class="empty-text">Nessun prodotto. Crea una macchina con "+ Nuova macchina".</div>';
+    return;
+  }
+  const c = costOf(it.id);
+  const price = sellingPrice(it.id);
+  summary.innerHTML = [
+    kpi('Materiale', fmtN(c.material), 'orange'),
+    kpi('Commerciali', fmtN(c.purchased), 'accent'),
+    kpi('Parti', fmtN(c.parts), 'purple'),
+    kpi('Lavorazioni', fmtN(c.labor), 'green'),
+    kpi('Spese generali', fmtN(c.overhead), ''),
+    kpi('Costo totale', fmtN(c.total), ''),
+    kpi('Prezzo vendita', fmtN(price), 'green'),
+  ].join('') + (c.cycle ? '<div class="empty-text" style="color:var(--red)">⚠ Rilevato riferimento ciclico nella distinta!</div>' : '');
+
+  // Albero
+  const head = `<div class="bom-head"><span>Articolo</span><span class="num">Q.tà</span><span>U.M.</span>
+    <span class="num">Costo un.</span><span class="num">Scarto %</span><span class="num">Costo riga</span><span style="text-align:right">Azioni</span></div>`;
+  const rootRow = renderBomRootNode(it);
+  const rows = (it.components || []).map((comp, idx) =>
+    renderBomNode(comp, 1, it.id, true, idx, it.id, [it.id])).join('');
+  const opsRow = renderOpsBlock(it, true);
+  tree.innerHTML = head + rootRow + (rows || `<div class="empty-text">Nessun componente. Usa "+ Aggiungi componente".</div>`) + opsRow;
+}
+function kpi(label, value, cls) {
+  return `<div class="kpi-card ${cls}"><div class="kpi-value">${value}</div><div class="kpi-label">${label}</div></div>`;
+}
+
+// Render ricorsivo di un nodo (componente). editable = riga di primo livello dell'articolo aperto.
+function renderBomNode(comp, level, parentId, editable, idx, pathPrefix, ancestorIds) {
+  const child = getItem(comp.itemId);
+  if (!child) return `<div class="bom-node"><span class="bom-name">⚠ articolo mancante</span></div>`;
+  const nodeKey = pathPrefix + '>' + comp.itemId + '#' + idx;
+  const cyc = ancestorIds.includes(comp.itemId);
+  const isProd = isAssembly(child.type);
+  // Anche una Parte è espandibile: mostra il proprio ciclo di lavorazione (articoli + lavorazioni).
+  const hasCycle = child.type === 'parte' && (child.cycle || []).length > 0;
+  const expandable = !cyc && (hasCycle || (isProd && (child.components || []).length > 0));
+  const expanded = bomExpanded.has(nodeKey);
+  const unit = cyc ? 0 : costOf(comp.itemId).total;
+  const qty = Number(comp.qty) || 0;
+  const factor = qty * (1 + (Number(comp.scrapPct) || 0) / 100);
+  const lineCost = unit * factor;
+  const indent = (level - 1) * 18;
+  const toggle = expandable
+    ? `<span class="bom-toggle" onclick="toggleBom('${nodeKey}')">${expanded ? '▼' : '▶'}</span>`
+    : `<span class="bom-toggle leaf">•</span>`;
+  const actions = editable
+    ? `<button class="mini-btn" title="Modifica" onclick="editComponentModal(${idx})">✏</button>
+       <button class="mini-btn danger" title="Elimina" onclick="delComponent(${idx})">🗑</button>`
+    : '';
+
+  let h = `<div class="bom-node" style="padding-left:${18 + indent}px">
+    <span class="bom-name">${toggle}
+      <span class="bom-code">${esc(child.code)}</span>
+      <span class="bom-type-tag tt-${child.type}">${typeShort(child.type)}</span>
+      <span class="nm" title="${esc(child.name)}">${esc(child.name)}${cyc ? ' ⚠' : ''}</span>
+    </span>
+    <span class="num">${qty}</span>
+    <span>${esc(child.uom || '')}</span>
+    <span class="num cost">${fmtN(unit)}</span>
+    <span class="num">${Number(comp.scrapPct) || 0}</span>
+    <span class="num cost">${fmtN(lineCost)}</span>
+    <span class="bom-row-actions">${actions}</span>
+  </div>`;
+
+  if (expandable && expanded) {
+    if (hasCycle) {
+      h += (child.cycle || []).map(row => renderCycleBomNode(row, level + 1)).join('');
+    } else {
+      h += (child.components || []).map((cc, i) =>
+        renderBomNode(cc, level + 1, child.id, false, i, nodeKey, ancestorIds.concat(child.id))).join('');
+      if ((child.operations || []).length) h += renderOpsBlock(child, false, 18 + indent + 18);
+    }
+  }
+  return h;
+}
+
+// Riga del ciclo di lavorazione di una Parte, mostrata nell'albero della distinta (sola lettura:
+// il ciclo si modifica dalla scheda articolo in Catalogo).
+function renderCycleBomNode(row, level) {
+  const indent = (level - 1) * 18;
+  const lineCost = cycleRowCost(row);
+  let name, qtyCell, uom, unit;
+  if (row.kind === 'op') {
+    const wc = db.workCenters.find(w => w.id === row.workCenterId);
+    const sup = supplierName(row.supplierId);
+    name = `<span class="bom-type-tag tt-lav">LAV</span>
+      <span class="nm" title="${esc(wc ? wc.name : '?')}">🔧 ${esc(wc ? wc.name : '?')}${sup ? ' · ' + esc(sup) : ''}</span>`;
+    qtyCell = '—'; uom = ''; unit = lineCost;
+  } else {
+    const ci = getItem(row.itemId);
+    if (!ci) return `<div class="bom-node" style="padding-left:${18 + indent}px"><span class="bom-name">⚠ articolo mancante</span></div>`;
+    name = `<span class="bom-code">${esc(ci.code)}</span>
+      <span class="bom-type-tag tt-${ci.type}">${typeShort(ci.type)}</span>
+      <span class="nm" title="${esc(ci.name)}">${esc(ci.name)}</span>`;
+    qtyCell = Number(row.qty) || 0; uom = ci.uom || ''; unit = costOf(row.itemId).total;
+  }
+  return `<div class="bom-node bom-node-cycle" style="padding-left:${18 + indent}px">
+    <span class="bom-name"><span class="bom-toggle leaf">•</span>${name}</span>
+    <span class="num">${qtyCell}</span>
+    <span>${esc(uom)}</span>
+    <span class="num cost">${fmtN(unit)}</span>
+    <span class="num">—</span>
+    <span class="num cost">${fmtN(lineCost)}</span>
+    <span class="bom-row-actions"></span>
+  </div>`;
+}
+
+// Riga radice: mostra l'articolo padre (macchina/gruppo selezionata) come prima riga dell'albero.
+function renderBomRootNode(it) {
+  const unit = costOf(it.id).total;
+  return `<div class="bom-node bom-node-root">
+    <span class="bom-name">
+      <span class="bom-toggle leaf">•</span>
+      <span class="bom-code">${esc(it.code)}</span>
+      <span class="bom-type-tag tt-${it.type}">${typeShort(it.type)}</span>
+      <span class="nm" title="${esc(it.name)}">${esc(it.name)}</span>
+    </span>
+    <span class="num">1</span>
+    <span>${esc(it.uom || '')}</span>
+    <span class="num cost">${fmtN(unit)}</span>
+    <span class="num">0</span>
+    <span class="num cost">${fmtN(unit)}</span>
+    <span class="bom-row-actions"></span>
+  </div>`;
+}
+
+function renderOpsBlock(item, editable, padLeft) {
+  const ops = item.operations || [];
+  const pl = padLeft != null ? padLeft : 18;
+  const tags = ops.map((o, i) => {
+    const wc = db.workCenters.find(w => w.id === o.workCenterId);
+    const cost = (Number(o.hours) || 0) * (wc ? (Number(wc.hourlyRate) || 0) : 0);
+    const del = editable ? ` <span style="cursor:pointer;color:var(--red)" title="Elimina" onclick="delOperation(${i})">✕</span>` : '';
+    const ed = editable ? `<span style="cursor:pointer" onclick="editOperationModal(${i})">` : '<span>';
+    return `<span class="bom-op-tag">${ed}🔧 ${esc(wc ? wc.name : '?')} · ${(Number(o.hours) || 0)}h · ${fmtN(cost)}</span>${del}</span>`;
+  }).join('');
+  if (!ops.length && !editable) return '';
+  const label = editable ? 'Lavorazioni' : 'Lavorazioni (' + esc(item.name) + ')';
+  return `<div class="bom-ops" style="padding-left:${pl}px"><strong style="color:var(--text-dim);font-size:11px">${label}:</strong> ${tags || '<span class="empty-text" style="padding:0">nessuna</span>'}</div>`;
+}
+
+function toggleBom(key) { if (bomExpanded.has(key)) bomExpanded.delete(key); else bomExpanded.add(key); renderBom(); }
+function expandAllBom(on) {
+  bomExpanded = new Set();
+  if (on) {
+    const walk = (item, prefix) => {
+      (item.components || []).forEach((comp, idx) => {
+        const key = prefix + '>' + comp.itemId + '#' + idx;
+        const child = getItem(comp.itemId);
+        if (!child || prefix.split('>').includes(comp.itemId)) return;
+        if (isAssembly(child.type)) { bomExpanded.add(key); walk(child, key); }
+        // Una Parte col ciclo si espande, ma non ha figli da percorrere oltre
+        else if (child.type === 'parte' && (child.cycle || []).length) bomExpanded.add(key);
+      });
+    };
+    const it = getItem(currentBomId); if (it) walk(it, it.id);
+  }
+  renderBom();
+}
+
+// ─── CRUD componenti / lavorazioni dell'articolo aperto ───
+// Opzioni limitate ai tipi ammessi dal tipo del padre (regole rigide di contenimento).
+function itemPickerOptions(parentType, selectedId, excludeId) {
+  const allowed = ALLOWED_CHILDREN[parentType] || [];
+  return allowed.map(t => {
+    const opts = db.items.filter(i => i.type === t && i.id !== excludeId)
+      .map(i => `<option value="${i.id}" ${i.id === selectedId ? 'selected' : ''}>${esc(i.code)} — ${esc(i.name)}</option>`).join('');
+    return opts ? `<optgroup label="${typeLabel(t)}">${opts}</optgroup>` : '';
+  }).join('');
+}
+// Picker a ricerca live: candidati ammessi dal tipo padre, filtrabili per codice/nome.
+function pickerCandidates(parentType, excludeId) {
+  const allowed = ALLOWED_CHILDREN[parentType] || [];
+  return db.items
+    .filter(i => allowed.includes(i.type) && i.id !== excludeId)
+    .sort((a, b) => String(a.code).localeCompare(String(b.code)));
+}
+// Markup del campo di selezione articolo (input ricerca + lista risultati + valore nascosto).
+function itemPickerField(selectedId) {
+  const sel = selectedId ? getItem(selectedId) : null;
+  return `<div class="modal-field"><label>Articolo</label>
+      <input type="hidden" id="cmp-item" value="${selectedId ? esc(selectedId) : ''}">
+      <input type="text" id="cmp-search" class="search" placeholder="🔍 Cerca codice o nome..."
+        value="${sel ? esc(sel.code + ' — ' + sel.name) : ''}" oninput="renderPickerResults()" autocomplete="off">
+      <div id="cmp-results" class="picker-results"></div>
+    </div>`;
+}
+function renderPickerResults() {
+  const box = document.getElementById('cmp-results'); if (!box) return;
+  const q = (val('cmp-search') || '').toLowerCase();
+  let rows = (window.__pickerCandidates || []);
+  if (q) rows = rows.filter(i => (i.code + ' ' + i.name).toLowerCase().includes(q));
+  const total = rows.length;
+  rows = rows.slice(0, 50);
+  const sel = val('cmp-item');
+  let html = rows.map(i =>
+    `<div class="picker-row ${i.id === sel ? 'is-sel' : ''}" onclick="selectPickerItem('${i.id}')">
+       <span class="picker-type">${typeLabel(i.type)}</span><b>${esc(i.code)}</b> — ${esc(i.name)}
+     </div>`).join('');
+  if (!html) html = `<div class="picker-empty">Nessun articolo trovato</div>`;
+  else if (total > rows.length) html += `<div class="picker-empty">+${total - rows.length} altri — affina la ricerca</div>`;
+  box.innerHTML = html;
+}
+function selectPickerItem(id) {
+  const hidden = document.getElementById('cmp-item'); if (!hidden) return;
+  hidden.value = id;
+  const it = getItem(id);
+  const search = document.getElementById('cmp-search');
+  if (search && it) search.value = it.code + ' — ' + it.name;
+  renderPickerResults();
+}
+function allowedHint(parentType) {
+  const allowed = (ALLOWED_CHILDREN[parentType] || []).map(typeLabel);
+  return allowed.length ? `Tipi ammessi in un ${typeLabel(parentType).toLowerCase()}: ${allowed.join(', ')}.` : '';
+}
+function addComponentModal() {
+  const it = getItem(currentBomId); if (!it) return;
+  window.__pickerCandidates = pickerCandidates(it.type, it.id);
+  if (!window.__pickerCandidates.length) { showToast('Nessun articolo dei tipi ammessi. Crealo prima nel Catalogo.', 'error'); return; }
+  openModal(`<h3>➕ Aggiungi componente</h3>
+    <p class="empty-text" style="text-align:left;padding:0 0 10px">${allowedHint(it.type)}</p>
+    ${itemPickerField(null)}
+    <div class="modal-grid">
+      <div class="modal-field"><label>Quantità</label><input type="number" id="cmp-qty" min="0" step="0.001" value="1"></div>
+      <div class="modal-field"><label>Scarto %</label><input type="number" id="cmp-scrap" min="0" step="0.1" value="0"></div>
+    </div>
+    <div class="modal-actions"><button class="btn-ghost" onclick="closeModal()">Annulla</button>
+      <button class="add-btn-sm" onclick="saveNewComponent()">Aggiungi</button></div>`);
+  renderPickerResults();
+}
+function isAllowedChild(parentType, childId) {
+  const child = getItem(childId);
+  return !!child && (ALLOWED_CHILDREN[parentType] || []).includes(child.type);
+}
+function saveNewComponent() {
+  const it = getItem(currentBomId); if (!it) return;
+  const itemId = val('cmp-item');
+  if (!itemId) { showToast('Seleziona un articolo', 'error'); return; }
+  if (!isAllowedChild(it.type, itemId)) { showToast('Tipo non ammesso in un ' + typeLabel(it.type).toLowerCase(), 'error'); return; }
+  if (createsCycle(it.id, itemId)) { showToast('Operazione annullata: creerebbe un ciclo', 'error'); return; }
+  it.components.push({ itemId, qty: numVal('cmp-qty'), scrapPct: numVal('cmp-scrap') });
+  saveDB(); closeModal(); renderBom(); showToast('Componente aggiunto');
+}
+function editComponentModal(idx) {
+  const it = getItem(currentBomId); if (!it) return;
+  const comp = it.components[idx]; if (!comp) return;
+  window.__pickerCandidates = pickerCandidates(it.type, it.id);
+  openModal(`<h3>✏ Modifica componente</h3>
+    <p class="empty-text" style="text-align:left;padding:0 0 10px">${allowedHint(it.type)}</p>
+    ${itemPickerField(comp.itemId)}
+    <div class="modal-grid">
+      <div class="modal-field"><label>Quantità</label><input type="number" id="cmp-qty" min="0" step="0.001" value="${comp.qty}"></div>
+      <div class="modal-field"><label>Scarto %</label><input type="number" id="cmp-scrap" min="0" step="0.1" value="${comp.scrapPct || 0}"></div>
+    </div>
+    <div class="modal-actions"><button class="btn-ghost" onclick="closeModal()">Annulla</button>
+      <button class="add-btn-sm" onclick="saveComponentEdit(${idx})">Salva</button></div>`);
+  renderPickerResults();
+}
+function saveComponentEdit(idx) {
+  const it = getItem(currentBomId); if (!it) return;
+  const comp = it.components[idx]; if (!comp) return;
+  const itemId = val('cmp-item');
+  if (!isAllowedChild(it.type, itemId)) { showToast('Tipo non ammesso in un ' + typeLabel(it.type).toLowerCase(), 'error'); return; }
+  if (createsCycle(it.id, itemId)) { showToast('Operazione annullata: creerebbe un ciclo', 'error'); return; }
+  comp.itemId = itemId; comp.qty = numVal('cmp-qty'); comp.scrapPct = numVal('cmp-scrap');
+  saveDB(); closeModal(); renderBom(); showToast('Componente aggiornato');
+}
+function delComponent(idx) {
+  const it = getItem(currentBomId); if (!it) return;
+  if (!confirm('Eliminare questo componente dalla distinta?')) return;
+  it.components.splice(idx, 1); saveDB(); renderBom(); showToast('Componente eliminato');
+}
+// Verifica se aggiungere childId dentro parentId creerebbe un ciclo
+function createsCycle(parentId, childId) {
+  if (parentId === childId) return true;
+  const child = getItem(childId);
+  if (!child || !isAssembly(child.type)) return false;
+  const visited = new Set();
+  const dfs = (id) => {
+    if (id === parentId) return true;
+    if (visited.has(id)) return false;
+    visited.add(id);
+    const node = getItem(id);
+    if (!node || !isAssembly(node.type)) return false;
+    return (node.components || []).some(c => dfs(c.itemId));
+  };
+  return dfs(childId);
+}
+
+function supplierName(id) { const s = db.suppliers.find(x => x.id === id); return s ? s.name : ''; }
+function supplierOptions(selectedId) {
+  return `<option value="">—</option>` + db.suppliers
+    .map(s => `<option value="${s.id}" ${s.id === selectedId ? 'selected' : ''}>${esc(s.name)}</option>`).join('');
+}
+// Solo il nome del centro: nel ciclo di una Parte il costo è fisso, la tariffa oraria non si applica.
+function wcOptionsNoRate(selectedId) {
+  return db.workCenters.filter(w => w.active !== false)
+    .map(w => `<option value="${w.id}" ${w.id === selectedId ? 'selected' : ''}>${esc(w.name)}</option>`).join('');
+}
+function wcOptions(selectedId) {
+  return db.workCenters.filter(w => w.active !== false)
+    .map(w => `<option value="${w.id}" ${w.id === selectedId ? 'selected' : ''}>${esc(w.name)} (${fmtN(w.hourlyRate)}/h)</option>`).join('');
+}
+function addOperationModal() {
+  const it = getItem(currentBomId); if (!it) return;
+  if (!db.workCenters.length) { showToast('Aggiungi prima un centro di lavoro in Gestione', 'error'); return; }
+  openModal(`<h3>🔧 Aggiungi lavorazione</h3>
+    <div class="modal-field"><label>Centro di lavoro</label><select id="op-wc">${wcOptions(null)}</select></div>
+    <div class="modal-grid">
+      <div class="modal-field"><label>Ore</label><input type="number" id="op-hours" min="0" step="0.25" value="1"></div>
+      <div class="modal-field"><label>Nota</label><input type="text" id="op-note" placeholder="opzionale"></div>
+    </div>
+    <div class="modal-actions"><button class="btn-ghost" onclick="closeModal()">Annulla</button>
+      <button class="add-btn-sm" onclick="saveNewOperation()">Aggiungi</button></div>`);
+}
+function saveNewOperation() {
+  const it = getItem(currentBomId); if (!it) return;
+  it.operations.push({ workCenterId: val('op-wc'), hours: numVal('op-hours'), note: val('op-note') });
+  saveDB(); closeModal(); renderBom(); showToast('Lavorazione aggiunta');
+}
+function editOperationModal(idx) {
+  const it = getItem(currentBomId); if (!it) return;
+  const op = it.operations[idx]; if (!op) return;
+  openModal(`<h3>🔧 Modifica lavorazione</h3>
+    <div class="modal-field"><label>Centro di lavoro</label><select id="op-wc">${wcOptions(op.workCenterId)}</select></div>
+    <div class="modal-grid">
+      <div class="modal-field"><label>Ore</label><input type="number" id="op-hours" min="0" step="0.25" value="${op.hours}"></div>
+      <div class="modal-field"><label>Nota</label><input type="text" id="op-note" value="${esc(op.note || '')}"></div>
+    </div>
+    <div class="modal-actions"><button class="btn-ghost" onclick="closeModal()">Annulla</button>
+      <button class="add-btn-sm" onclick="saveOperationEdit(${idx})">Salva</button></div>`);
+}
+function saveOperationEdit(idx) {
+  const it = getItem(currentBomId); if (!it) return;
+  const op = it.operations[idx]; if (!op) return;
+  op.workCenterId = val('op-wc'); op.hours = numVal('op-hours'); op.note = val('op-note');
+  saveDB(); closeModal(); renderBom(); showToast('Lavorazione aggiornata');
+}
+function delOperation(idx) {
+  const it = getItem(currentBomId); if (!it) return;
+  if (!confirm('Eliminare questa lavorazione?')) return;
+  it.operations.splice(idx, 1); saveDB(); renderBom(); showToast('Lavorazione eliminata');
+}
+
+// ─── Macchina / testata prodotto ───
+function newMachineModal() {
+  const nextNum = db.items.length + 1;
+  openModal(`<h3>🛠 Nuova macchina</h3>
+    <div class="modal-grid">
+      <div class="modal-field"><label>Codice</label><input id="mac-code" value="MAC-${String(nextNum).padStart(3, '0')}"></div>
+      <div class="modal-field"><label>U.M.</label><input id="mac-uom" value="pz"></div>
+    </div>
+    <div class="modal-field"><label>Nome</label><input id="mac-name" placeholder="Es. Nastro Trasportatore NT-200"></div>
+    <div class="modal-field"><label>Note</label><textarea id="mac-notes" rows="2"></textarea></div>
+    <div class="modal-actions"><button class="btn-ghost" onclick="closeModal()">Annulla</button>
+      <button class="add-btn-sm" onclick="saveNewMachine()">Crea</button></div>`);
+}
+function saveNewMachine() {
+  const name = val('mac-name');
+  if (!name) { showToast('Nome richiesto', 'error'); return; }
+  const id = gid();
+  db.items.push({ id, code: val('mac-code') || id, name, type: 'macchina', uom: val('mac-uom') || 'pz',
+    notes: val('mac-notes'), active: true, components: [], operations: [] });
+  currentBomId = id; bomExpanded = new Set();
+  saveDB(); closeModal(); renderBom(); showToast('Macchina creata');
+}
+function editCurrentItemModal() {
+  const it = getItem(currentBomId); if (!it) return;
+  openModal(`<h3>✏ Modifica testata — <span style="color:var(--text-dim);font-weight:500">${typeLabel(it.type)}</span></h3>
+    <div class="modal-grid">
+      <div class="modal-field"><label>Codice</label><input id="mac-code" value="${esc(it.code)}"></div>
+      <div class="modal-field"><label>U.M.</label><input id="mac-uom" value="${esc(it.uom || 'pz')}"></div>
+    </div>
+    <div class="modal-field"><label>Nome</label><input id="mac-name" value="${esc(it.name)}"></div>
+    <div class="modal-grid">
+      <div class="modal-field"><label>Spese generali % (override)</label><input type="number" id="mac-ov" step="0.1" value="${it.overheadPctOverride != null ? it.overheadPctOverride : ''}" placeholder="default ${db.settings.overheadPct}%"></div>
+      <div class="modal-field"><label>Margine % (override)</label><input type="number" id="mac-mg" step="0.1" value="${it.marginPctOverride != null ? it.marginPctOverride : ''}" placeholder="default ${db.settings.marginPct}%"></div>
+    </div>
+    <div class="modal-field"><label>Note</label><textarea id="mac-notes" rows="2">${esc(it.notes || '')}</textarea></div>
+    <div class="modal-actions"><button class="btn-ghost" onclick="closeModal()">Annulla</button>
+      <button class="add-btn-sm" onclick="saveCurrentItem()">Salva</button></div>`);
+}
+function saveCurrentItem() {
+  const it = getItem(currentBomId); if (!it) return;
+  it.code = val('mac-code'); it.uom = val('mac-uom'); it.name = val('mac-name') || it.name;
+  it.notes = val('mac-notes');
+  const ov = val('mac-ov'); it.overheadPctOverride = ov === '' ? null : parseFloat(ov);
+  const mg = val('mac-mg'); it.marginPctOverride = mg === '' ? null : parseFloat(mg);
+  saveDB(); closeModal(); renderBom(); showToast('Testata aggiornata');
+}
+function deleteCurrentMachine() {
+  const it = getItem(currentBomId); if (!it) return;
+  const used = usedBy(it.id);
+  if (used.length) { showToast('Usato in: ' + used.map(u => u.code).join(', ') + '. Rimuovilo prima.', 'error'); return; }
+  if (!confirm(`Eliminare "${it.name}" e la sua distinta?`)) return;
+  db.items = db.items.filter(i => i.id !== it.id);
+  currentBomId = null; saveDB(); renderBom(); showToast('Eliminato');
+}
+function usedBy(itemId) {
+  return db.items.filter(i =>
+    (isAssembly(i.type) && (i.components || []).some(c => c.itemId === itemId)) ||
+    (i.type === 'parte' && (i.cycle || []).some(r => r.kind === 'item' && r.itemId === itemId)));
+}
+
+// ═══════════════════════════════════════════════════════════
+//  VISTA: CATALOGO ARTICOLI
+// ═══════════════════════════════════════════════════════════
+function onCatFamilyChange() {
+  document.getElementById('cat-subfamily').innerHTML =
+    `<option value="">Tutte le sottofamiglie</option>` + subFamilyOptions(val('cat-family'), '').replace(/^<option value="">—<\/option>/, '');
+  renderCatalog();
+}
+function catalogRow(i) {
+  const unit = (isAssembly(i.type) || i.type === 'parte') ? costOf(i.id).total
+    : (i.type === 'acquistato' ? (i.purchasePrice || 0) : (i.unitCost || 0));
+  let meta = '';
+  if (i.type === 'acquistato') { const s = db.suppliers.find(x => x.id === i.supplierId); meta = s ? s.name : '—'; }
+  else if (isAssembly(i.type)) meta = (i.components || []).length + ' comp. / ' + (i.operations || []).length + ' lav.';
+  else if (i.type === 'parte') meta = (i.cycle || []).length ? (i.cycle.length + ' righe ciclo') : '—';
+  else meta = '—';
+  return `<tr>
+    <td style="font-family:var(--mono)">${esc(i.code)}</td>
+    <td>${esc(i.name)}</td>
+    <td><span class="bom-type-tag tt-${i.type}">${typeShort(i.type)}</span> ${typeLabel(i.type)}</td>
+    <td style="color:var(--text-dim)">${esc(familyLabel(i))}</td>
+    <td>${esc(i.uom || '')}</td>
+    <td style="font-family:var(--mono)">${fmtN(unit)}</td>
+    <td style="color:var(--text-dim)">${esc(meta)}</td>
+    <td style="text-align:right;white-space:nowrap">
+      <button class="mini-btn" onclick="editItemModal('${i.id}')">✏</button>
+      <button class="mini-btn" title="Duplica" onclick="duplicateItemModal('${i.id}')">📋</button>
+      <button class="mini-btn danger" onclick="delItem('${i.id}')">🗑</button>
+    </td></tr>`;
+}
+function renderCatalog() {
+  // popola il filtro famiglie preservando la selezione
+  const famSel = document.getElementById('cat-family');
+  const curFam = famSel.value;
+  famSel.innerHTML = `<option value="">Tutte le famiglie</option>` +
+    (db.families || []).map(f => `<option value="${f.id}" ${f.id === curFam ? 'selected' : ''}>${esc(f.name)}</option>`).join('');
+  const q = (document.getElementById('cat-search').value || '').toLowerCase();
+  const ft = document.getElementById('cat-type').value;
+  const ff = document.getElementById('cat-family').value;
+  const fsf = document.getElementById('cat-subfamily').value;
+  let rows = db.items.slice();
+  if (ft) rows = rows.filter(i => i.type === ft);
+  if (ff) rows = rows.filter(i => usesFamily(i.type) && i.familyId === ff);
+  if (fsf) rows = rows.filter(i => i.subFamilyId === fsf);
+  if (q) rows = rows.filter(i => (i.code + ' ' + i.name).toLowerCase().includes(q));
+  rows.sort((a, b) => (a.code || '').localeCompare(b.code || ''));
+
+  // Raggruppamento: commerciali e materie prime per macrofamiglia, gli altri tipi per categoria
+  const GROUP_LABELS = { materiale: 'Materie prime', parte: 'Parti', sottogruppo: 'Sottogruppi', gruppo: 'Gruppi', macchina: 'Macchine' };
+  const ORDER = { acquistato: 0, materiale: 1, parte: 2, sottogruppo: 3, gruppo: 4, macchina: 5 };
+  const NO_FAMILY_LABELS = { acquistato: 'Commerciali senza famiglia', materiale: 'Materie prime senza famiglia', parte: 'Parti senza famiglia' };
+  const groupKey = (i) => usesFamily(i.type)
+    ? (i.familyId ? familyName(i.familyId) : NO_FAMILY_LABELS[i.type])
+    : GROUP_LABELS[i.type];
+  const order = (i) => ORDER[i.type] != null ? ORDER[i.type] : 9;
+  const groups = {};
+  rows.forEach(i => { const k = groupKey(i); (groups[k] = groups[k] || { items: [], ord: order(i) }).items.push(i); });
+  const keys = Object.keys(groups).sort((a, b) => groups[a].ord - groups[b].ord || a.localeCompare(b));
+
+  const head = `<thead><tr><th>Codice</th><th>Nome</th><th>Tipo</th><th>Famiglia</th><th>U.M.</th><th>Costo un.</th><th>Dettaglio</th><th></th></tr></thead>`;
+  const html = keys.map(k =>
+    `<div class="cat-group-title">${esc(k)} <span style="color:var(--text-dim);font-weight:500">(${groups[k].items.length})</span></div>
+     <table>${head}<tbody>${groups[k].items.map(catalogRow).join('')}</tbody></table>`).join('');
+  document.getElementById('catalog-table').innerHTML = rows.length ? html : '<div class="empty-text">Nessun articolo trovato.</div>';
+}
+function itemModalBody(it) {
+  const t = it ? it.type : 'acquistato';
+  const sourcePicker = it ? '' : `
+    <div class="modal-field"><label>Parti da (opzionale)</label>
+      <input type="text" id="src-search" class="search" placeholder="🔍 Duplica da un articolo esistente..." oninput="renderSourceResults()" autocomplete="off">
+      <div id="src-results" class="picker-results"></div>
+    </div>`;
+  return `${sourcePicker}
+    <div class="modal-grid">
+      <div class="modal-field"><label>Tipo</label>
+        <select id="it-type" onchange="toggleItemFields()" ${it ? 'disabled' : ''}>
+          <option value="materiale" ${t === 'materiale' ? 'selected' : ''}>Materia prima</option>
+          <option value="acquistato" ${t === 'acquistato' ? 'selected' : ''}>Componente commerciale</option>
+          <option value="parte" ${t === 'parte' ? 'selected' : ''}>Parte (lavorato)</option>
+          <option value="sottogruppo" ${t === 'sottogruppo' ? 'selected' : ''}>Sottogruppo</option>
+          <option value="gruppo" ${t === 'gruppo' ? 'selected' : ''}>Gruppo</option>
+          <option value="macchina" ${t === 'macchina' ? 'selected' : ''}>Macchina</option>
+        </select>
+      </div>
+      <div class="modal-field"><label>Codice</label><input id="it-code" value="${it ? esc(it.code) : ''}" oninput="markCodeManual()"></div>
+    </div>
+    <div class="modal-field"><label>Nome</label><input id="it-name" value="${it ? esc(it.name) : ''}"></div>
+    <div class="modal-grid">
+      <div class="modal-field"><label>Unità di misura</label><input id="it-uom" value="${it ? esc(it.uom || 'pz') : 'pz'}"></div>
+      <div class="modal-field" id="fld-unitcost"><label>Costo unitario (${cur()}/U.M.)</label><input type="number" id="it-unitcost" step="0.0001" value="${it && it.unitCost != null ? it.unitCost : ''}"></div>
+      <div class="modal-field" id="fld-assembly-note" style="grid-column:1/-1"><label>Composizione</label><span class="empty-text" style="padding:0">La distinta (componenti e lavorazioni) si gestisce nella vista <strong>Distinte base</strong>.</span></div>
+      <div class="modal-field" id="fld-price"><label>Prezzo acquisto (${cur()}/U.M.)</label><input type="number" id="it-price" step="0.0001" value="${it && it.purchasePrice != null ? it.purchasePrice : ''}"></div>
+      <div class="modal-field" id="fld-supplier"><label>Fornitore</label><select id="it-supplier">${supplierOptions(it ? it.supplierId : '')}</select></div>
+    </div>
+    <div class="modal-grid" id="fld-family">
+      <div class="modal-field"><label>Macrofamiglia</label><select id="it-family" onchange="onItemFamilyChange()">${familyOptions(it ? it.familyId : '', usesFamily(t) ? t : '')}</select></div>
+      <div class="modal-field"><label>Sottofamiglia</label><select id="it-subfamily" onchange="onItemSubFamilyChange()">${subFamilyOptions(it ? it.familyId : '', it ? it.subFamilyId : '')}</select></div>
+    </div>
+    <div class="modal-field" id="fld-cycle">
+      <label>Ciclo di lavorazione</label>
+      <div class="cycle-box">
+        <div id="cycle-list"></div>
+        <div id="cycle-picker"></div>
+        <div class="cycle-actions">
+          <button type="button" class="add-btn-sm" onclick="addCycleItemRow()">+ Articolo</button>
+          <button type="button" class="add-btn-sm" onclick="addCycleOpRow()">+ Lavorazione</button>
+          <span id="cycle-total" class="cycle-total"></span>
+        </div>
+      </div>
+    </div>
+    <div class="modal-field"><label>Note</label><textarea id="it-notes" rows="2">${it ? esc(it.notes || '') : ''}</textarea></div>`;
+}
+// Stato: true finché il codice è ancora "automatico" (non modificato a mano dall'utente)
+let itemCodeAuto = true;
+function markCodeManual() { itemCodeAuto = false; }
+function refreshItemCode() {
+  if (!itemCodeAuto) return;
+  const codeEl = document.getElementById('it-code');
+  if (!codeEl) return;
+  codeEl.value = genItemCode(val('it-type'), val('it-family'), val('it-subfamily'));
+}
+function toggleItemFields() {
+  const t = document.getElementById('it-type').value;
+  document.getElementById('fld-unitcost').style.display = (t === 'materiale' || t === 'parte') ? '' : 'none';
+  document.getElementById('fld-price').style.display = t === 'acquistato' ? '' : 'none';
+  document.getElementById('fld-supplier').style.display = t === 'acquistato' ? '' : 'none';
+  const showFam = usesFamily(t);
+  document.getElementById('fld-family').style.display = showFam ? '' : 'none';
+  document.getElementById('fld-assembly-note').style.display = isAssembly(t) ? '' : 'none';
+  document.getElementById('fld-cycle').style.display = t === 'parte' ? '' : 'none';
+  if (showFam) {
+    // Ripopola le famiglie con quelle del tipo selezionato, preservando la selezione se compatibile
+    const famSel = document.getElementById('it-family');
+    const cur = famSel.value;
+    famSel.innerHTML = familyOptions(cur, t);
+    if (famSel.value !== cur) document.getElementById('it-subfamily').innerHTML = subFamilyOptions('', '');
+  }
+  if (t === 'parte') renderCycleList();
+  refreshItemCode();
+}
+function onItemFamilyChange() {
+  document.getElementById('it-subfamily').innerHTML = subFamilyOptions(val('it-family'), '');
+  refreshItemCode();
+}
+function onItemSubFamilyChange() { refreshItemCode(); }
+
+// ─── Editor inline del ciclo di lavorazione (solo articoli "parte") ───
+// openModal() sostituisce l'intero #modal-root, quindi l'editor non può usare modali annidati:
+// lavora su una bozza in memoria, committata su readItemForm().
+let cycleDraft = [];
+
+function cycleRowLabel(row) {
+  if (row.kind === 'op') {
+    const wc = db.workCenters.find(w => w.id === row.workCenterId);
+    return `🔧 ${esc(wc ? wc.name : '?')} <span class="cycle-dim">lavorazione</span>`;
+  }
+  const it = getItem(row.itemId);
+  if (!it) return '⚠ articolo mancante';
+  return `<span class="bom-type-tag tt-${it.type}">${typeShort(it.type)}</span>
+    <span class="cycle-code">${esc(it.code)}</span> ${esc(it.name)}`;
+}
+function renderCycleList() {
+  const box = document.getElementById('cycle-list'); if (!box) return;
+  if (!cycleDraft.length) {
+    box.innerHTML = '<div class="empty-text" style="padding:8px 0">Nessuna riga. Il costo unitario resta quello inserito a mano.</div>';
+    renderCycleTotals();
+    return;
+  }
+  const head = `<div class="cycle-row cycle-head">
+    <span>Voce</span><span>Fornitore</span><span class="num">Q.tà</span><span class="num">Costo</span><span class="num">Costo riga</span><span></span></div>`;
+  box.innerHTML = head + cycleDraft.map((row, idx) => {
+    // Lavorazione: fornitore selezionabile e costo fisso, nessuna quantità.
+    // Articolo: fornitore ereditato dall'anagrafica, q.tà × costo unitario, con override facoltativo.
+    const supCell = row.kind === 'op'
+      ? `<select class="cycle-sup" onchange="updateCycleRow(${idx})" id="cyc-sup-${idx}">${supplierOptions(row.supplierId || '')}</select>`
+      : `<span class="cycle-dim">${esc(supplierName(getItem(row.itemId) && getItem(row.itemId).supplierId) || '—')}</span>`;
+    const qtyCell = row.kind === 'op'
+      ? `<span class="num cycle-dim">—</span>`
+      : `<input class="num" type="number" min="0" step="0.001" value="${Number(row.qty) || 0}"
+           onchange="updateCycleRow(${idx})" id="cyc-qty-${idx}">`;
+    const costCell = row.kind === 'op'
+      ? `<input class="num" type="number" min="0" step="0.01" value="${Number(row.cost) || 0}"
+           title="Costo fisso della lavorazione" onchange="updateCycleRow(${idx})" id="cyc-cost-in-${idx}">`
+      : `<input class="num" type="number" min="0" step="0.01" value="${row.costOverride != null ? row.costOverride : ''}"
+           placeholder="${cycleRowComputed(row).toFixed(2)}" title="Lascia vuoto per usare il costo calcolato"
+           onchange="updateCycleRow(${idx})" id="cyc-ovr-${idx}">`;
+    return `<div class="cycle-row">
+      <span class="cycle-name">${cycleRowLabel(row)}</span>
+      ${supCell}
+      ${qtyCell}
+      ${costCell}
+      <span class="num cost" id="cyc-cost-${idx}">${fmtN(cycleRowCost(row))}</span>
+      <button type="button" class="mini-btn danger" onclick="delCycleRow(${idx})">🗑</button>
+    </div>`;
+  }).join('');
+  renderCycleTotals();
+}
+// Aggiorna solo i totali/costi riga, senza ridisegnare gli input (il re-render farebbe perdere il focus).
+function renderCycleTotals() {
+  cycleDraft.forEach((row, idx) => {
+    const el = document.getElementById('cyc-cost-' + idx);
+    if (el) el.textContent = fmtN(cycleRowCost(row));
+    // Il suggerimento "costo calcolato" della riga articolo segue la quantità
+    const ovr = document.getElementById('cyc-ovr-' + idx);
+    if (ovr) ovr.placeholder = cycleRowComputed(row).toFixed(2);
+  });
+  const tot = document.getElementById('cycle-total');
+  if (tot) tot.innerHTML = cycleDraft.length
+    ? `Totale ciclo: <strong>${fmtN(cycleDraft.reduce((s, r) => s + cycleRowCost(r), 0))}</strong>`
+    : '';
+  // Con un ciclo il costo unitario è derivato: il campo manuale non si usa più.
+  const uc = document.getElementById('it-unitcost');
+  if (uc) {
+    const derived = cycleDraft.length > 0;
+    uc.disabled = derived;
+    uc.title = derived ? 'Costo derivato dal ciclo di lavorazione' : '';
+  }
+}
+function updateCycleRow(idx) {
+  const row = cycleDraft[idx]; if (!row) return;
+  if (row.kind === 'op') {
+    row.cost = numVal('cyc-cost-in-' + idx);
+    row.supplierId = val('cyc-sup-' + idx);
+  } else {
+    row.qty = numVal('cyc-qty-' + idx);
+    const ovr = val('cyc-ovr-' + idx);
+    row.costOverride = ovr === '' ? null : (parseFloat(ovr) || 0);
+  }
+  renderCycleTotals();
+}
+function delCycleRow(idx) {
+  cycleDraft.splice(idx, 1);
+  renderCycleList();
+}
+function closeCyclePicker() {
+  const box = document.getElementById('cycle-picker'); if (box) box.innerHTML = '';
+}
+// Picker inline di un articolo (commerciale o materia prima) da aggiungere al ciclo.
+function addCycleItemRow() {
+  const box = document.getElementById('cycle-picker'); if (!box) return;
+  window.__cyclePickerCandidates = db.items
+    .filter(i => CYCLE_CHILD_TYPES.includes(i.type))
+    .sort((a, b) => String(a.code).localeCompare(String(b.code)));
+  if (!window.__cyclePickerCandidates.length) {
+    showToast('Nessun commerciale o materia prima a catalogo.', 'error'); return;
+  }
+  box.innerHTML = `<div class="cycle-picker-box">
+    <input type="text" id="cyc-search" class="search" placeholder="🔍 Cerca codice o nome..." oninput="renderCyclePickerResults()" autocomplete="off">
+    <div id="cyc-results" class="picker-results"></div>
+    <div class="cycle-actions"><button type="button" class="btn-ghost" onclick="closeCyclePicker()">Annulla</button></div>
+  </div>`;
+  renderCyclePickerResults();
+  const s = document.getElementById('cyc-search'); if (s) s.focus();
+}
+function renderCyclePickerResults() {
+  const box = document.getElementById('cyc-results'); if (!box) return;
+  const q = (val('cyc-search') || '').toLowerCase();
+  let rows = window.__cyclePickerCandidates || [];
+  if (q) rows = rows.filter(i => (i.code + ' ' + i.name).toLowerCase().includes(q));
+  const total = rows.length;
+  rows = rows.slice(0, 50);
+  let html = rows.map(i =>
+    `<div class="picker-row" onclick="pickCycleItem('${i.id}')">
+       <span class="picker-type">${typeLabel(i.type)}</span><b>${esc(i.code)}</b> — ${esc(i.name)}
+     </div>`).join('');
+  if (!html) html = `<div class="picker-empty">Nessun articolo trovato</div>`;
+  else if (total > rows.length) html += `<div class="picker-empty">+${total - rows.length} altri — affina la ricerca</div>`;
+  box.innerHTML = html;
+}
+function pickCycleItem(id) {
+  cycleDraft.push({ kind: 'item', itemId: id, qty: 1, costOverride: null });
+  closeCyclePicker();
+  renderCycleList();
+}
+// Selettore inline di una lavorazione da un centro di lavoro esistente (costo fisso, non orario).
+function addCycleOpRow() {
+  const box = document.getElementById('cycle-picker'); if (!box) return;
+  if (!db.workCenters.length) { showToast('Aggiungi prima un centro di lavoro in Gestione', 'error'); return; }
+  box.innerHTML = `<div class="cycle-picker-box">
+    <div class="modal-grid">
+      <div class="modal-field"><label>Centro di lavoro</label><select id="cyc-wc">${wcOptionsNoRate(null)}</select></div>
+      <div class="modal-field"><label>Fornitore</label><select id="cyc-opsup">${supplierOptions('')}</select></div>
+      <div class="modal-field"><label>Costo (${cur()})</label><input type="number" id="cyc-opcost" min="0" step="0.01" value="0"></div>
+    </div>
+    <div class="cycle-actions">
+      <button type="button" class="btn-ghost" onclick="closeCyclePicker()">Annulla</button>
+      <button type="button" class="add-btn-sm" onclick="pickCycleOp()">Aggiungi</button>
+    </div>
+  </div>`;
+}
+function pickCycleOp() {
+  const wcId = val('cyc-wc');
+  if (!wcId) { showToast('Seleziona un centro di lavoro', 'error'); return; }
+  cycleDraft.push({ kind: 'op', workCenterId: wcId, supplierId: val('cyc-opsup'), cost: numVal('cyc-opcost'), note: '' });
+  closeCyclePicker();
+  renderCycleList();
+}
+
+function newItemModal() {
+  itemCodeAuto = true;
+  window.__dupSourceId = null;
+  cycleDraft = [];
+  openModal(`<h3>📦 Nuovo articolo</h3>${itemModalBody(null)}
+    <div class="modal-actions"><button class="btn-ghost" onclick="closeModal()">Annulla</button>
+      <button class="add-btn-sm" onclick="saveNewItem()">Crea</button></div>`, true);
+  toggleItemFields();
+}
+// Ricerca live di un articolo sorgente da cui duplicare (tutti i tipi).
+function renderSourceResults() {
+  const box = document.getElementById('src-results'); if (!box) return;
+  const q = (val('src-search') || '').toLowerCase();
+  if (!q) { box.innerHTML = ''; return; }
+  const rows = db.items.filter(i => (i.code + ' ' + i.name).toLowerCase().includes(q))
+    .sort((a, b) => String(a.code).localeCompare(String(b.code))).slice(0, 50);
+  box.innerHTML = rows.map(i =>
+    `<div class="picker-row" onclick="applyItemSource('${i.id}')">
+       <span class="picker-type">${typeLabel(i.type)}</span><b>${esc(i.code)}</b> — ${esc(i.name)}
+     </div>`).join('') || `<div class="picker-empty">Nessun articolo trovato</div>`;
+}
+// Precompila il form "Nuovo articolo" coi dati della sorgente (codice escluso, sempre univoco).
+function applyItemSource(id) {
+  const src = getItem(id); if (!src) return;
+  window.__dupSourceId = id;
+  itemCodeAuto = true;
+  cycleDraft = (src.cycle || []).map(r => Object.assign({}, r));
+  setVal('it-type', src.type); toggleItemFields();
+  if (usesFamily(src.type)) {
+    setVal('it-family', src.familyId || '');
+    document.getElementById('it-subfamily').innerHTML = subFamilyOptions(src.familyId || '', src.subFamilyId || '');
+  }
+  setVal('it-name', src.name + ' (copia)');
+  setVal('it-uom', src.uom || 'pz');
+  setVal('it-unitcost', src.unitCost != null ? src.unitCost : '');
+  setVal('it-price', src.purchasePrice != null ? src.purchasePrice : '');
+  setVal('it-supplier', src.supplierId || '');
+  setVal('it-notes', src.notes || '');
+  setVal('it-code', '');
+  refreshItemCode();
+  const box = document.getElementById('src-results'); if (box) box.innerHTML = '';
+  setVal('src-search', src.code + ' — ' + src.name);
+}
+function duplicateItemModal(id) {
+  if (!getItem(id)) return;
+  newItemModal();
+  applyItemSource(id);
+}
+function readItemForm(it) {
+  it.code = val('it-code') || it.id;
+  it.name = val('it-name');
+  it.uom = val('it-uom') || 'pz';
+  it.notes = val('it-notes');
+  if (it.type === 'materiale' || it.type === 'parte') { it.unitCost = numVal('it-unitcost'); }
+  if (it.type === 'acquistato') { it.purchasePrice = numVal('it-price'); it.supplierId = val('it-supplier'); }
+  if (usesFamily(it.type)) { it.familyId = val('it-family'); it.subFamilyId = val('it-subfamily'); }
+  // Il ciclo (con costo derivato) sostituisce il costo manuale quando ha almeno una riga.
+  if (it.type === 'parte') it.cycle = cycleDraft.map(r => Object.assign({}, r));
+}
+function saveNewItem() {
+  const name = val('it-name'); if (!name) { showToast('Nome richiesto', 'error'); return; }
+  const it = { id: gid(), type: val('it-type') };
+  if (isAssembly(it.type)) { it.components = []; it.operations = []; }
+  readItemForm(it);
+  const src = window.__dupSourceId ? getItem(window.__dupSourceId) : null;
+  if (src && isAssembly(it.type)) {
+    it.components = (src.components || []).map(c => Object.assign({}, c));
+    it.operations = (src.operations || []).map(o => Object.assign({}, o));
+  }
+  if (src) {
+    if (src.overheadPctOverride != null) it.overheadPctOverride = src.overheadPctOverride;
+    if (src.marginPctOverride != null) it.marginPctOverride = src.marginPctOverride;
+  }
+  db.items.push(it);
+  saveDB(); closeModal(); renderCatalog(); showToast(src ? 'Copia creata' : 'Articolo creato');
+}
+function editItemModal(id) {
+  const it = getItem(id); if (!it) return;
+  itemCodeAuto = false; // in modifica non si rigenera mai il codice esistente
+  cycleDraft = (it.cycle || []).map(r => Object.assign({}, r));
+  openModal(`<h3>✏ Modifica articolo</h3>${itemModalBody(it)}
+    <div class="modal-actions"><button class="btn-ghost" onclick="closeModal()">Annulla</button>
+      <button class="add-btn-sm" onclick="saveItemEdit('${id}')">Salva</button></div>`, true);
+  toggleItemFields();
+}
+function saveItemEdit(id) {
+  const it = getItem(id); if (!it) return;
+  readItemForm(it);
+  saveDB(); closeModal(); renderCatalog(); showToast('Articolo aggiornato');
+}
+function delItem(id) {
+  const it = getItem(id); if (!it) return;
+  const used = usedBy(id);
+  if (used.length) { showToast('Usato in: ' + used.map(u => u.code).join(', ') + '. Rimuovilo prima.', 'error'); return; }
+  if (!confirm(`Eliminare "${it.name}"?`)) return;
+  db.items = db.items.filter(x => x.id !== id);
+  if (currentBomId === id) currentBomId = null;
+  saveDB(); renderCatalog(); showToast('Eliminato');
+}
+
+// ═══════════════════════════════════════════════════════════
+//  VISTA: COSTIFICAZIONE & REPORT
+// ═══════════════════════════════════════════════════════════
+function flattenBom(itemId, qty, scrap, level, rows, ancestors) {
+  const it = getItem(itemId); if (!it) return;
+  const cyc = ancestors.includes(itemId);
+  const unit = cyc ? 0 : costOf(itemId).total;
+  const factor = (Number(qty) || 0) * (1 + (Number(scrap) || 0) / 100);
+  rows.push({ level, code: it.code, name: it.name + (cyc ? ' (ciclo!)' : ''), type: typeLabel(it.type),
+    qty: Number(qty) || 0, uom: it.uom || '', unit, line: unit * factor });
+  if (isAssembly(it.type) && !cyc) {
+    (it.components || []).forEach(c => flattenBom(c.itemId, c.qty, c.scrapPct, level + 1, rows, ancestors.concat(itemId)));
+  }
+  // Una Parte esplode il proprio ciclo di lavorazione: i costi riga sono scalati per la quantità del padre,
+  // così la somma dei figli coincide col costo riga della Parte.
+  if (it.type === 'parte' && !cyc) {
+    (it.cycle || []).forEach(row => {
+      const rowCost = cycleRowCost(row);
+      if (row.kind === 'op') {
+        const wc = db.workCenters.find(w => w.id === row.workCenterId);
+        const sup = supplierName(row.supplierId);
+        rows.push({ level: level + 1, code: '', name: '🔧 ' + (wc ? wc.name : '?') + (sup ? ' · ' + sup : ''),
+          type: 'Lavorazione', qty: 1, uom: '', unit: rowCost, line: rowCost * factor });
+      } else {
+        const ci = getItem(row.itemId); if (!ci) return;
+        rows.push({ level: level + 1, code: ci.code, name: ci.name, type: typeLabel(ci.type),
+          qty: Number(row.qty) || 0, uom: ci.uom || '', unit: costOf(row.itemId).total, line: rowCost * factor });
+      }
+    });
+  }
+}
+function renderReport() {
+  // sincronizza i due selettori
+  if (!reportBomId) reportBomId = currentBomId;
+  ensureCurrentBom(); if (!reportBomId) reportBomId = currentBomId;
+  const sel = document.getElementById('report-select');
+  if (document.activeElement !== sel) sel.innerHTML = productOptions(reportBomId);
+  reportBomId = val('report-select') || reportBomId;
+  const it = getItem(reportBomId);
+  const wrap = document.getElementById('report-content');
+  if (!it) { wrap.innerHTML = '<div class="empty-text">Seleziona un prodotto.</div>'; return; }
+
+  const c = costOf(it.id);
+  const price = sellingPrice(it.id);
+  const cats = [
+    { name: 'Materiale', val: c.material, color: 'var(--orange)' },
+    { name: 'Commerciali', val: c.purchased, color: 'var(--accent)' },
+    { name: 'Parti', val: c.parts, color: 'var(--purple)' },
+    { name: 'Lavorazioni', val: c.labor, color: 'var(--green)' },
+    { name: 'Spese generali', val: c.overhead, color: 'var(--text-dim)' },
+  ];
+  const mx = Math.max(...cats.map(x => x.val), 0.0001);
+  const bars = cats.map(x => `<div class="breakdown-row">
+    <div class="breakdown-name">${x.name}</div>
+    <div class="breakdown-bar"><div class="breakdown-fill" style="width:${x.val / mx * 100}%;background:${x.color}"></div></div>
+    <div class="breakdown-stats"><span>${fmtN(x.val)}</span><span style="color:var(--text-dim)">${c.total ? (x.val / c.total * 100).toFixed(1) : '0.0'}%</span></div>
+  </div>`).join('');
+
+  const rows = [];
+  flattenBom(it.id, 1, 0, 0, rows, []);
+  const tableRows = rows.map(r => `<tr>
+    <td style="font-family:var(--mono)">${esc(r.code)}</td>
+    <td style="padding-left:${12 + r.level * 18}px">${r.level ? '└ ' : ''}${esc(r.name)}</td>
+    <td style="color:var(--text-dim)">${esc(r.type)}</td>
+    <td style="font-family:var(--mono)">${r.qty} ${esc(r.uom)}</td>
+    <td style="font-family:var(--mono)">${fmtN(r.unit)}</td>
+    <td style="font-family:var(--mono)">${fmtN(r.line)}</td></tr>`).join('');
+
+  wrap.innerHTML = `
+    <div class="cost-summary">
+      ${kpi('Materiale', fmtN(c.material), 'orange')}
+      ${kpi('Commerciali', fmtN(c.purchased), 'accent')}
+      ${kpi('Parti', fmtN(c.parts), 'purple')}
+      ${kpi('Lavorazioni', fmtN(c.labor), 'green')}
+      ${kpi('Spese generali', fmtN(c.overhead), '')}
+      ${kpi('Costo totale', fmtN(c.total), '')}
+      ${kpi('Prezzo vendita', fmtN(price), 'green')}
+    </div>
+    <div class="breakdown-section" style="margin-bottom:20px"><h3 class="sub-title">Incidenza voci di costo</h3>${bars}</div>
+    <div class="breakdown-section"><h3 class="sub-title">Distinta base esplosa</h3>
+      <div class="table-wrap"><table><thead><tr><th>Codice</th><th>Articolo</th><th>Tipo</th><th>Q.tà</th><th>Costo un.</th><th>Costo riga</th></tr></thead>
+      <tbody>${tableRows}</tbody></table></div></div>`;
+}
+
+// ─── EXPORT ───
+function reportRows() { const r = []; flattenBom(reportBomId || currentBomId, 1, 0, 0, r, []); return r; }
+function exportBomExcel() {
+  const it = getItem(reportBomId || currentBomId); if (!it) { showToast('Seleziona un prodotto', 'error'); return; }
+  const c = costOf(it.id);
+  const rows = reportRows();
+  const data = [['Codice', 'Articolo', 'Livello', 'Tipo', 'Quantità', 'U.M.', 'Costo unitario', 'Costo riga']];
+  rows.forEach(r => data.push([r.code, '  '.repeat(r.level) + r.name, r.level, r.type, r.qty, r.uom, +r.unit.toFixed(4), +r.line.toFixed(4)]));
+  data.push([]);
+  data.push(['', 'Materiale', '', '', '', '', '', +c.material.toFixed(2)]);
+  data.push(['', 'Commerciali', '', '', '', '', '', +c.purchased.toFixed(2)]);
+  data.push(['', 'Parti', '', '', '', '', '', +c.parts.toFixed(2)]);
+  data.push(['', 'Lavorazioni', '', '', '', '', '', +c.labor.toFixed(2)]);
+  data.push(['', 'Spese generali', '', '', '', '', '', +c.overhead.toFixed(2)]);
+  data.push(['', 'COSTO TOTALE', '', '', '', '', '', +c.total.toFixed(2)]);
+  data.push(['', 'PREZZO VENDITA', '', '', '', '', '', +sellingPrice(it.id).toFixed(2)]);
+  const ws = XLSX.utils.aoa_to_sheet(data);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Distinta');
+  XLSX.writeFile(wb, `Distinta_${it.code || it.name}.xlsx`);
+  showToast('Excel esportato');
+}
+function exportBomPDF() {
+  const it = getItem(reportBomId || currentBomId); if (!it) { showToast('Seleziona un prodotto', 'error'); return; }
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF();
+  const c = costOf(it.id);
+  doc.setFontSize(15); doc.text(`Distinta base — ${it.name}`, 14, 16);
+  doc.setFontSize(10); doc.setTextColor(120);
+  doc.text(`Codice: ${it.code || '-'}   Data: ${new Date().toLocaleDateString('it-IT')}`, 14, 23);
+  const rows = reportRows().map(r => ['  '.repeat(r.level) + r.code, '  '.repeat(r.level) + r.name, r.type, r.qty + ' ' + r.uom, fmtN(r.unit), fmtN(r.line)]);
+  doc.autoTable({
+    startY: 28, head: [['Codice', 'Articolo', 'Tipo', 'Q.tà', 'Costo un.', 'Costo riga']], body: rows,
+    styles: { fontSize: 8 }, headStyles: { fillColor: [58, 123, 232] },
+  });
+  let y = doc.lastAutoTable.finalY + 8;
+  const sum = [
+    ['Materiale', fmtN(c.material)], ['Commerciali', fmtN(c.purchased)], ['Parti', fmtN(c.parts)], ['Lavorazioni', fmtN(c.labor)],
+    ['Spese generali', fmtN(c.overhead)], ['COSTO TOTALE', fmtN(c.total)], ['PREZZO VENDITA', fmtN(sellingPrice(it.id))],
+  ];
+  doc.autoTable({ startY: y, body: sum, theme: 'plain', styles: { fontSize: 10 },
+    columnStyles: { 0: { fontStyle: 'bold' }, 1: { halign: 'right', fontStyle: 'bold' } }, tableWidth: 90 });
+  doc.save(`Distinta_${it.code || it.name}.pdf`);
+  showToast('PDF esportato');
+}
+
+// ═══════════════════════════════════════════════════════════
+//  VISTA: GESTIONE
+// ═══════════════════════════════════════════════════════════
+const MGMT_TABS = [
+  { id: 'suppliers', label: '🏭 Fornitori' },
+  { id: 'fam-acquistato', label: '🛒 Famiglie commerciali' },
+  { id: 'fam-materiale', label: '🧱 Famiglie materie prime' },
+  { id: 'fam-parte', label: '⚙️ Famiglie parti' },
+  { id: 'workcenters', label: '🔧 Centri di lavoro' },
+  { id: 'settings', label: '📐 Impostazioni' },
+  { id: 'import', label: '⬆ Import' },
+  { id: 'backup', label: '💾 Backup' },
+];
+function renderManage() {
+  document.getElementById('mgmt-tabs').innerHTML = MGMT_TABS.map(t =>
+    `<button class="mgmt-tab ${mgmtTab === t.id ? 'active' : ''}" onclick="setMgmtTab('${t.id}')">${t.label}</button>`).join('');
+  const c = document.getElementById('mgmt-content');
+  if (mgmtTab === 'suppliers') c.innerHTML = renderSuppliers();
+  else if (mgmtTab === 'fam-acquistato') c.innerHTML = renderFamilies('acquistato');
+  else if (mgmtTab === 'fam-materiale') c.innerHTML = renderFamilies('materiale');
+  else if (mgmtTab === 'fam-parte') c.innerHTML = renderFamilies('parte');
+  else if (mgmtTab === 'workcenters') c.innerHTML = renderWorkCenters();
+  else if (mgmtTab === 'settings') c.innerHTML = renderSettings();
+  else if (mgmtTab === 'import') c.innerHTML = renderImport();
+  else if (mgmtTab === 'backup') c.innerHTML = renderBackup();
+}
+function setMgmtTab(t) { mgmtTab = t; renderManage(); }
+
+function renderSuppliers() {
+  const list = db.suppliers.map(s => `<div class="mgmt-item">
+    <span class="mgmt-item-name">${esc(s.name)}</span>
+    <span class="mgmt-item-meta">${esc(s.referente || '')} ${s.email ? '· ' + esc(s.email) : ''}</span>
+    <div class="mgmt-item-actions">
+      <button class="mini-btn" onclick="editSupplierModal('${s.id}')">✏</button>
+      <button class="mini-btn danger" onclick="delSupplier('${s.id}')">🗑</button></div></div>`).join('') || '<div class="empty-text">Nessun fornitore.</div>';
+  return `<div class="mgmt-panel"><div class="mgmt-list">${list}</div>
+    <div class="mgmt-form">
+      <input id="sup-name" placeholder="Nome fornitore">
+      <input id="sup-ref" placeholder="Referente">
+      <input id="sup-email" placeholder="Email">
+      <button class="add-btn-sm" onclick="addSupplier()">+ Aggiungi</button></div></div>`;
+}
+function addSupplier() {
+  const n = val('sup-name'); if (!n) { showToast('Nome richiesto', 'error'); return; }
+  db.suppliers.push({ id: gid(), name: n, referente: val('sup-ref'), email: val('sup-email'), active: true });
+  saveDB(); renderManage(); showToast('Fornitore aggiunto');
+}
+function editSupplierModal(id) {
+  const s = db.suppliers.find(x => x.id === id); if (!s) return;
+  openModal(`<h3>✏ Modifica fornitore</h3>
+    <div class="modal-field"><label>Nome</label><input id="es-name" value="${esc(s.name)}"></div>
+    <div class="modal-field"><label>Referente</label><input id="es-ref" value="${esc(s.referente || '')}"></div>
+    <div class="modal-field"><label>Email</label><input id="es-email" value="${esc(s.email || '')}"></div>
+    <div class="modal-actions"><button class="btn-ghost" onclick="closeModal()">Annulla</button>
+      <button class="add-btn-sm" onclick="saveSupplier('${id}')">Salva</button></div>`);
+}
+function saveSupplier(id) {
+  const s = db.suppliers.find(x => x.id === id); if (!s) return;
+  s.name = val('es-name'); s.referente = val('es-ref'); s.email = val('es-email');
+  saveDB(); closeModal(); renderManage(); showToast('Aggiornato');
+}
+function delSupplier(id) {
+  const used = db.items.filter(i => i.supplierId === id);
+  if (used.length) { showToast('Fornitore usato da ' + used.length + ' articoli', 'error'); return; }
+  if (!confirm('Eliminare il fornitore?')) return;
+  db.suppliers = db.suppliers.filter(x => x.id !== id); saveDB(); renderManage(); showToast('Eliminato');
+}
+
+// ─── Famiglie / sottofamiglie ───
+function familyPanelHtml(f) {
+  const subs = (f.subs || []).map(s => `<div class="mgmt-item" style="padding:6px 12px">
+      <span class="mgmt-item-name" style="font-size:13px;font-weight:500">${esc(s.name)} <span style="font-family:var(--mono);color:var(--text-dim);font-size:11px">[${esc(s.sigla || siglaFromName(s.name))}]</span></span>
+      <div class="mgmt-item-actions">
+        <button class="mini-btn" onclick="editSubFamilyModal('${f.id}','${s.id}')">✏</button>
+        <button class="mini-btn danger" onclick="delSubFamily('${f.id}','${s.id}')">🗑</button></div></div>`).join('')
+    || '<div class="empty-text" style="padding:6px 0">Nessuna sottofamiglia.</div>';
+  return `<div class="mgmt-panel" style="margin-bottom:12px">
+      <div class="mgmt-item" style="background:transparent;border:none;padding:0 0 10px">
+        <span class="mgmt-item-name" style="font-size:15px;color:var(--accent)">🗂 ${esc(f.name)} <span style="font-family:var(--mono);color:var(--text-dim);font-size:12px">[${esc(f.sigla || siglaFromName(f.name))}]</span></span>
+        <div class="mgmt-item-actions">
+          <button class="mini-btn" onclick="editFamilyModal('${f.id}')">✏</button>
+          <button class="mini-btn danger" onclick="delFamily('${f.id}')">🗑</button></div></div>
+      <div class="mgmt-list" style="margin-bottom:10px">${subs}</div>
+      <div class="mgmt-form">
+        <input id="sub-name-${f.id}" placeholder="Nuova sottofamiglia">
+        <input id="sub-sigla-${f.id}" placeholder="Sigla" maxlength="6" style="max-width:90px">
+        <button class="add-btn-sm" onclick="addSubFamily('${f.id}')">+ Sottofamiglia</button></div>
+    </div>`;
+}
+function renderFamilies(kind) {
+  kind = kind || 'acquistato';
+  const hint = kind === 'materiale' ? 'Nuova macrofamiglia (es. Acciaio)'
+    : kind === 'parte' ? 'Nuova macrofamiglia (es. Lavorazioni meccaniche)'
+    : 'Nuova macrofamiglia (es. Idraulico)';
+  const blocks = (db.families || []).filter(f => (f.kind || 'acquistato') === kind).map(familyPanelHtml).join('')
+    || '<div class="empty-text">Nessuna macrofamiglia.</div>';
+  return `<div>${blocks}
+    <div class="mgmt-panel"><div class="mgmt-form">
+      <input id="fam-name-${kind}" placeholder="${hint}">
+      <input id="fam-sigla-${kind}" placeholder="Sigla" maxlength="6" style="max-width:90px">
+      <button class="add-btn-sm" onclick="addFamily('${kind}')">+ Aggiungi macrofamiglia</button></div></div></div>`;
+}
+function addFamily(kind) {
+  kind = kind || 'acquistato';
+  const n = val('fam-name-' + kind); if (!n) { showToast('Nome richiesto', 'error'); return; }
+  const sg = val('fam-sigla-' + kind);
+  db.families.push({ id: gid(), name: n, kind, sigla: sg ? sg.toUpperCase() : siglaFromName(n), subs: [] });
+  saveDB(); renderManage(); showToast('Macrofamiglia aggiunta');
+}
+function editFamilyModal(id) {
+  const f = getFamily(id); if (!f) return;
+  openModal(`<h3>✏ Modifica macrofamiglia</h3>
+    <div class="modal-grid">
+      <div class="modal-field"><label>Nome</label><input id="ef-name" value="${esc(f.name)}"></div>
+      <div class="modal-field"><label>Sigla (per codifica)</label><input id="ef-sigla" value="${esc(f.sigla || siglaFromName(f.name))}" maxlength="6"></div>
+    </div>
+    <div class="modal-actions"><button class="btn-ghost" onclick="closeModal()">Annulla</button>
+      <button class="add-btn-sm" onclick="saveFamily('${id}')">Salva</button></div>`);
+}
+function saveFamily(id) {
+  const f = getFamily(id); if (!f) return;
+  f.name = val('ef-name') || f.name;
+  const sg = val('ef-sigla'); f.sigla = sg ? sg.toUpperCase() : siglaFromName(f.name);
+  saveDB(); closeModal(); renderManage(); showToast('Aggiornata');
+}
+function delFamily(id) {
+  const used = db.items.filter(i => i.familyId === id);
+  if (used.length) { showToast('Famiglia usata da ' + used.length + ' articoli', 'error'); return; }
+  if (!confirm('Eliminare la macrofamiglia e le sue sottofamiglie?')) return;
+  db.families = db.families.filter(f => f.id !== id);
+  saveDB(); renderManage(); showToast('Eliminata');
+}
+function addSubFamily(familyId) {
+  const f = getFamily(familyId); if (!f) return;
+  const n = val('sub-name-' + familyId); if (!n) { showToast('Nome richiesto', 'error'); return; }
+  if (!f.subs) f.subs = [];
+  const sg = val('sub-sigla-' + familyId);
+  f.subs.push({ id: gid(), name: n, sigla: sg ? sg.toUpperCase() : siglaFromName(n) });
+  saveDB(); renderManage(); showToast('Sottofamiglia aggiunta');
+}
+function editSubFamilyModal(familyId, subId) {
+  const f = getFamily(familyId); const s = f && (f.subs || []).find(x => x.id === subId); if (!s) return;
+  openModal(`<h3>✏ Modifica sottofamiglia</h3>
+    <div class="modal-grid">
+      <div class="modal-field"><label>Nome (in ${esc(f.name)})</label><input id="esf-name" value="${esc(s.name)}"></div>
+      <div class="modal-field"><label>Sigla (per codifica)</label><input id="esf-sigla" value="${esc(s.sigla || siglaFromName(s.name))}" maxlength="6"></div>
+    </div>
+    <div class="modal-actions"><button class="btn-ghost" onclick="closeModal()">Annulla</button>
+      <button class="add-btn-sm" onclick="saveSubFamily('${familyId}','${subId}')">Salva</button></div>`);
+}
+function saveSubFamily(familyId, subId) {
+  const f = getFamily(familyId); const s = f && (f.subs || []).find(x => x.id === subId); if (!s) return;
+  s.name = val('esf-name') || s.name;
+  const sg = val('esf-sigla'); s.sigla = sg ? sg.toUpperCase() : siglaFromName(s.name);
+  saveDB(); closeModal(); renderManage(); showToast('Aggiornata');
+}
+function delSubFamily(familyId, subId) {
+  const used = db.items.filter(i => i.subFamilyId === subId);
+  if (used.length) { showToast('Sottofamiglia usata da ' + used.length + ' articoli', 'error'); return; }
+  if (!confirm('Eliminare la sottofamiglia?')) return;
+  const f = getFamily(familyId); if (!f) return;
+  f.subs = (f.subs || []).filter(x => x.id !== subId);
+  saveDB(); renderManage(); showToast('Eliminata');
+}
+
+function renderWorkCenters() {
+  const list = db.workCenters.map(w => `<div class="mgmt-item">
+    <span class="mgmt-item-name">${esc(w.name)}</span>
+    <span class="mgmt-item-meta">${fmtN(w.hourlyRate)}/h</span>
+    <div class="mgmt-item-actions">
+      <button class="mini-btn" onclick="editWcModal('${w.id}')">✏</button>
+      <button class="mini-btn danger" onclick="delWc('${w.id}')">🗑</button></div></div>`).join('') || '<div class="empty-text">Nessun centro di lavoro.</div>';
+  return `<div class="mgmt-panel"><div class="mgmt-list">${list}</div>
+    <div class="mgmt-form">
+      <input id="wc-name" placeholder="Nome (es. Tornitura)">
+      <input id="wc-rate" type="number" step="0.5" placeholder="Tariffa €/h">
+      <button class="add-btn-sm" onclick="addWc()">+ Aggiungi</button></div></div>`;
+}
+function addWc() {
+  const n = val('wc-name'); if (!n) { showToast('Nome richiesto', 'error'); return; }
+  db.workCenters.push({ id: gid(), name: n, hourlyRate: numVal('wc-rate'), active: true });
+  saveDB(); renderManage(); showToast('Centro di lavoro aggiunto');
+}
+function editWcModal(id) {
+  const w = db.workCenters.find(x => x.id === id); if (!w) return;
+  openModal(`<h3>✏ Modifica centro di lavoro</h3>
+    <div class="modal-field"><label>Nome</label><input id="ew-name" value="${esc(w.name)}"></div>
+    <div class="modal-field"><label>Tariffa (${cur()}/h)</label><input id="ew-rate" type="number" step="0.5" value="${w.hourlyRate}"></div>
+    <div class="modal-actions"><button class="btn-ghost" onclick="closeModal()">Annulla</button>
+      <button class="add-btn-sm" onclick="saveWc('${id}')">Salva</button></div>`);
+}
+function saveWc(id) {
+  const w = db.workCenters.find(x => x.id === id); if (!w) return;
+  w.name = val('ew-name'); w.hourlyRate = numVal('ew-rate');
+  saveDB(); closeModal(); renderManage(); showToast('Aggiornato');
+}
+function delWc(id) {
+  const used = db.items.filter(i => (i.operations || []).some(o => o.workCenterId === id));
+  if (used.length) { showToast('Usato in ' + used.length + ' distinte', 'error'); return; }
+  if (!confirm('Eliminare il centro di lavoro?')) return;
+  db.workCenters = db.workCenters.filter(x => x.id !== id); saveDB(); renderManage(); showToast('Eliminato');
+}
+
+function renderSettings() {
+  const s = db.settings;
+  return `<div class="mgmt-panel">
+    <div class="modal-grid">
+      <div class="modal-field"><label>Spese generali / overhead (%)</label><input type="number" id="set-ov" step="0.1" value="${s.overheadPct}"></div>
+      <div class="modal-field"><label>Margine / markup (%)</label><input type="number" id="set-mg" step="0.1" value="${s.marginPct}"></div>
+      <div class="modal-field"><label>Simbolo valuta</label><input id="set-cur" value="${esc(s.currency)}" maxlength="3"></div>
+      <div class="modal-field"><label>Cifre parte incrementale codice</label><input type="number" id="set-digits" min="1" max="10" step="1" value="${codeDigits()}"></div>
+      <div class="modal-field"><label>Prefisso codice — Commerciali</label><input id="set-pfx-acq" maxlength="10" value="${esc(s.codePrefixAcquistato || 'CMM')}" placeholder="CMM"></div>
+      <div class="modal-field"><label>Prefisso codice — Materie prime</label><input id="set-pfx-mat" maxlength="10" value="${esc(s.codePrefixMateriale || 'MAT')}" placeholder="MAT"></div>
+      <div class="modal-field"><label>Prefisso codice — Parti</label><input id="set-pfx-prt" maxlength="10" value="${esc(s.codePrefixParte || 'PRT')}" placeholder="PRT"></div>
+    </div>
+    <p class="empty-text" style="text-align:left;padding:4px 0 12px">Le percentuali sono i valori di default applicati a tutti i prodotti. Si possono sovrascrivere per singola macchina dalla "Modifica testata". Le cifre della parte incrementale determinano lo zero-padding del progressivo (es. 3 → <span style="font-family:var(--mono)">${esc(s.codePrefixMateriale || 'MAT')}-ACC-LAM-001</span>). Il prefisso codice è la sigla iniziale usata nei codici automatici per commerciali, materie prime e parti.</p>
+    <button class="add-btn-sm" onclick="saveSettings()">Salva impostazioni</button></div>`;
+}
+function saveSettings() {
+  db.settings.overheadPct = numVal('set-ov');
+  db.settings.marginPct = numVal('set-mg');
+  db.settings.currency = val('set-cur') || '€';
+  const d = parseInt(val('set-digits'), 10);
+  db.settings.codeDigits = (d >= 1 && d <= 10) ? d : 3;
+  db.settings.codePrefixAcquistato = (val('set-pfx-acq') || 'CMM').toUpperCase();
+  db.settings.codePrefixMateriale = (val('set-pfx-mat') || 'MAT').toUpperCase();
+  db.settings.codePrefixParte = (val('set-pfx-prt') || 'PRT').toUpperCase();
+  saveDB(); renderManage(); showToast('Impostazioni salvate');
+}
+
+// ═══════════════════════════════════════════════════════════
+//  IMPORT MASSIVO DA EXCEL (Articoli e Distinte)
+// ═══════════════════════════════════════════════════════════
+function renderImport() {
+  const types = ALL_TYPES.map(t => typeLabel(t)).join(', ');
+  return `<div class="cloud-section" style="flex-direction:column;align-items:stretch;gap:18px">
+    <div>
+      <strong>📦 Import Articoli</strong>
+      <p>Carica un foglio Excel per creare o aggiornare articoli in blocco (materie prime, commerciali, parti, assiemi). Se il <b>Codice</b> esiste già l'articolo viene <b>aggiornato</b>; se è vuoto viene generato automaticamente per materie prime, commerciali e parti. Colonne: <span style="font-family:var(--mono)">Tipo, Codice, Nome, UM, CostoUnitario, PrezzoAcquisto, Fornitore, Macrofamiglia, Sottofamiglia, Note</span>. Tipi ammessi: ${esc(types)}.</p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
+        <button class="btn-outline" onclick="downloadItemsTemplate()">⬇ Scarica template Articoli</button>
+        <button class="add-btn-sm" onclick="document.getElementById('imp-items-file').click()">⬆ Carica file Articoli</button>
+        <input type="file" id="imp-items-file" accept=".xlsx,.xls,.csv" style="display:none" onchange="onImportItems(event)">
+      </div>
+    </div>
+    <div style="border-top:1px solid var(--border, #2a2a2a);padding-top:16px">
+      <strong>🌳 Import Distinte</strong>
+      <p>Carica un foglio Excel con le relazioni <b>padre-figlio</b> per costruire le distinte. Gli articoli (padri e figli) devono già esistere in catalogo — importali prima con il foglio Articoli. Per ogni padre presente nel file i componenti vengono <b>sostituiti</b> (reimport idempotente); le lavorazioni non vengono toccate. Colonne: <span style="font-family:var(--mono)">CodicePadre, CodiceFiglio, Qta, Scarto%</span>.</p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
+        <button class="btn-outline" onclick="downloadBomTemplate()">⬇ Scarica template Distinte</button>
+        <button class="add-btn-sm" onclick="document.getElementById('imp-bom-file').click()">⬆ Carica file Distinte</button>
+        <input type="file" id="imp-bom-file" accept=".xlsx,.xls,.csv" style="display:none" onchange="onImportBom(event)">
+      </div>
+    </div></div>`;
+}
+
+// ─── Lettura foglio Excel → array di oggetti riga ───
+function readSheet(file, cb) {
+  const reader = new FileReader();
+  reader.onload = () => {
+    try {
+      const wb = XLSX.read(new Uint8Array(reader.result), { type: 'array' });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      if (!ws) throw new Error('foglio vuoto');
+      cb(XLSX.utils.sheet_to_json(ws, { defval: '' }));
+    } catch (e) { console.error(e); showToast('File non valido', 'error'); }
+  };
+  reader.readAsArrayBuffer(file);
+}
+// Normalizza un'intestazione: minuscolo, senza spazi/accenti/punteggiatura
+function normHeader(s) {
+  return String(s == null ? '' : s).toLowerCase()
+    .normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .replace(/[^a-z0-9]/g, '');
+}
+// Legge il primo valore non vuoto tra più nomi colonna alternativi (tollerante a varianti)
+function pick(row, ...names) {
+  const wanted = names.map(normHeader);
+  for (const k of Object.keys(row)) {
+    if (wanted.includes(normHeader(k))) {
+      const v = row[k];
+      if (v !== '' && v != null) return v;
+    }
+  }
+  return '';
+}
+function numOr(v, def) { const n = parseFloat(String(v).replace(',', '.')); return isNaN(n) ? def : n; }
+
+// Mappa un valore "Tipo" (label IT o chiave interna) al tipo articolo canonico
+function resolveType(raw) {
+  const n = normHeader(raw);
+  if (!n) return '';
+  for (const t of ALL_TYPES) {
+    if (normHeader(t) === n || normHeader(TYPE_LABELS[t]) === n || normHeader(TYPE_SHORTS[t]) === n) return t;
+  }
+  // sinonimi comuni
+  if (n === 'materiaprima' || n === 'materiaprime' || n === 'mp') return 'materiale';
+  if (n === 'commerciale' || n === 'commerciali' || n === 'comm') return 'acquistato';
+  return '';
+}
+// Trova (o crea) un fornitore per nome
+function findOrCreateSupplier(name, report) {
+  const n = String(name).trim(); if (!n) return '';
+  let s = db.suppliers.find(x => x.name.toLowerCase() === n.toLowerCase());
+  if (!s) { s = { id: gid(), name: n, referente: '', email: '', active: true }; db.suppliers.push(s); report.createdSuppliers++; }
+  return s.id;
+}
+// Trova (o crea) famiglia e sottofamiglia per nome, coerenti col tipo
+function findOrCreateFamily(famName, subName, type, report) {
+  const fn = String(famName).trim();
+  const result = { familyId: '', subFamilyId: '' };
+  if (!fn) return result;
+  const kind = type;
+  let f = (db.families || []).find(x => x.name.toLowerCase() === fn.toLowerCase() && (x.kind || 'acquistato') === kind);
+  if (!f) { f = { id: gid(), name: fn, kind, sigla: siglaFromName(fn), subs: [] }; db.families.push(f); report.createdFamilies++; }
+  result.familyId = f.id;
+  const sn = String(subName).trim();
+  if (sn) {
+    let s = (f.subs || []).find(x => x.name.toLowerCase() === sn.toLowerCase());
+    if (!s) { s = { id: gid(), name: sn, sigla: siglaFromName(sn) }; (f.subs = f.subs || []).push(s); report.createdSubFamilies++; }
+    result.subFamilyId = s.id;
+  }
+  return result;
+}
+
+// ─── Import Articoli ───
+function onImportItems(ev) {
+  const file = ev.target.files[0]; ev.target.value = '';
+  if (!file) return;
+  readSheet(file, rows => { showImportReport(importItems(rows), 'items'); });
+}
+function importItems(rows) {
+  const report = { created: 0, updated: 0, skipped: 0, errors: [],
+    createdSuppliers: 0, createdFamilies: 0, createdSubFamilies: 0 };
+  rows.forEach((row, i) => {
+    const ln = i + 2; // riga foglio (1 = intestazioni)
+    const name = String(pick(row, 'Nome', 'Name', 'Descrizione')).trim();
+    const typeRaw = pick(row, 'Tipo', 'Type');
+    const type = resolveType(typeRaw);
+    if (!name && !type && !pick(row, 'Codice', 'Code')) { report.skipped++; return; } // riga vuota
+    if (!type) { report.errors.push(`Riga ${ln}: tipo non valido ("${esc(typeRaw)}")`); return; }
+    if (!name) { report.errors.push(`Riga ${ln}: nome mancante`); return; }
+    const code = String(pick(row, 'Codice', 'Code')).trim();
+
+    // Upsert per codice
+    let it = code ? db.items.find(x => String(x.code).toLowerCase() === code.toLowerCase()) : null;
+    const isNew = !it;
+    if (isNew) {
+      it = { id: gid(), type };
+      if (isAssembly(type)) { it.components = []; it.operations = []; }
+      db.items.push(it);
+    } else {
+      it.type = type;
+      if (isAssembly(type)) { if (!it.components) it.components = []; if (!it.operations) it.operations = []; }
+    }
+    it.name = name;
+    it.uom = String(pick(row, 'UM', 'U.M.', 'UnitaDiMisura', 'Unità') || it.uom || 'pz').trim();
+    it.active = true;
+    const notes = String(pick(row, 'Note', 'Notes')).trim();
+    if (notes) it.notes = notes; else if (isNew) it.notes = '';
+
+    if (type === 'materiale' || type === 'parte') it.unitCost = numOr(pick(row, 'CostoUnitario', 'Costo', 'UnitCost'), it.unitCost || 0);
+    if (type === 'acquistato') {
+      it.purchasePrice = numOr(pick(row, 'PrezzoAcquisto', 'Prezzo', 'PurchasePrice'), it.purchasePrice || 0);
+      const supName = pick(row, 'Fornitore', 'Supplier');
+      if (supName) it.supplierId = findOrCreateSupplier(supName, report);
+    }
+    if (usesFamily(type)) {
+      const fam = findOrCreateFamily(pick(row, 'Macrofamiglia', 'Famiglia', 'Family'), pick(row, 'Sottofamiglia', 'SubFamily'), type, report);
+      it.familyId = fam.familyId; it.subFamilyId = fam.subFamilyId;
+    }
+    // Codice: dato esplicito, oppure auto per mat/acq, oppure id come fallback
+    if (code) it.code = code;
+    else if (isNew) it.code = genItemCode(type, it.familyId, it.subFamilyId) || it.id;
+
+    if (isNew) report.created++; else report.updated++;
+  });
+  saveDB();
+  return report;
+}
+
+// ─── Import Distinte (righe padre-figlio) ───
+function onImportBom(ev) {
+  const file = ev.target.files[0]; ev.target.value = '';
+  if (!file) return;
+  readSheet(file, rows => { showImportReport(importBom(rows), 'bom'); });
+}
+function findByCode(code) {
+  const c = String(code).trim().toLowerCase();
+  if (!c) return null;
+  return db.items.find(x => String(x.code).toLowerCase() === c) || null;
+}
+function importBom(rows) {
+  const report = { added: 0, parents: 0, skipped: 0, errors: [] };
+  const clearedParents = new Set(); // padri già azzerati in questo import
+  rows.forEach((row, i) => {
+    const ln = i + 2;
+    const pCode = String(pick(row, 'CodicePadre', 'Padre', 'Parent')).trim();
+    const cCode = String(pick(row, 'CodiceFiglio', 'Figlio', 'Child', 'Componente')).trim();
+    if (!pCode && !cCode) { report.skipped++; return; } // riga vuota
+    const parent = findByCode(pCode);
+    if (!parent) { report.errors.push(`Riga ${ln}: padre "${esc(pCode)}" non trovato in catalogo`); return; }
+    if (!isAssembly(parent.type)) { report.errors.push(`Riga ${ln}: "${esc(pCode)}" è ${typeLabel(parent.type)}, non può avere una distinta`); return; }
+    const child = findByCode(cCode);
+    if (!child) { report.errors.push(`Riga ${ln}: figlio "${esc(cCode)}" non trovato in catalogo`); return; }
+    if (!isAllowedChild(parent.type, child.id)) {
+      report.errors.push(`Riga ${ln}: ${typeLabel(child.type)} non ammesso in ${typeLabel(parent.type)}`); return;
+    }
+    // Azzera i componenti del padre alla prima riga valida che lo riguarda
+    if (!clearedParents.has(parent.id)) { parent.components = []; clearedParents.add(parent.id); report.parents++; }
+    if (createsCycle(parent.id, child.id)) {
+      report.errors.push(`Riga ${ln}: "${esc(cCode)}" in "${esc(pCode)}" creerebbe un ciclo`); return;
+    }
+    parent.components.push({ itemId: child.id, qty: numOr(pick(row, 'Qta', 'Quantità', 'Qty', 'Quantita'), 1), scrapPct: numOr(pick(row, 'Scarto%', 'Scarto', 'ScrapPct'), 0) });
+    report.added++;
+  });
+  saveDB();
+  return report;
+}
+
+// ─── Template scaricabili ───
+function downloadItemsTemplate() {
+  const header = ['Tipo', 'Codice', 'Nome', 'UM', 'CostoUnitario', 'PrezzoAcquisto', 'Fornitore', 'Macrofamiglia', 'Sottofamiglia', 'Note'];
+  const data = [header,
+    ['Materia prima', '', 'Lamiera acciaio S235', 'kg', 1.2, '', '', 'Acciaio', 'Lamiere', 'codice auto se vuoto'],
+    ['Componente commerciale', '', 'Cuscinetto SKF 6204', 'pz', '', 12.5, 'SKF', 'Meccanico', 'Cuscinetti', ''],
+    ['Parte', '', 'Fiancata lavorata', 'pz', 45, '', '', 'Carpenteria', 'Fiancate', 'codice auto se vuoto'],
+    ['Sottogruppo', 'SGR-100', 'Gruppo motore', 'pz', '', '', '', '', '', 'la distinta si carica con il foglio Distinte'],
+    ['Gruppo', 'GRP-100', 'Gruppo telaio', 'pz', '', '', '', '', '', ''],
+    ['Macchina', 'MAC-100', 'Nastro Trasportatore NT-200', 'pz', '', '', '', '', '', ''],
+  ];
+  const ws = XLSX.utils.aoa_to_sheet(data);
+  ws['!cols'] = header.map((h, i) => ({ wch: i === 2 ? 30 : 16 }));
+  const info = XLSX.utils.aoa_to_sheet([
+    ['ISTRUZIONI — Import Articoli'],
+    [],
+    ['Colonna', 'Descrizione'],
+    ['Tipo', 'Uno tra: ' + ALL_TYPES.map(t => typeLabel(t)).join(', ')],
+    ['Codice', 'Se esiste già viene aggiornato. Se vuoto: generato per materie prime/commerciali/parti, altrimenti interno.'],
+    ['Nome', 'Obbligatorio.'],
+    ['UM', 'Unità di misura (default pz).'],
+    ['CostoUnitario', 'Per Materia prima e Parte.'],
+    ['PrezzoAcquisto', 'Per Componente commerciale.'],
+    ['Fornitore', 'Per Commerciale. Creato se non esiste.'],
+    ['Macrofamiglia / Sottofamiglia', 'Per Materia prima, Commerciale e Parte. Create se non esistono.'],
+    ['Note', 'Opzionale.'],
+  ]);
+  info['!cols'] = [{ wch: 28 }, { wch: 70 }];
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Articoli');
+  XLSX.utils.book_append_sheet(wb, info, 'Istruzioni');
+  XLSX.writeFile(wb, 'Template_Articoli.xlsx');
+  showToast('Template scaricato');
+}
+function downloadBomTemplate() {
+  const data = [['CodicePadre', 'CodiceFiglio', 'Qta', 'Scarto%'],
+    ['MAC-100', 'GRP-100', 1, 0],
+    ['GRP-100', 'PRT-100', 2, 0],
+    ['GRP-100', 'SGR-100', 1, 0],
+  ];
+  const ws = XLSX.utils.aoa_to_sheet(data);
+  ws['!cols'] = [{ wch: 16 }, { wch: 16 }, { wch: 8 }, { wch: 10 }];
+  const info = XLSX.utils.aoa_to_sheet([
+    ['ISTRUZIONI — Import Distinte'],
+    [],
+    ['Ogni riga collega un padre (assieme) a un suo componente figlio.'],
+    ['I codici di padre e figlio devono già esistere in catalogo (importa prima gli Articoli).'],
+    ['Per ogni padre presente nel file i componenti vengono SOSTITUITI (le lavorazioni restano).'],
+    ['Le relazioni non ammesse o cicliche vengono segnalate e saltate.'],
+    [],
+    ['Colonna', 'Descrizione'],
+    ['CodicePadre', 'Codice dell\'assieme (macchina/gruppo/sottogruppo).'],
+    ['CodiceFiglio', 'Codice del componente contenuto.'],
+    ['Qta', 'Quantità (default 1).'],
+    ['Scarto%', 'Percentuale di scarto (default 0).'],
+  ]);
+  info['!cols'] = [{ wch: 16 }, { wch: 70 }];
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Distinte');
+  XLSX.utils.book_append_sheet(wb, info, 'Istruzioni');
+  XLSX.writeFile(wb, 'Template_Distinte.xlsx');
+  showToast('Template scaricato');
+}
+
+// ─── Report di esito import ───
+function showImportReport(r, kind) {
+  let stats, extra = '';
+  if (kind === 'items') {
+    stats = [['Creati', r.created], ['Aggiornati', r.updated], ['Saltati (vuote)', r.skipped], ['Errori', r.errors.length]];
+    const auto = [];
+    if (r.createdSuppliers) auto.push(`${r.createdSuppliers} fornitori`);
+    if (r.createdFamilies) auto.push(`${r.createdFamilies} famiglie`);
+    if (r.createdSubFamilies) auto.push(`${r.createdSubFamilies} sottofamiglie`);
+    if (auto.length) extra = `<p class="empty-text" style="text-align:left;padding:6px 0">Creati automaticamente: ${auto.join(', ')}.</p>`;
+  } else {
+    stats = [['Componenti aggiunti', r.added], ['Distinte aggiornate', r.parents], ['Saltati (vuote)', r.skipped], ['Errori', r.errors.length]];
+  }
+  const cards = stats.map(([l, v]) => `<div class="kpi-card ${l === 'Errori' && v ? 'orange' : ''}"><div class="kpi-value">${v}</div><div class="kpi-label">${l}</div></div>`).join('');
+  const errBlock = r.errors.length
+    ? `<div style="margin-top:12px"><strong style="color:var(--red)">Righe con problemi (${r.errors.length}):</strong>
+        <div class="picker-results" style="max-height:240px;margin-top:6px">${r.errors.map(e => `<div class="picker-row">${e}</div>`).join('')}</div></div>`
+    : `<p class="empty-text" style="padding:8px 0">Nessun errore. ✔</p>`;
+  openModal(`<h3>📋 Esito import ${kind === 'items' ? 'Articoli' : 'Distinte'}</h3>
+    <div class="cost-summary">${cards}</div>${extra}${errBlock}
+    <div class="modal-actions"><button class="add-btn-sm" onclick="closeImportReport('${kind}')">Chiudi</button></div>`);
+}
+function closeImportReport(kind) {
+  closeModal();
+  if (kind === 'bom') { currentBomId = null; reportBomId = null; }
+  renderManage();
+  showToast('Import completato');
+}
+
+function renderBackup() {
+  return `<div class="cloud-section">
+    <div style="flex:1">
+      <strong>💾 Backup locale</strong>
+      <p>I dati sono salvati nel browser (localStorage). Esporta un file JSON per conservare un backup o trasferire i dati su un altro PC. L'import sovrascrive i dati attuali.</p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
+        <button class="add-btn-sm" onclick="exportBackup()">⬇ Esporta JSON</button>
+        <button class="btn-outline" onclick="document.getElementById('import-file').click()">⬆ Importa JSON</button>
+        <input type="file" id="import-file" accept="application/json,.json" style="display:none" onchange="importBackup(event)">
+        <button class="btn-outline" style="color:var(--red);border-color:var(--red)" onclick="resetDB()">↺ Ripristina dati esempio</button>
+      </div>
+    </div></div>`;
+}
+function exportBackup() {
+  const blob = new Blob([JSON.stringify(db, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = `bomtrack_backup_${new Date().toISOString().slice(0, 10)}.json`;
+  a.click(); URL.revokeObjectURL(url);
+  showToast('Backup esportato');
+}
+function importBackup(ev) {
+  const file = ev.target.files[0]; if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    try {
+      const data = JSON.parse(reader.result);
+      if (!data.items) throw new Error('formato non valido');
+      if (!confirm('Importare questo file? I dati attuali verranno sovrascritti.')) return;
+      db = data; migrateDB(); currentBomId = null; reportBomId = null;
+      saveDB(); setView('bom'); showToast('Backup importato');
+    } catch (e) { showToast('File non valido', 'error'); }
+  };
+  reader.readAsText(file);
+  ev.target.value = '';
+}
+function resetDB() {
+  if (!confirm('Ripristinare i dati di esempio? Tutti i dati attuali saranno persi.')) return;
+  db = JSON.parse(JSON.stringify(defaultDB));
+  currentBomId = null; reportBomId = null;
+  saveDB(); setView('bom'); showToast('Dati ripristinati');
+}
+
+// ═══════════════════════════════════════════════════════════
+//  INIT
+// ═══════════════════════════════════════════════════════════
+(function init() {
+  loadDB();
+  renderNav();
+  setView('bom');
+})();

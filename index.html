@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Bomtrack — Distinte Base & Costificazione</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+</head>
+<body>
+
+<div id="toast"></div>
+<div id="modal-root"></div>
+
+<header id="app-header">
+  <div style="display:flex;align-items:center;gap:10px">
+    <span class="logo">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7l9-4 9 4-9 4-9-4z"/><path d="M3 7v10l9 4 9-4V7"/><path d="M12 11v10"/></svg>
+      Bomtrack
+    </span>
+  </div>
+  <nav class="nav" id="main-nav"></nav>
+  <div class="header-right">
+    <button class="btn-outline" onclick="exportBackup()" title="Esporta backup JSON">⬇ Backup</button>
+  </div>
+</header>
+
+<div id="app-main">
+
+  <!-- DISTINTE BASE -->
+  <div id="view-bom" class="view-panel active">
+    <div class="bom-toolbar">
+      <h2 class="section-title">🌳 Distinta Base &amp; Costificazione</h2>
+      <div class="field-group" style="position:relative">
+        <label>Macchina / Prodotto</label>
+        <select id="bom-select" onchange="onBomSelect()"></select>
+      </div>
+      <button class="add-btn-sm" onclick="newMachineModal()">+ Nuova macchina</button>
+      <button class="btn-outline" id="bom-edit-btn" onclick="editCurrentItemModal()">✏ Modifica testata</button>
+      <button class="btn-outline" id="bom-del-btn" onclick="deleteCurrentMachine()">🗑 Elimina</button>
+    </div>
+
+    <div id="bom-cost-summary" class="cost-summary"></div>
+
+    <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
+      <button class="add-btn-sm" id="bom-add-comp" onclick="addComponentModal()">+ Aggiungi componente</button>
+      <button class="btn-outline" id="bom-add-op" onclick="addOperationModal()">+ Aggiungi lavorazione</button>
+      <button class="btn-outline" onclick="expandAllBom(true)">⊞ Espandi tutto</button>
+      <button class="btn-outline" onclick="expandAllBom(false)">⊟ Comprimi tutto</button>
+    </div>
+
+    <div class="bom-tree" id="bom-tree"></div>
+  </div>
+
+  <!-- CATALOGO ARTICOLI -->
+  <div id="view-catalog" class="view-panel">
+    <h2 class="section-title">📦 Catalogo Articoli</h2>
+    <div class="catalog-filters">
+      <input type="text" class="search" id="cat-search" placeholder="🔍 Cerca codice o nome..." oninput="renderCatalog()">
+      <select id="cat-type" onchange="renderCatalog()">
+        <option value="">Tutti i tipi</option>
+        <option value="materiale">Materia prima</option>
+        <option value="acquistato">Componente commerciale</option>
+        <option value="parte">Parte (lavorato)</option>
+        <option value="sottogruppo">Sottogruppo</option>
+        <option value="gruppo">Gruppo</option>
+        <option value="macchina">Macchina</option>
+      </select>
+      <select id="cat-family" onchange="onCatFamilyChange()">
+        <option value="">Tutte le famiglie</option>
+      </select>
+      <select id="cat-subfamily" onchange="renderCatalog()">
+        <option value="">Tutte le sottofamiglie</option>
+      </select>
+      <button class="add-btn-sm" onclick="newItemModal()">+ Nuovo articolo</button>
+    </div>
+    <div class="table-wrap" id="catalog-table"></div>
+  </div>
+
+  <!-- COSTIFICAZIONE & REPORT -->
+  <div id="view-report" class="view-panel">
+    <h2 class="section-title">💶 Costificazione &amp; Report</h2>
+    <div class="bom-toolbar">
+      <div class="field-group" style="position:relative">
+        <label>Macchina / Prodotto</label>
+        <select id="report-select" onchange="renderReport()"></select>
+      </div>
+      <button class="export-btn-xls" onclick="exportBomExcel()">📗 Esporta Excel</button>
+      <button class="export-btn-pdf" onclick="exportBomPDF()">📄 Esporta PDF</button>
+    </div>
+    <div id="report-content"></div>
+  </div>
+
+  <!-- GESTIONE -->
+  <div id="view-manage" class="view-panel">
+    <div class="manage-wrap">
+      <h2 class="section-title">⚙ Gestione</h2>
+      <div class="mgmt-tabs" id="mgmt-tabs"></div>
+      <div id="mgmt-content"></div>
+    </div>
+  </div>
+
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
