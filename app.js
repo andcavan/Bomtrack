@@ -665,10 +665,32 @@ function usedBy(itemId) {
 // ═══════════════════════════════════════════════════════════
 //  VISTA: CATALOGO ARTICOLI
 // ═══════════════════════════════════════════════════════════
-function onCatFamilyChange() {
-  document.getElementById('cat-subfamily').innerHTML =
-    `<option value="">Tutte le sottofamiglie</option>` + subFamilyOptions(val('cat-family'), '').replace(/^<option value="">—<\/option>/, '');
+function onCatTypeChange() {
+  updateCatFamilyFilters();
   renderCatalog();
+}
+function onCatFamilyChange() {
+  updateCatFamilyFilters();
+  renderCatalog();
+}
+// Allinea i filtri famiglia/sottofamiglia al tipo selezionato, preservando le selezioni compatibili
+function updateCatFamilyFilters() {
+  const famSel = document.getElementById('cat-family');
+  const subSel = document.getElementById('cat-subfamily');
+  const ft = document.getElementById('cat-type').value;
+  const famApplies = !ft || usesFamily(ft); // gli assiemi non hanno famiglia
+  famSel.disabled = !famApplies; subSel.disabled = !famApplies;
+  const fams = famApplies
+    ? (db.families || []).filter(f => !ft || (f.kind || 'acquistato') === ft)
+    : [];
+  const keepFam = fams.some(f => f.id === famSel.value) ? famSel.value : '';
+  famSel.innerHTML = `<option value="">Tutte le famiglie</option>` +
+    fams.map(f => `<option value="${f.id}" ${f.id === keepFam ? 'selected' : ''}>${esc(f.name)}</option>`).join('');
+  const f = getFamily(keepFam);
+  const subs = (f && f.subs) || [];
+  const keepSub = subs.some(s => s.id === subSel.value) ? subSel.value : '';
+  subSel.innerHTML = `<option value="">Tutte le sottofamiglie</option>` +
+    subs.map(s => `<option value="${s.id}" ${s.id === keepSub ? 'selected' : ''}>${esc(s.name)}</option>`).join('');
 }
 function catalogRow(i) {
   const unit = (isAssembly(i.type) || i.type === 'parte') ? costOf(i.id).total
@@ -693,11 +715,7 @@ function catalogRow(i) {
     </td></tr>`;
 }
 function renderCatalog() {
-  // popola il filtro famiglie preservando la selezione
-  const famSel = document.getElementById('cat-family');
-  const curFam = famSel.value;
-  famSel.innerHTML = `<option value="">Tutte le famiglie</option>` +
-    (db.families || []).map(f => `<option value="${f.id}" ${f.id === curFam ? 'selected' : ''}>${esc(f.name)}</option>`).join('');
+  updateCatFamilyFilters();
   const q = (document.getElementById('cat-search').value || '').toLowerCase();
   const ft = document.getElementById('cat-type').value;
   const ff = document.getElementById('cat-family').value;
