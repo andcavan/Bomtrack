@@ -40,9 +40,13 @@ Le percentuali di spese generali e margine sono globali (Impostazioni) e sovrasc
 ## File
 
 - `index.html` — struttura, navigazione, CDN (jsPDF, SheetJS).
-- `app.js` — modello dati, persistenza locale, motore di costificazione, viste, CRUD, export.
+- `store.js` — layer dati: schema, migrazioni versionate, `Store` (API repository) su localStorage.
+- `app.js` — motore di costificazione, viste, CRUD, export.
 - `style.css` — tema dark.
+- `docs/cloud-schema.md` — contratto per il futuro backend condiviso (mappatura tabelle, adapter).
 
 ## Note
 
-I dati risiedono nel browser. Per trasferirli su un altro PC usare **Gestione → Backup → Esporta/Importa JSON**. Reintrodurre la sincronizzazione cloud (Supabase) è previsto come passo successivo.
+I dati risiedono nel browser. Per trasferirli su un altro PC usare **Gestione → Backup → Esporta/Importa JSON**.
+
+Il layer dati è già **predisposto al cloud** (schema v2): ID UUID, timestamp `createdAt`/`updatedAt` su ogni record, versioning dello schema con migrazioni idempotenti (i backup vecchi si auto-migrano all'import). Il passo successivo — sincronizzazione condivisa per un piccolo team via Supabase o Cloudflare D1 — si aggancia al solo `Store` di `store.js`; il disegno è in `docs/cloud-schema.md`. Il frontend è statico e pubblicabile così com'è su GitHub Pages / Cloudflare Pages.
