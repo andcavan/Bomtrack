@@ -494,6 +494,7 @@ function saveNewComponent() {
   if (!isAllowedChild(it.type, itemId)) { showToast('Tipo non ammesso in un ' + typeLabel(it.type).toLowerCase(), 'error'); return; }
   if (createsCycle(it.id, itemId)) { showToast('Operazione annullata: creerebbe un ciclo', 'error'); return; }
   it.components.push({ itemId, qty: numVal('cmp-qty'), scrapPct: numVal('cmp-scrap') });
+  touch(it);
   saveDB(); closeModal(); renderBom(); showToast('Componente aggiunto');
 }
 function editComponentModal(idx) {
@@ -518,12 +519,13 @@ function saveComponentEdit(idx) {
   if (!isAllowedChild(it.type, itemId)) { showToast('Tipo non ammesso in un ' + typeLabel(it.type).toLowerCase(), 'error'); return; }
   if (createsCycle(it.id, itemId)) { showToast('Operazione annullata: creerebbe un ciclo', 'error'); return; }
   comp.itemId = itemId; comp.qty = numVal('cmp-qty'); comp.scrapPct = numVal('cmp-scrap');
+  touch(it);
   saveDB(); closeModal(); renderBom(); showToast('Componente aggiornato');
 }
 function delComponent(idx) {
   const it = getItem(currentBomId); if (!it) return;
   if (!confirm('Eliminare questo componente dalla distinta?')) return;
-  it.components.splice(idx, 1); saveDB(); renderBom(); showToast('Componente eliminato');
+  it.components.splice(idx, 1); touch(it); saveDB(); renderBom(); showToast('Componente eliminato');
 }
 // Verifica se aggiungere childId dentro parentId creerebbe un ciclo
 function createsCycle(parentId, childId) {
@@ -571,6 +573,7 @@ function addOperationModal() {
 function saveNewOperation() {
   const it = getItem(currentBomId); if (!it) return;
   it.operations.push({ workCenterId: val('op-wc'), hours: numVal('op-hours'), note: val('op-note') });
+  touch(it);
   saveDB(); closeModal(); renderBom(); showToast('Lavorazione aggiunta');
 }
 function editOperationModal(idx) {
@@ -589,12 +592,13 @@ function saveOperationEdit(idx) {
   const it = getItem(currentBomId); if (!it) return;
   const op = it.operations[idx]; if (!op) return;
   op.workCenterId = val('op-wc'); op.hours = numVal('op-hours'); op.note = val('op-note');
+  touch(it);
   saveDB(); closeModal(); renderBom(); showToast('Lavorazione aggiornata');
 }
 function delOperation(idx) {
   const it = getItem(currentBomId); if (!it) return;
   if (!confirm('Eliminare questa lavorazione?')) return;
-  it.operations.splice(idx, 1); saveDB(); renderBom(); showToast('Lavorazione eliminata');
+  it.operations.splice(idx, 1); touch(it); saveDB(); renderBom(); showToast('Lavorazione eliminata');
 }
 
 // ─── Macchina / testata prodotto ───
@@ -614,8 +618,8 @@ function saveNewMachine() {
   const name = val('mac-name');
   if (!name) { showToast('Nome richiesto', 'error'); return; }
   const id = gid();
-  db.items.push({ id, code: val('mac-code') || id, name, type: 'macchina', uom: val('mac-uom') || 'pz',
-    notes: val('mac-notes'), active: true, components: [], operations: [] });
+  db.items.push(stampNew({ id, code: val('mac-code') || id, name, type: 'macchina', uom: val('mac-uom') || 'pz',
+    notes: val('mac-notes'), active: true, components: [], operations: [] }));
   currentBomId = id; bomExpanded = new Set();
   saveDB(); closeModal(); renderBom(); showToast('Macchina creata');
 }
@@ -641,6 +645,7 @@ function saveCurrentItem() {
   it.notes = val('mac-notes');
   const ov = val('mac-ov'); it.overheadPctOverride = ov === '' ? null : parseFloat(ov);
   const mg = val('mac-mg'); it.marginPctOverride = mg === '' ? null : parseFloat(mg);
+  touch(it);
   saveDB(); closeModal(); renderBom(); showToast('Testata aggiornata');
 }
 function deleteCurrentMachine() {
@@ -1028,7 +1033,7 @@ function saveNewItem() {
     if (src.overheadPctOverride != null) it.overheadPctOverride = src.overheadPctOverride;
     if (src.marginPctOverride != null) it.marginPctOverride = src.marginPctOverride;
   }
-  db.items.push(it);
+  db.items.push(stampNew(it));
   saveDB(); closeModal(); renderCatalog(); showToast(src ? 'Copia creata' : 'Articolo creato');
 }
 function editItemModal(id) {
@@ -1043,6 +1048,7 @@ function editItemModal(id) {
 function saveItemEdit(id) {
   const it = getItem(id); if (!it) return;
   readItemForm(it);
+  touch(it);
   saveDB(); closeModal(); renderCatalog(); showToast('Articolo aggiornato');
 }
 function delItem(id) {
@@ -1229,7 +1235,7 @@ function renderSuppliers() {
 }
 function addSupplier() {
   const n = val('sup-name'); if (!n) { showToast('Nome richiesto', 'error'); return; }
-  db.suppliers.push({ id: gid(), name: n, referente: val('sup-ref'), email: val('sup-email'), active: true });
+  db.suppliers.push(stampNew({ id: gid(), name: n, referente: val('sup-ref'), email: val('sup-email'), active: true }));
   saveDB(); renderManage(); showToast('Fornitore aggiunto');
 }
 function editSupplierModal(id) {
@@ -1244,6 +1250,7 @@ function editSupplierModal(id) {
 function saveSupplier(id) {
   const s = db.suppliers.find(x => x.id === id); if (!s) return;
   s.name = val('es-name'); s.referente = val('es-ref'); s.email = val('es-email');
+  touch(s);
   saveDB(); closeModal(); renderManage(); showToast('Aggiornato');
 }
 function delSupplier(id) {
@@ -1291,7 +1298,7 @@ function addFamily(kind) {
   kind = kind || 'acquistato';
   const n = val('fam-name-' + kind); if (!n) { showToast('Nome richiesto', 'error'); return; }
   const sg = val('fam-sigla-' + kind);
-  db.families.push({ id: gid(), name: n, kind, sigla: sg ? sg.toUpperCase() : siglaFromName(n), subs: [] });
+  db.families.push(stampNew({ id: gid(), name: n, kind, sigla: sg ? sg.toUpperCase() : siglaFromName(n), subs: [] }));
   saveDB(); renderManage(); showToast('Macrofamiglia aggiunta');
 }
 function editFamilyModal(id) {
@@ -1308,6 +1315,7 @@ function saveFamily(id) {
   const f = getFamily(id); if (!f) return;
   f.name = val('ef-name') || f.name;
   const sg = val('ef-sigla'); f.sigla = sg ? sg.toUpperCase() : siglaFromName(f.name);
+  touch(f);
   saveDB(); closeModal(); renderManage(); showToast('Aggiornata');
 }
 function delFamily(id) {
@@ -1322,7 +1330,8 @@ function addSubFamily(familyId) {
   const n = val('sub-name-' + familyId); if (!n) { showToast('Nome richiesto', 'error'); return; }
   if (!f.subs) f.subs = [];
   const sg = val('sub-sigla-' + familyId);
-  f.subs.push({ id: gid(), name: n, sigla: sg ? sg.toUpperCase() : siglaFromName(n) });
+  f.subs.push(stampNew({ id: gid(), name: n, sigla: sg ? sg.toUpperCase() : siglaFromName(n) }));
+  touch(f);
   saveDB(); renderManage(); showToast('Sottofamiglia aggiunta');
 }
 function editSubFamilyModal(familyId, subId) {
@@ -1339,6 +1348,7 @@ function saveSubFamily(familyId, subId) {
   const f = getFamily(familyId); const s = f && (f.subs || []).find(x => x.id === subId); if (!s) return;
   s.name = val('esf-name') || s.name;
   const sg = val('esf-sigla'); s.sigla = sg ? sg.toUpperCase() : siglaFromName(s.name);
+  touch(s);
   saveDB(); closeModal(); renderManage(); showToast('Aggiornata');
 }
 function delSubFamily(familyId, subId) {
@@ -1365,7 +1375,7 @@ function renderWorkCenters() {
 }
 function addWc() {
   const n = val('wc-name'); if (!n) { showToast('Nome richiesto', 'error'); return; }
-  db.workCenters.push({ id: gid(), name: n, hourlyRate: numVal('wc-rate'), active: true });
+  db.workCenters.push(stampNew({ id: gid(), name: n, hourlyRate: numVal('wc-rate'), active: true }));
   saveDB(); renderManage(); showToast('Centro di lavoro aggiunto');
 }
 function editWcModal(id) {
@@ -1379,6 +1389,7 @@ function editWcModal(id) {
 function saveWc(id) {
   const w = db.workCenters.find(x => x.id === id); if (!w) return;
   w.name = val('ew-name'); w.hourlyRate = numVal('ew-rate');
+  touch(w);
   saveDB(); closeModal(); renderManage(); showToast('Aggiornato');
 }
 function delWc(id) {
@@ -1489,7 +1500,7 @@ function resolveType(raw) {
 function findOrCreateSupplier(name, report) {
   const n = String(name).trim(); if (!n) return '';
   let s = db.suppliers.find(x => x.name.toLowerCase() === n.toLowerCase());
-  if (!s) { s = { id: gid(), name: n, referente: '', email: '', active: true }; db.suppliers.push(s); report.createdSuppliers++; }
+  if (!s) { s = stampNew({ id: gid(), name: n, referente: '', email: '', active: true }); db.suppliers.push(s); report.createdSuppliers++; }
   return s.id;
 }
 // Trova (o crea) famiglia e sottofamiglia per nome, coerenti col tipo
@@ -1499,12 +1510,12 @@ function findOrCreateFamily(famName, subName, type, report) {
   if (!fn) return result;
   const kind = type;
   let f = (db.families || []).find(x => x.name.toLowerCase() === fn.toLowerCase() && (x.kind || 'acquistato') === kind);
-  if (!f) { f = { id: gid(), name: fn, kind, sigla: siglaFromName(fn), subs: [] }; db.families.push(f); report.createdFamilies++; }
+  if (!f) { f = stampNew({ id: gid(), name: fn, kind, sigla: siglaFromName(fn), subs: [] }); db.families.push(f); report.createdFamilies++; }
   result.familyId = f.id;
   const sn = String(subName).trim();
   if (sn) {
     let s = (f.subs || []).find(x => x.name.toLowerCase() === sn.toLowerCase());
-    if (!s) { s = { id: gid(), name: sn, sigla: siglaFromName(sn) }; (f.subs = f.subs || []).push(s); report.createdSubFamilies++; }
+    if (!s) { s = stampNew({ id: gid(), name: sn, sigla: siglaFromName(sn) }); (f.subs = f.subs || []).push(s); report.createdSubFamilies++; }
     result.subFamilyId = s.id;
   }
   return result;
@@ -1560,7 +1571,7 @@ function importItems(rows) {
     if (code) it.code = code;
     else if (isNew) it.code = genItemCode(type, it.familyId, it.subFamilyId) || it.id;
 
-    if (isNew) report.created++; else report.updated++;
+    if (isNew) { stampNew(it); report.created++; } else { touch(it); report.updated++; }
   });
   saveDB();
   return report;
@@ -1599,6 +1610,7 @@ function importBom(rows) {
       report.errors.push(`Riga ${ln}: "${esc(cCode)}" in "${esc(pCode)}" creerebbe un ciclo`); return;
     }
     parent.components.push({ itemId: child.id, qty: numOr(pick(row, 'Qta', 'Quantità', 'Qty', 'Quantita'), 1), scrapPct: numOr(pick(row, 'Scarto%', 'Scarto', 'ScrapPct'), 0) });
+    touch(parent);
     report.added++;
   });
   saveDB();
