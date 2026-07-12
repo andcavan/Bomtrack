@@ -151,6 +151,8 @@ tr{border-bottom:1px solid rgba(42,46,59,.4)}
 .mgmt-tab:hover{color:var(--text)}
 .mgmt-tab.active{background:rgba(58,123,232,.09);border-color:rgba(58,123,232,.27);color:var(--accent)}
 .mgmt-panel{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:24px}
+.settings-group-title{font-size:14px;font-weight:700;margin:0 0 12px;padding-top:16px;border-top:1px solid var(--border);display:flex;align-items:center;gap:6px}
+.settings-group-title:first-child{margin-top:0;padding-top:0;border-top:none}
 .mgmt-list{display:flex;flex-direction:column;gap:6px;margin-bottom:20px}
 .mgmt-item{display:flex;align-items:center;gap:12px;padding:10px 14px;background:var(--bg);border-radius:8px;border:1px solid var(--border);flex-wrap:wrap}
 .mgmt-item-name{font-weight:600;font-size:14px;flex:1;min-width:120px}
