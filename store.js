@@ -16,6 +16,7 @@ const defaultDB = {
     { id: 's3', name: 'Würth', referente: '', email: '', active: true },
   ],
   rfqs: [],
+  orders: [],
   workCenters: [
     { id: 'w1', name: 'Taglio laser', hourlyRate: 45, active: true },
     { id: 'w2', name: 'Saldatura', hourlyRate: 38, active: true },
@@ -156,6 +157,7 @@ function migrateDB() {
   // Normalizzazioni legacy (idempotenti, sempre eseguite)
   if (!db.suppliers) db.suppliers = [];
   if (!db.rfqs) db.rfqs = [];
+  if (!db.orders) db.orders = [];
   if (!db.workCenters) db.workCenters = [];
   if (!db.families) db.families = JSON.parse(JSON.stringify(defaultDB.families));
   if (!db.items) db.items = [];
@@ -204,6 +206,19 @@ function migrateDB() {
       if (l.deliveryDate == null) l.deliveryDate = '';
     });
     delete r.supplierIds; delete r.offers; delete r.awards;
+  });
+  // Ordini a fornitore: normalizzazione campi riga (prezzo, consegna, ricevuto)
+  (db.orders || []).forEach(o => {
+    if (o.transport == null) o.transport = '';
+    if (o.payment == null) o.payment = '';
+    if (o.requestedDelivery == null) o.requestedDelivery = '';
+    if (o.rfqId == null) o.rfqId = null;
+    if (o.supplierConfirmation == null) o.supplierConfirmation = '';
+    (o.lines || []).forEach(l => {
+      if (l.price == null) l.price = '';
+      if (l.deliveryDate == null) l.deliveryDate = '';
+      if (l.received == null) l.received = 0;
+    });
   });
   // Famiglie: tipizzazione (materie prime vs commerciali) + sigla per codifica automatica
   (db.families || []).forEach(f => {

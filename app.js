@@ -11,6 +11,9 @@ let rfqView = 'list';        // 'list' | 'edit' | 'compare'
 let currentRfqId = null;     // richiesta di offerta aperta in editor
 let rfqCompareSel = [];      // id delle richieste selezionate nel confronto tra richieste
 let rfqDirty = false;        // modifiche non salvate nell'editor RFQ (il documento si genera solo dopo il salvataggio)
+let orderView = 'list';      // 'list' | 'edit'
+let currentOrderId = null;   // ordine aperto in editor
+let orderDirty = false;      // modifiche non salvate nell'editor ordine
 
 
 // ═══════════════════════════════════════════════════════════
@@ -321,6 +324,7 @@ const NAV = [
   { id: 'catalog', label: '📦 Catalogo' },
   { id: 'report', label: '💶 Costificazione' },
   { id: 'rfq', label: '📨 Richieste offerta' },
+  { id: 'orders', label: '🧾 Ordini' },
   { id: 'manage', label: '⚙ Gestione' },
 ];
 function renderNav() {
@@ -336,6 +340,7 @@ function setView(v) {
   else if (v === 'catalog') renderCatalog();
   else if (v === 'report') renderReport();
   else if (v === 'rfq') renderRfq();
+  else if (v === 'orders') renderOrders();
   else if (v === 'manage') renderManage();
 }
 
@@ -1492,14 +1497,15 @@ const RFQ_STATUS = { bozza: 'Bozza', inviata: 'Inviata', chiusa: 'Chiusa' };
 function getRfq(id) { return db.rfqs.find(r => r.id === id); }
 function fmtDateIt(d) { return d ? new Date(d).toLocaleDateString('it-IT') : ''; }
 // Codice/descrizione del fornitore per una riga, ma solo se l'articolo è legato
-// allo stesso fornitore della richiesta (altrimenti non è pertinente).
-function rfqLineSupInfo(r, l) {
-  if (!l.itemId || !r.supplierId) return null;
+// allo stesso fornitore del documento (RFQ o ordine); altrimenti non è pertinente.
+function lineSupInfo(supplierId, l) {
+  if (!l.itemId || !supplierId) return null;
   const it = getItem(l.itemId);
-  if (!it || it.supplierId !== r.supplierId) return null;
+  if (!it || it.supplierId !== supplierId) return null;
   if (!it.supplierCode && !it.supplierDesc) return null;
   return { code: it.supplierCode || '', desc: it.supplierDesc || '' };
 }
+function rfqLineSupInfo(r, l) { return lineSupInfo(r.supplierId, l); }
 
 function renderRfq() {
   const host = document.getElementById('view-rfq');
@@ -1525,6 +1531,7 @@ function renderRfqList() {
       <span class="mgmt-item-meta">${esc(sup)} · ${RFQ_STATUS[r.status] || r.status} · ${nl} righe${r.date ? ' · ' + fmtDateIt(r.date) : ''}</span>
       <div class="mgmt-item-actions">
         <button class="mini-btn" onclick="openRfqEdit('${r.id}')" title="Modifica">✏</button>
+        <button class="mini-btn" onclick="orderFromRfq('${r.id}')" title="Crea ordine da questa richiesta">🧾</button>
         <button class="mini-btn danger" onclick="delRfq('${r.id}')" title="Elimina">🗑</button>
       </div></div>`;
   }).join('') || '<div class="empty-text">Nessuna richiesta di offerta. Creane una per chiedere prezzi a un fornitore.</div>';
@@ -1600,7 +1607,10 @@ function rfqAddManualLine(id) {
   touch(r); rfqMarkDirty(); closeModal(); renderRfq();
 }
 
-function rfqAddCatalogModal(id) {
+// ─── Picker catalogo con filtri, condiviso tra RFQ e Ordini ───
+let __pickOnAdd = null;
+function catalogPickerModal(onAddIds) {
+  __pickOnAdd = onAddIds;
   const opts = db.items.filter(i => i.active !== false).sort((a, b) => (a.code || '').localeCompare(b.code || ''))
     .map(i => `<label class="rfq-pick-row" data-type="${i.type}" data-fam="${i.familyId || ''}" data-sub="${i.subFamilyId || ''}" data-sup="${i.supplierId || ''}"><input type="checkbox" value="${i.id}">
       <span style="font-family:var(--mono)">${esc(i.code || '')}</span> ${esc(i.name)}
@@ -1609,29 +1619,29 @@ function rfqAddCatalogModal(id) {
   const famOpts = (db.families || []).map(f => `<option value="${f.id}">${esc(f.name)}</option>`).join('');
   openModal(`<h3>+ Aggiungi da catalogo</h3>
     <div class="rfq-pick-filters">
-      <input class="search" id="rfq-pick-search" placeholder="🔍 Codice o nome..." oninput="rfqFilterPick()">
-      <select id="rfq-pick-type" onchange="rfqFilterPick()"><option value="">Tutti i tipi</option>${typeOpts}</select>
-      <select id="rfq-pick-fam" onchange="rfqPickFamilyChange()"><option value="">Tutte le famiglie</option>${famOpts}</select>
-      <select id="rfq-pick-sub" onchange="rfqFilterPick()"><option value="">Tutte le sottofamiglie</option></select>
-      <select id="rfq-pick-sup" onchange="rfqFilterPick()"><option value="">Tutti i fornitori</option>${db.suppliers.map(s => `<option value="${s.id}">${esc(s.name)}</option>`).join('')}</select>
+      <input class="search" id="pick-search" placeholder="🔍 Codice o nome..." oninput="pickFilter()">
+      <select id="pick-type" onchange="pickFilter()"><option value="">Tutti i tipi</option>${typeOpts}</select>
+      <select id="pick-fam" onchange="pickFamilyChange()"><option value="">Tutte le famiglie</option>${famOpts}</select>
+      <select id="pick-sub" onchange="pickFilter()"><option value="">Tutte le sottofamiglie</option></select>
+      <select id="pick-sup" onchange="pickFilter()"><option value="">Tutti i fornitori</option>${db.suppliers.map(s => `<option value="${s.id}">${esc(s.name)}</option>`).join('')}</select>
     </div>
-    <div class="rfq-pick-list" id="rfq-pick-list">${opts || '<div class="empty-text">Catalogo vuoto.</div>'}</div>
-    <div class="rfq-pick-empty empty-text" id="rfq-pick-empty" style="display:none">Nessun articolo con questi filtri.</div>
+    <div class="rfq-pick-list" id="pick-list">${opts || '<div class="empty-text">Catalogo vuoto.</div>'}</div>
+    <div class="empty-text" id="pick-empty" style="display:none">Nessun articolo con questi filtri.</div>
     <div class="modal-actions"><button class="btn-ghost" onclick="closeModal()">Annulla</button>
-      <button class="add-btn-sm" onclick="rfqAddCatalogLines('${id}')">Aggiungi selezionati</button></div>`, true);
+      <button class="add-btn-sm" onclick="pickConfirm()">Aggiungi selezionati</button></div>`, true);
 }
-function rfqPickFamilyChange() {
-  const f = getFamily(val('rfq-pick-fam'));
+function pickFamilyChange() {
+  const f = getFamily(val('pick-fam'));
   const subs = (f && f.subs) || [];
-  const sel = document.getElementById('rfq-pick-sub');
+  const sel = document.getElementById('pick-sub');
   if (sel) sel.innerHTML = '<option value="">Tutte le sottofamiglie</option>' + subs.map(s => `<option value="${s.id}">${esc(s.name)}</option>`).join('');
-  rfqFilterPick();
+  pickFilter();
 }
-function rfqFilterPick() {
-  const q = (val('rfq-pick-search') || '').toLowerCase();
-  const ty = val('rfq-pick-type'), fam = val('rfq-pick-fam'), sub = val('rfq-pick-sub'), sup = val('rfq-pick-sup');
+function pickFilter() {
+  const q = (val('pick-search') || '').toLowerCase();
+  const ty = val('pick-type'), fam = val('pick-fam'), sub = val('pick-sub'), sup = val('pick-sup');
   let shown = 0;
-  document.querySelectorAll('#rfq-pick-list .rfq-pick-row').forEach(el => {
+  document.querySelectorAll('#pick-list .rfq-pick-row').forEach(el => {
     const ok = el.textContent.toLowerCase().includes(q)
       && (!ty || el.dataset.type === ty)
       && (!fam || el.dataset.fam === fam)
@@ -1640,19 +1650,24 @@ function rfqFilterPick() {
     el.style.display = ok ? '' : 'none';
     if (ok) shown++;
   });
-  const empty = document.getElementById('rfq-pick-empty');
+  const empty = document.getElementById('pick-empty');
   if (empty) empty.style.display = shown ? 'none' : '';
 }
-function rfqAddCatalogLines(id) {
+function pickConfirm() {
+  const ids = Array.from(document.querySelectorAll('#pick-list input:checked')).map(c => c.value);
+  if (!ids.length) { showToast('Nessun articolo selezionato', 'error'); return; }
+  const cb = __pickOnAdd; __pickOnAdd = null;
+  if (cb) cb(ids);
+}
+function rfqAddCatalogModal(id) { catalogPickerModal(ids => rfqAddCatalogLines(id, ids)); }
+function rfqAddCatalogLines(id, ids) {
   const r = getRfq(id); if (!r) return;
-  const checked = Array.from(document.querySelectorAll('#rfq-pick-list input:checked')).map(c => c.value);
-  if (!checked.length) { showToast('Nessun articolo selezionato', 'error'); return; }
-  checked.forEach(itemId => {
+  ids.forEach(itemId => {
     const it = getItem(itemId); if (!it) return;
     r.lines.push({ id: gid(), itemId, code: it.code || '', description: it.name || '', uom: it.uom || 'pz', qty: 1, price: '', deliveryDate: '' });
   });
   touch(r); rfqMarkDirty(); closeModal(); renderRfq();
-  showToast(checked.length + ' righe aggiunte');
+  showToast(ids.length + ' righe aggiunte');
 }
 
 function renderRfqEdit(id) {
@@ -1866,6 +1881,304 @@ function delRfq(id) {
   saveDB();
   if (currentRfqId === id) { currentRfqId = null; rfqView = 'list'; }
   renderRfq(); showToast('Richiesta eliminata');
+}
+
+// ═══════════════════════════════════════════════════════════
+//  VISTA: ORDINI A FORNITORE (ODA)
+// ═══════════════════════════════════════════════════════════
+const ORDER_STATUS = { bozza: 'Bozza', inviato: 'Inviato', confermato: 'Confermato', parziale: 'Parziale', evaso: 'Evaso', annullato: 'Annullato' };
+function getOrder(id) { return db.orders.find(o => o.id === id); }
+function fmtQty(n) { n = Number(n) || 0; return Number.isInteger(n) ? String(n) : String(+n.toFixed(3)); }
+function orderTotal(o) { return (o.lines || []).reduce((s, l) => s + (Number(l.qty) || 0) * (Number(l.price) || 0), 0); }
+function orderReception(o) {
+  let ordered = 0, received = 0;
+  (o.lines || []).forEach(l => { ordered += Number(l.qty) || 0; received += Number(l.received) || 0; });
+  return { ordered, received, residual: ordered - received };
+}
+function nextOrderNumber() {
+  const prefix = `ODA-${new Date().getFullYear()}-`;
+  const seqs = db.orders.filter(o => (o.number || '').startsWith(prefix)).map(o => parseInt((o.number || '').slice(prefix.length), 10) || 0);
+  return prefix + String((seqs.length ? Math.max(...seqs) : 0) + 1).padStart(3, '0');
+}
+
+function renderOrders() {
+  const host = document.getElementById('view-orders');
+  if (orderView === 'edit' && getOrder(currentOrderId)) host.innerHTML = renderOrderEdit(currentOrderId);
+  else { orderView = 'list'; host.innerHTML = renderOrderList(); }
+}
+
+function renderOrderList() {
+  const rows = db.orders.slice().sort((a, b) => (b.number || '').localeCompare(a.number || '')).map(o => {
+    const sup = o.supplierId ? supplierName(o.supplierId) : '— nessun fornitore —';
+    const rec = orderReception(o);
+    const recTxt = rec.ordered ? `ric. ${fmtQty(rec.received)}/${fmtQty(rec.ordered)}` : '';
+    return `<div class="mgmt-item">
+      <span class="mgmt-item-name"><span style="font-family:var(--mono)">${esc(o.number)}</span> — ${esc(o.title || '(senza titolo)')}</span>
+      <span class="mgmt-item-meta">${esc(sup)} · ${ORDER_STATUS[o.status] || o.status} · ${fmtN(orderTotal(o))}${recTxt ? ' · ' + recTxt : ''}${o.date ? ' · ' + fmtDateIt(o.date) : ''}</span>
+      <div class="mgmt-item-actions">
+        <button class="mini-btn" onclick="openOrderEdit('${o.id}')" title="Modifica">✏</button>
+        <button class="mini-btn danger" onclick="delOrder('${o.id}')" title="Elimina">🗑</button>
+      </div></div>`;
+  }).join('') || '<div class="empty-text">Nessun ordine. Creane uno o generane uno da una richiesta di offerta.</div>';
+  return `<div class="manage-wrap">
+    <div class="bom-toolbar">
+      <h2 class="section-title">🧾 Ordini a fornitore</h2>
+      <button class="add-btn-sm" onclick="newOrder()">+ Nuovo ordine</button>
+    </div>
+    <div class="mgmt-list">${rows}</div></div>`;
+}
+
+function newOrder() {
+  const o = stampNew({ id: gid(), number: nextOrderNumber(), title: '', date: nowISO().slice(0, 10),
+    status: 'bozza', supplierId: null, transport: db.settings.transportDefault || '', payment: db.settings.paymentDefault || '',
+    requestedDelivery: '', rfqId: null, supplierConfirmation: '', notes: '', lines: [], active: true });
+  db.orders.push(o); saveDB();
+  currentOrderId = o.id; orderView = 'edit'; orderDirty = false; renderOrders();
+}
+function orderFromRfq(rfqId) {
+  const r = getRfq(rfqId); if (!r) return;
+  const sup = r.supplierId ? db.suppliers.find(s => s.id === r.supplierId) : null;
+  const o = stampNew({ id: gid(), number: nextOrderNumber(),
+    title: r.title || ('Da ' + r.number), date: nowISO().slice(0, 10), status: 'bozza',
+    supplierId: r.supplierId || null,
+    transport: r.transport || (sup && sup.defaultTransport) || db.settings.transportDefault || '',
+    payment: r.payment || (sup && sup.defaultPayment) || db.settings.paymentDefault || '',
+    requestedDelivery: '', rfqId: r.id, supplierConfirmation: '', notes: r.notes || '',
+    lines: (r.lines || []).map(l => ({ id: gid(), itemId: l.itemId || null, code: l.code || '', description: l.description || '',
+      uom: l.uom || 'pz', qty: Number(l.qty) || 0, price: (l.price === '' || l.price == null) ? '' : Number(l.price),
+      deliveryDate: l.deliveryDate || '', received: 0 })),
+    active: true });
+  db.orders.push(o); saveDB();
+  currentOrderId = o.id; orderView = 'edit'; orderDirty = false;
+  setView('orders');
+  showToast('Ordine ' + o.number + ' creato dalla richiesta');
+}
+function openOrderEdit(id) { currentOrderId = id; orderView = 'edit'; orderDirty = false; renderOrders(); }
+function orderBackToList() { if (orderDirty) { saveDB(); orderDirty = false; } orderView = 'list'; currentOrderId = null; renderOrders(); }
+function orderMarkDirty() {
+  orderDirty = true;
+  const sv = document.getElementById('order-save-btn'); if (sv) sv.classList.add('dirty');
+  document.querySelectorAll('.order-export-btn').forEach(b => { b.disabled = true; b.title = "Salva l'ordine prima di generare il documento"; });
+}
+function ordSave(id) { const o = getOrder(id); if (!o) return; touch(o); saveDB(); orderDirty = false; renderOrders(); showToast('Ordine salvato'); }
+
+function ordSetField(id, field, value) { const o = getOrder(id); if (!o) return; o[field] = value || (field === 'supplierId' ? null : ''); touch(o); orderMarkDirty(); }
+function ordSetSupplier(id, sid) {
+  const o = getOrder(id); if (!o) return;
+  o.supplierId = sid || null;
+  const sup = sid ? db.suppliers.find(s => s.id === sid) : null;
+  if (sup) { if (sup.defaultTransport) o.transport = sup.defaultTransport; if (sup.defaultPayment) o.payment = sup.defaultPayment; }
+  touch(o); orderMarkDirty(); renderOrders();
+}
+function ordSetLine(id, lineId, field, value) {
+  const o = getOrder(id); if (!o) return;
+  const l = (o.lines || []).find(x => x.id === lineId); if (!l) return;
+  if (field === 'qty' || field === 'price' || field === 'received') l[field] = (value === '' ? (field === 'received' ? 0 : '') : (parseFloat(value) || 0));
+  else l[field] = value;
+  touch(o); orderMarkDirty();
+}
+function ordDelLine(id, lineId) { const o = getOrder(id); if (!o) return; o.lines = (o.lines || []).filter(x => x.id !== lineId); touch(o); orderMarkDirty(); renderOrders(); }
+function ordMarkAllReceived(id) { const o = getOrder(id); if (!o) return; (o.lines || []).forEach(l => { l.received = Number(l.qty) || 0; }); touch(o); orderMarkDirty(); renderOrders(); }
+
+function ordAddManualLineModal(id) {
+  openModal(`<h3>+ Riga manuale</h3>
+    <div class="modal-field"><label>Descrizione</label><input id="ol-desc"></div>
+    <div class="modal-field"><label>Codice (opzionale)</label><input id="ol-code"></div>
+    <div class="modal-field"><label>U.M.</label><input id="ol-uom" value="pz"></div>
+    <div class="modal-field"><label>Quantità</label><input id="ol-qty" type="number" value="1" min="0" step="any"></div>
+    <div class="modal-field"><label>Prezzo unitario</label><input id="ol-price" type="number" min="0" step="any"></div>
+    <div class="modal-actions"><button class="btn-ghost" onclick="closeModal()">Annulla</button>
+      <button class="add-btn-sm" onclick="ordAddManualLine('${id}')">Aggiungi</button></div>`);
+}
+function ordAddManualLine(id) {
+  const o = getOrder(id); if (!o) return;
+  const desc = val('ol-desc'); if (!desc) { showToast('Descrizione richiesta', 'error'); return; }
+  o.lines.push({ id: gid(), itemId: null, code: val('ol-code'), description: desc, uom: val('ol-uom') || 'pz',
+    qty: numVal('ol-qty') || 1, price: (val('ol-price') === '' ? '' : numVal('ol-price')), deliveryDate: '', received: 0 });
+  touch(o); orderMarkDirty(); closeModal(); renderOrders();
+}
+function ordAddCatalogModal(id) { catalogPickerModal(ids => ordAddCatalogLines(id, ids)); }
+function ordAddCatalogLines(id, ids) {
+  const o = getOrder(id); if (!o) return;
+  ids.forEach(itemId => {
+    const it = getItem(itemId); if (!it) return;
+    const price = (it.type === 'acquistato' && it.purchasePrice != null) ? Number(it.purchasePrice)
+      : (it.type === 'materiale' && it.unitCost != null) ? Number(it.unitCost) : '';
+    o.lines.push({ id: gid(), itemId, code: it.code || '', description: it.name || '', uom: it.uom || 'pz', qty: 1, price, deliveryDate: '', received: 0 });
+  });
+  touch(o); orderMarkDirty(); closeModal(); renderOrders();
+  showToast(ids.length + ' righe aggiunte');
+}
+
+function renderOrderEdit(id) {
+  const o = getOrder(id); if (!o) { orderView = 'list'; return renderOrderList(); }
+  const lines = (o.lines || []).map((l, i) => {
+    const si = lineSupInfo(o.supplierId, l);
+    const siSub = si ? `<div class="rfq-cmp-sub">🏷 ${esc(si.code || '—')}${si.desc ? ' · ' + esc(si.desc) : ''}</div>` : '';
+    const qty = Number(l.qty) || 0, price = (l.price === '' || l.price == null) ? null : Number(l.price);
+    const amount = price != null ? qty * price : null;
+    const rec = Number(l.received) || 0, residual = qty - rec;
+    return `<tr>
+      <td>${i + 1}</td>
+      <td style="font-family:var(--mono)">${esc(l.code || '')}</td>
+      <td>${esc(l.description)}${l.itemId ? '' : ' <span class="rfq-manual-tag">manuale</span>'}${siSub}</td>
+      <td>${esc(l.uom || '')}</td>
+      <td><input type="number" class="rfq-qty-input" value="${l.qty}" min="0" step="any" onchange="ordSetLine('${id}','${l.id}','qty',this.value)"></td>
+      <td><input type="number" class="rfq-price-input" value="${price != null ? price : ''}" min="0" step="any" placeholder="—" onchange="ordSetLine('${id}','${l.id}','price',this.value)"></td>
+      <td class="ord-amount">${amount != null ? fmtN(amount) : '—'}</td>
+      <td><input type="date" class="rfq-date-input" value="${esc(l.deliveryDate || '')}" onchange="ordSetLine('${id}','${l.id}','deliveryDate',this.value)"></td>
+      <td><input type="number" class="rfq-qty-input" value="${rec}" min="0" step="any" onchange="ordSetLine('${id}','${l.id}','received',this.value)"></td>
+      <td class="ord-residual ${residual > 0 ? 'pos' : ''}">${fmtQty(residual)}</td>
+      <td><button class="mini-btn danger" onclick="ordDelLine('${id}','${l.id}')">🗑</button></td></tr>`;
+  }).join('') || `<tr><td colspan="11" class="empty-text">Nessuna riga. Aggiungi articoli dal catalogo o manualmente.</td></tr>`;
+  const total = orderTotal(o);
+  const co = db.settings.company || {};
+  const coWarn = co.name ? '' : `<div class="rfq-warn">⚠ Dati azienda non impostati: compilali in <strong>Gestione › Dati azienda</strong> per stamparli sul documento.</div>`;
+  const rfqRef = (o.rfqId && getRfq(o.rfqId)) ? `<div class="ord-ref">📨 Generato dalla richiesta <strong>${esc(getRfq(o.rfqId).number)}</strong></div>` : '';
+  const dis = orderDirty ? 'disabled title="Salva l\'ordine prima di generare il documento"' : '';
+  return `<div class="manage-wrap">
+    <div class="bom-toolbar">
+      <button class="btn-outline" onclick="orderBackToList()">← Elenco</button>
+      <h2 class="section-title" style="font-family:var(--mono)">${esc(o.number)}</h2>
+      <button class="add-btn-sm rfq-save-btn ${orderDirty ? 'dirty' : ''}" id="order-save-btn" onclick="ordSave('${id}')">💾 Salva</button>
+    </div>
+    ${coWarn}${rfqRef}
+    <div class="rfq-head">
+      <div class="modal-field"><label>Titolo / oggetto</label><input value="${esc(o.title || '')}" onchange="ordSetField('${id}','title',this.value)"></div>
+      <div class="rfq-head-row">
+        <div class="modal-field"><label>Fornitore</label><select onchange="ordSetSupplier('${id}',this.value)">${supplierOptions(o.supplierId)}</select></div>
+        <div class="modal-field"><label>Data ordine</label><input type="date" value="${(o.date || '').slice(0, 10)}" onchange="ordSetField('${id}','date',this.value)"></div>
+        <div class="modal-field"><label>Stato</label><select onchange="ordSetField('${id}','status',this.value)">
+          ${Object.entries(ORDER_STATUS).map(([k, v]) => `<option value="${k}" ${o.status === k ? 'selected' : ''}>${v}</option>`).join('')}
+        </select></div>
+      </div>
+      <div class="rfq-head-row">
+        <div class="modal-field"><label>Tipo di trasporto / resa</label>
+          <input list="ord-transport-opts" value="${esc(o.transport || '')}" placeholder="es. Porto franco, EXW…" onchange="ordSetField('${id}','transport',this.value)">
+          <datalist id="ord-transport-opts">${(db.settings.transportOptions || []).map(x => `<option value="${esc(x)}"></option>`).join('')}</datalist></div>
+        <div class="modal-field"><label>Tipo di pagamento</label>
+          <input list="ord-payment-opts" value="${esc(o.payment || '')}" placeholder="es. Bonifico 60gg…" onchange="ordSetField('${id}','payment',this.value)">
+          <datalist id="ord-payment-opts">${(db.settings.paymentOptions || []).map(x => `<option value="${esc(x)}"></option>`).join('')}</datalist></div>
+      </div>
+      <div class="rfq-head-row">
+        <div class="modal-field"><label>Consegna richiesta</label><input type="date" value="${esc(o.requestedDelivery || '')}" onchange="ordSetField('${id}','requestedDelivery',this.value)"></div>
+        <div class="modal-field"><label>N° conferma d'ordine fornitore</label><input value="${esc(o.supplierConfirmation || '')}" onchange="ordSetField('${id}','supplierConfirmation',this.value)"></div>
+      </div>
+      <div class="modal-field"><label>Note</label><textarea rows="2" onchange="ordSetField('${id}','notes',this.value)">${esc(o.notes || '')}</textarea></div>
+    </div>
+    <h3 class="rfq-subhead">Righe ordine
+      <span class="rfq-head-actions">
+        <button class="add-btn-sm" onclick="ordAddCatalogModal('${id}')">+ Da catalogo</button>
+        <button class="btn-outline" onclick="ordAddManualLineModal('${id}')">+ Riga manuale</button>
+        <button class="btn-outline" onclick="ordMarkAllReceived('${id}')">✓ Segna tutto ricevuto</button>
+      </span></h3>
+    <div class="table-wrap"><table class="rfq-table">
+      <thead><tr><th>#</th><th>Codice</th><th>Descrizione</th><th>U.M.</th><th>Q.tà</th><th>Prezzo unit.</th><th>Importo</th><th>Consegna</th><th>Ricevuto</th><th>Residuo</th><th></th></tr></thead>
+      <tbody>${lines}</tbody>
+      <tfoot><tr class="rfq-cmp-total"><td colspan="6" style="text-align:right">Totale imponibile</td><td>${fmtN(total)}</td><td colspan="4"></td></tr></tfoot>
+    </table></div>
+    <div class="rfq-export-bar">
+      <label>Documento d'ordine:</label>
+      <button class="export-btn-pdf order-export-btn" onclick="exportOrderPDF('${id}')" ${dis}>📄 PDF</button>
+      <button class="export-btn-xls order-export-btn" onclick="exportOrderExcel('${id}')" ${dis}>📗 Excel</button>
+      ${orderDirty ? '<span class="rfq-dirty-hint">Salva per abilitare la generazione del documento</span>' : ''}
+    </div>
+  </div>`;
+}
+
+function exportOrderPDF(id) {
+  const o = getOrder(id); if (!o) return;
+  if (!(o.lines || []).length) { showToast('Nessuna riga da esportare', 'error'); return; }
+  const { jsPDF } = window.jspdf;
+  const co = db.settings.company || {};
+  const sup = o.supplierId ? db.suppliers.find(s => s.id === o.supplierId) : null;
+  const hasSup = (o.lines || []).some(l => lineSupInfo(o.supplierId, l));
+  const doc = new jsPDF({ orientation: 'landscape' });
+  doc.setFontSize(15); doc.setTextColor(30); doc.text(`Ordine di acquisto / Purchase Order — ${o.number}`, 14, 16);
+  doc.setFontSize(9); doc.setTextColor(90);
+  doc.text(`Data / Date: ${fmtDateIt(o.date) || fmtDateIt(nowISO())}`, 14, 22);
+  if (o.title) doc.text(`Oggetto / Subject: ${o.title}`, 14, 27);
+  const yTop = 36;
+  const block = (x, title, rowsTxt) => {
+    doc.setFontSize(8); doc.setTextColor(130); doc.text(title, x, yTop);
+    doc.setFontSize(9); doc.setTextColor(40);
+    const rows = rowsTxt.filter(Boolean);
+    rows.forEach((t, i) => doc.text(String(t), x, yTop + 5 + i * 4.5));
+    return rows.length;
+  };
+  const n1 = block(14, 'RICHIEDENTE / BUYER', [co.name, ...addressLines(co), co.vat ? 'P.IVA / VAT ' + co.vat : '', co.referente, co.email, co.phone]);
+  const n2 = block(160, 'FORNITORE / SUPPLIER', [sup ? sup.name : '(fornitore non selezionato / not selected)', ...(sup ? addressLines(sup) : []), sup && sup.vat ? 'P.IVA / VAT ' + sup.vat : '', sup && sup.referente, sup && sup.email, sup && sup.phone]);
+  const startY = yTop + 5 + Math.max(n1, n2) * 4.5 + 4;
+  const head = hasSup
+    ? ['#', 'Codice\nCode', 'Descrizione\nDescription', 'Cod. forn.\nSuppl. code', 'Descr. forn.\nSuppl. desc.', 'Q.tà\nQty', 'Prezzo unit.\nUnit price', 'Importo\nAmount', 'Data consegna\nDelivery date']
+    : ['#', 'Codice\nCode', 'Descrizione\nDescription', 'Q.tà\nQty', 'Prezzo unit.\nUnit price', 'Importo\nAmount', 'Data consegna\nDelivery date'];
+  const body = (o.lines || []).map((l, i) => {
+    const si = lineSupInfo(o.supplierId, l);
+    const qty = Number(l.qty) || 0, price = (l.price === '' || l.price == null) ? null : Number(l.price);
+    const tail = [qty + ' ' + (l.uom || ''), price != null ? fmtN(price) : '', price != null ? fmtN(qty * price) : '', fmtDateIt(l.deliveryDate)];
+    return hasSup ? [i + 1, l.code || '', l.description, si ? si.code : '', si ? si.desc : '', ...tail] : [i + 1, l.code || '', l.description, ...tail];
+  });
+  const totLabel = { content: 'Totale / Total', styles: { halign: 'right', fontStyle: 'bold' } };
+  const totVal = { content: fmtN(orderTotal(o)), styles: { fontStyle: 'bold' } };
+  const foot = hasSup ? [['', '', '', '', '', '', totLabel, totVal, '']] : [['', '', '', '', totLabel, totVal, '']];
+  doc.autoTable({ startY, head: [head], body, foot, styles: { fontSize: 8 }, headStyles: { fillColor: [58, 123, 232] }, footStyles: { fillColor: [235, 238, 245], textColor: 20 } });
+  let fy = doc.lastAutoTable.finalY + 8;
+  doc.setTextColor(80); doc.setFontSize(9);
+  if (o.transport) { doc.text('Trasporto / Shipping: ' + o.transport, 14, fy); fy += 5; }
+  if (o.payment) { doc.text('Pagamento / Payment: ' + o.payment, 14, fy); fy += 5; }
+  if (o.requestedDelivery) { doc.text('Consegna richiesta / Requested delivery: ' + fmtDateIt(o.requestedDelivery), 14, fy); fy += 5; }
+  if (o.supplierConfirmation) { doc.text('Conferma fornitore / Order confirmation: ' + o.supplierConfirmation, 14, fy); fy += 5; }
+  if (o.notes) { doc.text('Note / Notes: ' + o.notes, 14, fy); }
+  doc.save(`${o.number}${sup ? '_' + (sup.name || '').replace(/\s+/g, '_') : ''}.pdf`);
+  showToast('PDF esportato');
+}
+
+function exportOrderExcel(id) {
+  const o = getOrder(id); if (!o) return;
+  if (!(o.lines || []).length) { showToast('Nessuna riga da esportare', 'error'); return; }
+  const co = db.settings.company || {};
+  const sup = o.supplierId ? db.suppliers.find(s => s.id === o.supplierId) : null;
+  const data = [['Ordine di acquisto / Purchase Order', o.number], ['Data', fmtDateIt(o.date)]];
+  if (o.title) data.push(['Oggetto', o.title]);
+  if (o.rfqId && getRfq(o.rfqId)) data.push(['Da richiesta', getRfq(o.rfqId).number]);
+  if (o.transport) data.push(['Trasporto / Shipping', o.transport]);
+  if (o.payment) data.push(['Pagamento / Payment', o.payment]);
+  if (o.requestedDelivery) data.push(['Consegna richiesta / Requested delivery', fmtDateIt(o.requestedDelivery)]);
+  if (o.supplierConfirmation) data.push(['Conferma fornitore / Order confirmation', o.supplierConfirmation]);
+  data.push([]);
+  data.push(['RICHIEDENTE', '', 'FORNITORE']);
+  const coLines = [co.name || '', ...addressLines(co), co.vat ? 'P.IVA ' + co.vat : '', co.referente || '', co.email || '', co.phone || ''];
+  const supLines = sup ? [sup.name, ...addressLines(sup), sup.vat ? 'P.IVA ' + sup.vat : '', sup.referente || '', sup.email || '', sup.phone || ''] : [''];
+  for (let i = 0; i < Math.max(coLines.length, supLines.length); i++) data.push([coLines[i] || '', '', supLines[i] || '']);
+  data.push([]);
+  const hasSup = (o.lines || []).some(l => lineSupInfo(o.supplierId, l));
+  data.push(hasSup
+    ? ['#', 'Codice', 'Descrizione', 'Codice fornitore', 'Descrizione fornitore', 'Q.tà', 'U.M.', 'Prezzo unitario', 'Importo', 'Consegna', 'Ricevuto', 'Residuo']
+    : ['#', 'Codice', 'Descrizione', 'Q.tà', 'U.M.', 'Prezzo unitario', 'Importo', 'Consegna', 'Ricevuto', 'Residuo']);
+  (o.lines || []).forEach((l, i) => {
+    const si = lineSupInfo(o.supplierId, l);
+    const qty = Number(l.qty) || 0, price = (l.price === '' || l.price == null) ? '' : Number(l.price);
+    const amount = price === '' ? '' : qty * price;
+    const rec = Number(l.received) || 0;
+    const supCols = hasSup ? [si ? si.code : '', si ? si.desc : ''] : [];
+    data.push([i + 1, l.code || '', l.description, ...supCols, qty, l.uom || '', price, amount, fmtDateIt(l.deliveryDate), rec, qty - rec]);
+  });
+  data.push([]);
+  data.push(['', 'TOTALE IMPONIBILE / TOTAL', orderTotal(o)]);
+  if (o.notes) { data.push([]); data.push(['Note', o.notes]); }
+  const ws = XLSX.utils.aoa_to_sheet(data);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Ordine');
+  XLSX.writeFile(wb, `${o.number}${sup ? '_' + (sup.name || '').replace(/\s+/g, '_') : ''}.xlsx`);
+  showToast('Excel esportato');
+}
+
+function delOrder(id) {
+  const o = getOrder(id); if (!o) return;
+  if (!confirm(`Eliminare l'ordine ${o.number}?`)) return;
+  db.orders = db.orders.filter(x => x.id !== id); saveDB();
+  if (currentOrderId === id) { currentOrderId = null; orderView = 'list'; }
+  renderOrders(); showToast('Ordine eliminato');
 }
 
 // ═══════════════════════════════════════════════════════════
