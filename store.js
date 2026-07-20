@@ -187,6 +187,8 @@ function migrateDB() {
   (db.suppliers || []).forEach(s => {
     if (s.phone == null) s.phone = '';
     if (s.vat == null) s.vat = '';
+    if (s.defaultTransport == null) s.defaultTransport = '';
+    if (s.defaultPayment == null) s.defaultPayment = '';
     ensureAddr(s);
   });
   // RFQ: modello a fornitore singolo + campi riga (prezzo unitario e data consegna)

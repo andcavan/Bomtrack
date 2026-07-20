@@ -1565,6 +1565,17 @@ function rfqSetField(id, field, value) {
   r[field] = value || (field === 'supplierId' ? null : '');
   touch(r); rfqMarkDirty();
 }
+// Alla scelta del fornitore eredita le sue condizioni predefinite (se impostate)
+function rfqSetSupplier(id, sid) {
+  const r = getRfq(id); if (!r) return;
+  r.supplierId = sid || null;
+  const sup = sid ? db.suppliers.find(s => s.id === sid) : null;
+  if (sup) {
+    if (sup.defaultTransport) r.transport = sup.defaultTransport;
+    if (sup.defaultPayment) r.payment = sup.defaultPayment;
+  }
+  touch(r); rfqMarkDirty(); renderRfq();
+}
 function rfqSetLine(id, lineId, field, value) {
   const r = getRfq(id); if (!r) return;
   const l = (r.lines || []).find(x => x.id === lineId); if (!l) return;
@@ -1591,20 +1602,46 @@ function rfqAddManualLine(id) {
 
 function rfqAddCatalogModal(id) {
   const opts = db.items.filter(i => i.active !== false).sort((a, b) => (a.code || '').localeCompare(b.code || ''))
-    .map(i => `<label class="rfq-pick-row"><input type="checkbox" value="${i.id}">
+    .map(i => `<label class="rfq-pick-row" data-type="${i.type}" data-fam="${i.familyId || ''}" data-sub="${i.subFamilyId || ''}" data-sup="${i.supplierId || ''}"><input type="checkbox" value="${i.id}">
       <span style="font-family:var(--mono)">${esc(i.code || '')}</span> ${esc(i.name)}
       <span class="rfq-pick-type">${TYPE_LABELS[i.type] || i.type}</span></label>`).join('');
+  const typeOpts = ALL_TYPES.map(t => `<option value="${t}">${typeLabel(t)}</option>`).join('');
+  const famOpts = (db.families || []).map(f => `<option value="${f.id}">${esc(f.name)}</option>`).join('');
   openModal(`<h3>+ Aggiungi da catalogo</h3>
-    <input class="search" id="rfq-pick-search" placeholder="🔍 Filtra codice o nome..." oninput="rfqFilterPick()">
+    <div class="rfq-pick-filters">
+      <input class="search" id="rfq-pick-search" placeholder="🔍 Codice o nome..." oninput="rfqFilterPick()">
+      <select id="rfq-pick-type" onchange="rfqFilterPick()"><option value="">Tutti i tipi</option>${typeOpts}</select>
+      <select id="rfq-pick-fam" onchange="rfqPickFamilyChange()"><option value="">Tutte le famiglie</option>${famOpts}</select>
+      <select id="rfq-pick-sub" onchange="rfqFilterPick()"><option value="">Tutte le sottofamiglie</option></select>
+      <select id="rfq-pick-sup" onchange="rfqFilterPick()"><option value="">Tutti i fornitori</option>${db.suppliers.map(s => `<option value="${s.id}">${esc(s.name)}</option>`).join('')}</select>
+    </div>
     <div class="rfq-pick-list" id="rfq-pick-list">${opts || '<div class="empty-text">Catalogo vuoto.</div>'}</div>
+    <div class="rfq-pick-empty empty-text" id="rfq-pick-empty" style="display:none">Nessun articolo con questi filtri.</div>
     <div class="modal-actions"><button class="btn-ghost" onclick="closeModal()">Annulla</button>
       <button class="add-btn-sm" onclick="rfqAddCatalogLines('${id}')">Aggiungi selezionati</button></div>`, true);
 }
+function rfqPickFamilyChange() {
+  const f = getFamily(val('rfq-pick-fam'));
+  const subs = (f && f.subs) || [];
+  const sel = document.getElementById('rfq-pick-sub');
+  if (sel) sel.innerHTML = '<option value="">Tutte le sottofamiglie</option>' + subs.map(s => `<option value="${s.id}">${esc(s.name)}</option>`).join('');
+  rfqFilterPick();
+}
 function rfqFilterPick() {
   const q = (val('rfq-pick-search') || '').toLowerCase();
+  const ty = val('rfq-pick-type'), fam = val('rfq-pick-fam'), sub = val('rfq-pick-sub'), sup = val('rfq-pick-sup');
+  let shown = 0;
   document.querySelectorAll('#rfq-pick-list .rfq-pick-row').forEach(el => {
-    el.style.display = el.textContent.toLowerCase().includes(q) ? '' : 'none';
+    const ok = el.textContent.toLowerCase().includes(q)
+      && (!ty || el.dataset.type === ty)
+      && (!fam || el.dataset.fam === fam)
+      && (!sub || el.dataset.sub === sub)
+      && (!sup || el.dataset.sup === sup);
+    el.style.display = ok ? '' : 'none';
+    if (ok) shown++;
   });
+  const empty = document.getElementById('rfq-pick-empty');
+  if (empty) empty.style.display = shown ? 'none' : '';
 }
 function rfqAddCatalogLines(id) {
   const r = getRfq(id); if (!r) return;
@@ -1647,7 +1684,7 @@ function renderRfqEdit(id) {
     <div class="rfq-head">
       <div class="modal-field"><label>Titolo / oggetto</label><input value="${esc(r.title || '')}" onchange="rfqSetField('${id}','title',this.value)"></div>
       <div class="rfq-head-row">
-        <div class="modal-field"><label>Fornitore</label><select onchange="rfqSetField('${id}','supplierId',this.value)">${supplierOptions(r.supplierId)}</select></div>
+        <div class="modal-field"><label>Fornitore</label><select onchange="rfqSetSupplier('${id}',this.value)">${supplierOptions(r.supplierId)}</select></div>
         <div class="modal-field"><label>Data</label><input type="date" value="${(r.date || '').slice(0, 10)}" onchange="rfqSetField('${id}','date',this.value)"></div>
         <div class="modal-field"><label>Stato</label><select onchange="rfqSetField('${id}','status',this.value)">
           ${Object.entries(RFQ_STATUS).map(([k, v]) => `<option value="${k}" ${r.status === k ? 'selected' : ''}>${v}</option>`).join('')}
@@ -1949,7 +1986,8 @@ function renderSuppliers() {
 function addSupplier() {
   const n = val('sup-name'); if (!n) { showToast('Nome richiesto', 'error'); return; }
   db.suppliers.push(stampNew({ id: gid(), name: n, referente: val('sup-ref'), email: val('sup-email'),
-    phone: val('sup-phone'), vat: '', street: '', streetNumber: '', zip: '', city: '', province: '', country: '', active: true }));
+    phone: val('sup-phone'), vat: '', street: '', streetNumber: '', zip: '', city: '', province: '', country: '',
+    defaultTransport: '', defaultPayment: '', active: true }));
   saveDB(); renderManage(); showToast('Fornitore aggiunto');
 }
 function addressFieldsHtml(pfx, o) {
@@ -1974,6 +2012,12 @@ function editSupplierModal(id) {
       <div class="modal-field"><label>Email</label><input id="es-email" value="${esc(s.email || '')}"></div>
       <div class="modal-field"><label>Telefono</label><input id="es-phone" value="${esc(s.phone || '')}"></div>
       <div class="modal-field"><label>P.IVA / C.F.</label><input id="es-vat" value="${esc(s.vat || '')}"></div>
+      <div class="modal-field"><label>Pagamento predefinito</label>
+        <input id="es-dpayment" list="sup-payment-opts" value="${esc(s.defaultPayment || '')}" placeholder="es. Bonifico 30gg">
+        <datalist id="sup-payment-opts">${(db.settings.paymentOptions || []).map(o => `<option value="${esc(o)}"></option>`).join('')}</datalist></div>
+      <div class="modal-field"><label>Trasporto predefinito</label>
+        <input id="es-dtransport" list="sup-transport-opts" value="${esc(s.defaultTransport || '')}" placeholder="es. Porto franco">
+        <datalist id="sup-transport-opts">${(db.settings.transportOptions || []).map(o => `<option value="${esc(o)}"></option>`).join('')}</datalist></div>
       ${addressFieldsHtml('es', s)}
     </div>
     <div class="modal-actions"><button class="btn-ghost" onclick="closeModal()">Annulla</button>
@@ -1983,6 +2027,7 @@ function saveSupplier(id) {
   const s = db.suppliers.find(x => x.id === id); if (!s) return;
   s.name = val('es-name'); s.referente = val('es-ref'); s.email = val('es-email');
   s.phone = val('es-phone'); s.vat = val('es-vat');
+  s.defaultPayment = val('es-dpayment'); s.defaultTransport = val('es-dtransport');
   Object.assign(s, readAddressFields('es'));
   touch(s);
   saveDB(); closeModal(); renderManage(); showToast('Aggiornato');
