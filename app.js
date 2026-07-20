@@ -7,6 +7,10 @@ let reportBomId = null;      // articolo selezionato nel report
 let mgmtTab = 'suppliers';
 let bomExpanded = new Set(); // chiavi-percorso dei nodi espansi
 let activeView = 'bom';
+let rfqView = 'list';        // 'list' | 'edit' | 'compare'
+let currentRfqId = null;     // richiesta di offerta aperta in editor
+let rfqCompareSel = [];      // id delle richieste selezionate nel confronto tra richieste
+let rfqDirty = false;        // modifiche non salvate nell'editor RFQ (il documento si genera solo dopo il salvataggio)
 
 
 // ═══════════════════════════════════════════════════════════
@@ -16,6 +20,15 @@ function cur() { return (db.settings && db.settings.currency) || '€'; }
 function fmtN(n) { return cur() + (Number(n) || 0).toFixed(2); }
 function esc(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
 function getItem(id) { return db.items.find(i => i.id === id); }
+// Indirizzo strutturato → righe di testo (per documenti) o riga singola (per liste)
+function addressLines(o) {
+  if (!o) return [];
+  const l1 = [o.street, o.streetNumber].filter(Boolean).join(' ');
+  const cityPart = [o.zip, o.city].filter(Boolean).join(' ');
+  const l2 = [cityPart, o.province ? '(' + o.province + ')' : ''].filter(Boolean).join(' ');
+  return [l1, l2, o.country].map(s => (s || '').trim()).filter(Boolean);
+}
+function addressOneLine(o) { return addressLines(o).join(', '); }
 // Tassonomia tipi articolo e regole di contenimento (distinta meccanica)
 const ALL_TYPES = ['macchina', 'gruppo', 'sottogruppo', 'parte', 'materiale', 'acquistato'];
 const ALLOWED_CHILDREN = {
@@ -307,6 +320,7 @@ const NAV = [
   { id: 'bom', label: '🌳 Distinte base' },
   { id: 'catalog', label: '📦 Catalogo' },
   { id: 'report', label: '💶 Costificazione' },
+  { id: 'rfq', label: '📨 Richieste offerta' },
   { id: 'manage', label: '⚙ Gestione' },
 ];
 function renderNav() {
@@ -321,6 +335,7 @@ function setView(v) {
   if (v === 'bom') renderBom();
   else if (v === 'catalog') renderCatalog();
   else if (v === 'report') renderReport();
+  else if (v === 'rfq') renderRfq();
   else if (v === 'manage') renderManage();
 }
 
@@ -907,6 +922,10 @@ function itemModalBody(it) {
       <div class="modal-field" id="fld-price"><label>Prezzo acquisto (${cur()}/U.M.)</label><input type="number" id="it-price" step="0.0001" value="${it && it.purchasePrice != null ? it.purchasePrice : ''}"></div>
       <div class="modal-field" id="fld-supplier"><label>Fornitore</label><select id="it-supplier">${supplierOptions(it ? it.supplierId : '')}</select></div>
     </div>
+    <div class="modal-grid" id="fld-supinfo">
+      <div class="modal-field"><label>Codice fornitore</label><input id="it-supcode" value="${it ? esc(it.supplierCode || '') : ''}"></div>
+      <div class="modal-field"><label>Descrizione fornitore</label><input id="it-supdesc" value="${it ? esc(it.supplierDesc || '') : ''}"></div>
+    </div>
     <div class="modal-grid" id="fld-family">
       <div class="modal-field"><label>Macrofamiglia</label><select id="it-family" onchange="onItemFamilyChange()">${familyOptions(it ? it.familyId : '', usesFamily(t) ? t : '')}</select></div>
       <div class="modal-field"><label>Sottofamiglia</label><select id="it-subfamily" onchange="onItemSubFamilyChange()">${subFamilyOptions(it ? it.familyId : '', it ? it.subFamilyId : '')}</select></div>
@@ -1010,6 +1029,7 @@ function toggleItemFields() {
   document.getElementById('fld-unitcost').style.display = (t === 'materiale' || t === 'parte') ? '' : 'none';
   document.getElementById('fld-price').style.display = t === 'acquistato' ? '' : 'none';
   document.getElementById('fld-supplier').style.display = t === 'acquistato' ? '' : 'none';
+  document.getElementById('fld-supinfo').style.display = (t === 'acquistato' || t === 'materiale') ? '' : 'none';
   const showFam = usesFamily(t);
   document.getElementById('fld-family').style.display = showFam ? '' : 'none';
   document.getElementById('fld-assembly-note').style.display = isAssembly(t) ? '' : 'none';
@@ -1233,6 +1253,8 @@ function applyItemSource(id) {
   setVal('it-unitcost', src.unitCost != null ? src.unitCost : '');
   setVal('it-price', src.purchasePrice != null ? src.purchasePrice : '');
   setVal('it-supplier', src.supplierId || '');
+  setVal('it-supcode', src.supplierCode || '');
+  setVal('it-supdesc', src.supplierDesc || '');
   setVal('it-notes', src.notes || '');
   setVal('it-code', '');
   refreshItemCode();
@@ -1251,6 +1273,7 @@ function readItemForm(it) {
   it.notes = val('it-notes');
   if (it.type === 'materiale' || it.type === 'parte') { it.unitCost = numVal('it-unitcost'); }
   if (it.type === 'acquistato') { it.purchasePrice = numVal('it-price'); it.supplierId = val('it-supplier'); }
+  if (it.type === 'materiale' || it.type === 'acquistato') { it.supplierCode = val('it-supcode'); it.supplierDesc = val('it-supdesc'); }
   if (usesFamily(it.type)) { it.familyId = val('it-family'); it.subFamilyId = val('it-subfamily'); }
   // Codifica gerarchica: schema sulla macchina, appartenenza sugli altri tipi
   const d = itemDraftFromForm();
@@ -1463,10 +1486,358 @@ function exportBomPDF() {
 }
 
 // ═══════════════════════════════════════════════════════════
+//  VISTA: RICHIESTE DI OFFERTA (RFQ)
+// ═══════════════════════════════════════════════════════════
+const RFQ_STATUS = { bozza: 'Bozza', inviata: 'Inviata', chiusa: 'Chiusa' };
+function getRfq(id) { return db.rfqs.find(r => r.id === id); }
+function fmtDateIt(d) { return d ? new Date(d).toLocaleDateString('it-IT') : ''; }
+// Codice/descrizione del fornitore per una riga, ma solo se l'articolo è legato
+// allo stesso fornitore della richiesta (altrimenti non è pertinente).
+function rfqLineSupInfo(r, l) {
+  if (!l.itemId || !r.supplierId) return null;
+  const it = getItem(l.itemId);
+  if (!it || it.supplierId !== r.supplierId) return null;
+  if (!it.supplierCode && !it.supplierDesc) return null;
+  return { code: it.supplierCode || '', desc: it.supplierDesc || '' };
+}
+
+function renderRfq() {
+  const host = document.getElementById('view-rfq');
+  if (rfqView === 'edit' && getRfq(currentRfqId)) host.innerHTML = renderRfqEdit(currentRfqId);
+  else if (rfqView === 'compare') host.innerHTML = renderRfqCompare();
+  else { rfqView = 'list'; host.innerHTML = renderRfqList(); }
+}
+
+// Progressivo per anno: RFQ-<anno>-NNN
+function nextRfqNumber() {
+  const prefix = `RFQ-${new Date().getFullYear()}-`;
+  const seqs = db.rfqs.filter(r => (r.number || '').startsWith(prefix))
+    .map(r => parseInt((r.number || '').slice(prefix.length), 10) || 0);
+  return prefix + String((seqs.length ? Math.max(...seqs) : 0) + 1).padStart(3, '0');
+}
+
+function renderRfqList() {
+  const rows = db.rfqs.slice().sort((a, b) => (b.number || '').localeCompare(a.number || '')).map(r => {
+    const nl = (r.lines || []).length;
+    const sup = r.supplierId ? supplierName(r.supplierId) : '— nessun fornitore —';
+    return `<div class="mgmt-item">
+      <span class="mgmt-item-name"><span style="font-family:var(--mono)">${esc(r.number)}</span> — ${esc(r.title || '(senza titolo)')}</span>
+      <span class="mgmt-item-meta">${esc(sup)} · ${RFQ_STATUS[r.status] || r.status} · ${nl} righe${r.date ? ' · ' + fmtDateIt(r.date) : ''}</span>
+      <div class="mgmt-item-actions">
+        <button class="mini-btn" onclick="openRfqEdit('${r.id}')" title="Modifica">✏</button>
+        <button class="mini-btn danger" onclick="delRfq('${r.id}')" title="Elimina">🗑</button>
+      </div></div>`;
+  }).join('') || '<div class="empty-text">Nessuna richiesta di offerta. Creane una per chiedere prezzi a un fornitore.</div>';
+  return `<div class="manage-wrap">
+    <div class="bom-toolbar">
+      <h2 class="section-title">📨 Richieste di offerta</h2>
+      <button class="add-btn-sm" onclick="newRfq()">+ Nuova richiesta</button>
+      <button class="btn-outline" onclick="openRfqCompare()">📊 Confronta offerte</button>
+    </div>
+    <div class="mgmt-list">${rows}</div></div>`;
+}
+
+function newRfq() {
+  const r = stampNew({ id: gid(), number: nextRfqNumber(), title: '', date: nowISO().slice(0, 10),
+    status: 'bozza', notes: '', supplierId: null,
+    transport: db.settings.transportDefault || '', payment: db.settings.paymentDefault || '',
+    lines: [], active: true });
+  db.rfqs.push(r); saveDB();
+  currentRfqId = r.id; rfqView = 'edit'; rfqDirty = false; renderRfq();
+}
+function openRfqEdit(id) { currentRfqId = id; rfqView = 'edit'; rfqDirty = false; renderRfq(); }
+function openRfqCompare() { rfqView = 'compare'; renderRfq(); }
+function rfqBackToList() { if (rfqDirty) { saveDB(); rfqDirty = false; } rfqView = 'list'; currentRfqId = null; renderRfq(); }
+
+// Salvataggio differito: le modifiche restano in memoria e si persistono solo con "Salva".
+// Finché ci sono modifiche non salvate i pulsanti documento restano disabilitati.
+function rfqMarkDirty() {
+  rfqDirty = true;
+  const sv = document.getElementById('rfq-save-btn'); if (sv) sv.classList.add('dirty');
+  document.querySelectorAll('.rfq-export-btn').forEach(b => { b.disabled = true; b.title = 'Salva la richiesta prima di generare il documento'; });
+}
+function rfqSave(id) {
+  const r = getRfq(id); if (!r) return;
+  touch(r); saveDB(); rfqDirty = false; renderRfq(); showToast('Richiesta salvata');
+}
+function rfqSetField(id, field, value) {
+  const r = getRfq(id); if (!r) return;
+  r[field] = value || (field === 'supplierId' ? null : '');
+  touch(r); rfqMarkDirty();
+}
+function rfqSetLine(id, lineId, field, value) {
+  const r = getRfq(id); if (!r) return;
+  const l = (r.lines || []).find(x => x.id === lineId); if (!l) return;
+  l[field] = (field === 'qty' || field === 'price') ? (value === '' ? '' : (parseFloat(value) || 0)) : value;
+  touch(r); rfqMarkDirty();
+}
+function rfqDelLine(id, lineId) { const r = getRfq(id); if (!r) return; r.lines = (r.lines || []).filter(x => x.id !== lineId); touch(r); rfqMarkDirty(); renderRfq(); }
+
+function rfqAddManualLineModal(id) {
+  openModal(`<h3>+ Riga manuale</h3>
+    <div class="modal-field"><label>Descrizione</label><input id="rl-desc"></div>
+    <div class="modal-field"><label>Codice (opzionale)</label><input id="rl-code"></div>
+    <div class="modal-field"><label>U.M.</label><input id="rl-uom" value="pz"></div>
+    <div class="modal-field"><label>Quantità</label><input id="rl-qty" type="number" value="1" min="0" step="any"></div>
+    <div class="modal-actions"><button class="btn-ghost" onclick="closeModal()">Annulla</button>
+      <button class="add-btn-sm" onclick="rfqAddManualLine('${id}')">Aggiungi</button></div>`);
+}
+function rfqAddManualLine(id) {
+  const r = getRfq(id); if (!r) return;
+  const desc = val('rl-desc'); if (!desc) { showToast('Descrizione richiesta', 'error'); return; }
+  r.lines.push({ id: gid(), itemId: null, code: val('rl-code'), description: desc, uom: val('rl-uom') || 'pz', qty: numVal('rl-qty') || 1, price: '', deliveryDate: '' });
+  touch(r); rfqMarkDirty(); closeModal(); renderRfq();
+}
+
+function rfqAddCatalogModal(id) {
+  const opts = db.items.filter(i => i.active !== false).sort((a, b) => (a.code || '').localeCompare(b.code || ''))
+    .map(i => `<label class="rfq-pick-row"><input type="checkbox" value="${i.id}">
+      <span style="font-family:var(--mono)">${esc(i.code || '')}</span> ${esc(i.name)}
+      <span class="rfq-pick-type">${TYPE_LABELS[i.type] || i.type}</span></label>`).join('');
+  openModal(`<h3>+ Aggiungi da catalogo</h3>
+    <input class="search" id="rfq-pick-search" placeholder="🔍 Filtra codice o nome..." oninput="rfqFilterPick()">
+    <div class="rfq-pick-list" id="rfq-pick-list">${opts || '<div class="empty-text">Catalogo vuoto.</div>'}</div>
+    <div class="modal-actions"><button class="btn-ghost" onclick="closeModal()">Annulla</button>
+      <button class="add-btn-sm" onclick="rfqAddCatalogLines('${id}')">Aggiungi selezionati</button></div>`, true);
+}
+function rfqFilterPick() {
+  const q = (val('rfq-pick-search') || '').toLowerCase();
+  document.querySelectorAll('#rfq-pick-list .rfq-pick-row').forEach(el => {
+    el.style.display = el.textContent.toLowerCase().includes(q) ? '' : 'none';
+  });
+}
+function rfqAddCatalogLines(id) {
+  const r = getRfq(id); if (!r) return;
+  const checked = Array.from(document.querySelectorAll('#rfq-pick-list input:checked')).map(c => c.value);
+  if (!checked.length) { showToast('Nessun articolo selezionato', 'error'); return; }
+  checked.forEach(itemId => {
+    const it = getItem(itemId); if (!it) return;
+    r.lines.push({ id: gid(), itemId, code: it.code || '', description: it.name || '', uom: it.uom || 'pz', qty: 1, price: '', deliveryDate: '' });
+  });
+  touch(r); rfqMarkDirty(); closeModal(); renderRfq();
+  showToast(checked.length + ' righe aggiunte');
+}
+
+function renderRfqEdit(id) {
+  const r = getRfq(id); if (!r) { rfqView = 'list'; return renderRfqList(); }
+  const lines = (r.lines || []).map((l, i) => {
+    const si = rfqLineSupInfo(r, l);
+    const siSub = si ? `<div class="rfq-cmp-sub">🏷 ${esc(si.code || '—')}${si.desc ? ' · ' + esc(si.desc) : ''}</div>` : '';
+    return `<tr>
+    <td>${i + 1}</td>
+    <td style="font-family:var(--mono)">${esc(l.code || '')}</td>
+    <td>${esc(l.description)}${l.itemId ? '' : ' <span class="rfq-manual-tag">manuale</span>'}${siSub}</td>
+    <td>${esc(l.uom || '')}</td>
+    <td><input type="number" class="rfq-qty-input" value="${l.qty}" min="0" step="any" onchange="rfqSetLine('${id}','${l.id}','qty',this.value)"></td>
+    <td><input type="number" class="rfq-price-input" value="${l.price === '' || l.price == null ? '' : l.price}" min="0" step="any" placeholder="—" onchange="rfqSetLine('${id}','${l.id}','price',this.value)"></td>
+    <td><input type="date" class="rfq-date-input" value="${esc(l.deliveryDate || '')}" onchange="rfqSetLine('${id}','${l.id}','deliveryDate',this.value)"></td>
+    <td><button class="mini-btn danger" onclick="rfqDelLine('${id}','${l.id}')">🗑</button></td></tr>`;
+  }).join('')
+    || `<tr><td colspan="8" class="empty-text">Nessuna riga. Aggiungi articoli dal catalogo o manualmente.</td></tr>`;
+  const co = db.settings.company || {};
+  const coWarn = co.name ? '' : `<div class="rfq-warn">⚠ Dati azienda non impostati: compilali in <strong>Gestione › Dati azienda</strong> per stamparli sul documento.</div>`;
+  const dis = rfqDirty ? 'disabled title="Salva la richiesta prima di generare il documento"' : '';
+  return `<div class="manage-wrap">
+    <div class="bom-toolbar">
+      <button class="btn-outline" onclick="rfqBackToList()">← Elenco</button>
+      <h2 class="section-title" style="font-family:var(--mono)">${esc(r.number)}</h2>
+      <button class="add-btn-sm rfq-save-btn ${rfqDirty ? 'dirty' : ''}" id="rfq-save-btn" onclick="rfqSave('${id}')">💾 Salva</button>
+    </div>
+    ${coWarn}
+    <div class="rfq-head">
+      <div class="modal-field"><label>Titolo / oggetto</label><input value="${esc(r.title || '')}" onchange="rfqSetField('${id}','title',this.value)"></div>
+      <div class="rfq-head-row">
+        <div class="modal-field"><label>Fornitore</label><select onchange="rfqSetField('${id}','supplierId',this.value)">${supplierOptions(r.supplierId)}</select></div>
+        <div class="modal-field"><label>Data</label><input type="date" value="${(r.date || '').slice(0, 10)}" onchange="rfqSetField('${id}','date',this.value)"></div>
+        <div class="modal-field"><label>Stato</label><select onchange="rfqSetField('${id}','status',this.value)">
+          ${Object.entries(RFQ_STATUS).map(([k, v]) => `<option value="${k}" ${r.status === k ? 'selected' : ''}>${v}</option>`).join('')}
+        </select></div>
+      </div>
+      <div class="rfq-head-row">
+        <div class="modal-field"><label>Tipo di trasporto / resa</label>
+          <input list="rfq-transport-opts" value="${esc(r.transport || '')}" placeholder="es. Porto franco, EXW, DAP…" onchange="rfqSetField('${id}','transport',this.value)">
+          <datalist id="rfq-transport-opts">${(db.settings.transportOptions || []).map(o => `<option value="${esc(o)}"></option>`).join('')}</datalist></div>
+        <div class="modal-field"><label>Tipo di pagamento</label>
+          <input list="rfq-payment-opts" value="${esc(r.payment || '')}" placeholder="es. Bonifico 30gg, RiBa 60gg…" onchange="rfqSetField('${id}','payment',this.value)">
+          <datalist id="rfq-payment-opts">${(db.settings.paymentOptions || []).map(o => `<option value="${esc(o)}"></option>`).join('')}</datalist></div>
+      </div>
+      <div class="modal-field"><label>Note per il fornitore</label><textarea rows="2" onchange="rfqSetField('${id}','notes',this.value)">${esc(r.notes || '')}</textarea></div>
+    </div>
+    <h3 class="rfq-subhead">Righe richiesta
+      <span class="rfq-head-actions">
+        <button class="add-btn-sm" onclick="rfqAddCatalogModal('${id}')">+ Da catalogo</button>
+        <button class="btn-outline" onclick="rfqAddManualLineModal('${id}')">+ Riga manuale</button>
+      </span></h3>
+    <p class="empty-text" style="text-align:left;padding:0 0 8px">Prezzo unitario e data consegna si lasciano vuoti nel documento inviato e si compilano al ritorno dell'offerta.</p>
+    <div class="table-wrap"><table class="rfq-table">
+      <thead><tr><th>#</th><th>Codice</th><th>Descrizione</th><th>U.M.</th><th>Q.tà</th><th>Prezzo unit.</th><th>Data consegna</th><th></th></tr></thead>
+      <tbody>${lines}</tbody></table></div>
+    <div class="rfq-export-bar">
+      <label>Documento di richiesta:</label>
+      <button class="export-btn-pdf rfq-export-btn" onclick="exportRfqPDF('${id}')" ${dis}>📄 PDF</button>
+      <button class="export-btn-xls rfq-export-btn" onclick="exportRfqExcel('${id}')" ${dis}>📗 Excel</button>
+      ${rfqDirty ? '<span class="rfq-dirty-hint">Salva per abilitare la generazione del documento</span>' : ''}
+    </div>
+  </div>`;
+}
+
+function exportRfqPDF(id) {
+  const r = getRfq(id); if (!r) return;
+  if (!(r.lines || []).length) { showToast('Nessuna riga da esportare', 'error'); return; }
+  const { jsPDF } = window.jspdf;
+  const co = db.settings.company || {};
+  const sup = r.supplierId ? db.suppliers.find(s => s.id === r.supplierId) : null;
+  // Le colonne "codice/descrizione fornitore" compaiono solo se qualche riga è legata
+  // allo stesso fornitore della richiesta; in tal caso si usa l'orientamento orizzontale.
+  const hasSup = (r.lines || []).some(l => rfqLineSupInfo(r, l));
+  const doc = new jsPDF(hasSup ? { orientation: 'landscape' } : undefined);
+  // Documento bilingue IT / EN per fornitori esteri
+  doc.setFontSize(15); doc.setTextColor(30); doc.text(`Richiesta di offerta / Request for Quotation — ${r.number}`, 14, 16);
+  doc.setFontSize(9); doc.setTextColor(90);
+  doc.text(`Data / Date: ${fmtDateIt(r.date) || fmtDateIt(nowISO())}`, 14, 22);
+  if (r.title) doc.text(`Oggetto / Subject: ${r.title}`, 14, 27);
+  const yTop = 36;
+  const block = (x, title, rowsTxt) => {
+    doc.setFontSize(8); doc.setTextColor(130); doc.text(title, x, yTop);
+    doc.setFontSize(9); doc.setTextColor(40);
+    const rows = rowsTxt.filter(Boolean);
+    rows.forEach((t, i) => doc.text(String(t), x, yTop + 5 + i * 4.5));
+    return rows.length;
+  };
+  const n1 = block(14, 'RICHIEDENTE / BUYER', [co.name, ...addressLines(co), co.vat ? 'P.IVA / VAT ' + co.vat : '', co.referente, co.email, co.phone]);
+  const n2 = block(hasSup ? 160 : 110, 'FORNITORE / SUPPLIER', [sup ? sup.name : '(fornitore non selezionato / not selected)', ...(sup ? addressLines(sup) : []), sup && sup.vat ? 'P.IVA / VAT ' + sup.vat : '', sup && sup.referente, sup && sup.email, sup && sup.phone]);
+  const startY = yTop + 5 + Math.max(n1, n2) * 4.5 + 4;
+  const head = hasSup
+    ? ['#', 'Codice\nCode', 'Descrizione\nDescription', 'Cod. forn.\nSuppl. code', 'Descr. forn.\nSuppl. desc.', 'Q.tà\nQty', 'Prezzo unit.\nUnit price', 'Data consegna\nDelivery date']
+    : ['#', 'Codice\nCode', 'Descrizione\nDescription', 'Q.tà\nQty', 'Prezzo unit.\nUnit price', 'Data consegna\nDelivery date'];
+  const body = (r.lines || []).map((l, i) => {
+    const si = rfqLineSupInfo(r, l);
+    const price = l.price === '' || l.price == null ? '' : fmtN(l.price);
+    const tail = [(l.qty || 0) + ' ' + (l.uom || ''), price, fmtDateIt(l.deliveryDate)];
+    return hasSup ? [i + 1, l.code || '', l.description, si ? si.code : '', si ? si.desc : '', ...tail]
+      : [i + 1, l.code || '', l.description, ...tail];
+  });
+  doc.autoTable({ startY, head: [head], body, styles: { fontSize: 8 }, headStyles: { fillColor: [58, 123, 232] } });
+  let fy = doc.lastAutoTable.finalY + 8;
+  doc.setTextColor(80); doc.setFontSize(9);
+  if (r.transport) { doc.text('Trasporto / Shipping: ' + r.transport, 14, fy); fy += 5; }
+  if (r.payment) { doc.text('Pagamento / Payment: ' + r.payment, 14, fy); fy += 5; }
+  if (r.notes) { doc.text('Note / Notes: ' + r.notes, 14, fy); }
+  doc.save(`${r.number}${sup ? '_' + (sup.name || '').replace(/\s+/g, '_') : ''}.pdf`);
+  showToast('PDF esportato');
+}
+
+function exportRfqExcel(id) {
+  const r = getRfq(id); if (!r) return;
+  if (!(r.lines || []).length) { showToast('Nessuna riga da esportare', 'error'); return; }
+  const co = db.settings.company || {};
+  const sup = r.supplierId ? db.suppliers.find(s => s.id === r.supplierId) : null;
+  const data = [['Richiesta di offerta', r.number], ['Data', fmtDateIt(r.date)]];
+  if (r.title) data.push(['Oggetto', r.title]);
+  if (r.transport) data.push(['Trasporto / Shipping', r.transport]);
+  if (r.payment) data.push(['Pagamento / Payment', r.payment]);
+  data.push([]);
+  data.push(['RICHIEDENTE', '', 'FORNITORE']);
+  const coLines = [co.name || '', ...addressLines(co), co.vat ? 'P.IVA ' + co.vat : '', co.referente || '', co.email || '', co.phone || ''];
+  const supLines = sup ? [sup.name, ...addressLines(sup), sup.vat ? 'P.IVA ' + sup.vat : '', sup.referente || '', sup.email || '', sup.phone || ''] : [''];
+  for (let i = 0; i < Math.max(coLines.length, supLines.length); i++) data.push([coLines[i] || '', '', supLines[i] || '']);
+  data.push([]);
+  const hasSup = (r.lines || []).some(l => rfqLineSupInfo(r, l));
+  data.push(hasSup
+    ? ['#', 'Codice', 'Descrizione', 'Codice fornitore', 'Descrizione fornitore', 'Q.tà', 'U.M.', 'Prezzo unitario', 'Data consegna']
+    : ['#', 'Codice', 'Descrizione', 'Q.tà', 'U.M.', 'Prezzo unitario', 'Data consegna']);
+  (r.lines || []).forEach((l, i) => {
+    const si = rfqLineSupInfo(r, l);
+    const price = l.price === '' || l.price == null ? '' : l.price;
+    data.push(hasSup
+      ? [i + 1, l.code || '', l.description, si ? si.code : '', si ? si.desc : '', l.qty || 0, l.uom || '', price, fmtDateIt(l.deliveryDate)]
+      : [i + 1, l.code || '', l.description, l.qty || 0, l.uom || '', price, fmtDateIt(l.deliveryDate)]);
+  });
+  if (r.notes) { data.push([]); data.push(['Note', r.notes]); }
+  const ws = XLSX.utils.aoa_to_sheet(data);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'RFQ');
+  XLSX.writeFile(wb, `${r.number}${sup ? '_' + (sup.name || '').replace(/\s+/g, '_') : ''}.xlsx`);
+  showToast('Excel esportato');
+}
+
+// ─── Confronto offerte tra più richieste (una per fornitore) ───
+function rfqLineKey(l) { return l.itemId || ('m:' + (l.code || '') + '|' + (l.description || '')); }
+function rfqToggleCompare(rid, on) {
+  if (on) { if (!rfqCompareSel.includes(rid)) rfqCompareSel.push(rid); }
+  else rfqCompareSel = rfqCompareSel.filter(x => x !== rid);
+  renderRfq();
+}
+function renderRfqCompare() {
+  rfqCompareSel = rfqCompareSel.filter(id => getRfq(id));
+  const head = `<div class="bom-toolbar">
+      <button class="btn-outline" onclick="rfqBackToList()">← Elenco</button>
+      <h2 class="section-title">📊 Confronto offerte tra richieste</h2></div>`;
+  const picker = db.rfqs.slice().sort((a, b) => (b.number || '').localeCompare(a.number || '')).map(r => {
+    const on = rfqCompareSel.includes(r.id);
+    return `<label class="rfq-sup-chk"><input type="checkbox" ${on ? 'checked' : ''} onchange="rfqToggleCompare('${r.id}',this.checked)">
+      <span style="font-family:var(--mono)">${esc(r.number)}</span> ${esc(r.supplierId ? supplierName(r.supplierId) : '(nessun fornitore)')}</label>`;
+  }).join('') || '<div class="empty-text">Nessuna richiesta disponibile.</div>';
+  const sel = rfqCompareSel.map(id => getRfq(id)).filter(Boolean);
+  let matrix;
+  if (sel.length < 2) {
+    matrix = '<div class="empty-text">Seleziona almeno due richieste per confrontare i prezzi articolo per articolo.</div>';
+  } else {
+    const keys = [], meta = {};
+    sel.forEach(r => (r.lines || []).forEach(l => {
+      const k = rfqLineKey(l);
+      if (!(k in meta)) { keys.push(k); meta[k] = { code: l.code, description: l.description }; }
+    }));
+    const totals = sel.map(() => 0);
+    const bodyRows = keys.map(k => {
+      const cellsData = sel.map(r => {
+        const l = (r.lines || []).find(x => rfqLineKey(x) === k);
+        return (l && l.price !== '' && l.price != null) ? { price: Number(l.price), qty: Number(l.qty) || 0, del: l.deliveryDate } : null;
+      });
+      const valid = cellsData.filter(p => p && p.price > 0).map(p => p.price);
+      const min = valid.length ? Math.min(...valid) : null;
+      const cells = cellsData.map((p, ci) => {
+        if (!p) return `<td class="rfq-cmp-cell">—</td>`;
+        totals[ci] += p.price * p.qty;
+        const isMin = min != null && p.price === min;
+        return `<td class="rfq-cmp-cell ${isMin ? 'rfq-min' : ''}">${fmtN(p.price)}<span class="rfq-line-tot">${p.qty} pz${p.del ? ' · ' + fmtDateIt(p.del) : ''}</span></td>`;
+      }).join('');
+      const m = meta[k];
+      return `<tr><td>${esc(m.description || '')}<div class="rfq-cmp-sub">${esc(m.code || '')}</div></td>${cells}</tr>`;
+    }).join('');
+    const posTotals = totals.filter(t => t > 0);
+    const minTot = posTotals.length ? Math.min(...posTotals) : null;
+    const totalRow = `<tr class="rfq-cmp-total"><td>Totale offerta</td>${totals.map(t => `<td class="${minTot != null && t === minTot ? 'rfq-min' : ''}">${fmtN(t)}</td>`).join('')}</tr>`;
+    const header = `<tr><th>Articolo</th>${sel.map(r => `<th>${esc(r.supplierId ? supplierName(r.supplierId) : r.number)}<div class="rfq-cmp-sub">${esc(r.number)}</div></th>`).join('')}</tr>`;
+    matrix = `<div class="table-wrap"><table class="rfq-table rfq-cmp-table">
+      <thead>${header}</thead><tbody>${bodyRows}${totalRow}</tbody></table></div>
+      <p class="empty-text" style="text-align:left">Prezzo minimo per riga e totale offerta più basso evidenziati in verde. I totali usano la quantità indicata in ciascuna richiesta.</p>`;
+  }
+  return `<div class="manage-wrap">${head}
+    <h3 class="rfq-subhead">Richieste da confrontare</h3>
+    <div class="rfq-sup-grid">${picker}</div>
+    <h3 class="rfq-subhead">Confronto prezzi</h3>
+    ${matrix}
+  </div>`;
+}
+
+function delRfq(id) {
+  const r = getRfq(id); if (!r) return;
+  if (!confirm(`Eliminare la richiesta ${r.number}?`)) return;
+  db.rfqs = db.rfqs.filter(x => x.id !== id);
+  rfqCompareSel = rfqCompareSel.filter(x => x !== id);
+  saveDB();
+  if (currentRfqId === id) { currentRfqId = null; rfqView = 'list'; }
+  renderRfq(); showToast('Richiesta eliminata');
+}
+
+// ═══════════════════════════════════════════════════════════
 //  VISTA: GESTIONE
 // ═══════════════════════════════════════════════════════════
 const MGMT_TABS = [
+  { id: 'company', label: '🏢 Dati azienda' },
   { id: 'suppliers', label: '🏭 Fornitori' },
+  { id: 'terms', label: '🚚 Condizioni offerta' },
   { id: 'fam-acquistato', label: '🛒 Famiglie commerciali' },
   { id: 'fam-materiale', label: '🧱 Famiglie materie prime' },
   { id: 'fam-parte', label: '⚙️ Famiglie parti' },
@@ -1479,7 +1850,9 @@ function renderManage() {
   document.getElementById('mgmt-tabs').innerHTML = MGMT_TABS.map(t =>
     `<button class="mgmt-tab ${mgmtTab === t.id ? 'active' : ''}" onclick="setMgmtTab('${t.id}')">${t.label}</button>`).join('');
   const c = document.getElementById('mgmt-content');
-  if (mgmtTab === 'suppliers') c.innerHTML = renderSuppliers();
+  if (mgmtTab === 'company') c.innerHTML = renderCompany();
+  else if (mgmtTab === 'terms') c.innerHTML = renderTerms();
+  else if (mgmtTab === 'suppliers') c.innerHTML = renderSuppliers();
   else if (mgmtTab === 'fam-acquistato') c.innerHTML = renderFamilies('acquistato');
   else if (mgmtTab === 'fam-materiale') c.innerHTML = renderFamilies('materiale');
   else if (mgmtTab === 'fam-parte') c.innerHTML = renderFamilies('parte');
@@ -1490,37 +1863,127 @@ function renderManage() {
 }
 function setMgmtTab(t) { mgmtTab = t; renderManage(); }
 
+function renderTerms() {
+  const s = db.settings;
+  const sect = (kind, title, def) => {
+    const arr = s[kind + 'Options'] || [];
+    const list = arr.map((o, i) => `<div class="mgmt-item">
+      <span class="mgmt-item-name">${esc(o)}${o === def ? ' <span class="terms-default">predefinito</span>' : ''}</span>
+      <div class="mgmt-item-actions">
+        <button class="mini-btn" onclick="termsSetDefault('${kind}',${i})" title="Imposta/rimuovi predefinito">${o === def ? '★' : '☆'}</button>
+        <button class="mini-btn danger" onclick="termsDel('${kind}',${i})">🗑</button>
+      </div></div>`).join('') || '<div class="empty-text">Nessuna voce.</div>';
+    return `<h3 class="settings-group-title">${title}</h3>
+      <div class="mgmt-list">${list}</div>
+      <div class="mgmt-form"><input id="terms-${kind}-new" placeholder="Nuova voce"><button class="add-btn-sm" onclick="termsAdd('${kind}')">+ Aggiungi</button></div>`;
+  };
+  return `<div class="mgmt-panel">
+    <p class="empty-text" style="text-align:left;padding:4px 0 12px">Gestisci le voci selezionabili per Trasporto e Pagamento nelle richieste di offerta. La voce con ★ precompila automaticamente le nuove richieste.</p>
+    ${sect('transport', '🚚 Tipi di trasporto / resa', s.transportDefault)}
+    ${sect('payment', '💳 Tipi di pagamento', s.paymentDefault)}</div>`;
+}
+function termsAdd(kind) {
+  const v = val('terms-' + kind + '-new'); if (!v) { showToast('Valore richiesto', 'error'); return; }
+  const key = kind + 'Options';
+  db.settings[key] = db.settings[key] || [];
+  if (db.settings[key].includes(v)) { showToast('Voce già presente', 'error'); return; }
+  db.settings[key].push(v);
+  saveDB(); renderManage(); showToast('Aggiunto');
+}
+function termsDel(kind, i) {
+  const key = kind + 'Options', arr = db.settings[key] || [];
+  const v = arr[i]; if (v == null) return;
+  db.settings[key] = arr.filter((_, idx) => idx !== i);
+  if (db.settings[kind + 'Default'] === v) db.settings[kind + 'Default'] = '';
+  saveDB(); renderManage(); showToast('Eliminato');
+}
+function termsSetDefault(kind, i) {
+  const arr = db.settings[kind + 'Options'] || [];
+  const v = arr[i]; if (v == null) return;
+  db.settings[kind + 'Default'] = (db.settings[kind + 'Default'] === v) ? '' : v;
+  saveDB(); renderManage();
+}
+
+function renderCompany() {
+  const co = db.settings.company || {};
+  return `<div class="mgmt-panel">
+    <h3 class="settings-group-title">🏢 Dati azienda (richiedente)</h3>
+    <p class="empty-text" style="text-align:left;padding:4px 0 12px">Questi dati identificano la tua azienda e vengono stampati come intestazione del richiedente sui documenti di richiesta di offerta.</p>
+    <div class="modal-grid">
+      <div class="modal-field"><label>Ragione sociale</label><input id="co-name" value="${esc(co.name || '')}"></div>
+      <div class="modal-field"><label>Referente</label><input id="co-ref" value="${esc(co.referente || '')}"></div>
+      <div class="modal-field"><label>Email</label><input id="co-email" value="${esc(co.email || '')}"></div>
+      <div class="modal-field"><label>Telefono</label><input id="co-phone" value="${esc(co.phone || '')}"></div>
+      <div class="modal-field"><label>P.IVA / C.F.</label><input id="co-vat" value="${esc(co.vat || '')}"></div>
+      ${addressFieldsHtml('co', co)}
+    </div>
+    <button class="add-btn-sm" onclick="saveCompany()">Salva dati azienda</button></div>`;
+}
+function saveCompany() {
+  db.settings.company = Object.assign({
+    name: val('co-name'), referente: val('co-ref'), email: val('co-email'),
+    phone: val('co-phone'), vat: val('co-vat'),
+  }, readAddressFields('co'));
+  saveDB(); renderManage(); showToast('Dati azienda salvati');
+}
+
 function renderSuppliers() {
-  const list = db.suppliers.map(s => `<div class="mgmt-item">
+  const list = db.suppliers.map(s => {
+    const loc = [s.city, s.province ? '(' + s.province + ')' : ''].filter(Boolean).join(' ');
+    return `<div class="mgmt-item">
     <span class="mgmt-item-name">${esc(s.name)}</span>
-    <span class="mgmt-item-meta">${esc(s.referente || '')} ${s.email ? '· ' + esc(s.email) : ''}</span>
+    <span class="mgmt-item-meta">${esc(s.referente || '')} ${s.email ? '· ' + esc(s.email) : ''} ${s.phone ? '· ' + esc(s.phone) : ''} ${loc ? '· ' + esc(loc) : ''}</span>
     <div class="mgmt-item-actions">
       <button class="mini-btn" onclick="editSupplierModal('${s.id}')">✏</button>
-      <button class="mini-btn danger" onclick="delSupplier('${s.id}')">🗑</button></div></div>`).join('') || '<div class="empty-text">Nessun fornitore.</div>';
+      <button class="mini-btn danger" onclick="delSupplier('${s.id}')">🗑</button></div></div>`;
+  }).join('') || '<div class="empty-text">Nessun fornitore.</div>';
   return `<div class="mgmt-panel"><div class="mgmt-list">${list}</div>
     <div class="mgmt-form">
       <input id="sup-name" placeholder="Nome fornitore">
       <input id="sup-ref" placeholder="Referente">
       <input id="sup-email" placeholder="Email">
-      <button class="add-btn-sm" onclick="addSupplier()">+ Aggiungi</button></div></div>`;
+      <input id="sup-phone" placeholder="Telefono">
+      <button class="add-btn-sm" onclick="addSupplier()">+ Aggiungi</button></div>
+    <p class="empty-text" style="text-align:left;padding:6px 0 0">Indirizzo completo e P.IVA si inseriscono con ✏ Modifica.</p></div>`;
 }
 function addSupplier() {
   const n = val('sup-name'); if (!n) { showToast('Nome richiesto', 'error'); return; }
-  db.suppliers.push(stampNew({ id: gid(), name: n, referente: val('sup-ref'), email: val('sup-email'), active: true }));
+  db.suppliers.push(stampNew({ id: gid(), name: n, referente: val('sup-ref'), email: val('sup-email'),
+    phone: val('sup-phone'), vat: '', street: '', streetNumber: '', zip: '', city: '', province: '', country: '', active: true }));
   saveDB(); renderManage(); showToast('Fornitore aggiunto');
+}
+function addressFieldsHtml(pfx, o) {
+  o = o || {};
+  return `<div class="modal-field" style="grid-column:1/-1"><label>Via / indirizzo</label><input id="${pfx}-street" value="${esc(o.street || '')}"></div>
+    <div class="modal-field"><label>Numero civico</label><input id="${pfx}-num" value="${esc(o.streetNumber || '')}"></div>
+    <div class="modal-field"><label>CAP</label><input id="${pfx}-zip" value="${esc(o.zip || '')}"></div>
+    <div class="modal-field"><label>Città</label><input id="${pfx}-city" value="${esc(o.city || '')}"></div>
+    <div class="modal-field"><label>Provincia</label><input id="${pfx}-prov" value="${esc(o.province || '')}" maxlength="4" placeholder="es. MO"></div>
+    <div class="modal-field"><label>Stato</label><input id="${pfx}-country" value="${esc(o.country || '')}" placeholder="es. Italia"></div>`;
+}
+function readAddressFields(pfx) {
+  return { street: val(pfx + '-street'), streetNumber: val(pfx + '-num'), zip: val(pfx + '-zip'),
+    city: val(pfx + '-city'), province: val(pfx + '-prov').toUpperCase(), country: val(pfx + '-country') };
 }
 function editSupplierModal(id) {
   const s = db.suppliers.find(x => x.id === id); if (!s) return;
   openModal(`<h3>✏ Modifica fornitore</h3>
-    <div class="modal-field"><label>Nome</label><input id="es-name" value="${esc(s.name)}"></div>
-    <div class="modal-field"><label>Referente</label><input id="es-ref" value="${esc(s.referente || '')}"></div>
-    <div class="modal-field"><label>Email</label><input id="es-email" value="${esc(s.email || '')}"></div>
+    <div class="modal-grid">
+      <div class="modal-field"><label>Nome</label><input id="es-name" value="${esc(s.name)}"></div>
+      <div class="modal-field"><label>Referente</label><input id="es-ref" value="${esc(s.referente || '')}"></div>
+      <div class="modal-field"><label>Email</label><input id="es-email" value="${esc(s.email || '')}"></div>
+      <div class="modal-field"><label>Telefono</label><input id="es-phone" value="${esc(s.phone || '')}"></div>
+      <div class="modal-field"><label>P.IVA / C.F.</label><input id="es-vat" value="${esc(s.vat || '')}"></div>
+      ${addressFieldsHtml('es', s)}
+    </div>
     <div class="modal-actions"><button class="btn-ghost" onclick="closeModal()">Annulla</button>
-      <button class="add-btn-sm" onclick="saveSupplier('${id}')">Salva</button></div>`);
+      <button class="add-btn-sm" onclick="saveSupplier('${id}')">Salva</button></div>`, true);
 }
 function saveSupplier(id) {
   const s = db.suppliers.find(x => x.id === id); if (!s) return;
   s.name = val('es-name'); s.referente = val('es-ref'); s.email = val('es-email');
+  s.phone = val('es-phone'); s.vat = val('es-vat');
+  Object.assign(s, readAddressFields('es'));
   touch(s);
   saveDB(); closeModal(); renderManage(); showToast('Aggiornato');
 }

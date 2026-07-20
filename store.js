@@ -15,6 +15,7 @@ const defaultDB = {
     { id: 's2', name: 'SKF', referente: '', email: '', active: true },
     { id: 's3', name: 'Würth', referente: '', email: '', active: true },
   ],
+  rfqs: [],
   workCenters: [
     { id: 'w1', name: 'Taglio laser', hourlyRate: 45, active: true },
     { id: 'w2', name: 'Saldatura', hourlyRate: 38, active: true },
@@ -154,6 +155,7 @@ function loadDB() {
 function migrateDB() {
   // Normalizzazioni legacy (idempotenti, sempre eseguite)
   if (!db.suppliers) db.suppliers = [];
+  if (!db.rfqs) db.rfqs = [];
   if (!db.workCenters) db.workCenters = [];
   if (!db.families) db.families = JSON.parse(JSON.stringify(defaultDB.families));
   if (!db.items) db.items = [];
@@ -162,6 +164,45 @@ function migrateDB() {
   if (!db.settings.codePrefixAcquistato) db.settings.codePrefixAcquistato = 'CMM';
   if (!db.settings.codePrefixMateriale) db.settings.codePrefixMateriale = 'MAT';
   if (!db.settings.codePrefixParte) db.settings.codePrefixParte = 'PRT';
+  // Voci precompilabili per trasporto/pagamento nelle richieste di offerta (+ predefinita)
+  if (!db.settings.transportOptions) db.settings.transportOptions = ['Porto franco', 'Porto assegnato', 'EXW', 'FCA', 'DAP', 'CIF'];
+  if (!db.settings.paymentOptions) db.settings.paymentOptions = ['Bonifico anticipato', 'Bonifico 30gg', 'Bonifico 60gg', 'RiBa 30gg', 'RiBa 60gg'];
+  if (db.settings.transportDefault == null) db.settings.transportDefault = '';
+  if (db.settings.paymentDefault == null) db.settings.paymentDefault = '';
+  // Dati dell'azienda utilizzatrice (richiedente), stampati sui documenti RFQ
+  if (!db.settings.company) db.settings.company = { name: '', referente: '', email: '', phone: '', vat: '', street: '', streetNumber: '', zip: '', city: '', province: '', country: '' };
+  // Indirizzo strutturato (via, civico, CAP, città, provincia, stato); migra il vecchio campo unico
+  const ensureAddr = o => {
+    if (!o) return;
+    if (o.street == null) o.street = o.address || '';
+    if (o.streetNumber == null) o.streetNumber = '';
+    if (o.zip == null) o.zip = '';
+    if (o.city == null) o.city = '';
+    if (o.province == null) o.province = '';
+    if (o.country == null) o.country = '';
+    delete o.address;
+  };
+  ensureAddr(db.settings.company);
+  // Fornitori: campi anagrafici estesi usati nei documenti di richiesta offerta
+  (db.suppliers || []).forEach(s => {
+    if (s.phone == null) s.phone = '';
+    if (s.vat == null) s.vat = '';
+    ensureAddr(s);
+  });
+  // RFQ: modello a fornitore singolo + campi riga (prezzo unitario e data consegna)
+  (db.rfqs || []).forEach(r => {
+    if (r.supplierId == null) r.supplierId = (r.supplierIds && r.supplierIds[0]) || null;
+    if (r.transport == null) r.transport = '';
+    if (r.payment == null) r.payment = '';
+    (r.lines || []).forEach(l => {
+      if (l.price == null) {
+        const o = r.offers && r.supplierId && r.offers[r.supplierId];
+        l.price = (o && o.lines && o.lines[l.id] != null) ? o.lines[l.id] : '';
+      }
+      if (l.deliveryDate == null) l.deliveryDate = '';
+    });
+    delete r.supplierIds; delete r.offers; delete r.awards;
+  });
   // Famiglie: tipizzazione (materie prime vs commerciali) + sigla per codifica automatica
   (db.families || []).forEach(f => {
     if (!f.kind) f.kind = 'acquistato'; // le famiglie storiche erano tutte commerciali
