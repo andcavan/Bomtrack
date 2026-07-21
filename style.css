@@ -33,6 +33,7 @@ input,select,button,textarea{font-family:var(--font)}
 /* Header */
 #app-header{display:flex;align-items:center;justify-content:space-between;padding:0 24px;height:56px;border-bottom:1px solid var(--border);background:var(--card);position:sticky;top:0;z-index:50;flex-wrap:wrap;gap:8px}
 .logo{font-weight:800;font-size:16px;color:var(--accent);display:flex;align-items:center;gap:6px;letter-spacing:-.02em}
+.app-version{font-family:var(--mono);font-size:10px;font-weight:600;color:var(--text-dim);border:1px solid var(--border);border-radius:4px;padding:1px 5px;align-self:flex-start}
 .nav{display:flex;gap:4px;flex-wrap:wrap}
 .nav-btn{background:transparent;border:none;color:var(--text-dim);padding:8px 14px;border-radius:8px;cursor:pointer;font-size:13px;font-weight:500;display:flex;align-items:center;gap:6px;transition:all .15s}
 .nav-btn:hover{color:var(--text)}
@@ -196,6 +197,23 @@ tr{border-bottom:1px solid rgba(42,46,59,.4)}
 .rfq-sup-chk:hover{border-color:var(--text-dim)}
 .rfq-sup-email{color:var(--text-dim);font-size:11px;font-family:var(--mono)}
 .rfq-manual-tag{font-size:10px;font-weight:600;text-transform:uppercase;color:var(--orange);border:1px solid var(--orange);border-radius:4px;padding:1px 5px;margin-left:4px}
+/* Badge di stato documento (RFQ / ODA) */
+.doc-badge{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;border-radius:5px;padding:3px 8px;white-space:nowrap;border:1px solid currentColor}
+.doc-badge.st-bozza{color:var(--text-dim)}
+.doc-badge.st-inviata,.doc-badge.st-inviato{color:var(--accent)}
+.doc-badge.st-ricevuta,.doc-badge.st-confermato{color:var(--purple)}
+.doc-badge.st-parziale{color:var(--orange)}
+.doc-badge.st-chiusa,.doc-badge.st-evaso{color:var(--green)}
+.doc-badge.st-annullato{color:var(--red)}
+
+/* Banner di blocco modifiche */
+.doc-lock-banner{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;
+  background:rgba(58,123,232,.08);border:1px solid var(--accent);color:var(--text);border-radius:8px;padding:9px 14px;font-size:13px;margin:12px 0}
+input:disabled,select:disabled,textarea:disabled{opacity:.5;cursor:not-allowed}
+button:disabled{opacity:.4;cursor:not-allowed}
+
+.line-note{font-size:11px;color:var(--text-dim);margin-top:3px;white-space:pre-wrap;max-width:340px}
+.line-actions{white-space:nowrap}
 .rfq-table{width:100%;border-collapse:collapse;font-size:13px}
 .rfq-table th{text-align:left;padding:9px 10px;color:var(--text-dim);font-size:11px;text-transform:uppercase;letter-spacing:.05em;border-bottom:1px solid var(--border);white-space:nowrap}
 .rfq-table td{padding:8px 10px;border-bottom:1px solid var(--border);vertical-align:middle}

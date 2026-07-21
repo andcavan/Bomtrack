@@ -121,6 +121,23 @@ const defaultDB = {
   settings: { overheadPct: 12, marginPct: 20, currency: '€', codeDigits: 3, codePrefixAcquistato: 'CMM', codePrefixMateriale: 'MAT', codePrefixParte: 'PRT' },
 };
 
+// Unità di misura predefinite (codice = quello stampato sui documenti)
+const DEFAULT_UOMS = [
+  { code: 'pz', name: 'Pezzi' },
+  { code: 'n', name: 'Numero' },
+  { code: 'set', name: 'Set / kit' },
+  { code: 'conf', name: 'Confezione' },
+  { code: 'kg', name: 'Chilogrammi' },
+  { code: 'g', name: 'Grammi' },
+  { code: 't', name: 'Tonnellate' },
+  { code: 'm', name: 'Metri' },
+  { code: 'mm', name: 'Millimetri' },
+  { code: 'm2', name: 'Metri quadri' },
+  { code: 'm3', name: 'Metri cubi' },
+  { code: 'l', name: 'Litri' },
+  { code: 'h', name: 'Ore' },
+];
+
 let db;
 
 // ── ID e timestamp ──────────────────────────────────────────
@@ -171,6 +188,21 @@ function migrateDB() {
   if (!db.settings.paymentOptions) db.settings.paymentOptions = ['Bonifico anticipato', 'Bonifico 30gg', 'Bonifico 60gg', 'RiBa 30gg', 'RiBa 60gg'];
   if (db.settings.transportDefault == null) db.settings.transportDefault = '';
   if (db.settings.paymentDefault == null) db.settings.paymentDefault = '';
+  // Unità di misura gestite: seed una-tantum con le predefinite + quelle già
+  // presenti nei dati (finora l'U.M. era testo libero, non va persa).
+  if (!Array.isArray(db.settings.uoms)) {
+    db.settings.uoms = DEFAULT_UOMS.map(u => ({ ...u }));
+    const known = new Set(db.settings.uoms.map(u => u.code));
+    const seen = [];
+    (db.items || []).forEach(i => seen.push(i.uom));
+    (db.rfqs || []).forEach(r => (r.lines || []).forEach(l => seen.push(l.uom)));
+    (db.orders || []).forEach(o => (o.lines || []).forEach(l => seen.push(l.uom)));
+    seen.forEach(c => {
+      const code = String(c || '').trim();
+      if (code && !known.has(code)) { known.add(code); db.settings.uoms.push({ code, name: '' }); }
+    });
+  }
+  if (db.settings.uomDefault == null) db.settings.uomDefault = 'pz';
   // Dati dell'azienda utilizzatrice (richiedente), stampati sui documenti RFQ
   if (!db.settings.company) db.settings.company = { name: '', referente: '', email: '', phone: '', vat: '', street: '', streetNumber: '', zip: '', city: '', province: '', country: '' };
   // Indirizzo strutturato (via, civico, CAP, città, provincia, stato); migra il vecchio campo unico
@@ -204,6 +236,7 @@ function migrateDB() {
         l.price = (o && o.lines && o.lines[l.id] != null) ? o.lines[l.id] : '';
       }
       if (l.deliveryDate == null) l.deliveryDate = '';
+      if (l.note == null) l.note = '';
     });
     delete r.supplierIds; delete r.offers; delete r.awards;
   });
@@ -218,6 +251,7 @@ function migrateDB() {
       if (l.price == null) l.price = '';
       if (l.deliveryDate == null) l.deliveryDate = '';
       if (l.received == null) l.received = 0;
+      if (l.note == null) l.note = '';
     });
   });
   // Famiglie: tipizzazione (materie prime vs commerciali) + sigla per codifica automatica
