@@ -5,8 +5,9 @@
 // Revisione in esecuzione, mostrata accanto al logo. Va tenuta allineata alla
 // voce in cima al changelog del README (l'app si copia a mano tra PC: sapere
 // quale revisione sta girando su una postazione è l'unico modo per capirlo).
-const APP_VERSION = '0.7.0';
+const APP_VERSION = '0.8.1';
 
+let currentUser = null;      // utente della sessione (null = schermata di accesso)
 let currentBomId = null;     // articolo prodotto attualmente aperto nelle Distinte
 let reportBomId = null;      // articolo selezionato nel report
 let mgmtTab = 'suppliers';
@@ -46,6 +47,39 @@ const ALLOWED_CHILDREN = {
   sottogruppo: ['sottogruppo', 'parte', 'materiale', 'acquistato'],
   parte: [], materiale: [], acquistato: [],
 };
+// ─── Ruoli e permessi ───
+// I ruoli limitano la SCRITTURA, non la lettura: tutti vedono tutto. Le aree
+// sono quattro: catalog (articoli), bom (distinte), docs (RFQ/ODA), manage.
+// Il controllo vero arriverà con Supabase (RLS): qui è una divisione di
+// responsabilità tra colleghi, non una barriera di sicurezza.
+const ROLES = {
+  admin: 'Amministratore',
+  acquisti: 'Ufficio acquisti',
+  progettazione: 'Progettazione',
+  lettore: 'Lettore',
+};
+const ROLE_WRITE = {
+  admin: ['catalog', 'bom', 'docs', 'manage'],
+  acquisti: ['docs'],
+  progettazione: ['catalog', 'bom'],
+  lettore: [],
+};
+const AREA_LABELS = { catalog: 'anagrafiche articoli', bom: 'distinte base', docs: 'richieste e ordini', manage: 'gestione' };
+function roleLabel(r) { return ROLES[r] || r || '—'; }
+function canWrite(area) {
+  if (!currentUser) return false;
+  return (ROLE_WRITE[currentUser.role] || []).includes(area);
+}
+function isAdmin() { return !!currentUser && currentUser.role === 'admin'; }
+// Guardia dei mutatori, sul modello di rfqGuard: blocca e spiega.
+function roleGuard(area) {
+  if (canWrite(area)) return true;
+  showToast(`Il ruolo "${roleLabel(currentUser && currentUser.role)}" non può modificare ${AREA_LABELS[area] || area}`, 'error');
+  return false;
+}
+// Area di scrittura corrispondente a ciascuna vista (per il banner di sola lettura)
+const VIEW_AREA = { bom: 'bom', buy: 'catalog', design: 'catalog', report: null, rfq: 'docs', orders: 'docs', manage: 'manage' };
+
 // Le due viste di anagrafica: ciò che si compra e ciò che si progetta.
 // Ogni vista ha i suoi filtri (prefisso degli id nella pagina) e la creazione
 // di articoli è ristretta ai tipi di sua competenza.
@@ -267,6 +301,172 @@ function setVal(id, v) { const e = document.getElementById(id); if (e) e.value =
 function numVal(id) { const e = document.getElementById(id); return e ? (parseFloat(e.value) || 0) : 0; }
 
 // ═══════════════════════════════════════════════════════════
+//  ACCESSO, SESSIONE E UTENTI
+// ═══════════════════════════════════════════════════════════
+// Struttura e nomi ricalcano timetrack-supabase (submitLogin/initSession/
+// doLogin/logout): quando i dati passeranno a Supabase basterà sostituire il
+// corpo di verifyCredentials() con supa.auth.signInWithPassword() e il caricamento
+// utenti con la tabella `profiles`. Tutto il resto — ruoli, guardie, UI — resta.
+const SESSION_KEY = 'bomtrack_session';
+const SAVED_EMAIL_KEY = 'bomtrack_saved_email';
+
+function userList() { return db.users || []; }
+function getUser(id) { return userList().find(u => u.id === id); }
+function findUserByEmail(email) {
+  const e = String(email || '').trim().toLowerCase();
+  return userList().find(u => (u.email || '').toLowerCase() === e);
+}
+function activeAdmins(exceptId) { return userList().filter(u => u.role === 'admin' && u.active !== false && u.id !== exceptId); }
+function setUserPassword(u, password) {
+  u.passwordSalt = newSalt();
+  u.passwordHash = hashPassword(password, u.passwordSalt);
+}
+function verifyPassword(u, password) {
+  return !!u && !!u.passwordHash && hashPassword(password, u.passwordSalt) === u.passwordHash;
+}
+
+function _loginError(msg) {
+  const el = document.getElementById('login-error');
+  if (el) { el.textContent = msg; el.style.display = 'block'; }
+}
+// Primo avvio: senza utenti si crea il primo amministratore, invece di
+// spedire l'app con credenziali predefinite scritte nel codice.
+function needsSetup() { return userList().length === 0; }
+function renderLogin() {
+  const setup = needsSetup();
+  document.getElementById('login-setup-fields').style.display = setup ? '' : 'none';
+  document.getElementById('login-remember-row').style.display = setup ? 'none' : '';
+  document.getElementById('login-sub').textContent = setup
+    ? 'Primo avvio — crea l\'amministratore' : 'Distinte base & Costificazione';
+  document.getElementById('login-submit').textContent = setup ? 'Crea amministratore' : 'Accedi';
+  const err = document.getElementById('login-error'); if (err) err.style.display = 'none';
+  const saved = !setup && localStorage.getItem(SAVED_EMAIL_KEY);
+  if (saved) {
+    setVal('login-email', saved);
+    const cb = document.getElementById('login-remember'); if (cb) cb.checked = true;
+    setTimeout(() => document.getElementById('login-password') && document.getElementById('login-password').focus(), 50);
+  } else {
+    setTimeout(() => {
+      const first = document.getElementById(setup ? 'login-name' : 'login-email');
+      if (first) first.focus();
+    }, 50);
+  }
+}
+function submitLogin() {
+  if (needsSetup()) return createFirstAdmin();
+  const email = val('login-email');
+  const password = document.getElementById('login-password').value;
+  if (!email) return _loginError('Inserisci la tua email');
+  if (!password) return _loginError('Inserisci la password');
+  const u = findUserByEmail(email);
+  // Un solo messaggio per utente inesistente e password errata: non si rivela
+  // quali email esistono.
+  if (!u || !verifyPassword(u, password)) {
+    _loginError('Email o password errati');
+    setVal('login-password', '');
+    return;
+  }
+  if (u.active === false) return _loginError('Account sospeso. Contatta un amministratore.');
+  if (document.getElementById('login-remember').checked) localStorage.setItem(SAVED_EMAIL_KEY, u.email || '');
+  else localStorage.removeItem(SAVED_EMAIL_KEY);
+  setVal('login-password', '');
+  doLogin(u, true);
+}
+function createFirstAdmin() {
+  const name = val('login-name'), email = val('login-email');
+  const password = document.getElementById('login-password').value;
+  if (!name) return _loginError('Inserisci il tuo nome');
+  if (!email) return _loginError('Inserisci la tua email');
+  if (password.length < 4) return _loginError('La password deve avere almeno 4 caratteri');
+  const u = { id: gid(), name, username: '', email, role: 'admin', color: '#3A7BE8', active: true };
+  setUserPassword(u, password);
+  db.users.push(stampNew(u));
+  saveDB();
+  setVal('login-password', '');
+  doLogin(u, true);
+  showToast('Amministratore creato: benvenuto in Bomtrack');
+}
+function doLogin(user, persist) {
+  currentUser = user;
+  Store.setActor(user.id);
+  if (persist) {
+    try { localStorage.setItem(SESSION_KEY, JSON.stringify({ userId: user.id, ts: nowISO() })); } catch (e) { /* sessione non persistita */ }
+  }
+  document.getElementById('login-screen').style.display = 'none';
+  document.getElementById('app-header').style.display = 'flex';
+  document.getElementById('app-main').style.display = 'block';
+  renderUserPill();
+  startClock();
+  setView('bom');
+}
+// Sessione salvata: si riapre l'app senza credenziali, purché l'utente esista
+// ancora e non sia stato sospeso nel frattempo.
+function restoreSession() {
+  let s = null;
+  try { s = JSON.parse(localStorage.getItem(SESSION_KEY) || 'null'); } catch (e) { s = null; }
+  const u = s && s.userId ? getUser(s.userId) : null;
+  if (!u || u.active === false) { localStorage.removeItem(SESSION_KEY); return false; }
+  doLogin(u, false);
+  return true;
+}
+function logout() {
+  localStorage.removeItem(SESSION_KEY);
+  currentUser = null;
+  Store.setActor(null);
+  stopClock();
+  document.getElementById('app-header').style.display = 'none';
+  document.getElementById('app-main').style.display = 'none';
+  document.getElementById('login-screen').style.display = 'flex';
+  setVal('login-password', '');
+  renderLogin();
+}
+function renderUserPill() {
+  const pill = document.getElementById('user-pill');
+  if (!pill || !currentUser) return;
+  pill.style.borderColor = safeColor(currentUser.color);
+  pill.title = `${currentUser.name} · ${roleLabel(currentUser.role)}`;
+  pill.innerHTML = `<span class="user-dot" style="background:${safeColor(currentUser.color)}"></span>${esc(currentUser.name.split(' ')[0])}
+    <span class="user-role">${esc(roleLabel(currentUser.role))}</span>`;
+}
+// Orologio dell'header: data per esteso e ora, allineato al minuto
+let clockTimer = null;
+function renderClock() {
+  const el = document.getElementById('header-clock');
+  if (!el) return;
+  const now = new Date();
+  let d = now.toLocaleDateString('it-IT', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+  d = d.charAt(0).toUpperCase() + d.slice(1);   // "mercoledì 22 luglio 2026" → maiuscola iniziale
+  const t = now.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
+  el.innerHTML = `<span class="clock-date">${esc(d)}</span><span class="clock-time">${t}</span>`;
+}
+function startClock() {
+  renderClock();
+  if (!clockTimer) clockTimer = setInterval(renderClock, 1000);
+}
+function stopClock() { if (clockTimer) { clearInterval(clockTimer); clockTimer = null; } }
+function safeColor(c) { return /^#[0-9A-Fa-f]{6}$/.test(String(c || '')) ? c : '#3A7BE8'; }
+
+// Cambio password del proprio account
+function changePassword() {
+  if (!currentUser) return;
+  openModal(`<h3>🔑 Cambia password</h3>
+    <div class="modal-field"><label>Password attuale</label><input type="password" id="cp-old"></div>
+    <div class="modal-field"><label>Nuova password</label><input type="password" id="cp-new"></div>
+    <div class="modal-field"><label>Ripeti nuova password</label><input type="password" id="cp-new2"></div>
+    <div class="modal-actions"><button class="btn-ghost" onclick="closeModal()">Annulla</button>
+      <button class="add-btn-sm" onclick="saveOwnPassword()">Salva</button></div>`);
+}
+function saveOwnPassword() {
+  const u = getUser(currentUser.id); if (!u) return;
+  if (!verifyPassword(u, document.getElementById('cp-old').value)) { showToast('Password attuale errata', 'error'); return; }
+  const n1 = document.getElementById('cp-new').value, n2 = document.getElementById('cp-new2').value;
+  if (n1.length < 4) { showToast('La nuova password deve avere almeno 4 caratteri', 'error'); return; }
+  if (n1 !== n2) { showToast('Le due password non coincidono', 'error'); return; }
+  setUserPassword(u, n1);
+  touch(u); saveDB(); closeModal(); showToast('Password aggiornata');
+}
+
+// ═══════════════════════════════════════════════════════════
 //  MOTORE DI COSTIFICAZIONE (rollup ricorsivo)
 // ═══════════════════════════════════════════════════════════
 // Ritorna i costi unitari (per 1 unità) suddivisi in categorie.
@@ -382,23 +582,33 @@ function sellingPrice(itemId) {
 // ═══════════════════════════════════════════════════════════
 //  NAVIGAZIONE
 // ═══════════════════════════════════════════════════════════
+// Icona ed etichetta separate: su schermi stretti l'etichetta sparisce e la
+// barra resta su una riga sola (vedi .nav-label in style.css).
 const NAV = [
-  { id: 'bom', label: '🌳 Distinte base' },
-  { id: 'buy', label: '📦 Acquisti' },
-  { id: 'design', label: '🏗 Progetto' },
-  { id: 'report', label: '💶 Costificazione' },
-  { id: 'rfq', label: '📨 Richieste offerta' },
-  { id: 'orders', label: '🧾 Ordini' },
-  { id: 'manage', label: '⚙ Gestione' },
+  { id: 'bom', icon: '🌳', label: 'Distinte base' },
+  { id: 'buy', icon: '📦', label: 'Acquisti' },
+  { id: 'design', icon: '🏗', label: 'Progetto' },
+  { id: 'report', icon: '💶', label: 'Costificazione' },
+  { id: 'rfq', icon: '📨', label: 'Richieste offerta' },
+  { id: 'orders', icon: '🧾', label: 'Ordini' },
+  { id: 'manage', icon: '⚙', label: 'Gestione' },
 ];
+function navItems() { return NAV.filter(n => n.id !== 'manage' || isAdmin()); }
 function renderNav() {
-  document.getElementById('main-nav').innerHTML = NAV.map(n =>
-    `<button class="nav-btn ${activeView === n.id ? 'active' : ''}" onclick="setView('${n.id}')">${n.label}</button>`).join('');
+  document.getElementById('main-nav').innerHTML = navItems().map(n =>
+    `<button class="nav-btn ${activeView === n.id ? 'active' : ''}" onclick="setView('${n.id}')" title="${esc(n.label)}">
+       <span class="nav-ico">${n.icon}</span><span class="nav-label">${esc(n.label)}</span></button>`).join('');
 }
 function setView(v) {
+  // La Gestione è riservata agli amministratori: chi non lo è torna alle distinte
+  if (v === 'manage' && !isAdmin()) { showToast('Sezione riservata agli amministratori', 'error'); v = 'bom'; }
   activeView = v;
   document.querySelectorAll('.view-panel').forEach(p => p.classList.remove('active'));
-  document.getElementById('view-' + v).classList.add('active');
+  const panel = document.getElementById('view-' + v);
+  panel.classList.add('active');
+  // Sola lettura per il ruolo: la UI nasconde le azioni, le guardie bloccano comunque
+  const area = VIEW_AREA[v];
+  panel.classList.toggle('view-readonly', !!area && !canWrite(area));
   renderNav();
   if (v === 'bom') renderBom();
   else if (v === 'buy' || v === 'design') renderCatalog(v);
@@ -406,6 +616,17 @@ function setView(v) {
   else if (v === 'rfq') renderRfq();
   else if (v === 'orders') renderOrders();
   else if (v === 'manage') renderManage();
+  showReadOnlyBanner(panel, area);
+}
+// Il banner va messo dopo il render: le viste documenti si riscrivono per intero
+function showReadOnlyBanner(panel, area) {
+  const old = panel.querySelector(':scope > .ro-banner');
+  if (old) old.remove();
+  if (!area || canWrite(area)) return;
+  const b = document.createElement('div');
+  b.className = 'ro-banner';
+  b.textContent = `👁 Sola lettura — il ruolo "${roleLabel(currentUser && currentUser.role)}" non modifica ${AREA_LABELS[area]}.`;
+  panel.insertBefore(b, panel.firstChild);
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -676,6 +897,7 @@ function allowedHint(parentType) {
   return allowed.length ? `Tipi ammessi in un ${typeLabel(parentType).toLowerCase()}: ${allowed.join(', ')}.` : '';
 }
 function addComponentModal() {
+  if (!roleGuard('bom')) return;
   const it = getItem(currentBomId); if (!it) return;
   window.__pickerCandidates = pickerCandidates(it.type, it.id);
   if (!window.__pickerCandidates.length) { showToast('Nessun articolo dei tipi ammessi. Crealo prima in Acquisti o Progetto.', 'error'); return; }
@@ -695,6 +917,7 @@ function isAllowedChild(parentType, childId) {
   return !!child && (ALLOWED_CHILDREN[parentType] || []).includes(child.type);
 }
 function saveNewComponent() {
+  if (!roleGuard('bom')) return;
   const it = getItem(currentBomId); if (!it) return;
   const itemId = val('cmp-item');
   if (!itemId) { showToast('Seleziona un articolo', 'error'); return; }
@@ -705,6 +928,7 @@ function saveNewComponent() {
   saveDB(); closeModal(); renderBom(); showToast('Componente aggiunto');
 }
 function editComponentModal(idx) {
+  if (!roleGuard('bom')) return;
   const it = getItem(currentBomId); if (!it) return;
   const comp = it.components[idx]; if (!comp) return;
   window.__pickerCandidates = pickerCandidates(it.type, it.id);
@@ -720,6 +944,7 @@ function editComponentModal(idx) {
   renderPickerResults();
 }
 function saveComponentEdit(idx) {
+  if (!roleGuard('bom')) return;
   const it = getItem(currentBomId); if (!it) return;
   const comp = it.components[idx]; if (!comp) return;
   const itemId = val('cmp-item');
@@ -730,6 +955,7 @@ function saveComponentEdit(idx) {
   saveDB(); closeModal(); renderBom(); showToast('Componente aggiornato');
 }
 function delComponent(idx) {
+  if (!roleGuard('bom')) return;
   const it = getItem(currentBomId); if (!it) return;
   if (!confirm('Eliminare questo componente dalla distinta?')) return;
   it.components.splice(idx, 1); touch(it); saveDB(); renderBom(); showToast('Componente eliminato');
@@ -766,6 +992,7 @@ function wcOptions(selectedId) {
     .map(w => `<option value="${w.id}" ${w.id === selectedId ? 'selected' : ''}>${esc(w.name)} (${fmtN(w.hourlyRate)}/h)</option>`).join('');
 }
 function addOperationModal() {
+  if (!roleGuard('bom')) return;
   const it = getItem(currentBomId); if (!it) return;
   if (!db.workCenters.length) { showToast('Aggiungi prima un centro di lavoro in Gestione', 'error'); return; }
   openModal(`<h3>🔧 Aggiungi lavorazione</h3>
@@ -778,12 +1005,14 @@ function addOperationModal() {
       <button class="add-btn-sm" onclick="saveNewOperation()">Aggiungi</button></div>`);
 }
 function saveNewOperation() {
+  if (!roleGuard('bom')) return;
   const it = getItem(currentBomId); if (!it) return;
   it.operations.push({ workCenterId: val('op-wc'), hours: numVal('op-hours'), note: val('op-note') });
   touch(it);
   saveDB(); closeModal(); renderBom(); showToast('Lavorazione aggiunta');
 }
 function editOperationModal(idx) {
+  if (!roleGuard('bom')) return;
   const it = getItem(currentBomId); if (!it) return;
   const op = it.operations[idx]; if (!op) return;
   openModal(`<h3>🔧 Modifica lavorazione</h3>
@@ -796,6 +1025,7 @@ function editOperationModal(idx) {
       <button class="add-btn-sm" onclick="saveOperationEdit(${idx})">Salva</button></div>`);
 }
 function saveOperationEdit(idx) {
+  if (!roleGuard('bom')) return;
   const it = getItem(currentBomId); if (!it) return;
   const op = it.operations[idx]; if (!op) return;
   op.workCenterId = val('op-wc'); op.hours = numVal('op-hours'); op.note = val('op-note');
@@ -803,6 +1033,7 @@ function saveOperationEdit(idx) {
   saveDB(); closeModal(); renderBom(); showToast('Lavorazione aggiornata');
 }
 function delOperation(idx) {
+  if (!roleGuard('bom')) return;
   const it = getItem(currentBomId); if (!it) return;
   if (!confirm('Eliminare questa lavorazione?')) return;
   it.operations.splice(idx, 1); touch(it); saveDB(); renderBom(); showToast('Lavorazione eliminata');
@@ -810,6 +1041,7 @@ function delOperation(idx) {
 
 // ─── Macchina / testata prodotto ───
 function newMachineModal() {
+  if (!roleGuard('bom')) return;
   const sm = machineScheme(null);
   openModal(`<h3>🛠 Nuova macchina</h3>
     <div class="modal-grid">
@@ -847,6 +1079,7 @@ function refreshMachineCode() {
   el.value = genItemCode(machineDraftFromForm());
 }
 function saveNewMachine() {
+  if (!roleGuard('bom')) return;
   const name = val('mac-name');
   if (!name) { showToast('Nome richiesto', 'error'); return; }
   const d = machineDraftFromForm();
@@ -861,6 +1094,7 @@ function saveNewMachine() {
   saveDB(); closeModal(); renderBom(); showToast('Macchina creata');
 }
 function editCurrentItemModal() {
+  if (!roleGuard('bom')) return;
   const it = getItem(currentBomId); if (!it) return;
   openModal(`<h3>✏ Modifica testata — <span style="color:var(--text-dim);font-weight:500">${typeLabel(it.type)}</span></h3>
     <div class="modal-grid">
@@ -877,6 +1111,7 @@ function editCurrentItemModal() {
       <button class="add-btn-sm" onclick="saveCurrentItem()">Salva</button></div>`);
 }
 function saveCurrentItem() {
+  if (!roleGuard('bom')) return;
   const it = getItem(currentBomId); if (!it) return;
   it.code = val('mac-code'); it.uom = val('mac-uom'); it.name = val('mac-name') || it.name;
   it.notes = val('mac-notes');
@@ -886,6 +1121,7 @@ function saveCurrentItem() {
   saveDB(); closeModal(); renderBom(); showToast('Testata aggiornata');
 }
 function deleteCurrentMachine() {
+  if (!roleGuard('bom')) return;
   const it = getItem(currentBomId); if (!it) return;
   const used = usedBy(it.id);
   if (used.length) { showToast('Usato in: ' + used.map(u => u.code).join(', ') + '. Rimuovilo prima.', 'error'); return; }
@@ -937,6 +1173,7 @@ function updateCatFamilyFilters(scope) {
 // Preferiti: solo su ciò che si acquista, per ritrovare in fretta gli articoli ricorrenti
 function canFavorite(type) { return type === 'acquistato' || type === 'materiale'; }
 function toggleFavorite(id) {
+  if (!roleGuard('catalog')) return;
   const it = getItem(id); if (!it) return;
   it.favorite = !it.favorite;
   touch(it); saveDB(); renderCatalogs();
@@ -1335,6 +1572,7 @@ function pickCycleOp() {
 }
 
 function newItemModal(scope) {
+  if (!roleGuard('catalog')) return;
   scope = CATALOG_SCOPES[scope] ? scope : 'buy';
   itemCodeAuto = true;
   window.__dupSourceId = null;
@@ -1393,6 +1631,7 @@ function applyItemSource(id) {
   setVal('src-search', src.code + ' — ' + src.name);
 }
 function duplicateItemModal(id) {
+  if (!roleGuard('catalog')) return;
   const src = getItem(id); if (!src) return;
   newItemModal(scopeOf(src.type));
   applyItemSource(id);
@@ -1443,6 +1682,7 @@ function validateItemCoding(id) {
   return null;
 }
 function saveNewItem() {
+  if (!roleGuard('catalog')) return;
   const name = val('it-name'); if (!name) { showToast('Nome richiesto', 'error'); return; }
   const codErr = validateItemCoding(null);
   if (codErr) { showToast(codErr, 'error'); return; }
@@ -1462,6 +1702,7 @@ function saveNewItem() {
   saveDB(); closeModal(); renderCatalogs(); showToast(src ? 'Copia creata' : 'Articolo creato');
 }
 function editItemModal(id) {
+  if (!roleGuard('catalog')) return;
   const it = getItem(id); if (!it) return;
   itemCodeAuto = false; // in modifica non si rigenera mai il codice esistente
   window.__editingItemId = id;
@@ -1473,6 +1714,7 @@ function editItemModal(id) {
   toggleItemFields();
 }
 function saveItemEdit(id) {
+  if (!roleGuard('catalog')) return;
   const it = getItem(id); if (!it) return;
   const codErr = validateItemCoding(id);
   if (codErr) { showToast(codErr, 'error'); return; }
@@ -1481,6 +1723,7 @@ function saveItemEdit(id) {
   saveDB(); closeModal(); renderCatalogs(); showToast('Articolo aggiornato');
 }
 function delItem(id) {
+  if (!roleGuard('catalog')) return;
   const it = getItem(id); if (!it) return;
   const used = usedBy(id);
   if (used.length) { showToast('Usato in: ' + used.map(u => u.code).join(', ') + '. Rimuovilo prima.', 'error'); return; }
@@ -1687,6 +1930,7 @@ const RFQ_LOCK = { bozza: 'full', inviata: 'offer', ricevuta: 'offer', chiusa: '
 function rfqMode(r) { return (r && rfqUnlockedId === r.id) ? 'full' : ((r && RFQ_LOCK[r.status]) || 'full'); }
 // Guard dei mutatori: il blocco vive qui, non nella UI (che si limita a disabilitare).
 function rfqGuard(id, kind) {
+  if (!roleGuard('docs')) return false;   // choke point: copre tutti i mutatori RFQ
   const r = getRfq(id); if (!r) return false;
   if (modeAllows(rfqMode(r), kind)) return true;
   showToast(`Richiesta ${(RFQ_STATUS[r.status] || r.status).toLowerCase()}: usa 🔓 Sblocca per modificarla`, 'error');
@@ -1823,6 +2067,7 @@ function renderRfqList() {
 }
 
 function newRfq() {
+  if (!roleGuard('docs')) return;
   const r = stampNew({ id: gid(), number: nextRfqNumber(), title: '', date: nowISO().slice(0, 10),
     status: 'bozza', notes: '', notesInternal: '', supplierId: null,
     transport: db.settings.transportDefault || '', payment: db.settings.paymentDefault || '',
@@ -2241,6 +2486,7 @@ function renderRfqCompare() {
 }
 
 function delRfq(id) {
+  if (!roleGuard('docs')) return;
   const r = getRfq(id); if (!r) return;
   const warn = r.status === 'bozza' ? '' : `\nAttenzione: risulta ${(RFQ_STATUS[r.status] || r.status).toLowerCase()}.`;
   if (!confirm(`Eliminare la richiesta ${r.number}?${warn}`)) return;
@@ -2261,6 +2507,7 @@ const ORDER_LOCK = { bozza: 'full', inviato: 'reception', confermato: 'reception
 function getOrder(id) { return db.orders.find(o => o.id === id); }
 function ordMode(o) { return (o && orderUnlockedId === o.id) ? 'full' : ((o && ORDER_LOCK[o.status]) || 'full'); }
 function ordGuard(id, kind) {
+  if (!roleGuard('docs')) return false;   // choke point: copre tutti i mutatori ordine
   const o = getOrder(id); if (!o) return false;
   if (modeAllows(ordMode(o), kind)) return true;
   showToast(`Ordine ${(ORDER_STATUS[o.status] || o.status).toLowerCase()}: usa 🔓 Sblocca per modificarlo`, 'error');
@@ -2331,6 +2578,7 @@ function renderOrderList() {
 }
 
 function newOrder() {
+  if (!roleGuard('docs')) return;
   const o = stampNew({ id: gid(), number: nextOrderNumber(), title: '', date: nowISO().slice(0, 10),
     status: 'bozza', supplierId: null, transport: db.settings.transportDefault || '', payment: db.settings.paymentDefault || '',
     requestedDelivery: '', rfqId: null, supplierConfirmation: '', notes: '', notesInternal: '', lines: [], active: true });
@@ -2338,6 +2586,7 @@ function newOrder() {
   currentOrderId = o.id; orderView = 'edit'; orderDirty = false; renderOrders();
 }
 function orderFromRfq(rfqId) {
+  if (!roleGuard('docs')) return;
   const r = getRfq(rfqId); if (!r) return;
   const sup = r.supplierId ? db.suppliers.find(s => s.id === r.supplierId) : null;
   const o = stampNew({ id: gid(), number: nextOrderNumber(),
@@ -2654,6 +2903,7 @@ function exportOrderExcel(id) {
 }
 
 function delOrder(id) {
+  if (!roleGuard('docs')) return;
   const o = getOrder(id); if (!o) return;
   const rec = orderReception(o);
   const warn = o.status === 'bozza' ? ''
@@ -2668,6 +2918,7 @@ function delOrder(id) {
 //  VISTA: GESTIONE
 // ═══════════════════════════════════════════════════════════
 const MGMT_TABS = [
+  { id: 'users', label: '👥 Utenti' },
   { id: 'company', label: '🏢 Dati azienda' },
   { id: 'suppliers', label: '🏭 Fornitori' },
   { id: 'terms', label: '🚚 Condizioni offerta' },
@@ -2684,7 +2935,8 @@ function renderManage() {
   document.getElementById('mgmt-tabs').innerHTML = MGMT_TABS.map(t =>
     `<button class="mgmt-tab ${mgmtTab === t.id ? 'active' : ''}" onclick="setMgmtTab('${t.id}')">${t.label}</button>`).join('');
   const c = document.getElementById('mgmt-content');
-  if (mgmtTab === 'company') c.innerHTML = renderCompany();
+  if (mgmtTab === 'users') c.innerHTML = renderUsers();
+  else if (mgmtTab === 'company') c.innerHTML = renderCompany();
   else if (mgmtTab === 'terms') c.innerHTML = renderTerms();
   else if (mgmtTab === 'suppliers') c.innerHTML = renderSuppliers();
   else if (mgmtTab === 'fam-acquistato') c.innerHTML = renderFamilies('acquistato');
@@ -2697,6 +2949,126 @@ function renderManage() {
   else if (mgmtTab === 'backup') c.innerHTML = renderBackup();
 }
 function setMgmtTab(t) { mgmtTab = t; renderManage(); }
+
+// ─── Utenti (solo amministratori) ───
+// Le invarianti (ultimo admin, azioni su se stessi) vivono nei mutatori, non
+// nella UI: in cloud diventeranno vincoli e policy lato Supabase.
+function roleOptions(sel) {
+  return Object.entries(ROLES).map(([k, v]) => `<option value="${k}" ${k === sel ? 'selected' : ''}>${v}</option>`).join('');
+}
+function renderUsers() {
+  const list = userList().map(u => {
+    const me = currentUser && u.id === currentUser.id;
+    const susp = u.active === false;
+    return `<div class="mgmt-item" style="border-left:3px solid ${safeColor(u.color)}">
+      <span class="mgmt-item-name">${esc(u.name)}${me ? ' <span class="mgmt-item-meta">(tu)</span>' : ''}</span>
+      <span class="mgmt-item-meta">${esc(u.email || '—')}${u.username ? ' · @' + esc(u.username) : ''}</span>
+      <span class="doc-badge">${esc(roleLabel(u.role))}</span>
+      <span class="doc-badge ${susp ? 'st-sospeso' : 'st-attivo'}">${susp ? 'Sospeso' : 'Attivo'}</span>
+      <div class="mgmt-item-actions">
+        <button class="mini-btn" onclick="editUserModal('${u.id}')" title="Modifica">✏</button>
+        <button class="mini-btn" onclick="resetUserPasswordModal('${u.id}')" title="Imposta password">🔑</button>
+        <button class="mini-btn" onclick="toggleUserActive('${u.id}')" title="${susp ? 'Riattiva' : 'Sospendi'}">${susp ? '✓' : '⏸'}</button>
+        <button class="mini-btn danger" onclick="delUser('${u.id}')" title="Elimina">🗑</button>
+      </div></div>`;
+  }).join('') || '<div class="empty-text">Nessun utente.</div>';
+  return `<div class="mgmt-panel"><div class="mgmt-list">${list}</div>
+    <div class="mgmt-form">
+      <input id="nu-name" placeholder="Nome e cognome">
+      <input id="nu-email" placeholder="Email">
+      <input id="nu-username" placeholder="Username (opzionale)">
+      <select id="nu-role">${roleOptions('progettazione')}</select>
+      <input type="color" id="nu-color" value="#3A7BE8" title="Colore" style="padding:2px;width:44px">
+      <input type="password" id="nu-password" placeholder="Password iniziale">
+      <button class="add-btn-sm" onclick="addUser()">+ Aggiungi</button></div>
+    <p class="empty-text" style="text-align:left;padding:6px 0 0">
+      <strong>Amministratore</strong>: tutto, compresi utenti, impostazioni e backup ·
+      <strong>Ufficio acquisti</strong>: richieste e ordini ·
+      <strong>Progettazione</strong>: articoli e distinte ·
+      <strong>Lettore</strong>: sola lettura.<br>
+      ⚠ Con i dati nel browser questi ruoli separano le responsabilità, non proteggono i dati: la protezione vera arriverà con l'accesso Supabase.</p></div>`;
+}
+function addUser() {
+  if (!roleGuard('manage')) return;
+  const name = val('nu-name'), email = val('nu-email');
+  const pwd = document.getElementById('nu-password').value;
+  if (!name) { showToast('Nome richiesto', 'error'); return; }
+  if (!email) { showToast('Email richiesta', 'error'); return; }
+  if (findUserByEmail(email)) { showToast('Email già usata da un altro utente', 'error'); return; }
+  if (pwd.length < 4) { showToast('La password deve avere almeno 4 caratteri', 'error'); return; }
+  const u = { id: gid(), name, username: val('nu-username'), email, role: val('nu-role') || 'lettore',
+    color: safeColor(val('nu-color')), active: true };
+  setUserPassword(u, pwd);
+  db.users.push(stampNew(u));
+  saveDB(); renderManage(); showToast('Utente creato');
+}
+function editUserModal(id) {
+  if (!roleGuard('manage')) return;
+  const u = getUser(id); if (!u) return;
+  openModal(`<h3>✏ Modifica utente</h3>
+    <div class="modal-field"><label>Nome e cognome</label><input id="eu-name" value="${esc(u.name)}"></div>
+    <div class="modal-grid">
+      <div class="modal-field"><label>Email</label><input id="eu-email" value="${esc(u.email || '')}"></div>
+      <div class="modal-field"><label>Username</label><input id="eu-username" value="${esc(u.username || '')}"></div>
+      <div class="modal-field"><label>Ruolo</label><select id="eu-role">${roleOptions(u.role)}</select></div>
+      <div class="modal-field"><label>Colore</label><input type="color" id="eu-color" value="${safeColor(u.color)}"></div>
+    </div>
+    <div class="modal-actions"><button class="btn-ghost" onclick="closeModal()">Annulla</button>
+      <button class="add-btn-sm" onclick="saveUserEdit('${id}')">Salva</button></div>`);
+}
+function saveUserEdit(id) {
+  if (!roleGuard('manage')) return;
+  const u = getUser(id); if (!u) return;
+  const name = val('eu-name'), email = val('eu-email'), role = val('eu-role');
+  if (!name) { showToast('Nome richiesto', 'error'); return; }
+  if (!email) { showToast('Email richiesta', 'error'); return; }
+  const dup = findUserByEmail(email);
+  if (dup && dup.id !== id) { showToast('Email già usata da un altro utente', 'error'); return; }
+  // Restare senza amministratori attivi chiuderebbe fuori tutti dalla Gestione
+  if (u.role === 'admin' && role !== 'admin' && !activeAdmins(id).length) {
+    showToast('Deve restare almeno un amministratore attivo', 'error'); return;
+  }
+  Object.assign(u, { name, email, username: val('eu-username'), role, color: safeColor(val('eu-color')) });
+  touch(u); saveDB(); closeModal();
+  if (currentUser && currentUser.id === id) { currentUser = u; renderUserPill(); renderNav(); }
+  renderManage(); showToast('Utente aggiornato');
+}
+function resetUserPasswordModal(id) {
+  if (!roleGuard('manage')) return;
+  const u = getUser(id); if (!u) return;
+  openModal(`<h3>🔑 Password di ${esc(u.name)}</h3>
+    <div class="modal-field"><label>Nuova password</label><input type="password" id="ru-pwd"></div>
+    <div class="modal-actions"><button class="btn-ghost" onclick="closeModal()">Annulla</button>
+      <button class="add-btn-sm" onclick="saveUserPassword('${id}')">Imposta</button></div>`);
+}
+function saveUserPassword(id) {
+  if (!roleGuard('manage')) return;
+  const u = getUser(id); if (!u) return;
+  const pwd = document.getElementById('ru-pwd').value;
+  if (pwd.length < 4) { showToast('La password deve avere almeno 4 caratteri', 'error'); return; }
+  setUserPassword(u, pwd);
+  touch(u); saveDB(); closeModal(); showToast('Password impostata');
+}
+function toggleUserActive(id) {
+  if (!roleGuard('manage')) return;
+  const u = getUser(id); if (!u) return;
+  if (currentUser && id === currentUser.id) { showToast('Non puoi sospendere te stesso', 'error'); return; }
+  if (u.active !== false && u.role === 'admin' && !activeAdmins(id).length) {
+    showToast('Deve restare almeno un amministratore attivo', 'error'); return;
+  }
+  u.active = u.active === false;
+  touch(u); saveDB(); renderManage();
+  showToast(u.active ? u.name + ' riattivato' : u.name + ' sospeso');
+}
+function delUser(id) {
+  if (!roleGuard('manage')) return;
+  const u = getUser(id); if (!u) return;
+  if (currentUser && id === currentUser.id) { showToast('Non puoi eliminare te stesso', 'error'); return; }
+  if (u.role === 'admin' && !activeAdmins(id).length) { showToast('Deve restare almeno un amministratore attivo', 'error'); return; }
+  if (!confirm(`Eliminare l'utente "${u.name}"? I record che ha creato restano, con il riferimento all'autore.`)) return;
+  db.users = db.users.filter(x => x.id !== id);
+  saveDB(); renderManage(); showToast('Utente eliminato');
+}
 
 function renderTerms() {
   const s = db.settings;
@@ -3074,6 +3446,7 @@ function renderSettings() {
     <button class="add-btn-sm" onclick="saveSettings()">Salva impostazioni</button></div>`;
 }
 function saveSettings() {
+  if (!roleGuard('manage')) return;
   db.settings.overheadPct = numVal('set-ov');
   db.settings.marginPct = numVal('set-mg');
   db.settings.currency = val('set-cur') || '€';
@@ -3394,6 +3767,8 @@ function renderBackup() {
     </div></div>`;
 }
 function exportBackup() {
+  // Il backup contiene tutto, utenti e hash compresi: solo agli amministratori
+  if (!roleGuard('manage')) return;
   const blob = new Blob([Store.exportSnapshot()], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -3402,6 +3777,7 @@ function exportBackup() {
   showToast('Backup esportato');
 }
 function importBackup(ev) {
+  if (!roleGuard('manage')) return;
   const file = ev.target.files[0]; if (!file) return;
   const reader = new FileReader();
   reader.onload = () => {
@@ -3411,6 +3787,7 @@ function importBackup(ev) {
       if (!confirm('Importare questo file? I dati attuali verranno sovrascritti.')) return;
       Store.importSnapshot(data);
       resetViewState();
+      if (!reconcileSession()) return;   // il backup può contenere altri utenti
       setView('bom'); showToast('Backup importato');
     } catch (e) { showToast('File non valido', 'error'); }
   };
@@ -3418,19 +3795,43 @@ function importBackup(ev) {
   ev.target.value = '';
 }
 function resetDB() {
+  if (!roleGuard('manage')) return;
   if (!confirm('Ripristinare i dati di esempio? Tutti i dati attuali saranno persi.')) return;
   Store.reset();
   resetViewState();
+  if (!reconcileSession()) return;
   setView('bom'); showToast('Dati ripristinati');
+}
+// Dopo un reset o un import il database sotto i piedi è cambiato: l'utente della
+// sessione può non esserci più. Se il nuovo database non ha utenti si ricrea
+// (chi ha appena ripristinato resta dentro); se ne ha altri si esce e si rientra.
+function reconcileSession() {
+  if (!currentUser) return true;
+  const mine = getUser(currentUser.id);
+  if (mine) { currentUser = mine; renderUserPill(); return true; }
+  if (!userList().length) {
+    const u = JSON.parse(JSON.stringify(currentUser));
+    u.role = 'admin'; u.active = true;
+    db.users.push(stampNew(u));
+    saveDB();
+    currentUser = u; renderUserPill(); return true;
+  }
+  showToast('Il database importato ha altri utenti: accedi di nuovo', 'error');
+  logout();
+  return false;
 }
 // Azzeramento totale: doppia conferma, la seconda va digitata (il click distratto non basta).
 function wipeAll() {
+  if (!roleGuard('manage')) return;
   if (!confirm('AZZERA TUTTO: il database verrà svuotato completamente e in modo irreversibile.\n\nHai esportato un backup JSON?')) return;
   if ((prompt('Scrivi AZZERA per confermare l\'azzeramento totale:') || '').trim().toUpperCase() !== 'AZZERA') {
     showToast('Azzeramento annullato', 'error'); return;
   }
-  Store.clearAll();
+  // L'utente che azzera sopravvive come amministratore: la sessione resta valida
+  Store.clearAll(currentUser ? JSON.parse(JSON.stringify(currentUser)) : null);
+  currentUser = currentUser ? getUser(currentUser.id) : null;
   resetViewState();
+  renderUserPill();
   setView('bom'); showToast('Database azzerato');
 }
 // Nessun documento o articolo sopravvive a un reset: azzera anche ciò che le viste tengono aperto
@@ -3450,8 +3851,10 @@ function resetViewState() {
 // ═══════════════════════════════════════════════════════════
 (function init() {
   Store.load();
-  const v = document.getElementById('app-version');
-  if (v) v.textContent = 'v' + APP_VERSION;
-  renderNav();
-  setView('bom');
+  const ver = 'v' + APP_VERSION;
+  ['app-version', 'app-version-login'].forEach(id => {
+    const el = document.getElementById(id); if (el) el.textContent = ver;
+  });
+  // Sessione salvata → si rientra diretti; altrimenti accesso (o setup del primo admin)
+  if (!restoreSession()) renderLogin();
 })();

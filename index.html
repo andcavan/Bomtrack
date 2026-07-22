@@ -16,7 +16,35 @@
 <div id="toast"></div>
 <div id="modal-root"></div>
 
-<header id="app-header">
+<!-- ACCESSO — al primo avvio (nessun utente) diventa la creazione dell'amministratore -->
+<div id="login-screen">
+  <div class="login-card">
+    <div class="login-logo">
+      <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7l9-4 9 4-9 4-9-4z"/><path d="M3 7v10l9 4 9-4V7"/><path d="M12 11v10"/></svg>
+    </div>
+    <h1 class="login-title">Bomtrack<sup class="app-version" id="app-version-login" title="Revisione in esecuzione"></sup></h1>
+    <p class="login-sub" id="login-sub">Distinte base &amp; Costificazione</p>
+    <form id="login-form" onsubmit="return false">
+      <div class="login-field" id="login-setup-fields" style="display:none">
+        <input type="text" id="login-name" placeholder="Nome e cognome" autocomplete="name" onkeydown="if(event.key==='Enter')submitLogin()">
+      </div>
+      <div class="login-field">
+        <input type="email" id="login-email" placeholder="Email" autocomplete="username" onkeydown="if(event.key==='Enter')submitLogin()">
+      </div>
+      <div class="login-field">
+        <input type="password" id="login-password" placeholder="Password" autocomplete="current-password" onkeydown="if(event.key==='Enter')submitLogin()">
+      </div>
+      <div class="login-remember" id="login-remember-row">
+        <label><input type="checkbox" id="login-remember"> Ricordami su questo PC</label>
+      </div>
+      <div id="login-error" class="login-error" style="display:none"></div>
+      <button class="add-btn-sm" id="login-submit" style="width:100%;justify-content:center" onclick="submitLogin()">Accedi</button>
+    </form>
+    <p class="login-note">I dati risiedono in questo browser: l'accesso separa i ruoli tra colleghi, non protegge i dati.</p>
+  </div>
+</div>
+
+<header id="app-header" style="display:none">
   <div style="display:flex;align-items:center;gap:10px">
     <span class="logo">
       <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7l9-4 9 4-9 4-9-4z"/><path d="M3 7v10l9 4 9-4V7"/><path d="M12 11v10"/></svg>
@@ -26,11 +54,16 @@
   </div>
   <nav class="nav" id="main-nav"></nav>
   <div class="header-right">
-    <button class="btn-outline" onclick="exportBackup()" title="Esporta backup JSON">⬇ Backup</button>
+    <span class="header-clock" id="header-clock"></span>
+    <span class="user-pill" id="user-pill"></span>
+    <button class="btn-outline btn-icon btn-emoji" onclick="changePassword()" title="Cambia password" aria-label="Cambia password">🔑</button>
+    <button class="btn-outline btn-icon" onclick="logout()" title="Esci" aria-label="Esci">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+    </button>
   </div>
 </header>
 
-<div id="app-main">
+<div id="app-main" style="display:none">
 
   <!-- DISTINTE BASE -->
   <div id="view-bom" class="view-panel active">

@@ -140,6 +140,62 @@ const DEFAULT_UOMS = [
 
 let db;
 
+// ── Utenti: password e hashing ──────────────────────────────
+// SHA-256 in JS puro invece di crypto.subtle: quello è asincrono e vive solo in
+// secure context, mentre l'app si apre anche con doppio click su file:// (stesso
+// motivo del fallback di newId()).
+// ATTENZIONE: con i dati in localStorage questo non è sicurezza — chi apre i
+// DevTools legge tutto. È un separatore di ruoli tra colleghi, in attesa che
+// l'autenticazione vera passi a Supabase Auth (vedi docs/cloud-schema.md).
+function sha256Hex(str) {
+  const K = [
+    0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
+    0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
+    0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
+    0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
+    0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
+    0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
+    0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
+    0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2];
+  const H = [0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19];
+  // UTF-8 → byte
+  const bytes = [];
+  for (const ch of unescape(encodeURIComponent(String(str)))) bytes.push(ch.charCodeAt(0));
+  const bitLen = bytes.length * 8;
+  bytes.push(0x80);
+  while (bytes.length % 64 !== 56) bytes.push(0);
+  for (let i = 7; i >= 0; i--) bytes.push((bitLen / 2 ** (8 * i)) & 0xff);
+
+  const rotr = (x, n) => (x >>> n) | (x << (32 - n));
+  const w = new Uint32Array(64);
+  for (let pos = 0; pos < bytes.length; pos += 64) {
+    for (let i = 0; i < 16; i++) {
+      w[i] = (bytes[pos + 4 * i] << 24) | (bytes[pos + 4 * i + 1] << 16) | (bytes[pos + 4 * i + 2] << 8) | bytes[pos + 4 * i + 3];
+    }
+    for (let i = 16; i < 64; i++) {
+      const s0 = rotr(w[i - 15], 7) ^ rotr(w[i - 15], 18) ^ (w[i - 15] >>> 3);
+      const s1 = rotr(w[i - 2], 17) ^ rotr(w[i - 2], 19) ^ (w[i - 2] >>> 10);
+      w[i] = (w[i - 16] + s0 + w[i - 7] + s1) >>> 0;
+    }
+    let [a, b, c, d, e, f, g, h] = H;
+    for (let i = 0; i < 64; i++) {
+      const S1 = rotr(e, 6) ^ rotr(e, 11) ^ rotr(e, 25);
+      const t1 = (h + S1 + ((e & f) ^ (~e & g)) + K[i] + w[i]) >>> 0;
+      const S0 = rotr(a, 2) ^ rotr(a, 13) ^ rotr(a, 22);
+      const t2 = (S0 + ((a & b) ^ (a & c) ^ (b & c))) >>> 0;
+      h = g; g = f; f = e; e = (d + t1) >>> 0;
+      d = c; c = b; b = a; a = (t1 + t2) >>> 0;
+    }
+    [a, b, c, d, e, f, g, h].forEach((v, i) => { H[i] = (H[i] + v) >>> 0; });
+  }
+  return H.map(x => x.toString(16).padStart(8, '0')).join('');
+}
+function newSalt() { return newId().replace(/-/g, ''); }
+function hashPassword(password, salt) { return sha256Hex(salt + ':' + password); }
+
+// Ruoli: chi può scrivere cosa è deciso in app.js, qui resta solo l'elenco valido
+const USER_ROLES = ['admin', 'acquisti', 'progettazione', 'lettore'];
+
 // ── ID e timestamp ──────────────────────────────────────────
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 function newId() {
@@ -152,8 +208,22 @@ function newId() {
 }
 function gid() { return newId(); }
 function nowISO() { return new Date().toISOString(); }
-function stampNew(rec) { const t = nowISO(); if (!rec.createdAt) rec.createdAt = t; rec.updatedAt = t; return rec; }
-function touch(rec) { if (rec) rec.updatedAt = nowISO(); return rec; }
+// Autore delle modifiche: impostato al login (Store.setActor), finisce in
+// createdBy/updatedBy di ogni record → created_by/updated_by in cloud.
+let actorId = null;
+function stampNew(rec) {
+  const t = nowISO();
+  if (!rec.createdAt) rec.createdAt = t;
+  rec.updatedAt = t;
+  if (actorId) { if (!rec.createdBy) rec.createdBy = actorId; rec.updatedBy = actorId; }
+  return rec;
+}
+function touch(rec) {
+  if (!rec) return rec;
+  rec.updatedAt = nowISO();
+  if (actorId) rec.updatedBy = actorId;
+  return rec;
+}
 
 function siglaFromName(name) {
   return String(name || '').replace(/[^a-zA-Z]/g, '').toUpperCase().slice(0, 3) || 'XXX';
@@ -177,6 +247,17 @@ function migrateDB() {
   if (!db.orders) db.orders = [];
   if (!db.workCenters) db.workCenters = [];
   if (!db.families) db.families = JSON.parse(JSON.stringify(defaultDB.families));
+  // Utenti: 1:1 con la futura tabella `profiles`. Nessun seed e nessuna
+  // credenziale predefinita: senza utenti l'app apre il setup del primo admin.
+  if (!db.users) db.users = [];
+  db.users.forEach(u => {
+    if (u.username == null) u.username = '';
+    if (u.email == null) u.email = '';
+    if (!USER_ROLES.includes(u.role)) u.role = 'lettore';
+    if (!u.color) u.color = '#3A7BE8';
+    if (u.active == null) u.active = true;
+    if (u.passwordHash == null) { u.passwordHash = ''; u.passwordSalt = ''; }
+  });
   if (!db.items) db.items = [];
   if (!db.settings) db.settings = { overheadPct: 0, marginPct: 0, currency: '€' };
   if (db.settings.codeDigits == null) db.settings.codeDigits = 3;
@@ -365,8 +446,16 @@ const Store = {
   // impostazione. migrateDB() ricostruisce lo scheletro e semina famiglie e
   // U.M. predefinite: qui si torna a svuotarle e si alzano i flag di seed,
   // altrimenti il seed una-tantum ripopolerebbe subito il db appena azzerato.
-  clearAll() {
-    db = { suppliers: [], rfqs: [], orders: [], workCenters: [], families: [], items: [], settings: {}, schemaVersion: SCHEMA_VERSION };
+  // L'autore delle modifiche (createdBy/updatedBy). null = nessuna sessione.
+  setActor(id) { actorId = id || null; },
+  getActor() { return actorId; },
+  // keepUser: l'utente che sta azzerando, ricreato come admin — chi svuota il
+  // database non deve restare chiuso fuori dalla propria app.
+  clearAll(keepUser) {
+    db = { suppliers: [], rfqs: [], orders: [], workCenters: [], families: [], items: [], users: [], settings: {}, schemaVersion: SCHEMA_VERSION };
+    if (keepUser) {
+      db.users.push(stampNew(Object.assign({}, keepUser, { role: 'admin', active: true })));
+    }
     migrateDB();
     db.families = [];
     db.settings.uoms = [];

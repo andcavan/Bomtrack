@@ -6,7 +6,7 @@ Costruita con lo stesso stile di TimeTrack: vanilla JavaScript + HTML + CSS, nes
 
 ## Avvio
 
-Aprire `index.html` in un browser (doppio click, oppure usare l'estensione "Live Server" di VS Code). Al primo avvio vengono caricati dei dati di esempio (macchina "Nastro Trasportatore NT-100").
+Aprire `index.html` in un browser (doppio click, oppure usare l'estensione "Live Server" di VS Code). Al primo avvio l'app chiede di creare l'**amministratore** (nome, email, password) e carica dei dati di esempio (macchina "Nastro Trasportatore NT-100"). Agli avvii successivi si entra con email e password; "Ricordami" conserva l'email e la sessione resta aperta fino a **Esci**.
 
 La revisione in esecuzione è mostrata accanto al logo, in alto a sinistra (es. `v0.6.0`), e corrisponde alla voce in cima al [changelog](#changelog).
 
@@ -21,6 +21,25 @@ La revisione in esecuzione è mostrata accanto al logo, in alto a sinistra (es. 
 - Gli elenchi di richieste e ordini si filtrano per **stato**, **fornitore** e **testo** (numero, oggetto, fornitore, note e righe del documento).
 - **🔒 Note interne** su richieste e ordini: restano nell'app, non compaiono mai su PDF ed Excel. Passano dalla richiesta all'ordine generato e sono modificabili in qualunque stato del documento.
 - **⚙ Gestione** — dati azienda, fornitori, condizioni di offerta (trasporto/pagamento), famiglie articolo, centri di lavoro (tariffe €/h), **unità di misura**, impostazioni globali (spese generali %, margine %, valuta, calcolo costo parte), **import massivo da Excel** e backup JSON (esporta/importa/ripristina/**azzera tutto**).
+
+### Utenti e ruoli
+
+Ogni persona ha un utente (*Gestione → 👥 Utenti*, riservata agli amministratori) con nome, email, ruolo, colore e stato attivo/sospeso. I ruoli limitano la **scrittura**: tutti vedono tutto.
+
+| Ruolo | Articoli | Distinte | Richieste e ordini | Gestione |
+|---|:--:|:--:|:--:|:--:|
+| Amministratore | ✔ | ✔ | ✔ | ✔ |
+| Ufficio acquisti | — | — | ✔ | — |
+| Progettazione | ✔ | ✔ | — | — |
+| Lettore | — | — | — | — |
+
+Nelle sezioni non scrivibili compare un banner di sola lettura e i pulsanti di creazione ed eliminazione spariscono; ogni tentativo di modifica viene comunque fermato con un messaggio. La voce *Gestione* — e con essa il backup — è visibile ai soli amministratori. Deve restare **almeno un amministratore attivo**: l'app impedisce di declassare, sospendere o eliminare l'ultimo, e di agire su se stessi.
+
+> ⚠️ **Questa non è sicurezza.** Finché i dati stanno nel browser (`localStorage`), chiunque apra gli strumenti di sviluppo può leggere il database, cambiarsi ruolo o saltare l'accesso: le password sono conservate come hash SHA-256 con salt, ma il controllo resta tutto lato client. Serve a separare le responsabilità tra colleghi che si fidano e a preparare il terreno. La protezione vera arriverà con **Supabase Auth + RLS**, dove i permessi vivranno sul server (vedi [docs/cloud-schema.md](docs/cloud-schema.md)).
+>
+> Di conseguenza: il **backup JSON contiene gli utenti** con i loro hash — trattalo come un file riservato.
+
+Ogni record salva `createdBy`/`updatedBy` con l'utente che l'ha creato e modificato per ultimo: i campi non sono ancora mostrati nell'interfaccia, esistono per arrivare pronti al cloud.
 
 ### Unità di misura
 
@@ -104,7 +123,7 @@ Il modo proposto alle nuove parti si imposta in *Gestione → Impostazioni*. Le 
 ## File
 
 - `index.html` — struttura, navigazione, barre filtri delle due anagrafiche, CDN (jsPDF, SheetJS).
-- `store.js` — layer dati: schema, migrazioni versionate, `Store` (API repository) su localStorage.
+- `store.js` — layer dati: schema, migrazioni versionate, `Store` (API repository) su localStorage, hashing delle password e autore delle modifiche.
 - `app.js` — motore di costificazione, viste, CRUD, export. La costante `APP_VERSION` in cima è la revisione mostrata nell'header.
 - `style.css` — tema dark.
 - `docs/cloud-schema.md` — contratto per il futuro backend condiviso (mappatura tabelle, adapter).
@@ -112,6 +131,22 @@ Il modo proposto alle nuove parti si imposta in *Gestione → Impostazioni*. Le 
 ## Changelog
 
 Le revisioni seguono il versionamento semantico `0.MINOR.PATCH`: **MINOR** per nuove funzionalità, **PATCH** per correzioni. La versione in cima è quella in `APP_VERSION` (`app.js`) e mostrata nell'header dell'app.
+
+### 0.8.1 — 2026-07-22
+
+- **Barra superiore alleggerita**: via il pulsante Backup (resta in *Gestione → 💾 Backup*), cambio password 🔑 e uscita ridotti a icone. A sinistra della pill utente **data per esteso sopra e ora sotto** (ore e minuti).
+- La barra resta sempre **su una riga sola**: al restringersi della finestra cede nell'ordine il ruolo nella pill, le etichette del menu (che diventa a sole icone, con la vista attiva evidenziata) e solo per ultima la data.
+
+### 0.8.0 — 2026-07-22
+
+**Aggiunto**
+- **Utenti, accesso e ruoli** — schermata di accesso con email e password (al primo avvio crea l'amministratore, senza credenziali predefinite), sessione con "Ricordami", cambio password e pill utente nell'header. Nuovo pannello *Gestione → 👥 Utenti* con creazione, modifica, sospensione, reset password ed eliminazione, e l'invariante dell'ultimo amministratore attivo.
+- **Quattro ruoli** — Amministratore, Ufficio acquisti, Progettazione, Lettore — che limitano la scrittura per area (articoli, distinte, documenti, gestione), con banner di sola lettura nelle sezioni non modificabili. Vedi [Utenti e ruoli](#utenti-e-ruoli), **avvertenza sui limiti inclusa**.
+- **Tracciabilità** `createdBy`/`updatedBy` su ogni record, popolata dall'utente della sessione (nessuna UI: serve alla migrazione).
+- Struttura pensata per **Supabase**: nomi e flusso (`submitLogin`/`doLogin`/`logout`) ricalcano l'app TimeTrack già migrata, così passare ad `auth.users` + `profiles` è una sostituzione localizzata — mappatura in [docs/cloud-schema.md](docs/cloud-schema.md).
+
+**Modificato**
+- `AZZERA TUTTO` conserva l'utente che lo esegue, ricreandolo come amministratore; ripristino dei dati di esempio e import di un backup riconciliano la sessione (se il backup contiene altri utenti si torna alla schermata di accesso).
 
 ### 0.7.0 — 2026-07-22
 

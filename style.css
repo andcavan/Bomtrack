@@ -31,14 +31,32 @@ input,select,button,textarea{font-family:var(--font)}
 .picker-empty{padding:10px 12px;font-size:12px;color:var(--text-dim);text-align:center}
 
 /* Header */
-#app-header{display:flex;align-items:center;justify-content:space-between;padding:0 24px;height:56px;border-bottom:1px solid var(--border);background:var(--card);position:sticky;top:0;z-index:50;flex-wrap:wrap;gap:8px}
+/* Una riga sola: logo e comandi non si comprimono, il nav sì (scorre se non ci sta) */
+#app-header{display:flex;align-items:center;justify-content:space-between;padding:0 16px;height:56px;border-bottom:1px solid var(--border);background:var(--card);position:sticky;top:0;z-index:50;flex-wrap:nowrap;gap:12px}
+#app-header > div:first-child{flex:0 0 auto}
 .logo{font-weight:800;font-size:16px;color:var(--accent);display:flex;align-items:center;gap:6px;letter-spacing:-.02em}
 .app-version{font-family:var(--mono);font-size:10px;font-weight:600;color:var(--text-dim);border:1px solid var(--border);border-radius:4px;padding:1px 5px;align-self:flex-start}
-.nav{display:flex;gap:4px;flex-wrap:wrap}
-.nav-btn{background:transparent;border:none;color:var(--text-dim);padding:8px 14px;border-radius:8px;cursor:pointer;font-size:13px;font-weight:500;display:flex;align-items:center;gap:6px;transition:all .15s}
+.nav{display:flex;gap:2px;flex:1 1 auto;min-width:0;overflow-x:auto;justify-content:center;scrollbar-width:none}
+.nav::-webkit-scrollbar{display:none}
+.nav-btn{background:transparent;border:none;color:var(--text-dim);padding:7px 10px;white-space:nowrap;border-radius:8px;cursor:pointer;font-size:13px;font-weight:500;display:flex;align-items:center;gap:6px;transition:all .15s}
 .nav-btn:hover{color:var(--text)}
 .nav-btn.active{background:rgba(58,123,232,.09);color:var(--accent)}
-.header-right{display:flex;align-items:center;gap:10px}
+.header-right{display:flex;align-items:center;gap:8px;flex:0 0 auto}
+/* Header compatto: pulsanti a sola icona e orologio con data per esteso */
+.btn-icon{padding:6px 8px;line-height:0;display:inline-flex;align-items:center}
+.btn-emoji{font-size:14px;line-height:1}
+.header-clock{display:flex;flex-direction:column;align-items:center;line-height:1.2;white-space:nowrap}
+.clock-date{font-size:11px;color:var(--text-dim)}
+.clock-time{font-family:var(--mono);font-size:14px;font-weight:700}
+.nav-ico{font-size:13px;line-height:1}
+/* Degradazione progressiva: la barra resta su una riga sola cedendo, in ordine,
+   il ruolo nella pill, le etichette del nav e solo per ultima la data. */
+@media(max-width:1420px){.user-role{display:none}}
+/* Senza etichetta la vista attiva va marcata di più: la sola tinta non basta */
+@media(max-width:1330px){.nav-label{display:none}.nav-btn{padding:7px 9px}.nav-ico{font-size:15px}
+  .nav-btn.active{background:rgba(58,123,232,.16);box-shadow:inset 0 -2px 0 var(--accent)}}
+@media(max-width:780px){.clock-date{display:none}}
+@media(max-width:620px){.header-clock{display:none}}
 
 /* Main */
 #app-main{max-width:1200px;margin:0 auto;padding:24px 16px}
@@ -215,6 +233,8 @@ textarea.notes-internal{border-style:dashed}
 .doc-badge.st-parziale{color:var(--orange)}
 .doc-badge.st-chiusa,.doc-badge.st-evaso{color:var(--green)}
 .doc-badge.st-annullato{color:var(--red)}
+.doc-badge.st-attivo{color:var(--green)}
+.doc-badge.st-sospeso{color:var(--red)}
 
 /* Banner di blocco modifiche */
 .doc-lock-banner{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;
@@ -269,3 +289,26 @@ button:disabled{opacity:.4;cursor:not-allowed}
 .rfq-mix{margin-top:14px;padding:12px 16px;background:var(--card);border:1px solid var(--border);border-radius:10px;font-size:14px}
 .rfq-mix strong{font-family:var(--mono)}
 .rfq-mix-warn{color:var(--orange);font-size:12px}
+
+/* ═══ Accesso, utente e sola lettura per ruolo ═══ */
+#login-screen{display:flex;align-items:center;justify-content:center;min-height:100vh;padding:20px}
+.login-card{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:44px 36px;max-width:400px;width:100%;text-align:center}
+.login-logo{color:var(--accent);margin-bottom:12px}
+.login-title{font-size:26px;font-weight:800;letter-spacing:-.02em}
+.login-title .app-version{font-size:11px;margin-left:4px}
+.login-sub{color:var(--text-dim);margin:8px 0 24px;font-size:14px}
+#login-form{text-align:left}
+.login-field{margin-bottom:10px}
+.login-field input{width:100%;padding:10px 12px;background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:14px;outline:none}
+.login-field input:focus{border-color:var(--accent)}
+.login-remember{display:flex;align-items:center;gap:6px;margin:2px 0 12px;font-size:13px;color:var(--text-dim)}
+.login-remember input{accent-color:var(--accent);width:14px;height:14px;cursor:pointer}
+.login-remember label{cursor:pointer}
+.login-error{color:var(--red);font-size:13px;margin-bottom:10px}
+.login-note{color:var(--text-dim);font-size:11px;line-height:1.5;margin-top:20px}
+.user-pill{display:flex;align-items:center;gap:5px;padding:3px 10px 3px 7px;border-radius:20px;border:1.5px solid var(--border);font-size:13px;font-weight:500;white-space:nowrap}
+.user-dot{width:8px;height:8px;border-radius:50%;display:inline-block}
+.user-role{color:var(--text-dim);font-size:11px}
+/* Sola lettura per ruolo: la UI nasconde creazione ed eliminazione, le guardie bloccano comunque */
+.view-readonly .add-btn-sm,.view-readonly .add-btn,.view-readonly .mini-btn.danger{display:none}
+.ro-banner{background:rgba(232,163,58,.1);border:1px solid var(--orange);color:var(--orange);border-radius:10px;padding:10px 14px;font-size:13px;margin-bottom:14px}
