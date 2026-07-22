@@ -188,6 +188,8 @@ function migrateDB() {
   if (!db.settings.paymentOptions) db.settings.paymentOptions = ['Bonifico anticipato', 'Bonifico 30gg', 'Bonifico 60gg', 'RiBa 30gg', 'RiBa 60gg'];
   if (db.settings.transportDefault == null) db.settings.transportDefault = '';
   if (db.settings.paymentDefault == null) db.settings.paymentDefault = '';
+  // Modo di calcolo del costo proposto alle nuove parti: 'unit' | 'cycle' | 'sum'
+  if (!db.settings.partCostModeDefault) db.settings.partCostModeDefault = 'cycle';
   // Unità di misura gestite: seed una-tantum con le predefinite + quelle già
   // presenti nei dati (finora l'U.M. era testo libero, non va persa).
   if (!Array.isArray(db.settings.uoms)) {
@@ -230,6 +232,7 @@ function migrateDB() {
     if (r.supplierId == null) r.supplierId = (r.supplierIds && r.supplierIds[0]) || null;
     if (r.transport == null) r.transport = '';
     if (r.payment == null) r.payment = '';
+    if (r.notesInternal == null) r.notesInternal = '';
     (r.lines || []).forEach(l => {
       if (l.price == null) {
         const o = r.offers && r.supplierId && r.offers[r.supplierId];
@@ -247,6 +250,7 @@ function migrateDB() {
     if (o.requestedDelivery == null) o.requestedDelivery = '';
     if (o.rfqId == null) o.rfqId = null;
     if (o.supplierConfirmation == null) o.supplierConfirmation = '';
+    if (o.notesInternal == null) o.notesInternal = '';
     (o.lines || []).forEach(l => {
       if (l.price == null) l.price = '';
       if (l.deliveryDate == null) l.deliveryDate = '';
@@ -285,6 +289,10 @@ function migrateDB() {
       if (!it.operations) it.operations = [];
     }
     if (it.type === 'parte' && !it.cycle) it.cycle = [];
+    // Modo di calcolo del costo della parte. I dati storici conservano il
+    // comportamento precedente: col ciclo il costo era derivato dal ciclo,
+    // senza ciclo era quello del campo manuale.
+    if (it.type === 'parte' && !it.costMode) it.costMode = (it.cycle || []).length ? 'cycle' : 'unit';
     // Righe lavorazione del ciclo: da ore × tariffa a costo fisso (conserva il valore già calcolato)
     (it.cycle || []).forEach(row => {
       if (row.kind !== 'op' || row.cost != null) return;
@@ -351,6 +359,20 @@ const Store = {
   reset() {
     db = JSON.parse(JSON.stringify(defaultDB));
     migrateDB();
+    this.commit();
+  },
+  // Svuota il database: nessun dato di esempio, nessuna anagrafica, nessuna
+  // impostazione. migrateDB() ricostruisce lo scheletro e semina famiglie e
+  // U.M. predefinite: qui si torna a svuotarle e si alzano i flag di seed,
+  // altrimenti il seed una-tantum ripopolerebbe subito il db appena azzerato.
+  clearAll() {
+    db = { suppliers: [], rfqs: [], orders: [], workCenters: [], families: [], items: [], settings: {}, schemaVersion: SCHEMA_VERSION };
+    migrateDB();
+    db.families = [];
+    db.settings.uoms = [];
+    db.settings.uomDefault = '';
+    db.settings.mpFamiliesSeeded = true;
+    db.settings.partFamiliesSeeded = true;
     this.commit();
   },
   getAll(coll) { return db[coll] || []; },

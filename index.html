@@ -57,29 +57,49 @@
     <div class="bom-tree" id="bom-tree"></div>
   </div>
 
-  <!-- CATALOGO ARTICOLI -->
-  <div id="view-catalog" class="view-panel">
-    <h2 class="section-title">📦 Catalogo Articoli</h2>
+  <!-- ARTICOLI D'ACQUISTO (commerciali e materie prime) -->
+  <div id="view-buy" class="view-panel">
+    <h2 class="section-title">📦 Commerciali &amp; Materie prime</h2>
     <div class="catalog-filters">
-      <input type="text" class="search" id="cat-search" placeholder="🔍 Cerca codice o nome..." oninput="renderCatalog()">
-      <select id="cat-type" onchange="onCatTypeChange()">
+      <input type="text" class="search" id="buy-search" placeholder="🔍 Cerca codice o nome..." oninput="renderCatalog('buy')">
+      <select id="buy-type" onchange="onCatTypeChange('buy')">
         <option value="">Tutti i tipi</option>
-        <option value="materiale">Materia prima</option>
         <option value="acquistato">Componente commerciale</option>
-        <option value="parte">Parte (lavorato)</option>
-        <option value="sottogruppo">Sottogruppo</option>
-        <option value="gruppo">Gruppo</option>
-        <option value="macchina">Macchina</option>
+        <option value="materiale">Materia prima</option>
       </select>
-      <select id="cat-family" onchange="onCatFamilyChange()">
+      <select id="buy-family" onchange="onCatFamilyChange('buy')">
         <option value="">Tutte le famiglie</option>
       </select>
-      <select id="cat-subfamily" onchange="renderCatalog()">
+      <select id="buy-subfamily" onchange="renderCatalog('buy')">
         <option value="">Tutte le sottofamiglie</option>
       </select>
-      <button class="add-btn-sm" onclick="newItemModal()">+ Nuovo articolo</button>
+      <button class="btn-outline fav-filter" id="buy-fav" title="Mostra solo i preferiti" onclick="toggleFavFilter()">★ Solo preferiti</button>
+      <button class="add-btn-sm" onclick="newItemModal('buy')">+ Nuovo articolo</button>
     </div>
-    <div class="table-wrap" id="catalog-table"></div>
+    <div class="table-wrap" id="buy-table"></div>
+  </div>
+
+  <!-- ARTICOLI DI PROGETTO (macchine, gruppi, sottogruppi, parti) -->
+  <div id="view-design" class="view-panel">
+    <h2 class="section-title">🏗 Macchine, Gruppi &amp; Parti</h2>
+    <div class="catalog-filters">
+      <input type="text" class="search" id="des-search" placeholder="🔍 Cerca codice o nome..." oninput="renderCatalog('design')">
+      <select id="des-type" onchange="onCatTypeChange('design')">
+        <option value="">Tutti i tipi</option>
+        <option value="macchina">Macchina</option>
+        <option value="gruppo">Gruppo</option>
+        <option value="sottogruppo">Sottogruppo</option>
+        <option value="parte">Parte (lavorato)</option>
+      </select>
+      <select id="des-family" onchange="onCatFamilyChange('design')">
+        <option value="">Tutte le famiglie</option>
+      </select>
+      <select id="des-subfamily" onchange="renderCatalog('design')">
+        <option value="">Tutte le sottofamiglie</option>
+      </select>
+      <button class="add-btn-sm" onclick="newItemModal('design')">+ Nuovo articolo</button>
+    </div>
+    <div class="table-wrap" id="des-table"></div>
   </div>
 
   <!-- COSTIFICAZIONE & REPORT -->

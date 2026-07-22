@@ -12,12 +12,15 @@ La revisione in esecuzione è mostrata accanto al logo, in alto a sinistra (es. 
 
 ## Funzionalità
 
-- **🌳 Distinte base** — albero multi-livello espandibile della macchina selezionata, con costo unitario e di riga per ogni componente, lavorazioni interne e card di riepilogo costi. Aggiunta/modifica/eliminazione di componenti e lavorazioni.
-- **📦 Catalogo** — gestione degli articoli riutilizzabili, tipizzati su 6 livelli: **macchina**, **gruppo**, **sottogruppo** (assiemi, con propria distinta e lavorazioni), **parte** (foglia con ciclo di lavorazione), **materia prima** (costo unitario per U.M., es. €/kg) e **componente commerciale** (prezzo d'acquisto da fornitore).
+- **🌳 Distinte base** — albero multi-livello espandibile della macchina selezionata, con costo unitario e di riga per ogni componente, lavorazioni interne e card di riepilogo costi. Aggiunta/modifica/eliminazione di componenti e lavorazioni. I sottogruppi possono contenere altri sottogruppi, senza limite di profondità.
+- **📦 Acquisti** — anagrafica di ciò che si compra: **materie prime** (costo unitario per U.M., es. €/kg) e **componenti commerciali** (prezzo d'acquisto da fornitore), con flag **preferito ★** e filtro dedicato.
+- **🏗 Progetto** — anagrafica di ciò che si costruisce: **macchina**, **gruppo**, **sottogruppo** (assiemi, con propria distinta e lavorazioni) e **parte** (foglia con ciclo di lavorazione).
 - **💶 Costificazione** — incidenza delle voci di costo e distinta esplosa; **export PDF ed Excel**.
 - **📨 Richieste di offerta (RFQ)** — una richiesta per fornitore, righe da catalogo o manuali, documento bilingue IT/EN in PDF ed Excel, compilazione dei prezzi al ritorno dell'offerta e **confronto offerte** tra più richieste.
 - **🧾 Ordini a fornitore (ODA)** — generabili da una richiesta o da zero, con prezzi, importi, consegne e **registrazione dei ricevimenti** (ricevuto/residuo per riga).
-- **⚙ Gestione** — dati azienda, fornitori, condizioni di offerta (trasporto/pagamento), famiglie articolo, centri di lavoro (tariffe €/h), **unità di misura**, impostazioni globali (spese generali %, margine %, valuta), **import massivo da Excel** e backup JSON (esporta/importa/ripristina).
+- Gli elenchi di richieste e ordini si filtrano per **stato**, **fornitore** e **testo** (numero, oggetto, fornitore, note e righe del documento).
+- **🔒 Note interne** su richieste e ordini: restano nell'app, non compaiono mai su PDF ed Excel. Passano dalla richiesta all'ordine generato e sono modificabili in qualunque stato del documento.
+- **⚙ Gestione** — dati azienda, fornitori, condizioni di offerta (trasporto/pagamento), famiglie articolo, centri di lavoro (tariffe €/h), **unità di misura**, impostazioni globali (spese generali %, margine %, valuta, calcolo costo parte), **import massivo da Excel** e backup JSON (esporta/importa/ripristina/**azzera tutto**).
 
 ### Unità di misura
 
@@ -38,7 +41,7 @@ Richieste e ordini hanno uno **stato** che l'app aggiorna da sé quando può ded
 | ODA | Inviato / Confermato / Parziale / Evaso | colonna Ricevuto |
 | ODA | Annullato | nulla (sola lettura) |
 
-In **ogni** stato restano sempre modificabili le note del documento, le note di riga e lo stato stesso. Quando serve correggere il resto, il pulsante **🔓 Sblocca per modifica** riapre il documento: lo sblocco vale finché resti dentro e si richiude tornando all'elenco.
+In **ogni** stato restano sempre modificabili le note del documento, le note interne, le note di riga e lo stato stesso. Quando serve correggere il resto, il pulsante **🔓 Sblocca per modifica** riapre il documento: lo sblocco vale finché resti dentro e si richiude tornando all'elenco.
 
 Le transizioni automatiche:
 
@@ -88,11 +91,19 @@ prezzo vendita = costo totale × (1 + margine %)
 
 Le percentuali di spese generali e margine sono globali (Impostazioni) e sovrascrivibili per singola macchina dalla *Modifica testata*. I riferimenti ciclici nella distinta sono rilevati e impediti.
 
-Gli articoli di tipo **parte** fanno eccezione: se hanno un **ciclo di lavorazione** (righe di materiale/commerciali più righe di lavorazione a costo fisso) il costo unitario è derivato dal ciclo e il campo manuale non viene più usato.
+Gli articoli di tipo **parte** fanno eccezione: oltre al costo unitario a mano possono avere un **ciclo di lavorazione** (righe di materiale/commerciali più righe di lavorazione a costo fisso), e ogni parte sceglie nella propria scheda come combinare i due:
+
+| Calcolo | Costo della parte |
+|---|---|
+| Solo costo unitario | il campo manuale; il ciclo resta documentale e non entra nel costo |
+| Solo valore ciclo | la somma delle righe di ciclo (il campo manuale si disabilita) |
+| Costo unitario + valore ciclo | la somma dei due |
+
+Il modo proposto alle nuove parti si imposta in *Gestione → Impostazioni*. Le parti già esistenti conservano il comportamento precedente (ciclo se ne avevano uno, altrimenti costo manuale).
 
 ## File
 
-- `index.html` — struttura, navigazione, CDN (jsPDF, SheetJS).
+- `index.html` — struttura, navigazione, barre filtri delle due anagrafiche, CDN (jsPDF, SheetJS).
 - `store.js` — layer dati: schema, migrazioni versionate, `Store` (API repository) su localStorage.
 - `app.js` — motore di costificazione, viste, CRUD, export. La costante `APP_VERSION` in cima è la revisione mostrata nell'header.
 - `style.css` — tema dark.
@@ -101,6 +112,17 @@ Gli articoli di tipo **parte** fanno eccezione: se hanno un **ciclo di lavorazio
 ## Changelog
 
 Le revisioni seguono il versionamento semantico `0.MINOR.PATCH`: **MINOR** per nuove funzionalità, **PATCH** per correzioni. La versione in cima è quella in `APP_VERSION` (`app.js`) e mostrata nell'header dell'app.
+
+### 0.7.0 — 2026-07-22
+
+**Aggiunto**
+- **Anagrafiche separate** — il Catalogo unico si divide in due viste: **📦 Acquisti** (commerciali e materie prime) e **🏗 Progetto** (macchine, gruppi, sottogruppi, parti). Ogni vista ha i propri filtri e la creazione di articoli ristretta ai tipi di sua competenza, così il menu "Tipo" non propone più sei voci di cui cinque fuori contesto.
+- **Calcolo del costo parte configurabile** — solo costo unitario, solo valore del ciclo di lavorazione, o la somma dei due; per singola parte, con default in *Gestione → Impostazioni*. Vedi [Modello di costo](#modello-di-costo).
+- **Preferiti ★** su commerciali e materie prime, con filtro "solo preferiti" nella vista Acquisti.
+- **Note interne** su richieste di offerta e ordini: non vengono stampate su PDF ed Excel, passano dalla richiesta all'ordine generato e restano modificabili in ogni stato del documento.
+- **Sottogruppi annidati** — un sottogruppo può contenere altri sottogruppi; il controllo anti-ciclo continua a impedire le auto-inclusioni.
+- **Filtri negli elenchi di richieste e ordini** — per stato, per fornitore (compreso "senza fornitore") e per testo. La ricerca guarda numero, oggetto, fornitore, note e **righe del documento**, così si risale all'ordine partendo dal codice acquistato. Accanto ai filtri il conteggio dei documenti mostrati e un pulsante per azzerarli.
+- **🗑 AZZERA TUTTO** in *Gestione → Backup*: svuota completamente il database (articoli, documenti, anagrafiche, famiglie, U.M. e impostazioni) senza ricaricare i dati di esempio. Doppia conferma, la seconda da digitare.
 
 ### 0.6.0 — 2026-07-21
 

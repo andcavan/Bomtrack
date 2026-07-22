@@ -169,6 +169,16 @@ tr{border-bottom:1px solid rgba(42,46,59,.4)}
 .catalog-filters .search{flex:1;min-width:200px}
 .cat-group-title{font-size:12px;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.05em;margin:18px 0 6px}
 .cat-group-title:first-child{margin-top:0}
+/* Preferiti: stellina gialla in elenco e toggle di filtro */
+.fav-star{font-size:14px;line-height:1;color:var(--orange);border-color:transparent;background:transparent}
+.fav-star:hover{color:var(--orange);border-color:var(--orange)}
+.fav-star.off{color:var(--border)}
+.fav-star.off:hover{color:var(--orange)}
+.fav-filter.active{color:var(--orange);border-color:var(--orange)}
+/* Note interne dei documenti: non finiscono su PDF/Excel, si distinguono a colpo d'occhio */
+textarea.notes-internal{border-style:dashed}
+/* Conteggio dei documenti mostrati dai filtri di richieste e ordini */
+.doc-filter-count{color:var(--text-dim);font-size:12px;white-space:nowrap}
 
 /* Cloud / backup */
 .cloud-section{display:flex;gap:14px;align-items:flex-start;background:var(--card);border:1px solid var(--border);border-radius:14px;padding:24px;color:var(--text-dim)}

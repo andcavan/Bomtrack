@@ -5,12 +5,13 @@
 // Revisione in esecuzione, mostrata accanto al logo. Va tenuta allineata alla
 // voce in cima al changelog del README (l'app si copia a mano tra PC: sapere
 // quale revisione sta girando su una postazione è l'unico modo per capirlo).
-const APP_VERSION = '0.6.0';
+const APP_VERSION = '0.7.0';
 
 let currentBomId = null;     // articolo prodotto attualmente aperto nelle Distinte
 let reportBomId = null;      // articolo selezionato nel report
 let mgmtTab = 'suppliers';
 let bomExpanded = new Set(); // chiavi-percorso dei nodi espansi
+let favOnly = false;         // filtro "solo preferiti" nella vista Acquisti
 let activeView = 'bom';
 let rfqView = 'list';        // 'list' | 'edit' | 'compare'
 let currentRfqId = null;     // richiesta di offerta aperta in editor
@@ -42,9 +43,17 @@ const ALL_TYPES = ['macchina', 'gruppo', 'sottogruppo', 'parte', 'materiale', 'a
 const ALLOWED_CHILDREN = {
   macchina: ['gruppo', 'sottogruppo'],
   gruppo: ['sottogruppo', 'parte', 'materiale', 'acquistato'],
-  sottogruppo: ['parte', 'materiale', 'acquistato'],
+  sottogruppo: ['sottogruppo', 'parte', 'materiale', 'acquistato'],
   parte: [], materiale: [], acquistato: [],
 };
+// Le due viste di anagrafica: ciò che si compra e ciò che si progetta.
+// Ogni vista ha i suoi filtri (prefisso degli id nella pagina) e la creazione
+// di articoli è ristretta ai tipi di sua competenza.
+const CATALOG_SCOPES = {
+  buy: { types: ['acquistato', 'materiale'], pfx: 'buy', title: 'Commerciali & materie prime' },
+  design: { types: ['macchina', 'gruppo', 'sottogruppo', 'parte'], pfx: 'des', title: 'Macchine, gruppi e parti' },
+};
+function scopeOf(type) { return CATALOG_SCOPES.buy.types.includes(type) ? 'buy' : 'design'; }
 // Tipi inseribili nel ciclo di lavorazione di una Parte (le lavorazioni sono a parte, dai centri di lavoro)
 const CYCLE_CHILD_TYPES = ['acquistato', 'materiale'];
 const TYPE_LABELS = { macchina: 'Macchina', gruppo: 'Gruppo', sottogruppo: 'Sottogruppo', parte: 'Parte', materiale: 'Materia prima', acquistato: 'Commerciale' };
@@ -278,15 +287,19 @@ function costOf(itemId, visited) {
     return { ...zero, purchased: v, base: v, total: v };
   }
   if (it.type === 'parte') {
-    // Senza ciclo il costo è quello manuale e resta nella voce "Parti".
-    if (!(it.cycle || []).length) {
-      const v = Number(it.unitCost) || 0;
-      return { ...zero, parts: v, base: v, total: v };
+    // Tre modi di calcolo (campo costMode): solo costo unitario a mano, solo
+    // valore del ciclo di lavorazione, oppure la somma dei due.
+    const mode = partCostMode(it);
+    const manual = Number(it.unitCost) || 0;
+    // Senza righe di ciclo resta solo il costo manuale, nella voce "Parti".
+    if (mode === 'unit' || !(it.cycle || []).length) {
+      return { ...zero, parts: manual, base: manual, total: manual };
     }
     // Col ciclo il costo è derivato e ogni riga confluisce nella propria voce:
     // materie prime → Materiale, commerciali → Commerciali, lavorazioni → Lavorazioni.
     const next = new Set(visited); next.add(itemId);
     let material = 0, purchased = 0, labor = 0;
+    const parts = mode === 'sum' ? manual : 0;   // 'sum': il costo unitario si aggiunge al ciclo
     it.cycle.forEach(row => {
       const rowCost = cycleRowCost(row, next);
       if (row.kind === 'op') { labor += rowCost; return; }
@@ -296,8 +309,8 @@ function costOf(itemId, visited) {
       else if (ci.type === 'acquistato') purchased += rowCost;
       else labor += rowCost;   // tipo inatteso: non perdiamo il costo
     });
-    const base = material + purchased + labor;
-    return { ...zero, material, purchased, labor, base, total: base };
+    const base = material + purchased + labor + parts;
+    return { ...zero, material, purchased, labor, parts, base, total: base };
   }
 
   // assieme (macchina/gruppo/sottogruppo): somma figli + lavorazioni
@@ -324,6 +337,25 @@ function costOf(itemId, visited) {
   const total = base + overhead;
   return { material, purchased, labor, parts, overhead, base, total, cycle };
 }
+// ─── Modo di calcolo del costo di una parte ───
+const PART_COST_MODES = {
+  unit: 'Solo costo unitario',
+  cycle: 'Solo valore ciclo di lavorazione',
+  sum: 'Costo unitario + valore ciclo',
+};
+function defaultPartCostMode() {
+  const d = db.settings && db.settings.partCostModeDefault;
+  return PART_COST_MODES[d] ? d : 'cycle';
+}
+function partCostMode(it) {
+  const m = it && it.costMode;
+  return PART_COST_MODES[m] ? m : defaultPartCostMode();
+}
+function partCostModeOptions(sel) {
+  return Object.entries(PART_COST_MODES)
+    .map(([k, v]) => `<option value="${k}" ${k === sel ? 'selected' : ''}>${v}</option>`).join('');
+}
+
 // ─── Ciclo di lavorazione (articoli tipo "parte") ───
 // Costo calcolato di una riga articolo (q.tà × costo unitario), ignorando l'eventuale override.
 function cycleRowComputed(row, visited) {
@@ -352,7 +384,8 @@ function sellingPrice(itemId) {
 // ═══════════════════════════════════════════════════════════
 const NAV = [
   { id: 'bom', label: '🌳 Distinte base' },
-  { id: 'catalog', label: '📦 Catalogo' },
+  { id: 'buy', label: '📦 Acquisti' },
+  { id: 'design', label: '🏗 Progetto' },
   { id: 'report', label: '💶 Costificazione' },
   { id: 'rfq', label: '📨 Richieste offerta' },
   { id: 'orders', label: '🧾 Ordini' },
@@ -368,7 +401,7 @@ function setView(v) {
   document.getElementById('view-' + v).classList.add('active');
   renderNav();
   if (v === 'bom') renderBom();
-  else if (v === 'catalog') renderCatalog();
+  else if (v === 'buy' || v === 'design') renderCatalog(v);
   else if (v === 'report') renderReport();
   else if (v === 'rfq') renderRfq();
   else if (v === 'orders') renderOrders();
@@ -441,7 +474,8 @@ function renderBomNode(comp, level, parentId, editable, idx, pathPrefix, ancesto
   const cyc = ancestorIds.includes(comp.itemId);
   const isProd = isAssembly(child.type);
   // Anche una Parte è espandibile: mostra il proprio ciclo di lavorazione (articoli + lavorazioni).
-  const hasCycle = child.type === 'parte' && (child.cycle || []).length > 0;
+  // Col calcolo "solo costo unitario" il ciclo non concorre al costo e non va mostrato nell'albero.
+  const hasCycle = child.type === 'parte' && (child.cycle || []).length > 0 && partCostMode(child) !== 'unit';
   const expandable = !cyc && (hasCycle || (isProd && (child.components || []).length > 0));
   const expanded = bomExpanded.has(nodeKey);
   const unit = cyc ? 0 : costOf(comp.itemId).total;
@@ -474,6 +508,7 @@ function renderBomNode(comp, level, parentId, editable, idx, pathPrefix, ancesto
   if (expandable && expanded) {
     if (hasCycle) {
       h += (child.cycle || []).map(row => renderCycleBomNode(row, level + 1)).join('');
+      h += renderPartManualCostNode(child, level + 1);
     } else {
       h += (child.components || []).map((cc, i) =>
         renderBomNode(cc, level + 1, child.id, false, i, nodeKey, ancestorIds.concat(child.id))).join('');
@@ -484,7 +519,7 @@ function renderBomNode(comp, level, parentId, editable, idx, pathPrefix, ancesto
 }
 
 // Riga del ciclo di lavorazione di una Parte, mostrata nell'albero della distinta (sola lettura:
-// il ciclo si modifica dalla scheda articolo in Catalogo).
+// il ciclo si modifica dalla scheda articolo nella vista Progetto).
 function renderCycleBomNode(row, level) {
   const indent = (level - 1) * 18;
   const lineCost = cycleRowCost(row);
@@ -510,6 +545,24 @@ function renderCycleBomNode(row, level) {
     <span class="num cost">${fmtN(unit)}</span>
     <span class="num">—</span>
     <span class="num cost">${fmtN(lineCost)}</span>
+    <span class="bom-row-actions"></span>
+  </div>`;
+}
+
+// Col calcolo "costo unitario + ciclo" la quota manuale è una riga a sé, così le
+// righe mostrate sotto la Parte sommano al suo costo unitario.
+function renderPartManualCostNode(it, level) {
+  const manual = Number(it.unitCost) || 0;
+  if (partCostMode(it) !== 'sum' || !manual) return '';
+  const indent = (level - 1) * 18;
+  return `<div class="bom-node bom-node-cycle" style="padding-left:${18 + indent}px">
+    <span class="bom-name"><span class="bom-toggle leaf">•</span>
+      <span class="nm">💠 Costo unitario (manuale)</span></span>
+    <span class="num">1</span>
+    <span>${esc(it.uom || '')}</span>
+    <span class="num cost">${fmtN(manual)}</span>
+    <span class="num">—</span>
+    <span class="num cost">${fmtN(manual)}</span>
     <span class="bom-row-actions"></span>
   </div>`;
 }
@@ -625,7 +678,7 @@ function allowedHint(parentType) {
 function addComponentModal() {
   const it = getItem(currentBomId); if (!it) return;
   window.__pickerCandidates = pickerCandidates(it.type, it.id);
-  if (!window.__pickerCandidates.length) { showToast('Nessun articolo dei tipi ammessi. Crealo prima nel Catalogo.', 'error'); return; }
+  if (!window.__pickerCandidates.length) { showToast('Nessun articolo dei tipi ammessi. Crealo prima in Acquisti o Progetto.', 'error'); return; }
   openModal(`<h3>➕ Aggiungi componente</h3>
     <p class="empty-text" style="text-align:left;padding:0 0 10px">${allowedHint(it.type)}</p>
     ${itemPickerField(null)}
@@ -847,26 +900,31 @@ function usedBy(itemId) {
 }
 
 // ═══════════════════════════════════════════════════════════
-//  VISTA: CATALOGO ARTICOLI
+//  VISTE: ANAGRAFICHE ARTICOLI (Acquisti / Progetto)
 // ═══════════════════════════════════════════════════════════
-function onCatTypeChange() {
-  updateCatFamilyFilters();
-  renderCatalog();
+function onCatTypeChange(scope) {
+  updateCatFamilyFilters(scope);
+  renderCatalog(scope);
 }
-function onCatFamilyChange() {
-  updateCatFamilyFilters();
-  renderCatalog();
+function onCatFamilyChange(scope) {
+  updateCatFamilyFilters(scope);
+  renderCatalog(scope);
+}
+// Ridisegna la vista di anagrafica attiva (le due condividono le funzioni di render)
+function renderCatalogs() {
+  if (activeView === 'buy' || activeView === 'design') renderCatalog(activeView);
 }
 // Allinea i filtri famiglia/sottofamiglia al tipo selezionato, preservando le selezioni compatibili
-function updateCatFamilyFilters() {
-  const famSel = document.getElementById('cat-family');
-  const subSel = document.getElementById('cat-subfamily');
-  const ft = document.getElementById('cat-type').value;
-  const famApplies = !ft || usesFamily(ft); // gli assiemi non hanno famiglia
+function updateCatFamilyFilters(scope) {
+  const pfx = CATALOG_SCOPES[scope].pfx;
+  const famSel = document.getElementById(pfx + '-family');
+  const subSel = document.getElementById(pfx + '-subfamily');
+  const ft = document.getElementById(pfx + '-type').value;
+  // Senza tipo selezionato valgono le famiglie di tutti i tipi dello scope che ne usano
+  const kinds = (ft ? [ft] : CATALOG_SCOPES[scope].types).filter(usesFamily);
+  const famApplies = !!kinds.length; // gli assiemi non hanno famiglia
   famSel.disabled = !famApplies; subSel.disabled = !famApplies;
-  const fams = famApplies
-    ? (db.families || []).filter(f => !ft || (f.kind || 'acquistato') === ft)
-    : [];
+  const fams = (db.families || []).filter(f => kinds.includes(f.kind || 'acquistato'));
   const keepFam = fams.some(f => f.id === famSel.value) ? famSel.value : '';
   famSel.innerHTML = `<option value="">Tutte le famiglie</option>` +
     fams.map(f => `<option value="${f.id}" ${f.id === keepFam ? 'selected' : ''}>${esc(f.name)}</option>`).join('');
@@ -876,6 +934,19 @@ function updateCatFamilyFilters() {
   subSel.innerHTML = `<option value="">Tutte le sottofamiglie</option>` +
     subs.map(s => `<option value="${s.id}" ${s.id === keepSub ? 'selected' : ''}>${esc(s.name)}</option>`).join('');
 }
+// Preferiti: solo su ciò che si acquista, per ritrovare in fretta gli articoli ricorrenti
+function canFavorite(type) { return type === 'acquistato' || type === 'materiale'; }
+function toggleFavorite(id) {
+  const it = getItem(id); if (!it) return;
+  it.favorite = !it.favorite;
+  touch(it); saveDB(); renderCatalogs();
+}
+function toggleFavFilter() {
+  favOnly = !favOnly;
+  const b = document.getElementById('buy-fav');
+  if (b) b.classList.toggle('active', favOnly);
+  renderCatalog('buy');
+}
 function catalogRow(i) {
   const unit = (isAssembly(i.type) || i.type === 'parte') ? costOf(i.id).total
     : (i.type === 'acquistato' ? (i.purchasePrice || 0) : (i.unitCost || 0));
@@ -884,7 +955,11 @@ function catalogRow(i) {
   else if (isAssembly(i.type)) meta = (i.components || []).length + ' comp. / ' + (i.operations || []).length + ' lav.';
   else if (i.type === 'parte') meta = (i.cycle || []).length ? (i.cycle.length + ' righe ciclo') : '—';
   else meta = '—';
+  const fav = canFavorite(i.type)
+    ? `<button class="mini-btn fav-star ${i.favorite ? '' : 'off'}" title="${i.favorite ? 'Togli dai preferiti' : 'Segna come preferito'}" onclick="toggleFavorite('${i.id}')">${i.favorite ? '★' : '☆'}</button>`
+    : '';
   return `<tr>
+    <td style="width:1%">${fav}</td>
     <td style="font-family:var(--mono)">${esc(i.code)}</td>
     <td>${esc(i.name)}</td>
     <td><span class="bom-type-tag tt-${i.type}">${typeShort(i.type)}</span> ${typeLabel(i.type)}</td>
@@ -898,14 +973,17 @@ function catalogRow(i) {
       <button class="mini-btn danger" onclick="delItem('${i.id}')">🗑</button>
     </td></tr>`;
 }
-function renderCatalog() {
-  updateCatFamilyFilters();
-  const q = (document.getElementById('cat-search').value || '').toLowerCase();
-  const ft = document.getElementById('cat-type').value;
-  const ff = document.getElementById('cat-family').value;
-  const fsf = document.getElementById('cat-subfamily').value;
-  let rows = db.items.slice();
+function renderCatalog(scope) {
+  const sc = CATALOG_SCOPES[scope]; if (!sc) return;
+  updateCatFamilyFilters(scope);
+  const pfx = sc.pfx;
+  const q = (document.getElementById(pfx + '-search').value || '').toLowerCase();
+  const ft = document.getElementById(pfx + '-type').value;
+  const ff = document.getElementById(pfx + '-family').value;
+  const fsf = document.getElementById(pfx + '-subfamily').value;
+  let rows = db.items.filter(i => sc.types.includes(i.type));
   if (ft) rows = rows.filter(i => i.type === ft);
+  if (scope === 'buy' && favOnly) rows = rows.filter(i => i.favorite);
   if (ff) rows = rows.filter(i => usesFamily(i.type) && i.familyId === ff);
   if (fsf) rows = rows.filter(i => i.subFamilyId === fsf);
   if (q) rows = rows.filter(i => (i.code + ' ' + i.name).toLowerCase().includes(q));
@@ -923,29 +1001,32 @@ function renderCatalog() {
   rows.forEach(i => { const k = groupKey(i); (groups[k] = groups[k] || { items: [], ord: order(i) }).items.push(i); });
   const keys = Object.keys(groups).sort((a, b) => groups[a].ord - groups[b].ord || a.localeCompare(b));
 
-  const head = `<thead><tr><th>Codice</th><th>Nome</th><th>Tipo</th><th>Famiglia</th><th>U.M.</th><th>Costo un.</th><th>Dettaglio</th><th></th></tr></thead>`;
+  const head = `<thead><tr><th></th><th>Codice</th><th>Nome</th><th>Tipo</th><th>Famiglia</th><th>U.M.</th><th>Costo un.</th><th>Dettaglio</th><th></th></tr></thead>`;
   const html = keys.map(k =>
     `<div class="cat-group-title">${esc(k)} <span style="color:var(--text-dim);font-weight:500">(${groups[k].items.length})</span></div>
      <table>${head}<tbody>${groups[k].items.map(catalogRow).join('')}</tbody></table>`).join('');
-  document.getElementById('catalog-table').innerHTML = rows.length ? html : '<div class="empty-text">Nessun articolo trovato.</div>';
+  document.getElementById(pfx + '-table').innerHTML = rows.length ? html : '<div class="empty-text">Nessun articolo trovato.</div>';
 }
-function itemModalBody(it) {
-  const t = it ? it.type : 'acquistato';
+// Etichette del menu "Tipo" (l'elenco è ristretto ai tipi della vista di provenienza)
+const TYPE_OPTION_LABELS = {
+  acquistato: 'Componente commerciale', materiale: 'Materia prima', parte: 'Parte (lavorato)',
+  sottogruppo: 'Sottogruppo', gruppo: 'Gruppo', macchina: 'Macchina',
+};
+function itemModalBody(it, scope) {
+  const sc = CATALOG_SCOPES[scope] || CATALOG_SCOPES.buy;
+  const t = it ? it.type : sc.types[0];
   const sourcePicker = it ? '' : `
     <div class="modal-field"><label>Parti da (opzionale)</label>
       <input type="text" id="src-search" class="search" placeholder="🔍 Duplica da un articolo esistente..." oninput="renderSourceResults()" autocomplete="off">
       <div id="src-results" class="picker-results"></div>
     </div>`;
+  // In modifica il tipo è bloccato: resta l'unica voce dell'articolo, qualunque sia lo scope
+  const types = it ? [it.type] : sc.types;
   return `${sourcePicker}
     <div class="modal-grid">
       <div class="modal-field"><label>Tipo</label>
         <select id="it-type" onchange="toggleItemFields()" ${it ? 'disabled' : ''}>
-          <option value="materiale" ${t === 'materiale' ? 'selected' : ''}>Materia prima</option>
-          <option value="acquistato" ${t === 'acquistato' ? 'selected' : ''}>Componente commerciale</option>
-          <option value="parte" ${t === 'parte' ? 'selected' : ''}>Parte (lavorato)</option>
-          <option value="sottogruppo" ${t === 'sottogruppo' ? 'selected' : ''}>Sottogruppo</option>
-          <option value="gruppo" ${t === 'gruppo' ? 'selected' : ''}>Gruppo</option>
-          <option value="macchina" ${t === 'macchina' ? 'selected' : ''}>Macchina</option>
+          ${types.map(x => `<option value="${x}" ${t === x ? 'selected' : ''}>${TYPE_OPTION_LABELS[x]}</option>`).join('')}
         </select>
       </div>
       <div class="modal-field"><label>Codice</label><input id="it-code" value="${it ? esc(it.code) : ''}" oninput="markCodeManual()"></div>
@@ -953,7 +1034,7 @@ function itemModalBody(it) {
     <div class="modal-field"><label>Nome</label><input id="it-name" value="${it ? esc(it.name) : ''}"></div>
     <div class="modal-grid">
       <div class="modal-field"><label>Unità di misura</label><select id="it-uom">${uomOptions(it ? (it.uom || defaultUom()) : defaultUom())}</select></div>
-      <div class="modal-field" id="fld-unitcost"><label>Costo unitario (${cur()}/U.M.)</label><input type="number" id="it-unitcost" step="0.0001" value="${it && it.unitCost != null ? it.unitCost : ''}"></div>
+      <div class="modal-field" id="fld-unitcost"><label>Costo unitario (${cur()}/U.M.)</label><input type="number" id="it-unitcost" step="0.0001" value="${it && it.unitCost != null ? it.unitCost : ''}" oninput="onUnitCostInput()"></div>
       <div class="modal-field" id="fld-assembly-note" style="grid-column:1/-1"><label>Composizione</label><span class="empty-text" style="padding:0">La distinta (componenti e lavorazioni) si gestisce nella vista <strong>Distinte base</strong>.</span></div>
       <div class="modal-field" id="fld-price"><label>Prezzo acquisto (${cur()}/U.M.)</label><input type="number" id="it-price" step="0.0001" value="${it && it.purchasePrice != null ? it.purchasePrice : ''}"></div>
       <div class="modal-field" id="fld-supplier"><label>Fornitore</label><select id="it-supplier">${supplierOptions(it ? it.supplierId : '')}</select></div>
@@ -970,6 +1051,8 @@ function itemModalBody(it) {
     <div class="modal-field" id="fld-cycle">
       <label>Ciclo di lavorazione</label>
       <div class="cycle-box">
+        <div class="modal-field" style="margin-bottom:10px"><label>Calcolo del costo della parte</label>
+          <select id="it-costmode" onchange="renderCycleTotals()">${partCostModeOptions(it ? partCostMode(it) : defaultPartCostMode())}</select></div>
         <div id="cycle-list"></div>
         <div id="cycle-picker"></div>
         <div class="cycle-actions">
@@ -1152,18 +1235,25 @@ function renderCycleTotals() {
     const ovr = document.getElementById('cyc-ovr-' + idx);
     if (ovr) ovr.placeholder = cycleRowComputed(row).toFixed(2);
   });
+  const mode = val('it-costmode') || defaultPartCostMode();
+  const cycleTot = cycleDraft.reduce((s, r) => s + cycleRowCost(r), 0);
+  const manual = numVal('it-unitcost');
+  // Il costo risultante dipende dal modo scelto; senza righe di ciclo resta il costo manuale.
+  const resulting = (mode === 'unit' || !cycleDraft.length) ? manual
+    : (mode === 'sum' ? cycleTot + manual : cycleTot);
   const tot = document.getElementById('cycle-total');
-  if (tot) tot.innerHTML = cycleDraft.length
-    ? `Totale ciclo: <strong>${fmtN(cycleDraft.reduce((s, r) => s + cycleRowCost(r), 0))}</strong>`
-    : '';
-  // Con un ciclo il costo unitario è derivato: il campo manuale non si usa più.
+  if (tot) tot.innerHTML = (cycleDraft.length ? `Totale ciclo: <strong>${fmtN(cycleTot)}</strong> · ` : '')
+    + `Costo parte: <strong>${fmtN(resulting)}</strong>`;
+  // Con "solo ciclo" (e almeno una riga) il costo unitario è derivato: il campo manuale non si usa.
   const uc = document.getElementById('it-unitcost');
   if (uc) {
-    const derived = cycleDraft.length > 0;
+    const derived = mode === 'cycle' && cycleDraft.length > 0;
     uc.disabled = derived;
     uc.title = derived ? 'Costo derivato dal ciclo di lavorazione' : '';
   }
 }
+// Sulle parti il costo manuale concorre al risultato: tieni aggiornato il riepilogo
+function onUnitCostInput() { if (val('it-type') === 'parte') renderCycleTotals(); }
 function updateCycleRow(idx) {
   const row = cycleDraft[idx]; if (!row) return;
   if (row.kind === 'op') {
@@ -1244,12 +1334,14 @@ function pickCycleOp() {
   renderCycleList();
 }
 
-function newItemModal() {
+function newItemModal(scope) {
+  scope = CATALOG_SCOPES[scope] ? scope : 'buy';
   itemCodeAuto = true;
   window.__dupSourceId = null;
   window.__editingItemId = null;
+  window.__itemScope = scope;
   cycleDraft = [];
-  openModal(`<h3>📦 Nuovo articolo</h3>${itemModalBody(null)}
+  openModal(`<h3>${scope === 'buy' ? '📦' : '🏗'} Nuovo articolo — ${esc(CATALOG_SCOPES[scope].title)}</h3>${itemModalBody(null, scope)}
     <div class="modal-actions"><button class="btn-ghost" onclick="closeModal()">Annulla</button>
       <button class="add-btn-sm" onclick="saveNewItem()">Crea</button></div>`, true);
   toggleItemFields();
@@ -1259,7 +1351,9 @@ function renderSourceResults() {
   const box = document.getElementById('src-results'); if (!box) return;
   const q = (val('src-search') || '').toLowerCase();
   if (!q) { box.innerHTML = ''; return; }
-  const rows = db.items.filter(i => (i.code + ' ' + i.name).toLowerCase().includes(q))
+  // Solo articoli dello stesso scope: il menu Tipo della modale non conosce gli altri
+  const types = (CATALOG_SCOPES[window.__itemScope] || CATALOG_SCOPES.buy).types;
+  const rows = db.items.filter(i => types.includes(i.type) && (i.code + ' ' + i.name).toLowerCase().includes(q))
     .sort((a, b) => String(a.code).localeCompare(String(b.code))).slice(0, 50);
   box.innerHTML = rows.map(i =>
     `<div class="picker-row" onclick="applyItemSource('${i.id}')">
@@ -1292,14 +1386,15 @@ function applyItemSource(id) {
   setVal('it-supcode', src.supplierCode || '');
   setVal('it-supdesc', src.supplierDesc || '');
   setVal('it-notes', src.notes || '');
+  if (src.type === 'parte') { setVal('it-costmode', partCostMode(src)); renderCycleTotals(); }
   setVal('it-code', '');
   refreshItemCode();
   const box = document.getElementById('src-results'); if (box) box.innerHTML = '';
   setVal('src-search', src.code + ' — ' + src.name);
 }
 function duplicateItemModal(id) {
-  if (!getItem(id)) return;
-  newItemModal();
+  const src = getItem(id); if (!src) return;
+  newItemModal(scopeOf(src.type));
   applyItemSource(id);
 }
 function readItemForm(it) {
@@ -1321,8 +1416,11 @@ function readItemForm(it) {
   } else if (it.type === 'sottogruppo' || it.type === 'parte') {
     it.machineItemId = d.machineItemId; it.groupItemId = d.groupItemId;
   }
-  // Il ciclo (con costo derivato) sostituisce il costo manuale quando ha almeno una riga.
-  if (it.type === 'parte') it.cycle = cycleDraft.map(r => Object.assign({}, r));
+  // Il ciclo e il modo di calcolo determinano insieme il costo della parte.
+  if (it.type === 'parte') {
+    it.cycle = cycleDraft.map(r => Object.assign({}, r));
+    it.costMode = val('it-costmode') || defaultPartCostMode();
+  }
 }
 // Controlli sulla codifica: sigle valide e univoche. Restituisce un messaggio o null.
 function validateItemCoding(id) {
@@ -1361,14 +1459,15 @@ function saveNewItem() {
     if (src.marginPctOverride != null) it.marginPctOverride = src.marginPctOverride;
   }
   db.items.push(stampNew(it));
-  saveDB(); closeModal(); renderCatalog(); showToast(src ? 'Copia creata' : 'Articolo creato');
+  saveDB(); closeModal(); renderCatalogs(); showToast(src ? 'Copia creata' : 'Articolo creato');
 }
 function editItemModal(id) {
   const it = getItem(id); if (!it) return;
   itemCodeAuto = false; // in modifica non si rigenera mai il codice esistente
   window.__editingItemId = id;
+  window.__itemScope = scopeOf(it.type);
   cycleDraft = (it.cycle || []).map(r => Object.assign({}, r));
-  openModal(`<h3>✏ Modifica articolo</h3>${itemModalBody(it)}
+  openModal(`<h3>✏ Modifica articolo</h3>${itemModalBody(it, window.__itemScope)}
     <div class="modal-actions"><button class="btn-ghost" onclick="closeModal()">Annulla</button>
       <button class="add-btn-sm" onclick="saveItemEdit('${id}')">Salva</button></div>`, true);
   toggleItemFields();
@@ -1379,7 +1478,7 @@ function saveItemEdit(id) {
   if (codErr) { showToast(codErr, 'error'); return; }
   readItemForm(it);
   touch(it);
-  saveDB(); closeModal(); renderCatalog(); showToast('Articolo aggiornato');
+  saveDB(); closeModal(); renderCatalogs(); showToast('Articolo aggiornato');
 }
 function delItem(id) {
   const it = getItem(id); if (!it) return;
@@ -1388,7 +1487,7 @@ function delItem(id) {
   if (!confirm(`Eliminare "${it.name}"?`)) return;
   db.items = db.items.filter(x => x.id !== id);
   if (currentBomId === id) currentBomId = null;
-  saveDB(); renderCatalog(); showToast('Eliminato');
+  saveDB(); renderCatalogs(); showToast('Eliminato');
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -1406,7 +1505,8 @@ function flattenBom(itemId, qty, scrap, level, rows, ancestors) {
   }
   // Una Parte esplode il proprio ciclo di lavorazione: i costi riga sono scalati per la quantità del padre,
   // così la somma dei figli coincide col costo riga della Parte.
-  if (it.type === 'parte' && !cyc) {
+  // (col calcolo "solo costo unitario" il ciclo non concorre al costo: niente esplosione)
+  if (it.type === 'parte' && !cyc && partCostMode(it) !== 'unit') {
     (it.cycle || []).forEach(row => {
       const rowCost = cycleRowCost(row);
       if (row.kind === 'op') {
@@ -1420,6 +1520,13 @@ function flattenBom(itemId, qty, scrap, level, rows, ancestors) {
           qty: Number(row.qty) || 0, uom: ci.uom || '', unit: costOf(row.itemId).total, line: rowCost * factor });
       }
     });
+    // Col calcolo "costo unitario + ciclo" anche la quota manuale è una riga,
+    // altrimenti la somma dei figli non tornerebbe col costo della Parte.
+    const manual = Number(it.unitCost) || 0;
+    if (partCostMode(it) === 'sum' && manual) {
+      rows.push({ level: level + 1, code: '', name: 'Costo unitario (manuale)', type: 'Costo',
+        qty: 1, uom: it.uom || '', unit: manual, line: manual * factor });
+    }
   }
 }
 function renderReport() {
@@ -1612,6 +1719,64 @@ function rfqLineSupInfo(r, l) { return lineSupInfo(r.supplierId, l); }
 // Nei documenti la nota di riga si stampa sotto la descrizione, nella stessa cella.
 function lineDescDoc(l) { return l.note ? (l.description || '') + '\n' + l.note : (l.description || ''); }
 
+// ─── Filtri degli elenchi documenti (condivisi tra richieste e ordini) ───
+// Gli elenchi si ridisegnano interi a ogni operazione: i criteri vivono qui
+// fuori, così sopravvivono al re-render, e la digitazione aggiorna solo la
+// lista (toccare la barra filtri farebbe perdere il focus al campo di ricerca).
+const docFilters = {
+  rfq: { q: '', status: '', supplierId: '' },
+  order: { q: '', status: '', supplierId: '' },
+};
+function docFilterBar(kind, statusMap, shown, total) {
+  const f = docFilters[kind];
+  const sups = db.suppliers.slice().sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+  return `<div class="catalog-filters">
+    <input type="text" class="search" id="${kind}f-q" value="${esc(f.q)}" placeholder="🔍 Cerca numero, oggetto, fornitore o riga..." oninput="docFilterChange('${kind}')">
+    <select id="${kind}f-status" onchange="docFilterChange('${kind}')">
+      <option value="">Tutti gli stati</option>
+      ${Object.entries(statusMap).map(([k, v]) => `<option value="${k}" ${f.status === k ? 'selected' : ''}>${v}</option>`).join('')}
+    </select>
+    <select id="${kind}f-sup" onchange="docFilterChange('${kind}')">
+      <option value="">Tutti i fornitori</option>
+      <option value="none" ${f.supplierId === 'none' ? 'selected' : ''}>— senza fornitore —</option>
+      ${sups.map(s => `<option value="${s.id}" ${f.supplierId === s.id ? 'selected' : ''}>${esc(s.name)}</option>`).join('')}
+    </select>
+    <span class="doc-filter-count" id="${kind}f-count">${docFilterCountText(shown, total)}</span>
+    ${docFilterActive(kind) ? `<button class="btn-outline" onclick="docFilterReset('${kind}')">✕ Azzera filtri</button>` : ''}
+  </div>`;
+}
+function docFilterCountText(shown, total) { return shown === total ? `${total} documenti` : `${shown} di ${total}`; }
+function docFilterActive(kind) { const f = docFilters[kind]; return !!(f.q || f.status || f.supplierId); }
+function docFilterChange(kind) {
+  const f = docFilters[kind];
+  f.q = (val(kind + 'f-q') || '').toLowerCase();
+  f.status = val(kind + 'f-status');
+  f.supplierId = val(kind + 'f-sup');
+  // Solo la lista: la barra filtri resta com'è, altrimenti il campo perde il focus
+  const list = document.getElementById(kind + '-list');
+  const count = document.getElementById(kind + 'f-count');
+  const all = kind === 'rfq' ? db.rfqs : db.orders;
+  if (list) list.innerHTML = kind === 'rfq' ? rfqListRows() : orderListRows();
+  if (count) count.textContent = docFilterCountText(docFilterApply(kind, all).length, all.length);
+}
+function docFilterReset(kind) {
+  docFilters[kind] = { q: '', status: '', supplierId: '' };
+  if (kind === 'rfq') renderRfq(); else renderOrders();
+}
+// Il testo cerca anche dentro le righe: spesso si risale al documento dal codice ordinato
+function docFilterApply(kind, docs) {
+  const f = docFilters[kind];
+  return docs.filter(d => {
+    if (f.status && d.status !== f.status) return false;
+    if (f.supplierId === 'none' ? !!d.supplierId : (f.supplierId && d.supplierId !== f.supplierId)) return false;
+    if (!f.q) return true;
+    const hay = [d.number, d.title, supplierName(d.supplierId), d.notes, d.notesInternal]
+      .concat((d.lines || []).map(l => [l.code, l.description, l.note].join(' ')))
+      .join(' ').toLowerCase();
+    return hay.includes(f.q);
+  });
+}
+
 function renderRfq() {
   const host = document.getElementById('view-rfq');
   if (rfqView === 'edit' && getRfq(currentRfqId)) {
@@ -1630,8 +1795,9 @@ function nextRfqNumber() {
   return prefix + String((seqs.length ? Math.max(...seqs) : 0) + 1).padStart(3, '0');
 }
 
-function renderRfqList() {
-  const rows = db.rfqs.slice().sort((a, b) => (b.number || '').localeCompare(a.number || '')).map(r => {
+function rfqListRows() {
+  const list = docFilterApply('rfq', db.rfqs.slice().sort((a, b) => (b.number || '').localeCompare(a.number || '')));
+  return list.map(r => {
     const nl = (r.lines || []).length;
     const sup = r.supplierId ? supplierName(r.supplierId) : '— nessun fornitore —';
     return `<div class="mgmt-item">
@@ -1643,19 +1809,22 @@ function renderRfqList() {
         <button class="mini-btn" onclick="orderFromRfq('${r.id}')" title="Crea ordine da questa richiesta">🧾</button>
         <button class="mini-btn danger" onclick="delRfq('${r.id}')" title="Elimina">🗑</button>
       </div></div>`;
-  }).join('') || '<div class="empty-text">Nessuna richiesta di offerta. Creane una per chiedere prezzi a un fornitore.</div>';
+  }).join('') || `<div class="empty-text">${db.rfqs.length ? 'Nessuna richiesta con questi filtri.' : 'Nessuna richiesta di offerta. Creane una per chiedere prezzi a un fornitore.'}</div>`;
+}
+function renderRfqList() {
   return `<div class="manage-wrap">
     <div class="bom-toolbar">
       <h2 class="section-title">📨 Richieste di offerta</h2>
       <button class="add-btn-sm" onclick="newRfq()">+ Nuova richiesta</button>
       <button class="btn-outline" onclick="openRfqCompare()">📊 Confronta offerte</button>
     </div>
-    <div class="mgmt-list">${rows}</div></div>`;
+    ${docFilterBar('rfq', RFQ_STATUS, docFilterApply('rfq', db.rfqs).length, db.rfqs.length)}
+    <div class="mgmt-list" id="rfq-list">${rfqListRows()}</div></div>`;
 }
 
 function newRfq() {
   const r = stampNew({ id: gid(), number: nextRfqNumber(), title: '', date: nowISO().slice(0, 10),
-    status: 'bozza', notes: '', supplierId: null,
+    status: 'bozza', notes: '', notesInternal: '', supplierId: null,
     transport: db.settings.transportDefault || '', payment: db.settings.paymentDefault || '',
     lines: [], active: true });
   db.rfqs.push(r); saveDB();
@@ -1678,7 +1847,7 @@ function rfqSave(id) {
 }
 function rfqSetField(id, field, value) {
   // Stato e note restano liberi anche a documento inviato
-  const kind = (field === 'status' || field === 'notes') ? 'ops' : 'contract';
+  const kind = (field === 'status' || field === 'notes' || field === 'notesInternal') ? 'ops' : 'contract';
   if (!rfqGuard(id, kind)) { renderRfq(); return; }
   const r = getRfq(id); if (!r) return;
   r[field] = value || (field === 'supplierId' ? null : '');
@@ -1772,7 +1941,7 @@ function lineIdentityFields(pfx, l, locked) {
   if (l.itemId) {
     return `<div class="modal-field"><label>Articolo da catalogo</label>
       <input value="${esc((l.code || '') + (l.code ? ' — ' : '') + (l.description || ''))}" disabled></div>
-      <p class="empty-text" style="text-align:left;padding:0 0 8px">Codice, descrizione e U.M. seguono l'anagrafica articolo. Modificali in <strong>Catalogo</strong>.</p>`;
+      <p class="empty-text" style="text-align:left;padding:0 0 8px">Codice, descrizione e U.M. seguono l'anagrafica articolo. Modificali nell'anagrafica articolo.</p>`;
   }
   if (locked) {
     return `<div class="modal-field"><label>Riga manuale</label>
@@ -1907,6 +2076,7 @@ function renderRfqEdit(id) {
           <datalist id="rfq-payment-opts">${(db.settings.paymentOptions || []).map(o => `<option value="${esc(o)}"></option>`).join('')}</datalist></div>
       </div>
       <div class="modal-field"><label>Note per il fornitore</label><textarea rows="2" onchange="rfqSetField('${id}','notes',this.value)">${esc(r.notes || '')}</textarea></div>
+      <div class="modal-field"><label>🔒 Note interne (non stampate sui documenti)</label><textarea rows="2" class="notes-internal" onchange="rfqSetField('${id}','notesInternal',this.value)">${esc(r.notesInternal || '')}</textarea></div>
     </div>
     <h3 class="rfq-subhead">Righe richiesta
       <span class="rfq-head-actions">
@@ -1967,6 +2137,7 @@ function exportRfqPDF(id) {
   doc.setTextColor(80); doc.setFontSize(9);
   if (r.transport) { doc.text('Trasporto / Shipping: ' + r.transport, 14, fy); fy += 5; }
   if (r.payment) { doc.text('Pagamento / Payment: ' + r.payment, 14, fy); fy += 5; }
+  // Solo r.notes: le note interne (notesInternal) non escono mai sul documento.
   if (r.notes) { doc.text('Note / Notes: ' + r.notes, 14, fy); }
   doc.save(`${r.number}${sup ? '_' + (sup.name || '').replace(/\s+/g, '_') : ''}.pdf`);
   showToast('PDF esportato');
@@ -1999,6 +2170,7 @@ function exportRfqExcel(id) {
       ? [i + 1, l.code || '', l.description, si ? si.code : '', si ? si.desc : '', l.qty || 0, l.uom || '', price, fmtDateIt(l.deliveryDate), l.note || '']
       : [i + 1, l.code || '', l.description, l.qty || 0, l.uom || '', price, fmtDateIt(l.deliveryDate), l.note || '']);
   });
+  // Solo r.notes: le note interne (notesInternal) non escono mai sul documento.
   if (r.notes) { data.push([]); data.push(['Note', r.notes]); }
   const ws = XLSX.utils.aoa_to_sheet(data);
   const wb = XLSX.utils.book_new();
@@ -2132,8 +2304,9 @@ function renderOrders() {
   else { orderView = 'list'; host.innerHTML = renderOrderList(); }
 }
 
-function renderOrderList() {
-  const rows = db.orders.slice().sort((a, b) => (b.number || '').localeCompare(a.number || '')).map(o => {
+function orderListRows() {
+  const list = docFilterApply('order', db.orders.slice().sort((a, b) => (b.number || '').localeCompare(a.number || '')));
+  return list.map(o => {
     const sup = o.supplierId ? supplierName(o.supplierId) : '— nessun fornitore —';
     const rec = orderReception(o);
     const recTxt = rec.ordered ? `ric. ${fmtQty(rec.received)}/${fmtQty(rec.ordered)}` : '';
@@ -2145,19 +2318,22 @@ function renderOrderList() {
         <button class="mini-btn" onclick="openOrderEdit('${o.id}')" title="Modifica">✏</button>
         <button class="mini-btn danger" onclick="delOrder('${o.id}')" title="Elimina">🗑</button>
       </div></div>`;
-  }).join('') || '<div class="empty-text">Nessun ordine. Creane uno o generane uno da una richiesta di offerta.</div>';
+  }).join('') || `<div class="empty-text">${db.orders.length ? 'Nessun ordine con questi filtri.' : 'Nessun ordine. Creane uno o generane uno da una richiesta di offerta.'}</div>`;
+}
+function renderOrderList() {
   return `<div class="manage-wrap">
     <div class="bom-toolbar">
       <h2 class="section-title">🧾 Ordini a fornitore</h2>
       <button class="add-btn-sm" onclick="newOrder()">+ Nuovo ordine</button>
     </div>
-    <div class="mgmt-list">${rows}</div></div>`;
+    ${docFilterBar('order', ORDER_STATUS, docFilterApply('order', db.orders).length, db.orders.length)}
+    <div class="mgmt-list" id="order-list">${orderListRows()}</div></div>`;
 }
 
 function newOrder() {
   const o = stampNew({ id: gid(), number: nextOrderNumber(), title: '', date: nowISO().slice(0, 10),
     status: 'bozza', supplierId: null, transport: db.settings.transportDefault || '', payment: db.settings.paymentDefault || '',
-    requestedDelivery: '', rfqId: null, supplierConfirmation: '', notes: '', lines: [], active: true });
+    requestedDelivery: '', rfqId: null, supplierConfirmation: '', notes: '', notesInternal: '', lines: [], active: true });
   db.orders.push(o); saveDB();
   currentOrderId = o.id; orderView = 'edit'; orderDirty = false; renderOrders();
 }
@@ -2169,7 +2345,7 @@ function orderFromRfq(rfqId) {
     supplierId: r.supplierId || null,
     transport: r.transport || (sup && sup.defaultTransport) || db.settings.transportDefault || '',
     payment: r.payment || (sup && sup.defaultPayment) || db.settings.paymentDefault || '',
-    requestedDelivery: '', rfqId: r.id, supplierConfirmation: '', notes: r.notes || '',
+    requestedDelivery: '', rfqId: r.id, supplierConfirmation: '', notes: r.notes || '', notesInternal: r.notesInternal || '',
     lines: (r.lines || []).map(l => ({ id: gid(), itemId: l.itemId || null, code: l.code || '', description: l.description || '',
       uom: l.uom || defaultUom(), qty: Number(l.qty) || 0, price: (l.price === '' || l.price == null) ? '' : Number(l.price),
       deliveryDate: l.deliveryDate || '', received: 0, note: l.note || '' })),
@@ -2194,7 +2370,7 @@ function orderMarkDirty() {
 function ordSave(id) { const o = getOrder(id); if (!o) return; touch(o); saveDB(); orderDirty = false; renderOrders(); showToast('Ordine salvato'); }
 
 function ordSetField(id, field, value) {
-  const kind = (field === 'status' || field === 'notes' || field === 'supplierConfirmation') ? 'ops' : 'contract';
+  const kind = (field === 'status' || field === 'notes' || field === 'notesInternal' || field === 'supplierConfirmation') ? 'ops' : 'contract';
   if (!ordGuard(id, kind)) { renderOrders(); return; }
   const o = getOrder(id); if (!o) return;
   const before = o.status;
@@ -2364,6 +2540,7 @@ function renderOrderEdit(id) {
         <div class="modal-field"><label>N° conferma d'ordine fornitore</label><input value="${esc(o.supplierConfirmation || '')}" onchange="ordSetField('${id}','supplierConfirmation',this.value)"></div>
       </div>
       <div class="modal-field"><label>Note</label><textarea rows="2" onchange="ordSetField('${id}','notes',this.value)">${esc(o.notes || '')}</textarea></div>
+      <div class="modal-field"><label>🔒 Note interne (non stampate sui documenti)</label><textarea rows="2" class="notes-internal" onchange="ordSetField('${id}','notesInternal',this.value)">${esc(o.notesInternal || '')}</textarea></div>
     </div>
     <h3 class="rfq-subhead">Righe ordine
       <span class="rfq-head-actions">
@@ -2427,6 +2604,7 @@ function exportOrderPDF(id) {
   if (o.payment) { doc.text('Pagamento / Payment: ' + o.payment, 14, fy); fy += 5; }
   if (o.requestedDelivery) { doc.text('Consegna richiesta / Requested delivery: ' + fmtDateIt(o.requestedDelivery), 14, fy); fy += 5; }
   if (o.supplierConfirmation) { doc.text('Conferma fornitore / Order confirmation: ' + o.supplierConfirmation, 14, fy); fy += 5; }
+  // Solo o.notes: le note interne (notesInternal) non escono mai sul documento.
   if (o.notes) { doc.text('Note / Notes: ' + o.notes, 14, fy); }
   doc.save(`${o.number}${sup ? '_' + (sup.name || '').replace(/\s+/g, '_') : ''}.pdf`);
   showToast('PDF esportato');
@@ -2465,6 +2643,7 @@ function exportOrderExcel(id) {
   });
   data.push([]);
   data.push(['', 'TOTALE IMPONIBILE / TOTAL', orderTotal(o)]);
+  // Solo o.notes: le note interne (notesInternal) non escono mai sul documento.
   if (o.notes) { data.push([]); data.push(['Note', o.notes]); }
   const ws = XLSX.utils.aoa_to_sheet(data);
   const wb = XLSX.utils.book_new();
@@ -2879,8 +3058,9 @@ function renderSettings() {
       <div class="modal-field"><label>Spese generali / overhead (%)</label><input type="number" id="set-ov" step="0.1" value="${s.overheadPct}"></div>
       <div class="modal-field"><label>Margine / markup (%)</label><input type="number" id="set-mg" step="0.1" value="${s.marginPct}"></div>
       <div class="modal-field"><label>Simbolo valuta</label><input id="set-cur" value="${esc(s.currency)}" maxlength="3"></div>
+      <div class="modal-field"><label>Calcolo costo parte (default)</label><select id="set-partcost">${partCostModeOptions(defaultPartCostMode())}</select></div>
     </div>
-    <p class="empty-text" style="text-align:left;padding:4px 0 12px">Le percentuali sono i valori di default applicati a tutti i prodotti. Si possono sovrascrivere per singola macchina dalla "Modifica testata".</p>
+    <p class="empty-text" style="text-align:left;padding:4px 0 12px">Le percentuali sono i valori di default applicati a tutti i prodotti. Si possono sovrascrivere per singola macchina dalla "Modifica testata".<br>Il calcolo del costo parte è quello proposto alle <strong>nuove</strong> parti: su ciascuna resta poi modificabile nella sua scheda.</p>
 
     <h3 class="settings-group-title">🏷 Codifica automatica articoli</h3>
     <div class="modal-grid">
@@ -2897,6 +3077,8 @@ function saveSettings() {
   db.settings.overheadPct = numVal('set-ov');
   db.settings.marginPct = numVal('set-mg');
   db.settings.currency = val('set-cur') || '€';
+  const pcm = val('set-partcost');
+  db.settings.partCostModeDefault = PART_COST_MODES[pcm] ? pcm : 'cycle';
   const d = parseInt(val('set-digits'), 10);
   db.settings.codeDigits = (d >= 1 && d <= 10) ? d : 3;
   db.settings.codePrefixAcquistato = (val('set-pfx-acq') || 'CMM').toUpperCase();
@@ -3201,6 +3383,14 @@ function renderBackup() {
         <input type="file" id="import-file" accept="application/json,.json" style="display:none" onchange="importBackup(event)">
         <button class="btn-outline" style="color:var(--red);border-color:var(--red)" onclick="resetDB()">↺ Ripristina dati esempio</button>
       </div>
+    </div></div>
+  <div class="cloud-section" style="border-color:var(--red);margin-top:16px">
+    <div style="flex:1">
+      <strong style="color:var(--red)">🗑 Azzera tutto</strong>
+      <p>Svuota completamente il database: articoli, distinte, richieste, ordini, fornitori, famiglie, centri di lavoro, unità di misura, dati azienda e impostazioni. Non restano nemmeno i dati di esempio. <strong>L'operazione è irreversibile</strong>: esporta prima un backup JSON.</p>
+      <div style="margin-top:8px">
+        <button class="btn-outline" style="color:var(--red);border-color:var(--red)" onclick="wipeAll()">🗑 AZZERA TUTTO</button>
+      </div>
     </div></div>`;
 }
 function exportBackup() {
@@ -3220,7 +3410,7 @@ function importBackup(ev) {
       if (!data || !Array.isArray(data.items)) throw new Error('formato non valido');
       if (!confirm('Importare questo file? I dati attuali verranno sovrascritti.')) return;
       Store.importSnapshot(data);
-      currentBomId = null; reportBomId = null;
+      resetViewState();
       setView('bom'); showToast('Backup importato');
     } catch (e) { showToast('File non valido', 'error'); }
   };
@@ -3230,8 +3420,29 @@ function importBackup(ev) {
 function resetDB() {
   if (!confirm('Ripristinare i dati di esempio? Tutti i dati attuali saranno persi.')) return;
   Store.reset();
-  currentBomId = null; reportBomId = null;
+  resetViewState();
   setView('bom'); showToast('Dati ripristinati');
+}
+// Azzeramento totale: doppia conferma, la seconda va digitata (il click distratto non basta).
+function wipeAll() {
+  if (!confirm('AZZERA TUTTO: il database verrà svuotato completamente e in modo irreversibile.\n\nHai esportato un backup JSON?')) return;
+  if ((prompt('Scrivi AZZERA per confermare l\'azzeramento totale:') || '').trim().toUpperCase() !== 'AZZERA') {
+    showToast('Azzeramento annullato', 'error'); return;
+  }
+  Store.clearAll();
+  resetViewState();
+  setView('bom'); showToast('Database azzerato');
+}
+// Nessun documento o articolo sopravvive a un reset: azzera anche ciò che le viste tengono aperto
+function resetViewState() {
+  currentBomId = null; reportBomId = null;
+  currentRfqId = null; currentOrderId = null;
+  rfqView = 'list'; orderView = 'list';
+  rfqUnlockedId = null; orderUnlockedId = null;
+  rfqDirty = false; orderDirty = false;
+  rfqCompareSel = []; bomExpanded = new Set(); favOnly = false;
+  docFilters.rfq = { q: '', status: '', supplierId: '' };
+  docFilters.order = { q: '', status: '', supplierId: '' };
 }
 
 // ═══════════════════════════════════════════════════════════
