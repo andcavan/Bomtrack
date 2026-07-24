@@ -138,6 +138,22 @@ const DEFAULT_UOMS = [
   { code: 'h', name: 'Ore' },
 ];
 
+// Concetti predefiniti: la parte "standardizzata" del nome di una parte
+// (l'oggetto), completata poi da una descrizione libera. Gestiti come le U.M.
+// in Gestione → Concetti. Id fissi: il seed è una-tantum e idempotente.
+const DEFAULT_CONCEPTS = [
+  { id: 'cn-albero', name: 'ALBERO' },
+  { id: 'cn-flangia', name: 'FLANGIA' },
+  { id: 'cn-staffa', name: 'STAFFA' },
+  { id: 'cn-piastra', name: 'PIASTRA' },
+  { id: 'cn-distanziale', name: 'DISTANZIALE' },
+  { id: 'cn-perno', name: 'PERNO' },
+  { id: 'cn-boccola', name: 'BOCCOLA' },
+  { id: 'cn-coperchio', name: 'COPERCHIO' },
+  { id: 'cn-supporto', name: 'SUPPORTO' },
+  { id: 'cn-ghiera', name: 'GHIERA' },
+];
+
 let db;
 
 // ── Utenti: password e hashing ──────────────────────────────
@@ -286,6 +302,13 @@ function migrateDB() {
     });
   }
   if (db.settings.uomDefault == null) db.settings.uomDefault = 'pz';
+  // Concetti gestiti: seed una-tantum con i predefiniti. Idempotente e non
+  // ripristina quelli cancellati (stesso criterio delle U.M.).
+  if (!Array.isArray(db.settings.concepts)) {
+    db.settings.concepts = DEFAULT_CONCEPTS.map(c => ({ ...c }));
+  }
+  // I concetti sono sempre in maiuscolo: normalizza anche quelli già salvati
+  db.settings.concepts.forEach(c => { c.name = String(c.name || '').toUpperCase(); });
   // Dati dell'azienda utilizzatrice (richiedente), stampati sui documenti RFQ
   if (!db.settings.company) db.settings.company = { name: '', referente: '', email: '', phone: '', vat: '', street: '', streetNumber: '', zip: '', city: '', province: '', country: '' };
   // Indirizzo strutturato (via, civico, CAP, città, provincia, stato); migra il vecchio campo unico
@@ -460,6 +483,7 @@ const Store = {
     db.families = [];
     db.settings.uoms = [];
     db.settings.uomDefault = '';
+    db.settings.concepts = [];
     db.settings.mpFamiliesSeeded = true;
     db.settings.partFamiliesSeeded = true;
     this.commit();

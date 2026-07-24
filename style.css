@@ -192,6 +192,11 @@ tr{border-bottom:1px solid rgba(42,46,59,.4)}
 .fav-star:hover{color:var(--orange);border-color:var(--orange)}
 .fav-star.off{color:var(--border)}
 .fav-star.off:hover{color:var(--orange)}
+.obs-mark{font-size:12px;margin-left:2px}
+.pick-fav{color:var(--orange);font-size:12px}
+.row-obsolete td{opacity:.55}
+.flag-check{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:400;color:var(--text);text-transform:none;letter-spacing:normal;cursor:pointer;padding:9px 0}
+.flag-check input{width:16px;height:16px;cursor:pointer}
 .fav-filter.active{color:var(--orange);border-color:var(--orange)}
 /* Note interne dei documenti: non finiscono su PDF/Excel, si distinguono a colpo d'occhio */
 textarea.notes-internal{border-style:dashed}

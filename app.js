@@ -5,7 +5,7 @@
 // Revisione in esecuzione, mostrata accanto al logo. Va tenuta allineata alla
 // voce in cima al changelog del README (l'app si copia a mano tra PC: sapere
 // quale revisione sta girando su una postazione è l'unico modo per capirlo).
-const APP_VERSION = '0.8.1';
+const APP_VERSION = '0.10.0';
 
 let currentUser = null;      // utente della sessione (null = schermata di accesso)
 let currentBomId = null;     // articolo prodotto attualmente aperto nelle Distinte
@@ -111,6 +111,19 @@ function uomOptions(selected) {
   if (sel && !list.some(u => u.code === sel)) list.unshift({ code: sel, name: '(non in elenco)' });
   if (!sel) list.unshift({ code: '', name: '—' });
   return list.map(u => `<option value="${esc(u.code)}" ${u.code === sel ? 'selected' : ''}>${esc(u.code)}${u.name ? ' — ' + esc(u.name) : ''}</option>`).join('');
+}
+// ── Concetti (parte "standardizzata" del nome di una Parte) ──
+function conceptList() { return (db.settings && db.settings.concepts) || []; }
+function conceptById(id) { return conceptList().find(c => c.id === id); }
+function conceptName(id) { const c = conceptById(id); return c ? c.name : ''; }
+function conceptOptions(selectedId) {
+  const sel = selectedId || '';
+  return `<option value="">—</option>` + conceptList()
+    .map(c => `<option value="${c.id}" ${c.id === sel ? 'selected' : ''}>${esc(c.name)}</option>`).join('');
+}
+// Nome finale di una parte: concetto + descrizione libera
+function composePartName(conceptId, free) {
+  return (conceptName(conceptId) + ' ' + (free || '')).trim();
 }
 // Registra al volo un'U.M. incontrata nell'import massivo
 function ensureUom(code) {
@@ -299,6 +312,7 @@ function closeModal() { document.getElementById('modal-root').innerHTML = ''; }
 function val(id) { const e = document.getElementById(id); return e ? e.value.trim() : ''; }
 function setVal(id, v) { const e = document.getElementById(id); if (e) e.value = v; }
 function numVal(id) { const e = document.getElementById(id); return e ? (parseFloat(e.value) || 0) : 0; }
+function isChecked(id) { const e = document.getElementById(id); return !!(e && e.checked); }
 
 // ═══════════════════════════════════════════════════════════
 //  ACCESSO, SESSIONE E UTENTI
@@ -633,7 +647,7 @@ function showReadOnlyBanner(panel, area) {
 //  VISTA: DISTINTE BASE
 // ═══════════════════════════════════════════════════════════
 function productOptions(selectedId) {
-  const opt = (i) => `<option value="${i.id}" ${i.id === selectedId ? 'selected' : ''}>${esc(i.code)} — ${esc(i.name)}</option>`;
+  const opt = (i) => `<option value="${i.id}" ${i.id === selectedId ? 'selected' : ''}>${itemBadgesTxt(i)}${esc(i.code)} — ${esc(i.name)}</option>`;
   const groups = [['macchina', 'Macchine'], ['gruppo', 'Gruppi'], ['sottogruppo', 'Sottogruppi']];
   let h = groups.map(([t, lbl]) => {
     const items = db.items.filter(i => i.type === t);
@@ -847,7 +861,7 @@ function itemPickerOptions(parentType, selectedId, excludeId) {
   const allowed = ALLOWED_CHILDREN[parentType] || [];
   return allowed.map(t => {
     const opts = db.items.filter(i => i.type === t && i.id !== excludeId)
-      .map(i => `<option value="${i.id}" ${i.id === selectedId ? 'selected' : ''}>${esc(i.code)} — ${esc(i.name)}</option>`).join('');
+      .map(i => `<option value="${i.id}" ${i.id === selectedId ? 'selected' : ''}>${itemBadgesTxt(i)}${esc(i.code)} — ${esc(i.name)}</option>`).join('');
     return opts ? `<optgroup label="${typeLabel(t)}">${opts}</optgroup>` : '';
   }).join('');
 }
@@ -878,7 +892,7 @@ function renderPickerResults() {
   const sel = val('cmp-item');
   let html = rows.map(i =>
     `<div class="picker-row ${i.id === sel ? 'is-sel' : ''}" onclick="selectPickerItem('${i.id}')">
-       <span class="picker-type">${typeLabel(i.type)}</span><b>${esc(i.code)}</b> — ${esc(i.name)}
+       <span class="picker-type">${typeLabel(i.type)}</span><b>${esc(i.code)}</b> — ${esc(i.name)}${itemBadges(i)}
      </div>`).join('');
   if (!html) html = `<div class="picker-empty">Nessun articolo trovato</div>`;
   else if (total > rows.length) html += `<div class="picker-empty">+${total - rows.length} altri — affina la ricerca</div>`;
@@ -1184,6 +1198,17 @@ function toggleFavFilter() {
   if (b) b.classList.toggle('active', favOnly);
   renderCatalog('buy');
 }
+// Badge preferito/obsoleto, mostrati in ogni selezione dell'articolo (righe picker).
+function itemBadges(i) {
+  if (!i) return '';
+  return (i.favorite ? ' <span class="pick-fav" title="Preferito">★</span>' : '')
+    + (i.obsolete ? ' <span class="obs-mark" title="Articolo obsoleto">⛔</span>' : '');
+}
+// Variante testuale per i menu a tendina (<option> non ammette HTML).
+function itemBadgesTxt(i) {
+  if (!i) return '';
+  return (i.favorite ? '★ ' : '') + (i.obsolete ? '⛔ ' : '');
+}
 function catalogRow(i) {
   const unit = (isAssembly(i.type) || i.type === 'parte') ? costOf(i.id).total
     : (i.type === 'acquistato' ? (i.purchasePrice || 0) : (i.unitCost || 0));
@@ -1192,11 +1217,10 @@ function catalogRow(i) {
   else if (isAssembly(i.type)) meta = (i.components || []).length + ' comp. / ' + (i.operations || []).length + ' lav.';
   else if (i.type === 'parte') meta = (i.cycle || []).length ? (i.cycle.length + ' righe ciclo') : '—';
   else meta = '—';
-  const fav = canFavorite(i.type)
-    ? `<button class="mini-btn fav-star ${i.favorite ? '' : 'off'}" title="${i.favorite ? 'Togli dai preferiti' : 'Segna come preferito'}" onclick="toggleFavorite('${i.id}')">${i.favorite ? '★' : '☆'}</button>`
-    : '';
-  return `<tr>
-    <td style="width:1%">${fav}</td>
+  // Indicatori a sinistra, di sola visione (i flag si impostano nella scheda articolo)
+  const flags = `${i.favorite ? '<span class="pick-fav" title="Preferito">★</span>' : ''}${i.obsolete ? '<span class="obs-mark" title="Obsoleto">⛔</span>' : ''}`;
+  return `<tr class="${i.obsolete ? 'row-obsolete' : ''}">
+    <td style="width:1%;white-space:nowrap">${flags}</td>
     <td style="font-family:var(--mono)">${esc(i.code)}</td>
     <td>${esc(i.name)}</td>
     <td><span class="bom-type-tag tt-${i.type}">${typeShort(i.type)}</span> ${typeLabel(i.type)}</td>
@@ -1268,7 +1292,15 @@ function itemModalBody(it, scope) {
       </div>
       <div class="modal-field"><label>Codice</label><input id="it-code" value="${it ? esc(it.code) : ''}" oninput="markCodeManual()"></div>
     </div>
-    <div class="modal-field"><label>Nome</label><input id="it-name" value="${it ? esc(it.name) : ''}"></div>
+    <div class="modal-field" id="fld-name-std"><label>Nome</label><input id="it-name" value="${it ? esc(it.name) : ''}"></div>
+    <div class="modal-grid" id="fld-name-parte">
+      <div class="modal-field"><label>Concetto</label>
+        <select id="it-concept" onchange="updatePartNamePreview()">${conceptOptions(it ? it.conceptId : '')}</select></div>
+      <div class="modal-field"><label>Descrizione</label>
+        <input id="it-namefree" value="${it ? esc(it.nameFree != null ? it.nameFree : it.name) : ''}" oninput="updatePartNamePreview()"></div>
+      <div class="modal-field" style="grid-column:1/-1;margin-top:-4px">
+        <span class="empty-text" style="padding:0">Nome: <strong id="part-name-preview"></strong></span></div>
+    </div>
     <div class="modal-grid">
       <div class="modal-field"><label>Unità di misura</label><select id="it-uom">${uomOptions(it ? (it.uom || defaultUom()) : defaultUom())}</select></div>
       <div class="modal-field" id="fld-unitcost"><label>Costo unitario (${cur()}/U.M.)</label><input type="number" id="it-unitcost" step="0.0001" value="${it && it.unitCost != null ? it.unitCost : ''}" oninput="onUnitCostInput()"></div>
@@ -1298,6 +1330,12 @@ function itemModalBody(it, scope) {
           <span id="cycle-total" class="cycle-total"></span>
         </div>
       </div>
+    </div>
+    <div class="modal-grid" id="fld-flags">
+      <div class="modal-field" id="fld-flag-fav"><label>Preferito</label>
+        <label class="flag-check"><input type="checkbox" id="it-favorite" ${it && it.favorite ? 'checked' : ''}> ★ Segna come preferito</label></div>
+      <div class="modal-field" id="fld-flag-obs"><label>Obsoleto</label>
+        <label class="flag-check"><input type="checkbox" id="it-obsolete" ${it && it.obsolete ? 'checked' : ''}> ⛔ Articolo obsoleto (non più utilizzabile)</label></div>
     </div>
     <div class="modal-field"><label>Note</label><textarea id="it-notes" rows="2">${it ? esc(it.notes || '') : ''}</textarea></div>`;
 }
@@ -1380,8 +1418,17 @@ function refreshItemCode() {
   if (!codeEl) return;
   codeEl.value = genItemCode(itemDraftFromForm());
 }
+// Anteprima del nome composto (concetto + descrizione) nella modale parte
+function updatePartNamePreview() {
+  const el = document.getElementById('part-name-preview');
+  if (el) el.textContent = composePartName(val('it-concept'), val('it-namefree')) || '—';
+}
 function toggleItemFields() {
   const t = document.getElementById('it-type').value;
+  // Nome: campo libero singolo per tutti i tipi tranne "parte", che usa concetto + descrizione
+  document.getElementById('fld-name-std').style.display = t === 'parte' ? 'none' : '';
+  document.getElementById('fld-name-parte').style.display = t === 'parte' ? '' : 'none';
+  if (t === 'parte') updatePartNamePreview();
   document.getElementById('fld-unitcost').style.display = (t === 'materiale' || t === 'parte') ? '' : 'none';
   document.getElementById('fld-price').style.display = t === 'acquistato' ? '' : 'none';
   document.getElementById('fld-supplier').style.display = t === 'acquistato' ? '' : 'none';
@@ -1390,6 +1437,11 @@ function toggleItemFields() {
   document.getElementById('fld-family').style.display = showFam ? '' : 'none';
   document.getElementById('fld-assembly-note').style.display = isAssembly(t) ? '' : 'none';
   document.getElementById('fld-cycle').style.display = t === 'parte' ? '' : 'none';
+  // Flag: preferito su commerciali e materie prime, obsoleto anche sulle parti
+  const showObs = t === 'acquistato' || t === 'materiale' || t === 'parte';
+  document.getElementById('fld-flag-fav').style.display = canFavorite(t) ? '' : 'none';
+  document.getElementById('fld-flag-obs').style.display = showObs ? '' : 'none';
+  document.getElementById('fld-flags').style.display = showObs ? '' : 'none';
   // Codifica gerarchica: schema per la macchina, appartenenza per gli altri tipi
   const isChild = t === 'gruppo' || t === 'sottogruppo' || t === 'parte';
   document.getElementById('fld-coding-mac').style.display = t === 'macchina' ? '' : 'none';
@@ -1425,7 +1477,7 @@ function cycleRowLabel(row) {
   const it = getItem(row.itemId);
   if (!it) return '⚠ articolo mancante';
   return `<span class="bom-type-tag tt-${it.type}">${typeShort(it.type)}</span>
-    <span class="cycle-code">${esc(it.code)}</span> ${esc(it.name)}`;
+    <span class="cycle-code">${esc(it.code)}</span> ${esc(it.name)}${itemBadges(it)}`;
 }
 function renderCycleList() {
   const box = document.getElementById('cycle-list'); if (!box) return;
@@ -1536,7 +1588,7 @@ function renderCyclePickerResults() {
   rows = rows.slice(0, 50);
   let html = rows.map(i =>
     `<div class="picker-row" onclick="pickCycleItem('${i.id}')">
-       <span class="picker-type">${typeLabel(i.type)}</span><b>${esc(i.code)}</b> — ${esc(i.name)}
+       <span class="picker-type">${typeLabel(i.type)}</span><b>${esc(i.code)}</b> — ${esc(i.name)}${itemBadges(i)}
      </div>`).join('');
   if (!html) html = `<div class="picker-empty">Nessun articolo trovato</div>`;
   else if (total > rows.length) html += `<div class="picker-empty">+${total - rows.length} altri — affina la ricerca</div>`;
@@ -1595,7 +1647,7 @@ function renderSourceResults() {
     .sort((a, b) => String(a.code).localeCompare(String(b.code))).slice(0, 50);
   box.innerHTML = rows.map(i =>
     `<div class="picker-row" onclick="applyItemSource('${i.id}')">
-       <span class="picker-type">${typeLabel(i.type)}</span><b>${esc(i.code)}</b> — ${esc(i.name)}
+       <span class="picker-type">${typeLabel(i.type)}</span><b>${esc(i.code)}</b> — ${esc(i.name)}${itemBadges(i)}
      </div>`).join('') || `<div class="picker-empty">Nessun articolo trovato</div>`;
 }
 // Precompila il form "Nuovo articolo" coi dati della sorgente (codice escluso, sempre univoco).
@@ -1616,7 +1668,14 @@ function applyItemSource(id) {
     if (src.type === 'gruppo') setVal('it-sigla-grp', src.sigla || '');
     else setVal('it-group', src.groupItemId || '');
   }
-  setVal('it-name', src.name + ' (copia)');
+  // Nome: le parti copiano concetto + descrizione, gli altri tipi il nome libero
+  if (src.type === 'parte') {
+    setVal('it-concept', src.conceptId || '');
+    setVal('it-namefree', (src.nameFree != null ? src.nameFree : src.name) + ' (copia)');
+    updatePartNamePreview();
+  } else {
+    setVal('it-name', src.name + ' (copia)');
+  }
   setVal('it-uom', src.uom || defaultUom());
   setVal('it-unitcost', src.unitCost != null ? src.unitCost : '');
   setVal('it-price', src.purchasePrice != null ? src.purchasePrice : '');
@@ -1638,9 +1697,19 @@ function duplicateItemModal(id) {
 }
 function readItemForm(it) {
   it.code = val('it-code') || it.id;
-  it.name = val('it-name');
+  // Le parti compongono il nome da concetto + descrizione libera; gli altri tipi restano a testo libero
+  if (it.type === 'parte') {
+    it.conceptId = val('it-concept');
+    it.nameFree = val('it-namefree');
+    it.name = composePartName(it.conceptId, it.nameFree);
+  } else {
+    it.name = val('it-name');
+  }
   it.uom = val('it-uom') || defaultUom();
   it.notes = val('it-notes');
+  // Flag: preferito (solo commerciali e materie prime), obsoleto (anche parti)
+  if (canFavorite(it.type)) it.favorite = isChecked('it-favorite');
+  if (it.type === 'acquistato' || it.type === 'materiale' || it.type === 'parte') it.obsolete = isChecked('it-obsolete');
   if (it.type === 'materiale' || it.type === 'parte') { it.unitCost = numVal('it-unitcost'); }
   if (it.type === 'acquistato') { it.purchasePrice = numVal('it-price'); it.supplierId = val('it-supplier'); }
   if (it.type === 'materiale' || it.type === 'acquistato') { it.supplierCode = val('it-supcode'); it.supplierDesc = val('it-supdesc'); }
@@ -1681,9 +1750,19 @@ function validateItemCoding(id) {
   }
   return null;
 }
+// Controlli sul nome secondo il tipo: le parti richiedono concetto + descrizione, gli altri il nome libero.
+function validateItemName(type) {
+  if (type === 'parte') {
+    if (!val('it-concept')) return 'Concetto richiesto';
+    if (!val('it-namefree')) return 'Descrizione richiesta';
+    return null;
+  }
+  return val('it-name') ? null : 'Nome richiesto';
+}
 function saveNewItem() {
   if (!roleGuard('catalog')) return;
-  const name = val('it-name'); if (!name) { showToast('Nome richiesto', 'error'); return; }
+  const nameErr = validateItemName(val('it-type'));
+  if (nameErr) { showToast(nameErr, 'error'); return; }
   const codErr = validateItemCoding(null);
   if (codErr) { showToast(codErr, 'error'); return; }
   const it = { id: gid(), type: val('it-type') };
@@ -1716,6 +1795,8 @@ function editItemModal(id) {
 function saveItemEdit(id) {
   if (!roleGuard('catalog')) return;
   const it = getItem(id); if (!it) return;
+  const nameErr = validateItemName(it.type);
+  if (nameErr) { showToast(nameErr, 'error'); return; }
   const codErr = validateItemCoding(id);
   if (codErr) { showToast(codErr, 'error'); return; }
   readItemForm(it);
@@ -2214,7 +2295,7 @@ function catalogPickerModal(onAddIds) {
   __pickOnAdd = onAddIds;
   const opts = db.items.filter(i => i.active !== false).sort((a, b) => (a.code || '').localeCompare(b.code || ''))
     .map(i => `<label class="rfq-pick-row" data-type="${i.type}" data-fam="${i.familyId || ''}" data-sub="${i.subFamilyId || ''}" data-sup="${i.supplierId || ''}"><input type="checkbox" value="${i.id}">
-      <span style="font-family:var(--mono)">${esc(i.code || '')}</span> ${esc(i.name)}
+      <span style="font-family:var(--mono)">${esc(i.code || '')}</span> ${esc(i.name)}${itemBadges(i)}
       <span class="rfq-pick-type">${TYPE_LABELS[i.type] || i.type}</span></label>`).join('');
   const typeOpts = ALL_TYPES.map(t => `<option value="${t}">${typeLabel(t)}</option>`).join('');
   const famOpts = (db.families || []).map(f => `<option value="${f.id}">${esc(f.name)}</option>`).join('');
@@ -2925,6 +3006,7 @@ const MGMT_TABS = [
   { id: 'fam-acquistato', label: '🛒 Famiglie commerciali' },
   { id: 'fam-materiale', label: '🧱 Famiglie materie prime' },
   { id: 'fam-parte', label: '⚙️ Famiglie parti' },
+  { id: 'concepts', label: '🏷 Concetti' },
   { id: 'workcenters', label: '🔧 Centri di lavoro' },
   { id: 'uoms', label: '📏 Unità di misura' },
   { id: 'settings', label: '📐 Impostazioni' },
@@ -2943,6 +3025,7 @@ function renderManage() {
   else if (mgmtTab === 'fam-materiale') c.innerHTML = renderFamilies('materiale');
   else if (mgmtTab === 'fam-parte') c.innerHTML = renderFamilies('parte');
   else if (mgmtTab === 'workcenters') c.innerHTML = renderWorkCenters();
+  else if (mgmtTab === 'concepts') c.innerHTML = renderConcepts();
   else if (mgmtTab === 'uoms') c.innerHTML = renderUoms();
   else if (mgmtTab === 'settings') c.innerHTML = renderSettings();
   else if (mgmtTab === 'import') c.innerHTML = renderImport();
@@ -3350,6 +3433,65 @@ function delWc(id) {
 
 // ─── Unità di misura ───
 // Quante volte un codice U.M. è usato in anagrafica articoli e nei documenti.
+// ─── Concetti (parte "standardizzata" del nome delle Parti) ───
+function conceptUsage(id) {
+  return (db.items || []).filter(i => i.type === 'parte' && i.conceptId === id).length;
+}
+function renderConcepts() {
+  const list = conceptList().map((c, i) => {
+    const used = conceptUsage(c.id);
+    return `<div class="mgmt-item">
+      <span class="mgmt-item-name">${esc(c.name)}</span>
+      <span class="mgmt-item-meta">${used ? 'usato ' + used + '×' : 'non usato'}</span>
+      <div class="mgmt-item-actions">
+        <button class="mini-btn" onclick="editConceptModal(${i})">✏</button>
+        <button class="mini-btn danger" onclick="delConcept(${i})">🗑</button>
+      </div></div>`;
+  }).join('') || '<div class="empty-text">Nessun concetto.</div>';
+  return `<div class="mgmt-panel">
+    <p class="empty-text" style="text-align:left;padding:4px 0 12px">Elenco dei <strong>concetti</strong> (sempre in <strong>MAIUSCOLO</strong>): la parte predeterminata del nome di una <strong>Parte</strong> (l'oggetto), completata da una descrizione libera — es. concetto <em>ALBERO</em> + <em>motore 20×100</em> → <em>ALBERO motore 20×100</em>. Un concetto in uso non può essere rinominato né eliminato.</p>
+    <div class="mgmt-list">${list}</div>
+    <div class="mgmt-form">
+      <input id="concept-name" placeholder="Concetto (es. ALBERO)" style="text-transform:uppercase" oninput="this.value=this.value.toUpperCase()">
+      <button class="add-btn-sm" onclick="addConcept()">+ Aggiungi</button></div></div>`;
+}
+function addConcept() {
+  if (!roleGuard('manage')) return;
+  const name = val('concept-name').trim().toUpperCase(); if (!name) { showToast('Nome richiesto', 'error'); return; }
+  if (conceptList().some(c => c.name === name)) { showToast('Concetto già presente', 'error'); return; }
+  db.settings.concepts.push({ id: gid(), name });
+  saveDB(); renderManage(); showToast('Concetto aggiunto');
+}
+function editConceptModal(i) {
+  if (!roleGuard('manage')) return;
+  const c = conceptList()[i]; if (!c) return;
+  openModal(`<h3>✏ Modifica concetto</h3>
+    <div class="modal-field"><label>Concetto</label><input id="ec-name" value="${esc(c.name)}" style="text-transform:uppercase" oninput="this.value=this.value.toUpperCase()"></div>
+    <div class="modal-actions"><button class="btn-ghost" onclick="closeModal()">Annulla</button>
+      <button class="add-btn-sm" onclick="saveConcept(${i})">Salva</button></div>`);
+}
+function saveConcept(i) {
+  if (!roleGuard('manage')) return;
+  const c = conceptList()[i]; if (!c) return;
+  const name = val('ec-name').trim().toUpperCase(); if (!name) { showToast('Nome richiesto', 'error'); return; }
+  if (name !== c.name) {
+    // Un concetto in uso è congelato: i nomi delle parti già composte non devono cambiare da soli
+    if (conceptUsage(c.id)) { showToast('Concetto in uso: rinomina non consentita', 'error'); return; }
+    if (conceptList().some((x, j) => j !== i && x.name === name)) { showToast('Concetto già presente', 'error'); return; }
+  }
+  c.name = name;
+  saveDB(); closeModal(); renderManage(); showToast('Aggiornato');
+}
+function delConcept(i) {
+  if (!roleGuard('manage')) return;
+  const c = conceptList()[i]; if (!c) return;
+  const used = conceptUsage(c.id);
+  if (used) { showToast(`Usato in ${used} parti`, 'error'); return; }
+  if (!confirm(`Eliminare il concetto "${c.name}"?`)) return;
+  db.settings.concepts = conceptList().filter((_, j) => j !== i);
+  saveDB(); renderManage(); showToast('Eliminato');
+}
+
 function uomUsage(code) {
   let n = 0;
   (db.items || []).forEach(i => { if (i.uom === code) n++; });
