@@ -331,7 +331,28 @@ function openModal(h, wide) {
 function closeModal() { document.getElementById('modal-root').innerHTML = ''; }
 function val(id) { const e = document.getElementById(id); return e ? e.value.trim() : ''; }
 function setVal(id, v) { const e = document.getElementById(id); if (e) e.value = v; }
-function numVal(id) { const e = document.getElementById(id); return e ? (parseFloat(e.value) || 0) : 0; }
+// ─── Lettura dei campi numerici ───
+// parseFloat da solo lascia passare i negativi e Infinity: un costo negativo si
+// propaga per tutto il rollup, un Infinity fa comparire NaN ovunque.
+// clampNum è logica pura, senza DOM: è la parte che la suite verifica.
+function clampNum(v, min, max) {
+  if (!isFinite(v)) return min != null ? min : 0;      // campo vuoto, testo, NaN, Infinity
+  if (min != null && v < min) return min;
+  if (max != null && v > max) return max;
+  return v;
+}
+// Valore così com'è stato digitato (0 se vuoto o non numerico): serve a
+// riconoscere un negativo prima di correggerlo.
+function rawNum(id) {
+  const e = document.getElementById(id);
+  const v = parseFloat(e ? e.value : '');
+  return isFinite(v) ? v : 0;
+}
+function numVal(id, min, max) { return clampNum(rawNum(id), min, max); }
+// Percentuali e valori di bozza si riportano dentro l'intervallo in silenzio
+// (come già fa codeDigits); costi, prezzi e quantità no: lì un negativo è un
+// errore di battitura, e azzerarlo lo farebbe sparire senza dirlo a nessuno.
+function isNeg(id) { return rawNum(id) < 0; }
 function isChecked(id) { const e = document.getElementById(id); return !!(e && e.checked); }
 
 // ═══════════════════════════════════════════════════════════
@@ -981,7 +1002,8 @@ function saveNewComponent() {
   if (!itemId) { showToast('Seleziona un articolo', 'error'); return; }
   if (!isAllowedChild(it.type, itemId)) { showToast('Tipo non ammesso in un ' + typeLabel(it.type).toLowerCase(), 'error'); return; }
   if (createsCycle(it.id, itemId)) { showToast('Operazione annullata: creerebbe un ciclo', 'error'); return; }
-  it.components.push({ itemId, qty: numVal('cmp-qty'), scrapPct: numVal('cmp-scrap') });
+  if (isNeg('cmp-qty')) { showToast('La quantità non può essere negativa', 'error'); return; }
+  it.components.push({ itemId, qty: numVal('cmp-qty', 0), scrapPct: numVal('cmp-scrap', 0, 100) });
   touch(it);
   saveDB(); closeModal(); renderBom(); showToast('Componente aggiunto');
 }
@@ -1008,7 +1030,8 @@ function saveComponentEdit(idx) {
   const itemId = val('cmp-item');
   if (!isAllowedChild(it.type, itemId)) { showToast('Tipo non ammesso in un ' + typeLabel(it.type).toLowerCase(), 'error'); return; }
   if (createsCycle(it.id, itemId)) { showToast('Operazione annullata: creerebbe un ciclo', 'error'); return; }
-  comp.itemId = itemId; comp.qty = numVal('cmp-qty'); comp.scrapPct = numVal('cmp-scrap');
+  if (isNeg('cmp-qty')) { showToast('La quantità non può essere negativa', 'error'); return; }
+  comp.itemId = itemId; comp.qty = numVal('cmp-qty', 0); comp.scrapPct = numVal('cmp-scrap', 0, 100);
   touch(it);
   saveDB(); closeModal(); renderBom(); showToast('Componente aggiornato');
 }
@@ -1065,7 +1088,8 @@ function addOperationModal() {
 function saveNewOperation() {
   if (!roleGuard('bom')) return;
   const it = getItem(currentBomId); if (!it) return;
-  it.operations.push({ workCenterId: val('op-wc'), hours: numVal('op-hours'), note: val('op-note') });
+  if (isNeg('op-hours')) { showToast('Le ore non possono essere negative', 'error'); return; }
+  it.operations.push({ workCenterId: val('op-wc'), hours: numVal('op-hours', 0), note: val('op-note') });
   touch(it);
   saveDB(); closeModal(); renderBom(); showToast('Lavorazione aggiunta');
 }
@@ -1086,7 +1110,8 @@ function saveOperationEdit(idx) {
   if (!roleGuard('bom')) return;
   const it = getItem(currentBomId); if (!it) return;
   const op = it.operations[idx]; if (!op) return;
-  op.workCenterId = val('op-wc'); op.hours = numVal('op-hours'); op.note = val('op-note');
+  if (isNeg('op-hours')) { showToast('Le ore non possono essere negative', 'error'); return; }
+  op.workCenterId = val('op-wc'); op.hours = numVal('op-hours', 0); op.note = val('op-note');
   touch(it);
   saveDB(); closeModal(); renderBom(); showToast('Lavorazione aggiornata');
 }
@@ -1173,8 +1198,10 @@ function saveCurrentItem() {
   const it = getItem(currentBomId); if (!it) return;
   it.code = val('mac-code'); it.uom = val('mac-uom'); it.name = val('mac-name') || it.name;
   it.notes = val('mac-notes');
-  const ov = val('mac-ov'); it.overheadPctOverride = ov === '' ? null : parseFloat(ov);
-  const mg = val('mac-mg'); it.marginPctOverride = mg === '' ? null : parseFloat(mg);
+  // Vuoto = nessuna sovrascrittura (si usa l'impostazione globale); un valore
+  // fuori scala viene riportato dentro l'intervallo, come per le impostazioni.
+  const ov = val('mac-ov'); it.overheadPctOverride = ov === '' ? null : clampNum(parseFloat(ov), 0, 1000);
+  const mg = val('mac-mg'); it.marginPctOverride = mg === '' ? null : clampNum(parseFloat(mg), 0, 1000);
   touch(it);
   saveDB(); closeModal(); renderBom(); showToast('Testata aggiornata');
 }
@@ -1348,9 +1375,9 @@ function itemModalBody(it, scope) {
     </div>
     <div class="modal-grid">
       <div class="modal-field"><label>Unità di misura</label><select id="it-uom">${uomOptions(it ? (it.uom || defaultUom()) : defaultUom())}</select></div>
-      <div class="modal-field" id="fld-unitcost"><label>Costo unitario (${cur()}/U.M.)</label><input type="number" id="it-unitcost" step="0.0001" value="${it && it.unitCost != null ? it.unitCost : ''}" oninput="onUnitCostInput()"></div>
+      <div class="modal-field" id="fld-unitcost"><label>Costo unitario (${cur()}/U.M.)</label><input type="number" id="it-unitcost" min="0" step="0.0001" value="${it && it.unitCost != null ? it.unitCost : ''}" oninput="onUnitCostInput()"></div>
       <div class="modal-field" id="fld-assembly-note" style="grid-column:1/-1"><label>Composizione</label><span class="empty-text" style="padding:0">La distinta (componenti e lavorazioni) si gestisce nella vista <strong>Distinte base</strong>.</span></div>
-      <div class="modal-field" id="fld-price"><label>Prezzo acquisto (${cur()}/U.M.)</label><input type="number" id="it-price" step="0.0001" value="${it && it.purchasePrice != null ? it.purchasePrice : ''}"></div>
+      <div class="modal-field" id="fld-price"><label>Prezzo acquisto (${cur()}/U.M.)</label><input type="number" id="it-price" min="0" step="0.0001" value="${it && it.purchasePrice != null ? it.purchasePrice : ''}"></div>
       <div class="modal-field" id="fld-supplier"><label>Fornitore</label><select id="it-supplier">${supplierOptions(it ? it.supplierId : '')}</select></div>
     </div>
     <div class="modal-grid" id="fld-supinfo">
@@ -1571,7 +1598,7 @@ function renderCycleTotals() {
   });
   const mode = val('it-costmode') || defaultPartCostMode();
   const cycleTot = cycleDraft.reduce((s, r) => s + cycleRowCost(r), 0);
-  const manual = numVal('it-unitcost');
+  const manual = numVal('it-unitcost', 0);
   // Il costo risultante dipende dal modo scelto; senza righe di ciclo resta il costo manuale.
   const resulting = (mode === 'unit' || !cycleDraft.length) ? manual
     : (mode === 'sum' ? cycleTot + manual : cycleTot);
@@ -1591,12 +1618,15 @@ function onUnitCostInput() { if (val('it-type') === 'parte') renderCycleTotals()
 function updateCycleRow(idx) {
   const row = cycleDraft[idx]; if (!row) return;
   if (row.kind === 'op') {
-    row.cost = numVal('cyc-cost-in-' + idx);
+    row.cost = numVal('cyc-cost-in-' + idx, 0);
     row.supplierId = val('cyc-sup-' + idx);
   } else {
-    row.qty = numVal('cyc-qty-' + idx);
+    row.qty = numVal('cyc-qty-' + idx, 0);
+    // Vuoto = nessun override, si usa il costo calcolato. Qui si corregge in
+    // silenzio: è una bozza che si ridisegna a ogni battuta, un messaggio
+    // d'errore per carattere sarebbe insopportabile.
     const ovr = val('cyc-ovr-' + idx);
-    row.costOverride = ovr === '' ? null : (parseFloat(ovr) || 0);
+    row.costOverride = ovr === '' ? null : clampNum(parseFloat(ovr), 0);
   }
   renderCycleTotals();
 }
@@ -1663,7 +1693,7 @@ function addCycleOpRow() {
 function pickCycleOp() {
   const wcId = val('cyc-wc');
   if (!wcId) { showToast('Seleziona un centro di lavoro', 'error'); return; }
-  cycleDraft.push({ kind: 'op', workCenterId: wcId, supplierId: val('cyc-opsup'), cost: numVal('cyc-opcost'), note: '' });
+  cycleDraft.push({ kind: 'op', workCenterId: wcId, supplierId: val('cyc-opsup'), cost: numVal('cyc-opcost', 0), note: '' });
   closeCyclePicker();
   renderCycleList();
 }
@@ -1755,8 +1785,8 @@ function readItemForm(it) {
   // Flag: preferito (solo commerciali e materie prime), obsoleto (anche parti)
   if (canFavorite(it.type)) it.favorite = isChecked('it-favorite');
   if (it.type === 'acquistato' || it.type === 'materiale' || it.type === 'parte') it.obsolete = isChecked('it-obsolete');
-  if (it.type === 'materiale' || it.type === 'parte') { it.unitCost = numVal('it-unitcost'); }
-  if (it.type === 'acquistato') { it.purchasePrice = numVal('it-price'); it.supplierId = val('it-supplier'); }
+  if (it.type === 'materiale' || it.type === 'parte') { it.unitCost = numVal('it-unitcost', 0); }
+  if (it.type === 'acquistato') { it.purchasePrice = numVal('it-price', 0); it.supplierId = val('it-supplier'); }
   if (it.type === 'materiale' || it.type === 'acquistato') { it.supplierCode = val('it-supcode'); it.supplierDesc = val('it-supdesc'); }
   if (usesFamily(it.type)) { it.familyId = val('it-family'); it.subFamilyId = val('it-subfamily'); }
   // Codifica gerarchica: schema sulla macchina, appartenenza sugli altri tipi
@@ -1795,6 +1825,13 @@ function validateItemCoding(id) {
   }
   return null;
 }
+// Costi e prezzi: un valore negativo ferma il salvataggio invece di essere
+// azzerato, così l'errore di battitura resta visibile e correggibile.
+function validateItemNumbers(type) {
+  if ((type === 'materiale' || type === 'parte') && isNeg('it-unitcost')) return 'Il costo unitario non può essere negativo';
+  if (type === 'acquistato' && isNeg('it-price')) return 'Il prezzo d\'acquisto non può essere negativo';
+  return null;
+}
 // Controlli sul nome secondo il tipo: le parti richiedono concetto + descrizione, gli altri il nome libero.
 function validateItemName(type) {
   if (type === 'parte') {
@@ -1810,6 +1847,8 @@ function saveNewItem() {
   if (nameErr) { showToast(nameErr, 'error'); return; }
   const codErr = validateItemCoding(null);
   if (codErr) { showToast(codErr, 'error'); return; }
+  const numErr = validateItemNumbers(val('it-type'));
+  if (numErr) { showToast(numErr, 'error'); return; }
   const it = { id: gid(), type: val('it-type') };
   if (isAssembly(it.type)) { it.components = []; it.operations = []; }
   readItemForm(it);
@@ -1844,6 +1883,8 @@ function saveItemEdit(id) {
   if (nameErr) { showToast(nameErr, 'error'); return; }
   const codErr = validateItemCoding(id);
   if (codErr) { showToast(codErr, 'error'); return; }
+  const numErr = validateItemNumbers(it.type);
+  if (numErr) { showToast(numErr, 'error'); return; }
   readItemForm(it);
   touch(it);
   saveDB(); closeModal(); renderCatalogs(); showToast('Articolo aggiornato');
@@ -2245,7 +2286,9 @@ function rfqSetLine(id, lineId, field, value) {
   const r = getRfq(id); if (!r) return;
   const l = (r.lines || []).find(x => x.id === lineId); if (!l) return;
   const before = r.status;
-  l[field] = (field === 'qty' || field === 'price') ? (value === '' ? '' : (parseFloat(value) || 0)) : value;
+  // Modifica diretta in tabella: niente messaggi, si riporta a 0 (il vincolo
+  // è anche sull'input, qui si copre l'incollaggio di testo).
+  l[field] = (field === 'qty' || field === 'price') ? (value === '' ? '' : clampNum(parseFloat(value), 0)) : value;
   rfqAutoStatus(r);
   touch(r); rfqMarkDirty();
   if (r.status !== before) { renderRfq(); showToast('Stato: ' + (RFQ_STATUS[r.status] || r.status)); }
@@ -2274,8 +2317,9 @@ function rfqAddManualLine(id) {
   if (!rfqGuard(id, 'contract')) return;
   const r = getRfq(id); if (!r) return;
   const desc = val('rl-desc'); if (!desc) { showToast('Descrizione richiesta', 'error'); return; }
+  if (isNeg('rl-qty')) { showToast('La quantità non può essere negativa', 'error'); return; }
   r.lines.push({ id: gid(), itemId: null, code: val('rl-code'), description: desc, uom: val('rl-uom') || defaultUom(),
-    qty: numVal('rl-qty') || 1, price: '', deliveryDate: '', note: val('rl-note') });
+    qty: numVal('rl-qty', 0) || 1, price: '', deliveryDate: '', note: val('rl-note') });
   rfqAutoStatus(r); touch(r); rfqMarkDirty(); closeModal(); renderRfq();
 }
 
@@ -2300,7 +2344,8 @@ function rfqSaveLineEdit(id, lineId) {
   const ro = !modeAllows(rfqMode(r), 'contract');
   if (!ro) {
     if (!readLineIdentity('rl', l)) return;
-    l.qty = numVal('rl-qty');
+    if (isNeg('rl-qty')) { showToast('La quantità non può essere negativa', 'error'); return; }
+    l.qty = numVal('rl-qty', 0);
   }
   l.note = val('rl-note');
   rfqAutoStatus(r); touch(r); rfqMarkDirty(); closeModal(); renderRfq();
@@ -2774,8 +2819,15 @@ function ordSetLine(id, lineId, field, value) {
   const o = getOrder(id); if (!o) return;
   const l = (o.lines || []).find(x => x.id === lineId); if (!l) return;
   const before = o.status;
-  if (field === 'qty' || field === 'price' || field === 'received') l[field] = (value === '' ? (field === 'received' ? 0 : '') : (parseFloat(value) || 0));
-  else l[field] = value;
+  if (field === 'qty' || field === 'price' || field === 'received') {
+    l[field] = (value === '' ? (field === 'received' ? 0 : '') : clampNum(parseFloat(value), 0));
+    // Non si può ricevere più di quanto ordinato: sarebbe una riga in eccedenza
+    // che manderebbe l'ordine in "evaso" con numeri incoerenti.
+    if (field === 'received') {
+      const ordinata = Number(l.qty) || 0;
+      if (l.received > ordinata) { l.received = ordinata; showToast('Non si può ricevere più di quanto ordinato', 'error'); }
+    }
+  } else l[field] = value;
   ordAutoStatus(o); // anche cambiare una quantità sposta la soglia di evasione
   touch(o); orderMarkDirty();
   if (o.status !== before) { renderOrders(); showToast('Stato: ' + (ORDER_STATUS[o.status] || o.status)); }
@@ -2812,8 +2864,10 @@ function ordAddManualLine(id) {
   if (!ordGuard(id, 'contract')) return;
   const o = getOrder(id); if (!o) return;
   const desc = val('ol-desc'); if (!desc) { showToast('Descrizione richiesta', 'error'); return; }
+  if (isNeg('ol-qty')) { showToast('La quantità non può essere negativa', 'error'); return; }
+  if (isNeg('ol-price')) { showToast('Il prezzo non può essere negativo', 'error'); return; }
   o.lines.push({ id: gid(), itemId: null, code: val('ol-code'), description: desc, uom: val('ol-uom') || defaultUom(),
-    qty: numVal('ol-qty') || 1, price: (val('ol-price') === '' ? '' : numVal('ol-price')), deliveryDate: '', received: 0, note: val('ol-note') });
+    qty: numVal('ol-qty', 0) || 1, price: (val('ol-price') === '' ? '' : numVal('ol-price', 0)), deliveryDate: '', received: 0, note: val('ol-note') });
   ordAutoStatus(o); touch(o); orderMarkDirty(); closeModal(); renderOrders();
 }
 function ordEditLineModal(id, lineId) {
@@ -2837,8 +2891,10 @@ function ordSaveLineEdit(id, lineId) {
     l.note = val('ol-note'); // a ordine bloccato passa la sola nota
   } else {
     if (!readLineIdentity('ol', l)) return;
-    l.qty = numVal('ol-qty');
-    l.price = val('ol-price') === '' ? '' : numVal('ol-price');
+    if (isNeg('ol-qty')) { showToast('La quantità non può essere negativa', 'error'); return; }
+    if (isNeg('ol-price')) { showToast('Il prezzo non può essere negativo', 'error'); return; }
+    l.qty = numVal('ol-qty', 0);
+    l.price = val('ol-price') === '' ? '' : numVal('ol-price', 0);
     l.note = val('ol-note');
   }
   ordAutoStatus(o); touch(o); orderMarkDirty(); closeModal(); renderOrders();
@@ -3448,25 +3504,27 @@ function renderWorkCenters() {
   return `<div class="mgmt-panel"><div class="mgmt-list">${list}</div>
     <div class="mgmt-form">
       <input id="wc-name" placeholder="Nome (es. Tornitura)">
-      <input id="wc-rate" type="number" step="0.5" placeholder="Tariffa €/h">
+      <input id="wc-rate" type="number" min="0" step="0.5" placeholder="Tariffa €/h">
       <button class="add-btn-sm" onclick="addWc()">+ Aggiungi</button></div></div>`;
 }
 function addWc() {
   const n = val('wc-name'); if (!n) { showToast('Nome richiesto', 'error'); return; }
-  db.workCenters.push(stampNew({ id: gid(), name: n, hourlyRate: numVal('wc-rate'), active: true }));
+  if (isNeg('wc-rate')) { showToast('La tariffa non può essere negativa', 'error'); return; }
+  db.workCenters.push(stampNew({ id: gid(), name: n, hourlyRate: numVal('wc-rate', 0), active: true }));
   saveDB(); renderManage(); showToast('Centro di lavoro aggiunto');
 }
 function editWcModal(id) {
   const w = db.workCenters.find(x => x.id === id); if (!w) return;
   openModal(`<h3>✏ Modifica centro di lavoro</h3>
     <div class="modal-field"><label>Nome</label><input id="ew-name" value="${esc(w.name)}"></div>
-    <div class="modal-field"><label>Tariffa (${cur()}/h)</label><input id="ew-rate" type="number" step="0.5" value="${w.hourlyRate}"></div>
+    <div class="modal-field"><label>Tariffa (${cur()}/h)</label><input id="ew-rate" type="number" min="0" step="0.5" value="${w.hourlyRate}"></div>
     <div class="modal-actions"><button class="btn-ghost" onclick="closeModal()">Annulla</button>
       <button class="add-btn-sm" onclick="saveWc('${id}')">Salva</button></div>`);
 }
 function saveWc(id) {
   const w = db.workCenters.find(x => x.id === id); if (!w) return;
-  w.name = val('ew-name'); w.hourlyRate = numVal('ew-rate');
+  if (isNeg('ew-rate')) { showToast('La tariffa non può essere negativa', 'error'); return; }
+  w.name = val('ew-name'); w.hourlyRate = numVal('ew-rate', 0);
   touch(w);
   saveDB(); closeModal(); renderManage(); showToast('Aggiornato');
 }
@@ -3615,8 +3673,8 @@ function renderSettings() {
   return `<div class="mgmt-panel">
     <h3 class="settings-group-title">💶 Costi e margini</h3>
     <div class="modal-grid">
-      <div class="modal-field"><label>Spese generali / overhead (%)</label><input type="number" id="set-ov" step="0.1" value="${s.overheadPct}"></div>
-      <div class="modal-field"><label>Margine / markup (%)</label><input type="number" id="set-mg" step="0.1" value="${s.marginPct}"></div>
+      <div class="modal-field"><label>Spese generali / overhead (%)</label><input type="number" id="set-ov" min="0" max="1000" step="0.1" value="${s.overheadPct}"></div>
+      <div class="modal-field"><label>Margine / markup (%)</label><input type="number" id="set-mg" min="0" max="1000" step="0.1" value="${s.marginPct}"></div>
       <div class="modal-field"><label>Simbolo valuta</label><input id="set-cur" value="${esc(s.currency)}" maxlength="3"></div>
       <div class="modal-field"><label>Calcolo costo parte (default)</label><select id="set-partcost">${partCostModeOptions(defaultPartCostMode())}</select></div>
     </div>
@@ -3635,8 +3693,9 @@ function renderSettings() {
 }
 function saveSettings() {
   if (!roleGuard('manage')) return;
-  db.settings.overheadPct = numVal('set-ov');
-  db.settings.marginPct = numVal('set-mg');
+  // Percentuali riportate dentro 0-1000 in silenzio, come già fa codeDigits qui sotto.
+  db.settings.overheadPct = numVal('set-ov', 0, 1000);
+  db.settings.marginPct = numVal('set-mg', 0, 1000);
   db.settings.currency = val('set-cur') || '€';
   const pcm = val('set-partcost');
   db.settings.partCostModeDefault = PART_COST_MODES[pcm] ? pcm : 'cycle';
