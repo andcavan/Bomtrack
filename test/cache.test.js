@@ -146,7 +146,6 @@ describe('invalidazione della cache', () => {
 
   it('la cache viene azzerata anche se il salvataggio fallisce', () => {
     const app = loadApp({ silent: true, quotaBytes: 10 });   // qualunque scrittura eccede
-    app.eval('showToast = function () {};');                 // il toast vuole il DOM, qui non serve
     app.eval('db = ' + JSON.stringify(makeDb({ items: [
       mat('m', 10), asm('mac', 'macchina', { components: [comp('m', 1)] }),
     ] })));

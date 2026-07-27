@@ -452,6 +452,28 @@ function migrateV2() {
   delete db.nextId;
 }
 
+// ── Esito dei salvataggi ────────────────────────────────────
+// Quando localStorage rifiuta la scrittura, l'app continua a funzionare
+// mostrando i dati aggiornati: la memoria diverge dal persistito e alla
+// chiusura del browser sparisce tutto. Va detto, e va detto in modo che non si
+// possa non vederlo — non con un toast che sparisce in due secondi e mezzo.
+let dbUnsaved = false;
+function isQuotaError(e) {
+  return !!e && (e.name === 'QuotaExceededError' || e.name === 'NS_ERROR_DOM_QUOTA_REACHED'
+              || e.code === 22 || e.code === 1014);
+}
+// kind: 'quota' (spazio esaurito) | 'storage' (salvataggio non disponibile,
+// es. navigazione privata) | 'serialize' (dati non serializzabili).
+// La segnalazione all'utente sta in app.js, dietro l'hook onPersistError:
+// store.js resta senza codice di interfaccia.
+function commitFailed(kind, err, bytes) {
+  dbUnsaved = true;
+  console.error('Salvataggio locale fallito (' + kind + '):', err);
+  if (typeof onPersistError === 'function') onPersistError(kind, { bytes, err });
+  else if (typeof showToast === 'function') showToast('Errore salvataggio', 'error');
+  return false;
+}
+
 // ── Store: API repository (contratto per il futuro adapter cloud) ──
 const Store = {
   load() { loadDB(); },
@@ -461,11 +483,28 @@ const Store = {
     // copre ogni mutazione. Prima del salvataggio, non dopo: se setItem fallisce
     // la cache resta comunque allineata a ciò che c'è in memoria.
     if (typeof invalidateCaches === 'function') invalidateCaches();
-    try { localStorage.setItem(DB_KEY, JSON.stringify(db)); }
-    catch (e) {
-      console.error('Errore salvataggio locale:', e);
-      if (typeof showToast === 'function') showToast('Errore salvataggio', 'error');
+    let payload;
+    try { payload = JSON.stringify(db); }
+    catch (e) { return commitFailed('serialize', e, 0); }
+    try {
+      localStorage.setItem(DB_KEY, payload);
+      if (dbUnsaved) {
+        dbUnsaved = false;
+        if (typeof onPersistRecovered === 'function') onPersistRecovered();
+      }
+      return true;
+    } catch (e) {
+      return commitFailed(isQuotaError(e) ? 'quota' : 'storage', e, payload.length);
     }
+  },
+  // Vero finché una modifica è rimasta solo in memoria. Chiudere la scheda in
+  // questo stato perde tutto il lavoro fatto dal primo errore in poi.
+  isUnsaved() { return dbUnsaved; },
+  // Dimensione del database persistito, per far vedere il limite arrivare.
+  sizeInfo() {
+    let bytes = 0;
+    try { bytes = (localStorage.getItem(DB_KEY) || '').length; } catch (e) { /* storage non leggibile */ }
+    return { bytes, mb: bytes / 1024 / 1024 };
   },
   reset() {
     db = JSON.parse(JSON.stringify(defaultDB));

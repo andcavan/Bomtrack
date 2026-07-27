@@ -45,6 +45,8 @@ input,select,button,textarea{font-family:var(--font)}
 /* Header compatto: pulsanti a sola icona e orologio con data per esteso */
 .btn-icon{padding:6px 8px;line-height:0;display:inline-flex;align-items:center}
 .btn-emoji{font-size:14px;line-height:1}
+/* Divergenza tra dati in memoria e dati salvati: deve restare visibile finché dura */
+.unsaved-badge{padding:4px 10px;border-radius:20px;background:var(--red);color:#fff;font-size:12px;font-weight:600;white-space:nowrap;cursor:help}
 .header-clock{display:flex;flex-direction:column;align-items:center;line-height:1.2;white-space:nowrap}
 .clock-date{font-size:11px;color:var(--text-dim)}
 .clock-time{font-family:var(--mono);font-size:14px;font-weight:700}

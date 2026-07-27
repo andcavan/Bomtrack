@@ -5,7 +5,7 @@
 // Revisione in esecuzione, mostrata accanto al logo. Va tenuta allineata alla
 // voce in cima al changelog del README (l'app si copia a mano tra PC: sapere
 // quale revisione sta girando su una postazione è l'unico modo per capirlo).
-const APP_VERSION = '0.10.0';
+const APP_VERSION = '0.11.0';
 
 let currentUser = null;      // utente della sessione (null = schermata di accesso)
 let currentBomId = null;     // articolo prodotto attualmente aperto nelle Distinte
@@ -322,6 +322,50 @@ function showToast(m, t = 'success') {
   el.classList.add('show');
   setTimeout(() => el.classList.remove('show'), 2500);
 }
+// ─── Esito del salvataggio locale ───
+// Hook chiamati da Store.commit(). Quando localStorage rifiuta la scrittura
+// l'app continua a mostrare i dati aggiornati, ma non li conserva: chiudere la
+// scheda in quello stato perde tutto il lavoro fatto dall'errore in poi.
+let persistErrorShown = false;   // il messaggio si mostra una volta, poi resta il badge
+function onPersistError(kind, info) {
+  renderUnsavedBadge();
+  if (persistErrorShown) return;
+  persistErrorShown = true;
+  // Differito: chi ha appena salvato chiama closeModal() subito dopo, e
+  // chiuderebbe questa finestra prima che si riesca a leggerla.
+  setTimeout(() => showPersistErrorModal(kind, info), 0);
+}
+function onPersistRecovered() {
+  persistErrorShown = false;
+  renderUnsavedBadge();
+  showToast('Salvataggio ripristinato');
+}
+function showPersistErrorModal(kind, info) {
+  const mb = info && info.bytes ? ` (il database occupa ${(info.bytes / 1024 / 1024).toFixed(1)} MB)` : '';
+  const testo = kind === 'quota'
+    ? `<p>Lo spazio che il browser riserva a questa app è esaurito${mb}.</p>
+       <p><strong>Le modifiche fatte da ora in poi non vengono salvate.</strong> I dati che vedi sono ancora tutti in memoria, ma chiudendo questa scheda andrebbero persi.</p>
+       <p>Esporta subito un backup JSON, poi libera spazio: elimina richieste e ordini vecchi, oppure azzera il database e reimporta solo ciò che serve.</p>`
+    : kind === 'storage'
+      ? `<p>Questo browser non consente il salvataggio locale: succede in navigazione privata o quando i dati dei siti sono bloccati.</p>
+         <p><strong>L'app funziona, ma alla chiusura non resterà nulla.</strong> Esporta un backup JSON prima di uscire.</p>`
+      : `<p>I dati in memoria non sono salvabili: c'è un valore che non si riesce a convertire in JSON.</p>
+         <p><strong>Le modifiche non vengono salvate.</strong> Esporta un backup e segnala il problema.</p>`;
+  // Il backup contiene gli utenti: il pulsante compare solo a chi può esportarlo.
+  const btnBackup = canWrite('manage')
+    ? `<button class="add-btn-sm" onclick="closeModal(); exportBackup()">⬇ Esporta backup JSON ora</button>` : '';
+  openModal(`<h3>⚠ Salvataggio non riuscito</h3>${testo}
+    <div class="modal-actions"><button class="btn-ghost" onclick="closeModal()">Ho capito</button>${btnBackup}</div>`);
+}
+// Indicatore fisso nell'header finché c'è divergenza tra memoria e persistito.
+function renderUnsavedBadge() {
+  const el = document.getElementById('unsaved-badge'); if (!el) return;
+  const aperto = Store.isUnsaved();
+  el.style.display = aperto ? '' : 'none';
+  el.textContent = aperto ? '⚠ Modifiche non salvate' : '';
+  el.title = aperto ? 'Le ultime modifiche sono rimaste solo in memoria: esporta un backup prima di chiudere la scheda' : '';
+}
+
 // Il click fuori dalla finestra non chiude: si esce solo con Salva/Annulla (o Chiudi).
 // wide = true per i form ampi, es. la scheda articolo col ciclo di lavorazione.
 function openModal(h, wide) {
@@ -3992,11 +4036,21 @@ function closeImportReport(kind) {
   showToast('Import completato');
 }
 
+// Lo spazio di localStorage è circa 5 MB per sito: oltre i 4 conviene saperlo
+// prima di sbatterci contro, non quando il salvataggio comincia a fallire.
+const DB_SIZE_WARN_MB = 4;
+function dbSizeLine() {
+  const { mb } = Store.sizeInfo();
+  const vicino = mb >= DB_SIZE_WARN_MB;
+  return `<p style="margin-top:6px">Spazio occupato: <strong${vicino ? ' style="color:var(--red)"' : ''}>${mb.toFixed(2)} MB</strong>
+    ${vicino ? '— vicino al limite del browser (circa 5 MB). Esporta un backup e alleggerisci il database.' : 'sui circa 5 MB che il browser riserva a questa app.'}</p>`;
+}
 function renderBackup() {
   return `<div class="cloud-section">
     <div style="flex:1">
       <strong>💾 Backup locale</strong>
       <p>I dati sono salvati nel browser (localStorage). Esporta un file JSON per conservare un backup o trasferire i dati su un altro PC. L'import sovrascrive i dati attuali.</p>
+      ${dbSizeLine()}
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
         <button class="add-btn-sm" onclick="exportBackup()">⬇ Esporta JSON</button>
         <button class="btn-outline" onclick="document.getElementById('import-file').click()">⬆ Importa JSON</button>

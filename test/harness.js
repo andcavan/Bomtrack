@@ -39,6 +39,16 @@ function makeStorage(quotaBytes) {
   };
 }
 
+// Elemento permissivo: accetta qualunque lettura o scrittura senza fare nulla.
+function elementoFinto() {
+  return {
+    value: '', textContent: '', innerHTML: '', placeholder: '', title: '',
+    disabled: false, checked: false, style: {},
+    classList: { add() {}, remove() {}, contains() { return false; } },
+    appendChild() {}, removeChild() {}, focus() {}, click() {},
+  };
+}
+
 function loadApp(opts) {
   const o = opts || {};
   const storage = o.storage || makeStorage(o.quotaBytes);
@@ -56,6 +66,19 @@ function loadApp(opts) {
     const code = fs.readFileSync(path.join(ROOT, f), 'utf8');
     vm.runInContext(code, ctx, { filename: f });
   });
+
+  // Il `document` finto si installa DOPO il caricamento, mai prima: la guardia
+  // in fondo ad app.js avvierebbe l'app. Serve solo a far passare a vuoto le
+  // funzioni di interfaccia (showToast, openModal, il badge) quando un test
+  // esercita un percorso che le attraversa. Nessun test verifica il DOM.
+  sandbox.document = {
+    getElementById() { return elementoFinto(); },
+    querySelectorAll() { return []; },
+    createElement() { return elementoFinto(); },
+    body: elementoFinto(),
+  };
+  sandbox.window = sandbox;
+  sandbox.setTimeout = (fn) => { void fn; return 0; };   // niente code differite nei test
 
   const ref = name => vm.runInContext(name, ctx);
 
