@@ -254,6 +254,33 @@ describe('costOf — rilevamento cicli', () => {
     assert.equal(app.ref('costOf')('b').cycle, true);
   });
 
+  // Dall'interfaccia un ciclo di lavorazione accetta solo materie prime e
+  // commerciali (foglie), ma import Excel e backup possono produrre altro.
+  it('anello dentro il ciclo di lavorazione di una parte: segnalato', () => {
+    const app = withDb(makeDb({ items: [
+      parte('p', { costMode: 'cycle', cycle: [{ kind: 'item', itemId: 'p', qty: 1 }] }),
+    ] }));
+    assert.equal(app.ref('costOf')('p').cycle, true);
+  });
+
+  it('anello parte → assieme → parte: risalito fino alla parte', () => {
+    const app = withDb(makeDb({ items: [
+      parte('p', { costMode: 'cycle', cycle: [{ kind: 'item', itemId: 'g', qty: 1 }] }),
+      asm('g', 'sottogruppo', { components: [comp('p', 1)] }),
+    ] }));
+    assert.equal(app.ref('costOf')('p').cycle, true, 'la parte deve segnalare l\'anello');
+    assert.equal(app.ref('costOf')('g').cycle, true, 'e anche l\'assieme');
+  });
+
+  it('un override di riga interrompe la dipendenza e il costo torna valido', () => {
+    const app = withDb(makeDb({ items: [
+      parte('p', { costMode: 'cycle', cycle: [{ kind: 'item', itemId: 'p', qty: 1, costOverride: 12 }] }),
+    ] }));
+    const c = app.ref('costOf')('p');
+    assert.equal(c.cycle, false, 'con l\'override non si scende più nel sottoalbero');
+    approx(c.total, 12);
+  });
+
   it('un ramo sano accanto a un anello conserva il proprio costo', () => {
     const app = withDb(makeDb({ items: [
       acq('ok', 100),

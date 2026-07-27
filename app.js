@@ -514,8 +514,11 @@ function costOf(itemId, visited) {
     const next = new Set(visited); next.add(itemId);
     let material = 0, purchased = 0, labor = 0;
     const parts = mode === 'sum' ? manual : 0;   // 'sum': il costo unitario si aggiunge al ciclo
+    // Accumulatore: raccoglie l'eventuale anello incontrato dalle righe del ciclo.
+    // Senza, un troncamento da ricorsione passerebbe per un costo valido.
+    const out = { cycle: false };
     it.cycle.forEach(row => {
-      const rowCost = cycleRowCost(row, next);
+      const rowCost = cycleRowCost(row, next, out);
       if (row.kind === 'op') { labor += rowCost; return; }
       const ci = getItem(row.itemId);
       if (!ci) return;
@@ -524,7 +527,7 @@ function costOf(itemId, visited) {
       else labor += rowCost;   // tipo inatteso: non perdiamo il costo
     });
     const base = material + purchased + labor + parts;
-    return { ...zero, material, purchased, labor, parts, base, total: base };
+    return { ...zero, material, purchased, labor, parts, base, total: base, cycle: out.cycle };
   }
 
   // assieme (macchina/gruppo/sottogruppo): somma figli + lavorazioni
@@ -571,19 +574,26 @@ function partCostModeOptions(sel) {
 }
 
 // ─── Ciclo di lavorazione (articoli tipo "parte") ───
+// `out` è un accumulatore opzionale: se il sottoalbero della riga contiene un
+// anello, ci finisce dentro `out.cycle = true`. Serve a costOf per non spacciare
+// per valido un costo troncato dalla ricorsione; i chiamanti dell'interfaccia
+// possono ignorarlo.
 // Costo calcolato di una riga articolo (q.tà × costo unitario), ignorando l'eventuale override.
-function cycleRowComputed(row, visited) {
+function cycleRowComputed(row, visited, out) {
   if (!row || row.kind === 'op') return 0;
-  return costOf(row.itemId, visited).total * (Number(row.qty) || 0);
+  const c = costOf(row.itemId, visited);
+  if (out && c.cycle) out.cycle = true;
+  return c.total * (Number(row.qty) || 0);
 }
 // Costo effettivo della riga.
 // Lavorazione: costo fisso, non orario (le lavorazioni orarie restano solo negli assiemi).
 // Articolo: override se valorizzato, altrimenti q.tà × costo unitario.
-function cycleRowCost(row, visited) {
+function cycleRowCost(row, visited, out) {
   if (!row) return 0;
   if (row.kind === 'op') return Number(row.cost) || 0;
+  // Con un override il costo non dipende più dal sottoalbero: niente da segnalare.
   if (row.costOverride != null && row.costOverride !== '') return Number(row.costOverride) || 0;
-  return cycleRowComputed(row, visited);
+  return cycleRowComputed(row, visited, out);
 }
 
 function sellingPrice(itemId) {
