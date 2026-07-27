@@ -95,7 +95,7 @@
   <div id="view-buy" class="view-panel">
     <h2 class="section-title">📦 Commerciali &amp; Materie prime</h2>
     <div class="catalog-filters">
-      <input type="text" class="search" id="buy-search" placeholder="🔍 Cerca codice o nome..." oninput="renderCatalog('buy')">
+      <input type="text" class="search" id="buy-search" placeholder="🔍 Cerca codice o nome..." oninput="catalogSearchInput('buy')">
       <select id="buy-type" onchange="onCatTypeChange('buy')">
         <option value="">Tutti i tipi</option>
         <option value="acquistato">Componente commerciale</option>
@@ -104,7 +104,7 @@
       <select id="buy-family" onchange="onCatFamilyChange('buy')">
         <option value="">Tutte le famiglie</option>
       </select>
-      <select id="buy-subfamily" onchange="renderCatalog('buy')">
+      <select id="buy-subfamily" onchange="catalogFilterChange('buy')">
         <option value="">Tutte le sottofamiglie</option>
       </select>
       <button class="btn-outline fav-filter" id="buy-fav" title="Mostra solo i preferiti" onclick="toggleFavFilter()">★ Solo preferiti</button>
@@ -117,7 +117,7 @@
   <div id="view-design" class="view-panel">
     <h2 class="section-title">🏗 Macchine, Gruppi &amp; Parti</h2>
     <div class="catalog-filters">
-      <input type="text" class="search" id="des-search" placeholder="🔍 Cerca codice o nome..." oninput="renderCatalog('design')">
+      <input type="text" class="search" id="des-search" placeholder="🔍 Cerca codice o nome..." oninput="catalogSearchInput('design')">
       <select id="des-type" onchange="onCatTypeChange('design')">
         <option value="">Tutti i tipi</option>
         <option value="macchina">Macchina</option>
@@ -128,7 +128,7 @@
       <select id="des-family" onchange="onCatFamilyChange('design')">
         <option value="">Tutte le famiglie</option>
       </select>
-      <select id="des-subfamily" onchange="renderCatalog('design')">
+      <select id="des-subfamily" onchange="catalogFilterChange('design')">
         <option value="">Tutte le sottofamiglie</option>
       </select>
       <button class="add-btn-sm" onclick="newItemModal('design')">+ Nuovo articolo</button>

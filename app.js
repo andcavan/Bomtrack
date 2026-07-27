@@ -5,7 +5,7 @@
 // Revisione in esecuzione, mostrata accanto al logo. Va tenuta allineata alla
 // voce in cima al changelog del README (l'app si copia a mano tra PC: sapere
 // quale revisione sta girando su una postazione è l'unico modo per capirlo).
-const APP_VERSION = '0.11.0';
+const APP_VERSION = '0.12.0';
 
 let currentUser = null;      // utente della sessione (null = schermata di accesso)
 let currentBomId = null;     // articolo prodotto attualmente aperto nelle Distinte
@@ -375,6 +375,18 @@ function openModal(h, wide) {
 function closeModal() { document.getElementById('modal-root').innerHTML = ''; }
 function val(id) { const e = document.getElementById(id); return e ? e.value.trim() : ''; }
 function setVal(id, v) { const e = document.getElementById(id); if (e) e.value = v; }
+// ─── Digitazione: rinvio del ridisegno ───
+// I campi di ricerca ridisegnano interi elenchi a ogni carattere. Con poche
+// centinaia di articoli si sente: la digitazione "impasta". Si aspetta una
+// breve pausa e si disegna una volta sola. Il rinvio è per chiave, così due
+// campi diversi non si annullano a vicenda.
+const SEARCH_DELAY = 160;   // ms: sotto la soglia in cui si percepisce un ritardo
+const _debounceTimers = {};
+function debounced(key, fn, ms) {
+  clearTimeout(_debounceTimers[key]);
+  _debounceTimers[key] = setTimeout(fn, ms == null ? SEARCH_DELAY : ms);
+}
+
 // ─── Lettura dei campi numerici ───
 // parseFloat da solo lascia passare i negativi e Infinity: un costo negativo si
 // propaga per tutto il rollup, un Infinity fa comparire NaN ovunque.
@@ -538,11 +550,18 @@ function renderClock() {
   const t = now.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
   el.innerHTML = `<span class="clock-date">${esc(d)}</span><span class="clock-time">${t}</span>`;
 }
+// L'orologio mostra ore e minuti: si risveglia al cambio di minuto, non ogni
+// secondo. Il primo colpo si allinea al minuto pieno, poi si va di 60 in 60.
 function startClock() {
   renderClock();
-  if (!clockTimer) clockTimer = setInterval(renderClock, 1000);
+  if (clockTimer) return;
+  const alProssimoMinuto = 60000 - (Date.now() % 60000);
+  clockTimer = setTimeout(function tic() {
+    renderClock();
+    clockTimer = setTimeout(tic, 60000);
+  }, alProssimoMinuto);
 }
-function stopClock() { if (clockTimer) { clearInterval(clockTimer); clockTimer = null; } }
+function stopClock() { if (clockTimer) { clearTimeout(clockTimer); clockTimer = null; } }
 function safeColor(c) { return /^#[0-9A-Fa-f]{6}$/.test(String(c || '')) ? c : '#3A7BE8'; }
 
 // Cambio password del proprio account
@@ -987,7 +1006,7 @@ function itemPickerField(selectedId) {
   return `<div class="modal-field"><label>Articolo</label>
       <input type="hidden" id="cmp-item" value="${selectedId ? esc(selectedId) : ''}">
       <input type="text" id="cmp-search" class="search" placeholder="🔍 Cerca codice o nome..."
-        value="${sel ? esc(sel.code + ' — ' + sel.name) : ''}" oninput="renderPickerResults()" autocomplete="off">
+        value="${sel ? esc(sel.code + ' — ' + sel.name) : ''}" oninput="debounced('picker', renderPickerResults)" autocomplete="off">
       <div id="cmp-results" class="picker-results"></div>
     </div>`;
 }
@@ -1269,11 +1288,11 @@ function usedBy(itemId) {
 // ═══════════════════════════════════════════════════════════
 function onCatTypeChange(scope) {
   updateCatFamilyFilters(scope);
-  renderCatalog(scope);
+  catalogFilterChange(scope);
 }
 function onCatFamilyChange(scope) {
   updateCatFamilyFilters(scope);
-  renderCatalog(scope);
+  catalogFilterChange(scope);
 }
 // Ridisegna la vista di anagrafica attiva (le due condividono le funzioni di render)
 function renderCatalogs() {
@@ -1311,7 +1330,7 @@ function toggleFavFilter() {
   favOnly = !favOnly;
   const b = document.getElementById('buy-fav');
   if (b) b.classList.toggle('active', favOnly);
-  renderCatalog('buy');
+  catalogFilterChange('buy');
 }
 // Badge preferito/obsoleto, mostrati in ogni selezione dell'articolo (righe picker).
 function itemBadges(i) {
@@ -1349,6 +1368,24 @@ function catalogRow(i) {
       <button class="mini-btn danger" onclick="delItem('${i.id}')">🗑</button>
     </td></tr>`;
 }
+// ─── Quante righe disegnare per volta ───
+// Il catalogo costruisce l'HTML di tutti gli articoli filtrati in una stringa
+// sola: oltre qualche centinaio di righe il ridisegno si vede. Si mostra un
+// blocco per volta, con i pulsanti per allargare. Il limite riparte da capo a
+// ogni cambio di filtro: chi filtra vuole vedere l'inizio del nuovo risultato.
+const CATALOG_PAGE = 200;
+const catalogLimit = { buy: CATALOG_PAGE, design: CATALOG_PAGE };
+function catalogShowMore(scope) { catalogLimit[scope] += CATALOG_PAGE; renderCatalog(scope); }
+function catalogShowAll(scope) { catalogLimit[scope] = Infinity; renderCatalog(scope); }
+// Punto d'ingresso di tutti i filtri: azzera il limite e ridisegna.
+function catalogFilterChange(scope) {
+  catalogLimit[scope] = CATALOG_PAGE;
+  renderCatalog(scope);
+}
+// Ricerca testuale: stesso effetto, ma dopo la pausa di digitazione.
+function catalogSearchInput(scope) {
+  debounced('cat-' + scope, () => catalogFilterChange(scope));
+}
 function renderCatalog(scope) {
   invalidateCaches();
   const sc = CATALOG_SCOPES[scope]; if (!sc) return;
@@ -1379,10 +1416,28 @@ function renderCatalog(scope) {
   const keys = Object.keys(groups).sort((a, b) => groups[a].ord - groups[b].ord || a.localeCompare(b));
 
   const head = `<thead><tr><th></th><th>Codice</th><th>Nome</th><th>Tipo</th><th>Famiglia</th><th>U.M.</th><th>Costo un.</th><th>Dettaglio</th><th></th></tr></thead>`;
-  const html = keys.map(k =>
-    `<div class="cat-group-title">${esc(k)} <span style="color:var(--text-dim);font-weight:500">(${groups[k].items.length})</span></div>
-     <table>${head}<tbody>${groups[k].items.map(catalogRow).join('')}</tbody></table>`).join('');
-  document.getElementById(pfx + '-table').innerHTML = rows.length ? html : '<div class="empty-text">Nessun articolo trovato.</div>';
+  // Si riempiono i gruppi nell'ordine di visualizzazione finché c'è spazio.
+  // Il titolo dice sempre quanti articoli contiene il gruppo per intero, anche
+  // quando ne sono disegnati solo i primi: il conteggio non deve mentire.
+  let restanti = catalogLimit[scope];
+  let disegnati = 0;
+  const html = keys.map(k => {
+    const tutti = groups[k].items;
+    const visibili = tutti.slice(0, Math.max(0, restanti));
+    restanti -= visibili.length;
+    disegnati += visibili.length;
+    if (!visibili.length) return '';
+    const conteggio = visibili.length < tutti.length ? `${visibili.length} di ${tutti.length}` : `${tutti.length}`;
+    return `<div class="cat-group-title">${esc(k)} <span style="color:var(--text-dim);font-weight:500">(${conteggio})</span></div>
+      <table>${head}<tbody>${visibili.map(catalogRow).join('')}</tbody></table>`;
+  }).join('');
+  const mancanti = rows.length - disegnati;
+  const piu = mancanti > 0 ? `<div class="cat-more">
+      <span>Mostrati ${disegnati} di ${rows.length} articoli</span>
+      <button class="btn-outline" onclick="catalogShowMore('${scope}')">Mostra altri ${Math.min(CATALOG_PAGE, mancanti)}</button>
+      <button class="btn-outline" onclick="catalogShowAll('${scope}')">Mostra tutti</button>
+    </div>` : '';
+  document.getElementById(pfx + '-table').innerHTML = rows.length ? html + piu : '<div class="empty-text">Nessun articolo trovato.</div>';
 }
 // Etichette del menu "Tipo" (l'elenco è ristretto ai tipi della vista di provenienza)
 const TYPE_OPTION_LABELS = {
@@ -1394,7 +1449,7 @@ function itemModalBody(it, scope) {
   const t = it ? it.type : sc.types[0];
   const sourcePicker = it ? '' : `
     <div class="modal-field"><label>Parti da (opzionale)</label>
-      <input type="text" id="src-search" class="search" placeholder="🔍 Duplica da un articolo esistente..." oninput="renderSourceResults()" autocomplete="off">
+      <input type="text" id="src-search" class="search" placeholder="🔍 Duplica da un articolo esistente..." oninput="debounced('src', renderSourceResults)" autocomplete="off">
       <div id="src-results" class="picker-results"></div>
     </div>`;
   // In modifica il tipo è bloccato: resta l'unica voce dell'articolo, qualunque sia lo scope
@@ -1691,7 +1746,7 @@ function addCycleItemRow() {
     showToast('Nessun commerciale o materia prima a catalogo.', 'error'); return;
   }
   box.innerHTML = `<div class="cycle-picker-box">
-    <input type="text" id="cyc-search" class="search" placeholder="🔍 Cerca codice o nome..." oninput="renderCyclePickerResults()" autocomplete="off">
+    <input type="text" id="cyc-search" class="search" placeholder="🔍 Cerca codice o nome..." oninput="debounced('cyc', renderCyclePickerResults)" autocomplete="off">
     <div id="cyc-results" class="picker-results"></div>
     <div class="cycle-actions"><button type="button" class="btn-ghost" onclick="closeCyclePicker()">Annulla</button></div>
   </div>`;
@@ -2187,7 +2242,7 @@ function docFilterBar(kind, statusMap, shown, total) {
   const f = docFilters[kind];
   const sups = db.suppliers.slice().sort((a, b) => (a.name || '').localeCompare(b.name || ''));
   return `<div class="catalog-filters">
-    <input type="text" class="search" id="${kind}f-q" value="${esc(f.q)}" placeholder="🔍 Cerca numero, oggetto, fornitore o riga..." oninput="docFilterChange('${kind}')">
+    <input type="text" class="search" id="${kind}f-q" value="${esc(f.q)}" placeholder="🔍 Cerca numero, oggetto, fornitore o riga..." oninput="docFilterInput('${kind}')">
     <select id="${kind}f-status" onchange="docFilterChange('${kind}')">
       <option value="">Tutti gli stati</option>
       ${Object.entries(statusMap).map(([k, v]) => `<option value="${k}" ${f.status === k ? 'selected' : ''}>${v}</option>`).join('')}
@@ -2203,6 +2258,9 @@ function docFilterBar(kind, statusMap, shown, total) {
 }
 function docFilterCountText(shown, total) { return shown === total ? `${total} documenti` : `${shown} di ${total}`; }
 function docFilterActive(kind) { const f = docFilters[kind]; return !!(f.q || f.status || f.supplierId); }
+// Digitazione nel campo di ricerca: si aspetta la pausa. I menu a tendina
+// restano immediati — un click è già un'intenzione conclusa.
+function docFilterInput(kind) { debounced('doc-' + kind, () => docFilterChange(kind)); }
 function docFilterChange(kind) {
   const f = docFilters[kind];
   f.q = (val(kind + 'f-q') || '').toLowerCase();
@@ -2219,6 +2277,20 @@ function docFilterReset(kind) {
   docFilters[kind] = { q: '', status: '', supplierId: '' };
   if (kind === 'rfq') renderRfq(); else renderOrders();
 }
+// Testo cercabile di un documento, righe comprese. Costruirlo significa
+// scorrere tutte le righe: senza memoria si rifarebbe per ogni documento a
+// ogni carattere digitato. La chiave di validità è updatedAt, che cambia a
+// ogni touch() — se il documento non è stato toccato, il testo è ancora buono.
+const _docHay = new WeakMap();
+function docSearchText(d) {
+  const memo = _docHay.get(d);
+  if (memo && memo.stamp === d.updatedAt) return memo.hay;
+  const hay = [d.number, d.title, supplierName(d.supplierId), d.notes, d.notesInternal]
+    .concat((d.lines || []).map(l => [l.code, l.description, l.note].join(' ')))
+    .join(' ').toLowerCase();
+  _docHay.set(d, { stamp: d.updatedAt, hay });
+  return hay;
+}
 // Il testo cerca anche dentro le righe: spesso si risale al documento dal codice ordinato
 function docFilterApply(kind, docs) {
   const f = docFilters[kind];
@@ -2226,10 +2298,7 @@ function docFilterApply(kind, docs) {
     if (f.status && d.status !== f.status) return false;
     if (f.supplierId === 'none' ? !!d.supplierId : (f.supplierId && d.supplierId !== f.supplierId)) return false;
     if (!f.q) return true;
-    const hay = [d.number, d.title, supplierName(d.supplierId), d.notes, d.notesInternal]
-      .concat((d.lines || []).map(l => [l.code, l.description, l.note].join(' ')))
-      .join(' ').toLowerCase();
-    return hay.includes(f.q);
+    return docSearchText(d).includes(f.q);
   });
 }
 
@@ -2436,7 +2505,7 @@ function catalogPickerModal(onAddIds) {
   const famOpts = (db.families || []).map(f => `<option value="${f.id}">${esc(f.name)}</option>`).join('');
   openModal(`<h3>+ Aggiungi da catalogo</h3>
     <div class="rfq-pick-filters">
-      <input class="search" id="pick-search" placeholder="🔍 Codice o nome..." oninput="pickFilter()">
+      <input class="search" id="pick-search" placeholder="🔍 Codice o nome..." oninput="debounced('pick', pickFilter)">
       <select id="pick-type" onchange="pickFilter()"><option value="">Tutti i tipi</option>${typeOpts}</select>
       <select id="pick-fam" onchange="pickFamilyChange()"><option value="">Tutte le famiglie</option>${famOpts}</select>
       <select id="pick-sub" onchange="pickFilter()"><option value="">Tutte le sottofamiglie</option></select>

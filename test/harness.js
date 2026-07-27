@@ -71,8 +71,14 @@ function loadApp(opts) {
   // in fondo ad app.js avvierebbe l'app. Serve solo a far passare a vuoto le
   // funzioni di interfaccia (showToast, openModal, il badge) quando un test
   // esercita un percorso che le attraversa. Nessun test verifica il DOM.
+  // Gli elementi sono memorizzati per id: quello che una funzione di render
+  // scrive in innerHTML resta leggibile dal test (vedi app.html()).
+  const elementi = new Map();
   sandbox.document = {
-    getElementById() { return elementoFinto(); },
+    getElementById(id) {
+      if (!elementi.has(id)) elementi.set(id, elementoFinto());
+      return elementi.get(id);
+    },
     querySelectorAll() { return []; },
     createElement() { return elementoFinto(); },
     body: elementoFinto(),
@@ -86,6 +92,13 @@ function loadApp(opts) {
     ctx,
     storage,
     ref,
+    // Elemento finto per id (persistente): permette di leggere ciò che una
+    // funzione di render ha scritto e di preimpostare il valore di un campo.
+    el(id) {
+      if (!elementi.has(id)) elementi.set(id, elementoFinto());
+      return elementi.get(id);
+    },
+    html(id) { return this.el(id).innerHTML; },
     // Imposta il database in memoria senza passare da localStorage.
     // Serializzato apposta: evita ogni problema di oggetti cross-realm.
     setDb(obj) { vm.runInContext('db = ' + JSON.stringify(obj), ctx); return ref('db'); },
