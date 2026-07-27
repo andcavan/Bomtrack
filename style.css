@@ -45,6 +45,8 @@ input,select,button,textarea{font-family:var(--font)}
 /* Header compatto: pulsanti a sola icona e orologio con data per esteso */
 .btn-icon{padding:6px 8px;line-height:0;display:inline-flex;align-items:center}
 .btn-emoji{font-size:14px;line-height:1}
+/* Divergenza tra dati in memoria e dati salvati: deve restare visibile finché dura */
+.unsaved-badge{padding:4px 10px;border-radius:20px;background:var(--red);color:#fff;font-size:12px;font-weight:600;white-space:nowrap;cursor:help}
 .header-clock{display:flex;flex-direction:column;align-items:center;line-height:1.2;white-space:nowrap}
 .clock-date{font-size:11px;color:var(--text-dim)}
 .clock-time{font-family:var(--mono);font-size:14px;font-weight:700}
@@ -187,6 +189,11 @@ tr{border-bottom:1px solid rgba(42,46,59,.4)}
 .catalog-filters .search{flex:1;min-width:200px}
 .cat-group-title{font-size:12px;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.05em;margin:18px 0 6px}
 .cat-group-title:first-child{margin-top:0}
+/* Listino fornitori: la quotazione in uso e quella più bassa vanno riconosciute a colpo d'occhio */
+.price-active{background:rgba(58,123,232,.10)}
+.price-best{color:var(--green);font-weight:700;margin-left:4px}
+/* Il catalogo disegna un blocco di righe per volta: qui i comandi per allargare */
+.cat-more{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:16px;padding-top:14px;border-top:1px solid var(--border);color:var(--text-dim);font-size:13px}
 /* Preferiti: stellina gialla in elenco e toggle di filtro */
 .fav-star{font-size:14px;line-height:1;color:var(--orange);border-color:transparent;background:transparent}
 .fav-star:hover{color:var(--orange);border-color:var(--orange)}

@@ -1,0 +1,350 @@
+// Motore di costificazione (app.js, costOf / cycleRowCost / sellingPrice / flattenBom).
+// È il cuore dell'app: da qui escono i prezzi che finiscono su offerte e ordini.
+
+const assert = require('node:assert/strict');
+const { describe, it, approx } = require('./tap.js');
+const { loadApp } = require('./harness.js');
+const { makeDb, mat, acq, parte, asm, comp, wc } = require('./fixtures.js');
+
+// Un'app fresca per ogni scenario: db isolato, nessuna contaminazione tra test.
+function withDb(dbObj) {
+  const app = loadApp({ silent: true });
+  app.setDb(dbObj);
+  return app;
+}
+// Invariante strutturale: le categorie devono ricomporre esattamente il totale.
+function assertCoerente(c, msg) {
+  approx(c.material + c.purchased + c.labor + c.parts + c.overhead, c.total, (msg || '') + ' somma categorie = total');
+  approx(c.base + c.overhead, c.total, (msg || '') + ' base + overhead = total');
+}
+
+describe('costOf — foglie', () => {
+  it('materiale: unitCost finisce in "material"', () => {
+    const app = withDb(makeDb({ items: [mat('m', 12.5)] }));
+    const c = app.ref('costOf')('m');
+    approx(c.material, 12.5); approx(c.total, 12.5); approx(c.base, 12.5);
+    approx(c.purchased, 0); approx(c.overhead, 0);
+    assert.equal(c.cycle, false);
+    assertCoerente(c);
+  });
+
+  it('acquistato: purchasePrice finisce in "purchased"', () => {
+    const app = withDb(makeDb({ items: [acq('a', 320)] }));
+    const c = app.ref('costOf')('a');
+    approx(c.purchased, 320); approx(c.total, 320); approx(c.material, 0);
+    assertCoerente(c);
+  });
+
+  it('le foglie non prendono spese generali', () => {
+    const app = withDb(makeDb({ items: [mat('m', 100)], settings: { overheadPct: 25 } }));
+    approx(app.ref('costOf')('m').total, 100);
+  });
+
+  it('articolo inesistente: ritorna zero senza lanciare', () => {
+    const app = withDb(makeDb({ items: [] }));
+    const c = app.ref('costOf')('non-esiste');
+    approx(c.total, 0); assert.equal(c.cycle, false);
+  });
+
+  it('costo mancante o non numerico vale 0, mai NaN', () => {
+    const app = withDb(makeDb({ items: [
+      { id: 'x', type: 'materiale', unitCost: 'abc' },
+      { id: 'y', type: 'acquistato' },
+    ] }));
+    approx(app.ref('costOf')('x').total, 0);
+    approx(app.ref('costOf')('y').total, 0);
+  });
+});
+
+describe('costOf — assiemi', () => {
+  it('applica quantità e scarto a tutte le categorie', () => {
+    const app = withDb(makeDb({
+      workCenters: [wc('w', 50)],
+      items: [
+        mat('m', 10), acq('a', 20), parte('p', { unitCost: 30, costMode: 'unit' }),
+        asm('g', 'gruppo', {
+          components: [comp('m', 2, 10), comp('a', 1), comp('p', 1)],
+          operations: [{ workCenterId: 'w', hours: 2 }],
+        }),
+      ],
+    }));
+    const c = app.ref('costOf')('g');
+    approx(c.material, 22, 'scarto 10% su 2 kg da 10');
+    approx(c.purchased, 20);
+    approx(c.parts, 30);
+    approx(c.labor, 100, 'ore x tariffa');
+    approx(c.total, 172);
+    assertCoerente(c);
+  });
+
+  it('centro di lavoro inesistente: manodopera 0, non NaN', () => {
+    const app = withDb(makeDb({
+      workCenters: [],
+      items: [asm('g', 'gruppo', { operations: [{ workCenterId: 'fantasma', hours: 3 }] })],
+    }));
+    const c = app.ref('costOf')('g');
+    approx(c.labor, 0); approx(c.total, 0);
+    assert.ok(!Number.isNaN(c.total));
+  });
+
+  it('spese generali in cascata: la quota dei figli non viene rimaggiorata', () => {
+    const app = withDb(makeDb({
+      settings: { overheadPct: 10 },
+      items: [
+        mat('m', 100),
+        asm('sg', 'sottogruppo', { components: [comp('m', 1)] }),
+        asm('g', 'gruppo', { components: [comp('sg', 1)] }),
+        asm('mac', 'macchina', { components: [comp('g', 1)] }),
+      ],
+    }));
+    const costOf = app.ref('costOf');
+    approx(costOf('sg').total, 110, 'sottogruppo');
+    approx(costOf('g').overhead, 20, 'gruppo: 10 del figlio + 10 propri');
+    approx(costOf('g').total, 120, 'gruppo');
+    const mac = costOf('mac');
+    approx(mac.overhead, 30, 'macchina: 20 dai figli + 10 propri');
+    approx(mac.base, 100, 'la base resta il costo puro');
+    approx(mac.total, 130, 'macchina');
+    assertCoerente(mac, 'macchina');
+  });
+
+  it('overheadPctOverride = 0 vince sull\'impostazione globale', () => {
+    const app = withDb(makeDb({
+      settings: { overheadPct: 10 },
+      items: [mat('m', 100), asm('g', 'gruppo', { components: [comp('m', 1)], overheadPctOverride: 0 })],
+    }));
+    const c = app.ref('costOf')('g');
+    approx(c.overhead, 0, 'lo zero esplicito non deve cadere sul default');
+    approx(c.total, 100);
+  });
+
+  it('overheadPctOverride valorizzato sostituisce il globale', () => {
+    const app = withDb(makeDb({
+      settings: { overheadPct: 10 },
+      items: [mat('m', 100), asm('g', 'gruppo', { components: [comp('m', 1)], overheadPctOverride: 50 })],
+    }));
+    approx(app.ref('costOf')('g').total, 150);
+  });
+
+  it('diamante: un componente condiviso viene contato una volta per ramo', () => {
+    const app = withDb(makeDb({
+      items: [
+        acq('d', 50),
+        asm('g1', 'gruppo', { components: [comp('d', 1)] }),
+        asm('g2', 'gruppo', { components: [comp('d', 1)] }),
+        asm('mac', 'macchina', { components: [comp('g1', 1), comp('g2', 1)] }),
+      ],
+    }));
+    const c = app.ref('costOf')('mac');
+    approx(c.purchased, 100, 'D contato in entrambi i rami');
+    approx(c.total, 100);
+  });
+});
+
+describe('costOf — parti e modi di calcolo', () => {
+  const dbConCiclo = costMode => makeDb({
+    items: [
+      mat('m', 10), acq('a', 5),
+      parte('p', {
+        unitCost: 30, costMode,
+        cycle: [
+          { kind: 'item', itemId: 'm', qty: 2 },
+          { kind: 'item', itemId: 'a', qty: 1 },
+          { kind: 'op', workCenterId: 'w', cost: 15 },
+        ],
+      }),
+    ],
+  });
+
+  it('"unit": solo il costo manuale, il ciclo è ignorato', () => {
+    const c = withDb(dbConCiclo('unit')).ref('costOf')('p');
+    approx(c.parts, 30); approx(c.material, 0); approx(c.labor, 0); approx(c.total, 30);
+    assertCoerente(c);
+  });
+
+  it('"cycle": ogni riga confluisce nella propria categoria', () => {
+    const c = withDb(dbConCiclo('cycle')).ref('costOf')('p');
+    approx(c.material, 20, 'materie prime del ciclo');
+    approx(c.purchased, 5, 'commerciali del ciclo');
+    approx(c.labor, 15, 'lavorazione a costo fisso');
+    approx(c.parts, 0, 'il costo manuale non concorre');
+    approx(c.total, 40);
+    assertCoerente(c);
+  });
+
+  it('"sum": costo manuale + valore del ciclo', () => {
+    const c = withDb(dbConCiclo('sum')).ref('costOf')('p');
+    approx(c.parts, 30); approx(c.total, 70);
+    assertCoerente(c);
+  });
+
+  it('costMode assente: ricade sul default delle impostazioni', () => {
+    const d = dbConCiclo(undefined);
+    delete d.items[2].costMode;
+    d.settings.partCostModeDefault = 'unit';
+    approx(withDb(d).ref('costOf')('p').total, 30);
+    d.settings.partCostModeDefault = 'sum';
+    approx(withDb(d).ref('costOf')('p').total, 70);
+  });
+
+  it('costMode non valido: ricade sul default', () => {
+    const d = dbConCiclo('inventato');
+    d.settings.partCostModeDefault = 'unit';
+    approx(withDb(d).ref('costOf')('p').total, 30);
+  });
+
+  it('"cycle" senza righe di ciclo: resta il costo manuale', () => {
+    const app = withDb(makeDb({ items: [parte('p', { unitCost: 42, costMode: 'cycle', cycle: [] })] }));
+    const c = app.ref('costOf')('p');
+    approx(c.parts, 42); approx(c.total, 42);
+  });
+
+  it('lavorazione del ciclo senza costo: 0, non NaN', () => {
+    const app = withDb(makeDb({ items: [parte('p', { costMode: 'cycle', cycle: [{ kind: 'op', workCenterId: 'w' }] })] }));
+    approx(app.ref('costOf')('p').total, 0);
+  });
+
+  it('riga di ciclo che punta a un articolo inesistente viene ignorata', () => {
+    const app = withDb(makeDb({ items: [
+      mat('m', 10),
+      parte('p', { costMode: 'cycle', cycle: [{ kind: 'item', itemId: 'm', qty: 1 }, { kind: 'item', itemId: 'boh', qty: 5 }] }),
+    ] }));
+    approx(app.ref('costOf')('p').total, 10);
+  });
+});
+
+describe('cycleRowCost — override di riga', () => {
+  const riga = over => makeDb({ items: [
+    mat('m', 10),
+    parte('p', { costMode: 'cycle', cycle: [Object.assign({ kind: 'item', itemId: 'm', qty: 2 }, over)] }),
+  ] });
+
+  it('nessun override: quantità x costo unitario', () => {
+    approx(withDb(riga({})).ref('costOf')('p').total, 20);
+  });
+  it('override stringa vuota NON è un override', () => {
+    approx(withDb(riga({ costOverride: '' })).ref('costOf')('p').total, 20);
+  });
+  it('override null NON è un override', () => {
+    approx(withDb(riga({ costOverride: null })).ref('costOf')('p').total, 20);
+  });
+  it('override 0 È un override e azzera la riga', () => {
+    approx(withDb(riga({ costOverride: 0 })).ref('costOf')('p').total, 0);
+  });
+  it('override valorizzato sostituisce il calcolo', () => {
+    approx(withDb(riga({ costOverride: 7.5 })).ref('costOf')('p').total, 7.5);
+  });
+});
+
+describe('costOf — rilevamento cicli', () => {
+  it('auto-anello: segnalato, nessuno stack overflow', () => {
+    const app = withDb(makeDb({ items: [asm('g', 'gruppo', { components: [comp('g', 1)] })] }));
+    const c = app.ref('costOf')('g');
+    assert.equal(c.cycle, true);
+    assert.ok(!Number.isNaN(c.total));
+  });
+
+  it('anello indiretto A→B→C→A: propagato fino alla radice', () => {
+    const app = withDb(makeDb({ items: [
+      asm('a', 'macchina', { components: [comp('b', 1)] }),
+      asm('b', 'gruppo', { components: [comp('c', 1)] }),
+      asm('c', 'sottogruppo', { components: [comp('a', 1)] }),
+    ] }));
+    assert.equal(app.ref('costOf')('a').cycle, true);
+    assert.equal(app.ref('costOf')('b').cycle, true);
+  });
+
+  // Dall'interfaccia un ciclo di lavorazione accetta solo materie prime e
+  // commerciali (foglie), ma import Excel e backup possono produrre altro.
+  it('anello dentro il ciclo di lavorazione di una parte: segnalato', () => {
+    const app = withDb(makeDb({ items: [
+      parte('p', { costMode: 'cycle', cycle: [{ kind: 'item', itemId: 'p', qty: 1 }] }),
+    ] }));
+    assert.equal(app.ref('costOf')('p').cycle, true);
+  });
+
+  it('anello parte → assieme → parte: risalito fino alla parte', () => {
+    const app = withDb(makeDb({ items: [
+      parte('p', { costMode: 'cycle', cycle: [{ kind: 'item', itemId: 'g', qty: 1 }] }),
+      asm('g', 'sottogruppo', { components: [comp('p', 1)] }),
+    ] }));
+    assert.equal(app.ref('costOf')('p').cycle, true, 'la parte deve segnalare l\'anello');
+    assert.equal(app.ref('costOf')('g').cycle, true, 'e anche l\'assieme');
+  });
+
+  it('un override di riga interrompe la dipendenza e il costo torna valido', () => {
+    const app = withDb(makeDb({ items: [
+      parte('p', { costMode: 'cycle', cycle: [{ kind: 'item', itemId: 'p', qty: 1, costOverride: 12 }] }),
+    ] }));
+    const c = app.ref('costOf')('p');
+    assert.equal(c.cycle, false, 'con l\'override non si scende più nel sottoalbero');
+    approx(c.total, 12);
+  });
+
+  it('un ramo sano accanto a un anello conserva il proprio costo', () => {
+    const app = withDb(makeDb({ items: [
+      acq('ok', 100),
+      asm('anello', 'sottogruppo', { components: [comp('anello', 1)] }),
+      asm('mac', 'macchina', { components: [comp('ok', 1), comp('anello', 1)] }),
+    ] }));
+    const c = app.ref('costOf')('mac');
+    assert.equal(c.cycle, true, 'la macchina segnala l\'anello');
+    approx(c.purchased, 100, 'il ramo sano resta valorizzato');
+  });
+});
+
+describe('sellingPrice', () => {
+  it('applica il margine globale', () => {
+    const app = withDb(makeDb({ settings: { marginPct: 20 }, items: [acq('a', 100)] }));
+    approx(app.ref('sellingPrice')('a'), 120);
+  });
+  it('marginPctOverride = 0 vince sul globale', () => {
+    const app = withDb(makeDb({ settings: { marginPct: 20 }, items: [Object.assign(acq('a', 100), { marginPctOverride: 0 })] }));
+    approx(app.ref('sellingPrice')('a'), 100);
+  });
+  it('marginPctOverride valorizzato sostituisce il globale', () => {
+    const app = withDb(makeDb({ settings: { marginPct: 20 }, items: [Object.assign(acq('a', 100), { marginPctOverride: 50 })] }));
+    approx(app.ref('sellingPrice')('a'), 150);
+  });
+});
+
+describe('flattenBom — coerenza con il motore', () => {
+  it('senza spese generali né lavorazioni di testa, i figli sommano al totale', () => {
+    const app = withDb(makeDb({
+      items: [
+        mat('m', 10), acq('a', 20),
+        asm('g', 'gruppo', { components: [comp('m', 3), comp('a', 2)] }),
+        asm('mac', 'macchina', { components: [comp('g', 2)] }),
+      ],
+    }));
+    const rows = [];
+    app.ref('flattenBom')('mac', 1, 0, 0, rows, []);
+    const figli = rows.filter(r => r.level === 1).reduce((s, r) => s + r.line, 0);
+    approx(figli, app.ref('costOf')('mac').total, 'somma righe di primo livello');
+  });
+
+  it('una parte esplode il proprio ciclo e le righe sommano al costo della parte', () => {
+    const app = withDb(makeDb({
+      items: [
+        mat('m', 10), acq('a', 5),
+        parte('p', { unitCost: 30, costMode: 'sum', cycle: [
+          { kind: 'item', itemId: 'm', qty: 2 },
+          { kind: 'item', itemId: 'a', qty: 1 },
+          { kind: 'op', workCenterId: 'w', cost: 15 },
+        ] }),
+      ],
+    }));
+    const rows = [];
+    app.ref('flattenBom')('p', 1, 0, 0, rows, []);
+    const figli = rows.filter(r => r.level === 1).reduce((s, r) => s + r.line, 0);
+    approx(figli, app.ref('costOf')('p').total, 'ciclo esploso + quota manuale');
+  });
+
+  it('un anello viene marcato e non esplode ricorsivamente', () => {
+    const app = withDb(makeDb({ items: [asm('g', 'gruppo', { components: [comp('g', 1)] })] }));
+    const rows = [];
+    app.ref('flattenBom')('g', 1, 0, 0, rows, []);
+    assert.ok(rows.length < 5, 'la ricorsione si ferma');
+    assert.ok(rows.some(r => /ciclo!/.test(r.name)), 'la riga in anello è segnalata');
+  });
+});

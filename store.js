@@ -362,12 +362,6 @@ function migrateDB() {
       if (l.note == null) l.note = '';
     });
   });
-  // Famiglie: tipizzazione (materie prime vs commerciali) + sigla per codifica automatica
-  (db.families || []).forEach(f => {
-    if (!f.kind) f.kind = 'acquistato'; // le famiglie storiche erano tutte commerciali
-    if (!f.sigla) f.sigla = siglaFromName(f.name);
-    (f.subs || []).forEach(s => { if (!s.sigla) s.sigla = siglaFromName(s.name); });
-  });
   // Seed una-tantum delle famiglie materie prime predefinite mancanti (non ripristina quelle cancellate)
   if (!db.settings.mpFamiliesSeeded) {
     const existingIds = new Set((db.families || []).map(f => f.id));
@@ -382,6 +376,14 @@ function migrateDB() {
       .forEach(f => db.families.push(JSON.parse(JSON.stringify(f))));
     db.settings.partFamiliesSeeded = true;
   }
+  // Famiglie: tipizzazione (materie prime vs commerciali) + sigla per codifica automatica.
+  // Va DOPO i seed: le famiglie appena seminate non hanno sigla e la codifica per
+  // famiglia (MAT-ACC-LAM-001) la richiede subito, non al ricaricamento successivo.
+  (db.families || []).forEach(f => {
+    if (!f.kind) f.kind = 'acquistato'; // le famiglie storiche erano tutte commerciali
+    if (!f.sigla) f.sigla = siglaFromName(f.name);
+    (f.subs || []).forEach(s => { if (!s.sigla) s.sigla = siglaFromName(s.name); });
+  });
   db.items.forEach(it => {
     // Migrazione vecchio tipo 'prodotto' + flag isMachine ai nuovi tipi
     if (it.type === 'prodotto') {
@@ -393,6 +395,30 @@ function migrateDB() {
       if (!it.operations) it.operations = [];
     }
     if (it.type === 'parte' && !it.cycle) it.cycle = [];
+    // Listino fornitori: lo stesso articolo può essere quotato da più fornitori,
+    // e le quotazioni si accumulano nel tempo. I campi singoli dell'articolo
+    // (supplierId, purchasePrice/unitCost, supplierCode, supplierDesc) restano
+    // il "prezzo in uso", cioè quello che entra nella costificazione: il listino
+    // è la memoria da cui lo si sceglie, non un secondo calcolo parallelo.
+    if (it.type === 'acquistato' || it.type === 'materiale') {
+      if (!Array.isArray(it.priceList)) it.priceList = [];
+      // Chi ha già un fornitore parte con quella quotazione in elenco, marcata
+      // come in uso. Il flag rende il seed una-tantum: se poi si svuota il
+      // listino, non ricompare al caricamento successivo.
+      if (!it.priceListSeeded) {
+        if (it.supplierId) {
+          const prezzo = it.type === 'acquistato' ? it.purchasePrice : it.unitCost;
+          const riga = stampNew({
+            id: newId(), supplierId: it.supplierId, price: Number(prezzo) || 0,
+            minQty: '', leadDays: '', code: it.supplierCode || '', desc: it.supplierDesc || '',
+            date: (it.updatedAt || nowISO()).slice(0, 10), rfqId: null, note: '',
+          });
+          it.priceList.push(riga);
+          it.activePriceId = riga.id;
+        }
+        it.priceListSeeded = true;
+      }
+    }
     // Modo di calcolo del costo della parte. I dati storici conservano il
     // comportamento precedente: col ciclo il costo era derivato dal ciclo,
     // senza ciclo era quello del campo manuale.
@@ -450,15 +476,59 @@ function migrateV2() {
   delete db.nextId;
 }
 
+// ── Esito dei salvataggi ────────────────────────────────────
+// Quando localStorage rifiuta la scrittura, l'app continua a funzionare
+// mostrando i dati aggiornati: la memoria diverge dal persistito e alla
+// chiusura del browser sparisce tutto. Va detto, e va detto in modo che non si
+// possa non vederlo — non con un toast che sparisce in due secondi e mezzo.
+let dbUnsaved = false;
+function isQuotaError(e) {
+  return !!e && (e.name === 'QuotaExceededError' || e.name === 'NS_ERROR_DOM_QUOTA_REACHED'
+              || e.code === 22 || e.code === 1014);
+}
+// kind: 'quota' (spazio esaurito) | 'storage' (salvataggio non disponibile,
+// es. navigazione privata) | 'serialize' (dati non serializzabili).
+// La segnalazione all'utente sta in app.js, dietro l'hook onPersistError:
+// store.js resta senza codice di interfaccia.
+function commitFailed(kind, err, bytes) {
+  dbUnsaved = true;
+  console.error('Salvataggio locale fallito (' + kind + '):', err);
+  if (typeof onPersistError === 'function') onPersistError(kind, { bytes, err });
+  else if (typeof showToast === 'function') showToast('Errore salvataggio', 'error');
+  return false;
+}
+
 // ── Store: API repository (contratto per il futuro adapter cloud) ──
 const Store = {
   load() { loadDB(); },
   commit() {
-    try { localStorage.setItem(DB_KEY, JSON.stringify(db)); }
-    catch (e) {
-      console.error('Errore salvataggio locale:', e);
-      if (typeof showToast === 'function') showToast('Errore salvataggio', 'error');
+    // Unico punto di scrittura: ci passano i 57 saveDB() di app.js, insert/
+    // update/remove, load, reset, clearAll e importSnapshot. Invalidare qui
+    // copre ogni mutazione. Prima del salvataggio, non dopo: se setItem fallisce
+    // la cache resta comunque allineata a ciò che c'è in memoria.
+    if (typeof invalidateCaches === 'function') invalidateCaches();
+    let payload;
+    try { payload = JSON.stringify(db); }
+    catch (e) { return commitFailed('serialize', e, 0); }
+    try {
+      localStorage.setItem(DB_KEY, payload);
+      if (dbUnsaved) {
+        dbUnsaved = false;
+        if (typeof onPersistRecovered === 'function') onPersistRecovered();
+      }
+      return true;
+    } catch (e) {
+      return commitFailed(isQuotaError(e) ? 'quota' : 'storage', e, payload.length);
     }
+  },
+  // Vero finché una modifica è rimasta solo in memoria. Chiudere la scheda in
+  // questo stato perde tutto il lavoro fatto dal primo errore in poi.
+  isUnsaved() { return dbUnsaved; },
+  // Dimensione del database persistito, per far vedere il limite arrivare.
+  sizeInfo() {
+    let bytes = 0;
+    try { bytes = (localStorage.getItem(DB_KEY) || '').length; } catch (e) { /* storage non leggibile */ }
+    return { bytes, mb: bytes / 1024 / 1024 };
   },
   reset() {
     db = JSON.parse(JSON.stringify(defaultDB));

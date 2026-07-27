@@ -5,7 +5,7 @@
 // Revisione in esecuzione, mostrata accanto al logo. Va tenuta allineata alla
 // voce in cima al changelog del README (l'app si copia a mano tra PC: sapere
 // quale revisione sta girando su una postazione è l'unico modo per capirlo).
-const APP_VERSION = '0.10.0';
+const APP_VERSION = '0.14.0';
 
 let currentUser = null;      // utente della sessione (null = schermata di accesso)
 let currentBomId = null;     // articolo prodotto attualmente aperto nelle Distinte
@@ -29,7 +29,27 @@ let orderDirty = false;      // modifiche non salvate nell'editor ordine
 function cur() { return (db.settings && db.settings.currency) || '€'; }
 function fmtN(n) { return cur() + (Number(n) || 0).toFixed(2); }
 function esc(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
-function getItem(id) { return db.items.find(i => i.id === id); }
+// ─── Indice articoli e cache dei costi ───
+// getItem era una scansione lineare di db.items, chiamata dentro costOf e per
+// ogni riga di catalogo. L'indice si ricostruisce da solo quando l'array cambia
+// identità o lunghezza: copre così anche le mutazioni dirette (db.items.push,
+// splice, riassegnazione di db in loadDB/importSnapshot) sparse per app.js.
+let _itemIdx = null, _itemIdxArr = null, _itemIdxLen = -1;
+function itemIndex() {
+  if (_itemIdx && db.items === _itemIdxArr && db.items.length === _itemIdxLen) return _itemIdx;
+  _itemIdx = new Map(db.items.map(i => [i.id, i]));
+  _itemIdxArr = db.items; _itemIdxLen = db.items.length;
+  return _itemIdx;
+}
+function getItem(id) { return itemIndex().get(id); }
+// Risultati di costOf già calcolati in questo giro di rendering.
+let _costCache = new Map();
+// Azzera indice e cache. Chiamata da Store.commit() — l'unico punto di scrittura
+// da cui passano tutti i salvataggi — e in testa alle viste che mostrano costi.
+function invalidateCaches() {
+  _costCache.clear();
+  _itemIdx = null; _itemIdxArr = null; _itemIdxLen = -1;
+}
 // Indirizzo strutturato → righe di testo (per documenti) o riga singola (per liste)
 function addressLines(o) {
   if (!o) return [];
@@ -302,6 +322,50 @@ function showToast(m, t = 'success') {
   el.classList.add('show');
   setTimeout(() => el.classList.remove('show'), 2500);
 }
+// ─── Esito del salvataggio locale ───
+// Hook chiamati da Store.commit(). Quando localStorage rifiuta la scrittura
+// l'app continua a mostrare i dati aggiornati, ma non li conserva: chiudere la
+// scheda in quello stato perde tutto il lavoro fatto dall'errore in poi.
+let persistErrorShown = false;   // il messaggio si mostra una volta, poi resta il badge
+function onPersistError(kind, info) {
+  renderUnsavedBadge();
+  if (persistErrorShown) return;
+  persistErrorShown = true;
+  // Differito: chi ha appena salvato chiama closeModal() subito dopo, e
+  // chiuderebbe questa finestra prima che si riesca a leggerla.
+  setTimeout(() => showPersistErrorModal(kind, info), 0);
+}
+function onPersistRecovered() {
+  persistErrorShown = false;
+  renderUnsavedBadge();
+  showToast('Salvataggio ripristinato');
+}
+function showPersistErrorModal(kind, info) {
+  const mb = info && info.bytes ? ` (il database occupa ${(info.bytes / 1024 / 1024).toFixed(1)} MB)` : '';
+  const testo = kind === 'quota'
+    ? `<p>Lo spazio che il browser riserva a questa app è esaurito${mb}.</p>
+       <p><strong>Le modifiche fatte da ora in poi non vengono salvate.</strong> I dati che vedi sono ancora tutti in memoria, ma chiudendo questa scheda andrebbero persi.</p>
+       <p>Esporta subito un backup JSON, poi libera spazio: elimina richieste e ordini vecchi, oppure azzera il database e reimporta solo ciò che serve.</p>`
+    : kind === 'storage'
+      ? `<p>Questo browser non consente il salvataggio locale: succede in navigazione privata o quando i dati dei siti sono bloccati.</p>
+         <p><strong>L'app funziona, ma alla chiusura non resterà nulla.</strong> Esporta un backup JSON prima di uscire.</p>`
+      : `<p>I dati in memoria non sono salvabili: c'è un valore che non si riesce a convertire in JSON.</p>
+         <p><strong>Le modifiche non vengono salvate.</strong> Esporta un backup e segnala il problema.</p>`;
+  // Il backup contiene gli utenti: il pulsante compare solo a chi può esportarlo.
+  const btnBackup = canWrite('manage')
+    ? `<button class="add-btn-sm" onclick="closeModal(); exportBackup()">⬇ Esporta backup JSON ora</button>` : '';
+  openModal(`<h3>⚠ Salvataggio non riuscito</h3>${testo}
+    <div class="modal-actions"><button class="btn-ghost" onclick="closeModal()">Ho capito</button>${btnBackup}</div>`);
+}
+// Indicatore fisso nell'header finché c'è divergenza tra memoria e persistito.
+function renderUnsavedBadge() {
+  const el = document.getElementById('unsaved-badge'); if (!el) return;
+  const aperto = Store.isUnsaved();
+  el.style.display = aperto ? '' : 'none';
+  el.textContent = aperto ? '⚠ Modifiche non salvate' : '';
+  el.title = aperto ? 'Le ultime modifiche sono rimaste solo in memoria: esporta un backup prima di chiudere la scheda' : '';
+}
+
 // Il click fuori dalla finestra non chiude: si esce solo con Salva/Annulla (o Chiudi).
 // wide = true per i form ampi, es. la scheda articolo col ciclo di lavorazione.
 function openModal(h, wide) {
@@ -311,7 +375,40 @@ function openModal(h, wide) {
 function closeModal() { document.getElementById('modal-root').innerHTML = ''; }
 function val(id) { const e = document.getElementById(id); return e ? e.value.trim() : ''; }
 function setVal(id, v) { const e = document.getElementById(id); if (e) e.value = v; }
-function numVal(id) { const e = document.getElementById(id); return e ? (parseFloat(e.value) || 0) : 0; }
+// ─── Digitazione: rinvio del ridisegno ───
+// I campi di ricerca ridisegnano interi elenchi a ogni carattere. Con poche
+// centinaia di articoli si sente: la digitazione "impasta". Si aspetta una
+// breve pausa e si disegna una volta sola. Il rinvio è per chiave, così due
+// campi diversi non si annullano a vicenda.
+const SEARCH_DELAY = 160;   // ms: sotto la soglia in cui si percepisce un ritardo
+const _debounceTimers = {};
+function debounced(key, fn, ms) {
+  clearTimeout(_debounceTimers[key]);
+  _debounceTimers[key] = setTimeout(fn, ms == null ? SEARCH_DELAY : ms);
+}
+
+// ─── Lettura dei campi numerici ───
+// parseFloat da solo lascia passare i negativi e Infinity: un costo negativo si
+// propaga per tutto il rollup, un Infinity fa comparire NaN ovunque.
+// clampNum è logica pura, senza DOM: è la parte che la suite verifica.
+function clampNum(v, min, max) {
+  if (!isFinite(v)) return min != null ? min : 0;      // campo vuoto, testo, NaN, Infinity
+  if (min != null && v < min) return min;
+  if (max != null && v > max) return max;
+  return v;
+}
+// Valore così com'è stato digitato (0 se vuoto o non numerico): serve a
+// riconoscere un negativo prima di correggerlo.
+function rawNum(id) {
+  const e = document.getElementById(id);
+  const v = parseFloat(e ? e.value : '');
+  return isFinite(v) ? v : 0;
+}
+function numVal(id, min, max) { return clampNum(rawNum(id), min, max); }
+// Percentuali e valori di bozza si riportano dentro l'intervallo in silenzio
+// (come già fa codeDigits); costi, prezzi e quantità no: lì un negativo è un
+// errore di battitura, e azzerarlo lo farebbe sparire senza dirlo a nessuno.
+function isNeg(id) { return rawNum(id) < 0; }
 function isChecked(id) { const e = document.getElementById(id); return !!(e && e.checked); }
 
 // ═══════════════════════════════════════════════════════════
@@ -453,11 +550,18 @@ function renderClock() {
   const t = now.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
   el.innerHTML = `<span class="clock-date">${esc(d)}</span><span class="clock-time">${t}</span>`;
 }
+// L'orologio mostra ore e minuti: si risveglia al cambio di minuto, non ogni
+// secondo. Il primo colpo si allinea al minuto pieno, poi si va di 60 in 60.
 function startClock() {
   renderClock();
-  if (!clockTimer) clockTimer = setInterval(renderClock, 1000);
+  if (clockTimer) return;
+  const alProssimoMinuto = 60000 - (Date.now() % 60000);
+  clockTimer = setTimeout(function tic() {
+    renderClock();
+    clockTimer = setTimeout(tic, 60000);
+  }, alProssimoMinuto);
 }
-function stopClock() { if (clockTimer) { clearInterval(clockTimer); clockTimer = null; } }
+function stopClock() { if (clockTimer) { clearTimeout(clockTimer); clockTimer = null; } }
 function safeColor(c) { return /^#[0-9A-Fa-f]{6}$/.test(String(c || '')) ? c : '#3A7BE8'; }
 
 // Cambio password del proprio account
@@ -485,12 +589,25 @@ function saveOwnPassword() {
 // ═══════════════════════════════════════════════════════════
 // Ritorna i costi unitari (per 1 unità) suddivisi in categorie.
 // material+purchased+labor+parts+overhead === total (= costo totale industriale).
+const ZERO_COST = { material: 0, purchased: 0, labor: 0, parts: 0, overhead: 0, base: 0, total: 0, cycle: false };
 function costOf(itemId, visited) {
-  visited = visited || new Set();
-  const zero = { material: 0, purchased: 0, labor: 0, parts: 0, overhead: 0, base: 0, total: 0, cycle: false };
   const it = getItem(itemId);
-  if (!it) return zero;
-  if (visited.has(itemId)) { return { ...zero, cycle: true }; }
+  if (!it) return { ...ZERO_COST };
+  if (visited && visited.has(itemId)) return { ...ZERO_COST, cycle: true };
+  // Un risultato senza anelli non dipende dal percorso di discesa: nessun
+  // antenato è stato incontrato nel sottoalbero, quindi vale per qualunque
+  // chiamante e si può riusare. Un risultato con cycle=true invece è troncato
+  // proprio in funzione degli antenati: quello non va mai in cache.
+  const hit = _costCache.get(itemId);
+  if (hit) return hit;
+  const res = computeCost(it, itemId, visited || new Set());
+  // Congelato: i chiamanti ricevono lo stesso oggetto, una modifica accidentale
+  // avvelenerebbe la cache invece di restare locale.
+  if (!res.cycle) _costCache.set(itemId, Object.freeze(res));
+  return res;
+}
+function computeCost(it, itemId, visited) {
+  const zero = ZERO_COST;
 
   if (it.type === 'materiale') {
     const v = Number(it.unitCost) || 0;
@@ -514,8 +631,11 @@ function costOf(itemId, visited) {
     const next = new Set(visited); next.add(itemId);
     let material = 0, purchased = 0, labor = 0;
     const parts = mode === 'sum' ? manual : 0;   // 'sum': il costo unitario si aggiunge al ciclo
+    // Accumulatore: raccoglie l'eventuale anello incontrato dalle righe del ciclo.
+    // Senza, un troncamento da ricorsione passerebbe per un costo valido.
+    const out = { cycle: false };
     it.cycle.forEach(row => {
-      const rowCost = cycleRowCost(row, next);
+      const rowCost = cycleRowCost(row, next, out);
       if (row.kind === 'op') { labor += rowCost; return; }
       const ci = getItem(row.itemId);
       if (!ci) return;
@@ -524,7 +644,7 @@ function costOf(itemId, visited) {
       else labor += rowCost;   // tipo inatteso: non perdiamo il costo
     });
     const base = material + purchased + labor + parts;
-    return { ...zero, material, purchased, labor, parts, base, total: base };
+    return { ...zero, material, purchased, labor, parts, base, total: base, cycle: out.cycle };
   }
 
   // assieme (macchina/gruppo/sottogruppo): somma figli + lavorazioni
@@ -571,19 +691,26 @@ function partCostModeOptions(sel) {
 }
 
 // ─── Ciclo di lavorazione (articoli tipo "parte") ───
+// `out` è un accumulatore opzionale: se il sottoalbero della riga contiene un
+// anello, ci finisce dentro `out.cycle = true`. Serve a costOf per non spacciare
+// per valido un costo troncato dalla ricorsione; i chiamanti dell'interfaccia
+// possono ignorarlo.
 // Costo calcolato di una riga articolo (q.tà × costo unitario), ignorando l'eventuale override.
-function cycleRowComputed(row, visited) {
+function cycleRowComputed(row, visited, out) {
   if (!row || row.kind === 'op') return 0;
-  return costOf(row.itemId, visited).total * (Number(row.qty) || 0);
+  const c = costOf(row.itemId, visited);
+  if (out && c.cycle) out.cycle = true;
+  return c.total * (Number(row.qty) || 0);
 }
 // Costo effettivo della riga.
 // Lavorazione: costo fisso, non orario (le lavorazioni orarie restano solo negli assiemi).
 // Articolo: override se valorizzato, altrimenti q.tà × costo unitario.
-function cycleRowCost(row, visited) {
+function cycleRowCost(row, visited, out) {
   if (!row) return 0;
   if (row.kind === 'op') return Number(row.cost) || 0;
+  // Con un override il costo non dipende più dal sottoalbero: niente da segnalare.
   if (row.costOverride != null && row.costOverride !== '') return Number(row.costOverride) || 0;
-  return cycleRowComputed(row, visited);
+  return cycleRowComputed(row, visited, out);
 }
 
 function sellingPrice(itemId) {
@@ -666,6 +793,7 @@ function ensureCurrentBom() {
 function onBomSelect() { currentBomId = val('bom-select'); bomExpanded = new Set(); renderBom(); }
 
 function renderBom() {
+  invalidateCaches();   // rete di sicurezza: la cache dei costi vive dentro un singolo disegno
   ensureCurrentBom();
   document.getElementById('bom-select').innerHTML = productOptions(currentBomId);
   const it = getItem(currentBomId);
@@ -721,10 +849,11 @@ function renderBomNode(comp, level, parentId, editable, idx, pathPrefix, ancesto
   const toggle = expandable
     ? `<span class="bom-toggle" onclick="toggleBom('${nodeKey}')">${expanded ? '▼' : '▶'}</span>`
     : `<span class="bom-toggle leaf">•</span>`;
-  const actions = editable
-    ? `<button class="mini-btn" title="Modifica" onclick="editComponentModal(${idx})">✏</button>
-       <button class="mini-btn danger" title="Elimina" onclick="delComponent(${idx})">🗑</button>`
-    : '';
+  const actions = `<button class="mini-btn" title="Dove è usato e impatto costi" onclick="usageModal('${comp.itemId}')">🔗</button>`
+    + (editable
+      ? `<button class="mini-btn" title="Modifica" onclick="editComponentModal(${idx})">✏</button>
+         <button class="mini-btn danger" title="Elimina" onclick="delComponent(${idx})">🗑</button>`
+      : '');
 
   let h = `<div class="bom-node" style="padding-left:${18 + indent}px">
     <span class="bom-name">${toggle}
@@ -878,7 +1007,7 @@ function itemPickerField(selectedId) {
   return `<div class="modal-field"><label>Articolo</label>
       <input type="hidden" id="cmp-item" value="${selectedId ? esc(selectedId) : ''}">
       <input type="text" id="cmp-search" class="search" placeholder="🔍 Cerca codice o nome..."
-        value="${sel ? esc(sel.code + ' — ' + sel.name) : ''}" oninput="renderPickerResults()" autocomplete="off">
+        value="${sel ? esc(sel.code + ' — ' + sel.name) : ''}" oninput="debounced('picker', renderPickerResults)" autocomplete="off">
       <div id="cmp-results" class="picker-results"></div>
     </div>`;
 }
@@ -937,7 +1066,8 @@ function saveNewComponent() {
   if (!itemId) { showToast('Seleziona un articolo', 'error'); return; }
   if (!isAllowedChild(it.type, itemId)) { showToast('Tipo non ammesso in un ' + typeLabel(it.type).toLowerCase(), 'error'); return; }
   if (createsCycle(it.id, itemId)) { showToast('Operazione annullata: creerebbe un ciclo', 'error'); return; }
-  it.components.push({ itemId, qty: numVal('cmp-qty'), scrapPct: numVal('cmp-scrap') });
+  if (isNeg('cmp-qty')) { showToast('La quantità non può essere negativa', 'error'); return; }
+  it.components.push({ itemId, qty: numVal('cmp-qty', 0), scrapPct: numVal('cmp-scrap', 0, 100) });
   touch(it);
   saveDB(); closeModal(); renderBom(); showToast('Componente aggiunto');
 }
@@ -964,7 +1094,8 @@ function saveComponentEdit(idx) {
   const itemId = val('cmp-item');
   if (!isAllowedChild(it.type, itemId)) { showToast('Tipo non ammesso in un ' + typeLabel(it.type).toLowerCase(), 'error'); return; }
   if (createsCycle(it.id, itemId)) { showToast('Operazione annullata: creerebbe un ciclo', 'error'); return; }
-  comp.itemId = itemId; comp.qty = numVal('cmp-qty'); comp.scrapPct = numVal('cmp-scrap');
+  if (isNeg('cmp-qty')) { showToast('La quantità non può essere negativa', 'error'); return; }
+  comp.itemId = itemId; comp.qty = numVal('cmp-qty', 0); comp.scrapPct = numVal('cmp-scrap', 0, 100);
   touch(it);
   saveDB(); closeModal(); renderBom(); showToast('Componente aggiornato');
 }
@@ -1021,7 +1152,8 @@ function addOperationModal() {
 function saveNewOperation() {
   if (!roleGuard('bom')) return;
   const it = getItem(currentBomId); if (!it) return;
-  it.operations.push({ workCenterId: val('op-wc'), hours: numVal('op-hours'), note: val('op-note') });
+  if (isNeg('op-hours')) { showToast('Le ore non possono essere negative', 'error'); return; }
+  it.operations.push({ workCenterId: val('op-wc'), hours: numVal('op-hours', 0), note: val('op-note') });
   touch(it);
   saveDB(); closeModal(); renderBom(); showToast('Lavorazione aggiunta');
 }
@@ -1042,7 +1174,8 @@ function saveOperationEdit(idx) {
   if (!roleGuard('bom')) return;
   const it = getItem(currentBomId); if (!it) return;
   const op = it.operations[idx]; if (!op) return;
-  op.workCenterId = val('op-wc'); op.hours = numVal('op-hours'); op.note = val('op-note');
+  if (isNeg('op-hours')) { showToast('Le ore non possono essere negative', 'error'); return; }
+  op.workCenterId = val('op-wc'); op.hours = numVal('op-hours', 0); op.note = val('op-note');
   touch(it);
   saveDB(); closeModal(); renderBom(); showToast('Lavorazione aggiornata');
 }
@@ -1129,8 +1262,10 @@ function saveCurrentItem() {
   const it = getItem(currentBomId); if (!it) return;
   it.code = val('mac-code'); it.uom = val('mac-uom'); it.name = val('mac-name') || it.name;
   it.notes = val('mac-notes');
-  const ov = val('mac-ov'); it.overheadPctOverride = ov === '' ? null : parseFloat(ov);
-  const mg = val('mac-mg'); it.marginPctOverride = mg === '' ? null : parseFloat(mg);
+  // Vuoto = nessuna sovrascrittura (si usa l'impostazione globale); un valore
+  // fuori scala viene riportato dentro l'intervallo, come per le impostazioni.
+  const ov = val('mac-ov'); it.overheadPctOverride = ov === '' ? null : clampNum(parseFloat(ov), 0, 1000);
+  const mg = val('mac-mg'); it.marginPctOverride = mg === '' ? null : clampNum(parseFloat(mg), 0, 1000);
   touch(it);
   saveDB(); closeModal(); renderBom(); showToast('Testata aggiornata');
 }
@@ -1150,15 +1285,353 @@ function usedBy(itemId) {
 }
 
 // ═══════════════════════════════════════════════════════════
+//  DOVE È USATO E IMPATTO SUI COSTI
+// ═══════════════════════════════════════════════════════════
+// La distinta si è sempre potuta leggere dall'alto verso il basso. Qui si
+// risale: dato un articolo, chi lo contiene e quali macchine ne risentono se
+// il suo costo cambia.
+
+// Quantità di `childId` dentro una unità di `parent`, scarto compreso.
+// Un componente può comparire più volte nella stessa distinta: si sommano.
+function usageQty(parent, childId) {
+  let q = 0;
+  if (isAssembly(parent.type)) {
+    (parent.components || []).forEach(c => {
+      if (c.itemId === childId) q += (Number(c.qty) || 0) * (1 + (Number(c.scrapPct) || 0) / 100);
+    });
+  }
+  // Nel ciclo di lavorazione una riga con override non dipende più dal costo
+  // dell'articolo: conta come impiego, ma non propaga la variazione di prezzo.
+  if (parent.type === 'parte' && partCostMode(parent) !== 'unit') {
+    (parent.cycle || []).forEach(r => {
+      if (r.kind === 'item' && r.itemId === childId) q += Number(r.qty) || 0;
+    });
+  }
+  return q;
+}
+// Impieghi diretti: chi contiene l'articolo, con la quantità per unità.
+function directUses(itemId) {
+  return usedBy(itemId)
+    .map(p => ({ item: p, qty: usageQty(p, itemId) }))
+    .sort((a, b) => (a.item.code || '').localeCompare(b.item.code || ''));
+}
+// Tutti gli antenati, con la quantità complessiva che ne serve per una unità di
+// ciascuno: si moltiplicano le quantità lungo la risalita. Il percorso già
+// attraversato ferma gli anelli.
+function ancestorTotals(itemId) {
+  const totali = new Map();
+  const salita = (id, qty, percorso) => {
+    usedBy(id).forEach(p => {
+      if (percorso.has(p.id)) return;
+      const q = qty * usageQty(p, id);
+      totali.set(p.id, (totali.get(p.id) || 0) + q);
+      const oltre = new Set(percorso); oltre.add(p.id);
+      salita(p.id, q, oltre);
+    });
+  };
+  salita(itemId, 1, new Set([itemId]));
+  return totali;
+}
+// Assiemi di testa impattati: le macchine, oppure — se l'articolo non arriva a
+// nessuna macchina — gli assiemi più alti che lo contengono.
+function impactedTops(itemId) {
+  const totali = ancestorTotals(itemId);
+  const righe = [...totali.entries()]
+    .map(([id, qty]) => ({ item: getItem(id), qty }))
+    .filter(r => r.item);
+  const macchine = righe.filter(r => r.item.type === 'macchina');
+  const cime = macchine.length ? macchine : righe.filter(r => !usedBy(r.item.id).length);
+  return cime.sort((a, b) => (a.item.code || '').localeCompare(b.item.code || ''));
+}
+
+// ─── Il campo dove vive il costo proprio dell'articolo ───
+// Dipende dal tipo. Gli assiemi non ne hanno uno (il loro costo è derivato) e
+// nemmeno le parti a "solo ciclo": lì non c'è un prezzo da simulare o da
+// prendere a listino.
+function costField(it) {
+  if (!it) return null;
+  if (it.type === 'acquistato') return 'purchasePrice';
+  if (it.type === 'materiale') return 'unitCost';
+  if (it.type === 'parte' && partCostMode(it) !== 'cycle') return 'unitCost';
+  return null;
+}
+// Esegue `fn` come se l'articolo costasse `valore`, poi rimette tutto a posto.
+// Nulla viene salvato: si tocca l'oggetto in memoria e lo si ripristina sempre,
+// anche se il calcolo solleva un'eccezione.
+function withTempCost(it, valore, fn) {
+  const campo = costField(it);
+  if (!campo) return fn();
+  const prima = it[campo];
+  it[campo] = valore;
+  invalidateCaches();
+  try { return fn(); }
+  finally { it[campo] = prima; invalidateCaches(); }
+}
+
+// ═══════════════════════════════════════════════════════════
+//  LISTINO FORNITORI E STORICO PREZZI
+// ═══════════════════════════════════════════════════════════
+// Un articolo comprato viene quotato da più fornitori, e le quotazioni
+// cambiano nel tempo. Il listino le conserva tutte; una sola è "in uso" ed è
+// quella che finisce nei campi dell'articolo, cioè nella costificazione.
+// Nessun costo viene derivato dal listino di nascosto: il passaggio è sempre
+// una scelta esplicita, così un prezzo non cambia da solo sotto un'offerta.
+function hasPriceList(it) { return !!it && (it.type === 'acquistato' || it.type === 'materiale'); }
+function priceRows(it) { return (it && it.priceList) || []; }
+function activePriceRow(it) { return priceRows(it).find(r => r.id === it.activePriceId) || null; }
+// La quotazione più bassa tra quelle valorizzate (a parità, la più recente).
+function bestPriceRow(it) {
+  const quotate = priceRows(it).filter(r => r.price !== '' && r.price != null);
+  if (!quotate.length) return null;
+  return quotate.reduce((best, r) => {
+    const d = (Number(r.price) || 0) - (Number(best.price) || 0);
+    if (d < 0) return r;
+    if (d > 0) return best;
+    return (r.date || '') > (best.date || '') ? r : best;
+  });
+}
+// Porta una quotazione nei campi dell'articolo: da qui in poi è quella che costa.
+function applyPriceRow(it, row) {
+  const campo = costField(it);
+  if (campo) it[campo] = Number(row.price) || 0;
+  if (it.type === 'acquistato') it.supplierId = row.supplierId || null;
+  it.supplierCode = row.code || '';
+  it.supplierDesc = row.desc || '';
+  it.activePriceId = row.id;
+}
+
+function priceListModal(id) {
+  const it = getItem(id); if (!it) return;
+  if (!hasPriceList(it)) { showToast('Il listino vale solo per commerciali e materie prime', 'error'); return; }
+  window.__priceItemId = id;
+  openModal(`<h3>💶 Listino fornitori — ${esc(it.code)}</h3>
+    <p style="color:var(--text-dim);margin-bottom:14px">${esc(it.name)} · ${typeLabel(it.type)}</p>
+    <div id="pricelist-body">${priceListBody(id)}</div>
+    <div class="modal-actions"><button class="btn-ghost" onclick="closeModal()">Chiudi</button></div>`, true);
+}
+function priceListRefresh() {
+  const host = document.getElementById('pricelist-body');
+  if (host && window.__priceItemId) host.innerHTML = priceListBody(window.__priceItemId);
+}
+function priceListBody(id) {
+  const it = getItem(id); if (!it) return '';
+  const campo = costField(it);
+  const inUso = activePriceRow(it);
+  const migliore = bestPriceRow(it);
+  const scrivibile = canWrite('catalog');
+
+  // Le quotazioni più recenti in cima: è quello che si guarda per primo.
+  const righe = priceRows(it).slice().sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+
+  const corpo = righe.map(r => {
+    const attiva = inUso && r.id === inUso.id;
+    const best = migliore && r.id === migliore.id && righe.length > 1;
+    const ro = scrivibile ? '' : 'disabled';
+    return `<tr class="${attiva ? 'price-active' : ''}">
+      <td style="width:1%;white-space:nowrap">${attiva ? '<span title="Prezzo in uso nella costificazione">✓</span>' : ''}${best ? '<span class="price-best" title="Quotazione più bassa">↓</span>' : ''}</td>
+      <td><select ${ro} onchange="priceSetField('${r.id}','supplierId',this.value)">${supplierOptions(r.supplierId || '')}</select></td>
+      <td><input type="number" class="num" min="0" step="0.0001" value="${r.price === '' || r.price == null ? '' : r.price}" ${ro} onchange="priceSetField('${r.id}','price',this.value)"></td>
+      <td><input type="number" class="num" min="0" step="any" value="${r.minQty === '' || r.minQty == null ? '' : r.minQty}" placeholder="—" ${ro} onchange="priceSetField('${r.id}','minQty',this.value)"></td>
+      <td><input type="number" class="num" min="0" step="1" value="${r.leadDays === '' || r.leadDays == null ? '' : r.leadDays}" placeholder="—" ${ro} onchange="priceSetField('${r.id}','leadDays',this.value)"></td>
+      <td><input value="${esc(r.code || '')}" placeholder="—" ${ro} onchange="priceSetField('${r.id}','code',this.value)"></td>
+      <td><input type="date" value="${esc(r.date || '')}" ${ro} onchange="priceSetField('${r.id}','date',this.value)"></td>
+      <td style="color:var(--text-dim);font-size:12px">${esc(priceRowOrigin(r))}</td>
+      <td style="text-align:right;white-space:nowrap">
+        ${attiva || !campo ? '' : `<button class="mini-btn" title="Usa questo prezzo nella costificazione" onclick="priceUseRow('${r.id}')">✓ Usa</button>`}
+        <button class="mini-btn danger" title="Elimina la voce" onclick="priceDelRow('${r.id}')">🗑</button>
+      </td></tr>`;
+  }).join('');
+
+  const vuoto = `<tr><td colspan="9" class="empty-text">Nessuna quotazione registrata. Aggiungine una, oppure registrale da una richiesta di offerta ricevuta.</td></tr>`;
+  const attuale = campo ? `<p style="margin-bottom:12px">Prezzo in uso nella costificazione: <strong style="font-family:var(--mono)">${fmtN(Number(it[campo]) || 0)}</strong>${inUso ? '' : ' <span style="color:var(--text-dim)">(inserito a mano, non da listino)</span>'}</p>` : '';
+  return `${attuale}
+    <div class="table-wrap"><table>
+      <thead><tr><th></th><th>Fornitore</th><th>Prezzo</th><th>Q.tà min</th><th>Consegna gg</th><th>Codice forn.</th><th>Data</th><th>Origine</th><th></th></tr></thead>
+      <tbody>${corpo || vuoto}</tbody></table></div>
+    <div style="margin-top:10px"><button class="add-btn-sm" onclick="priceAddRow()">+ Aggiungi quotazione</button></div>`;
+}
+function priceRowOrigin(r) {
+  if (!r.rfqId) return 'a mano';
+  const q = db.rfqs.find(x => x.id === r.rfqId);
+  return q ? q.number : 'richiesta eliminata';
+}
+// ─── Mutatori del listino ───
+// Ogni operazione salva: il listino è un dato dell'articolo come gli altri.
+function priceRowById(rowId) {
+  const it = getItem(window.__priceItemId);
+  if (!it) return null;
+  return { it, row: priceRows(it).find(r => r.id === rowId) || null };
+}
+function priceAddRow() {
+  if (!roleGuard('catalog')) return;
+  const it = getItem(window.__priceItemId); if (!it) return;
+  it.priceList.push(stampNew({
+    id: gid(), supplierId: it.supplierId || null, price: '', minQty: '', leadDays: '',
+    code: '', desc: '', date: new Date().toISOString().slice(0, 10), rfqId: null, note: '',
+  }));
+  touch(it); saveDB(); priceListRefresh(); renderCatalogs();
+}
+function priceSetField(rowId, field, value) {
+  if (!roleGuard('catalog')) { priceListRefresh(); return; }
+  const found = priceRowById(rowId); if (!found || !found.row) return;
+  const { it, row } = found;
+  if (field === 'price' || field === 'minQty' || field === 'leadDays') {
+    row[field] = value === '' ? '' : clampNum(parseFloat(value), 0);
+  } else if (field === 'supplierId') {
+    row.supplierId = value || null;
+  } else {
+    row[field] = value;
+  }
+  touch(row); touch(it);
+  // Correggere il prezzo della quotazione in uso deve muovere anche il costo:
+  // altrimenti listino e costificazione direbbero due cose diverse.
+  if (field === 'price' && it.activePriceId === row.id) applyPriceRow(it, row);
+  saveDB(); priceListRefresh(); renderCatalogs();
+}
+function priceUseRow(rowId) {
+  if (!roleGuard('catalog')) return;
+  const found = priceRowById(rowId); if (!found || !found.row) return;
+  applyPriceRow(found.it, found.row);
+  touch(found.it); saveDB(); priceListRefresh(); renderCatalogs();
+  showToast('Prezzo in uso aggiornato: ' + fmtN(Number(found.row.price) || 0));
+}
+function priceDelRow(rowId) {
+  if (!roleGuard('catalog')) return;
+  const found = priceRowById(rowId); if (!found || !found.row) return;
+  const { it, row } = found;
+  const attiva = it.activePriceId === row.id;
+  if (!confirm(attiva
+    ? 'Questa è la quotazione in uso. Eliminandola il costo dell\'articolo resta quello attuale, ma non sarà più legato a un fornitore. Procedere?'
+    : 'Eliminare questa quotazione dal listino?')) return;
+  it.priceList = it.priceList.filter(r => r.id !== rowId);
+  if (attiva) it.activePriceId = null;   // il costo resta, si sgancia il riferimento
+  touch(it); saveDB(); priceListRefresh(); renderCatalogs();
+}
+
+// ─── Dalla richiesta di offerta al listino ───
+// Le righe da catalogo con un prezzo compilato diventano quotazioni. Una riga
+// già registrata non si duplica: la coppia richiesta + riga è la chiave.
+function rfqPriceCandidates(r) {
+  if (!r || !r.supplierId) return [];
+  return (r.lines || []).filter(l => {
+    if (!l.itemId || l.price === '' || l.price == null) return false;
+    const it = getItem(l.itemId);
+    if (!hasPriceList(it)) return false;
+    return !priceRows(it).some(p => p.rfqId === r.id && p.lineId === l.id);
+  });
+}
+function rfqRecordPrices(id) {
+  if (!roleGuard('catalog')) return;
+  const r = getRfq(id); if (!r) return;
+  if (!r.supplierId) { showToast('La richiesta non ha un fornitore', 'error'); return; }
+  const righe = rfqPriceCandidates(r);
+  if (!righe.length) { showToast('Nessun prezzo nuovo da registrare', 'error'); return; }
+  const data = (r.date || new Date().toISOString()).slice(0, 10);
+  righe.forEach(l => {
+    const it = getItem(l.itemId);
+    const si = rfqLineSupInfo(r, l);
+    it.priceList.push(stampNew({
+      id: gid(), supplierId: r.supplierId, price: Number(l.price) || 0,
+      minQty: '', leadDays: '', code: (si && si.code) || '', desc: (si && si.desc) || '',
+      date: data, rfqId: r.id, lineId: l.id, note: '',
+    }));
+    touch(it);
+  });
+  saveDB(); renderRfq(); renderCatalogs();
+  showToast(righe.length + (righe.length === 1 ? ' prezzo registrato a listino' : ' prezzi registrati a listino'));
+}
+
+function usageModal(id) {
+  const it = getItem(id); if (!it) return;
+  window.__usageItemId = id;
+  openModal(`<h3>🔗 Dove è usato — ${esc(it.code)}</h3>
+    <p style="color:var(--text-dim);margin-bottom:14px">${esc(it.name)} · ${typeLabel(it.type)}</p>
+    ${usageWhatIfField(it)}
+    <div id="usage-body">${usageBody(id)}</div>
+    <div class="modal-actions"><button class="btn-ghost" onclick="closeModal()">Chiudi</button></div>`, true);
+}
+function usageWhatIfField(it) {
+  const campo = costField(it);
+  if (!campo) return '';
+  const attuale = Number(it[campo]) || 0;
+  return `<div class="modal-field">
+    <label>Simula un costo diverso (${cur()}/${esc(it.uom || 'U.M.')})</label>
+    <input type="number" id="usage-whatif" min="0" step="0.0001" placeholder="${attuale.toFixed(4)}"
+      oninput="debounced('whatif', usageRecalc)" autocomplete="off">
+    <small style="color:var(--text-dim)">Il valore non viene salvato: serve solo a vedere l'effetto sulle macchine qui sotto.</small>
+  </div>`;
+}
+// Ridisegna solo il corpo: la barra della simulazione resta com'è, altrimenti
+// il campo perderebbe il focus a ogni cifra digitata.
+function usageRecalc() {
+  const host = document.getElementById('usage-body');
+  if (host && window.__usageItemId) host.innerHTML = usageBody(window.__usageItemId);
+}
+function usageBody(id) {
+  const it = getItem(id); if (!it) return '';
+  const diretti = directUses(id);
+  const cime = impactedTops(id);
+  const simula = costField(it) && val('usage-whatif') !== '';
+  const nuovo = simula ? numVal('usage-whatif', 0) : null;
+
+  if (!diretti.length) {
+    return `<div class="empty-text">Questo articolo non è usato da nessuna parte: si può eliminare senza conseguenze.</div>`;
+  }
+
+  const tabDiretti = `<div class="cat-group-title">Impieghi diretti (${diretti.length})</div>
+    <table><thead><tr><th>Codice</th><th>Articolo</th><th>Tipo</th><th style="text-align:right">Q.tà</th><th></th></tr></thead>
+    <tbody>${diretti.map(r => `<tr>
+      <td style="font-family:var(--mono)">${esc(r.item.code)}</td>
+      <td>${esc(r.item.name)}</td>
+      <td><span class="bom-type-tag tt-${r.item.type}">${typeShort(r.item.type)}</span> ${typeLabel(r.item.type)}</td>
+      <td style="text-align:right;font-family:var(--mono)">${fmtQty(r.qty)}</td>
+      <td style="text-align:right"><button class="mini-btn" title="Apri qui" onclick="usageModal('${r.item.id}')">🔗</button></td>
+    </tr>`).join('')}</tbody></table>`;
+
+  if (!cime.length) return tabDiretti;
+
+  const etichettaCime = cime.some(c => c.item.type === 'macchina') ? 'Macchine impattate' : 'Assiemi di testa impattati';
+  const colonneSim = simula ? '<th style="text-align:right">Costo simulato</th><th style="text-align:right">Differenza</th>' : '';
+  const righe = cime.map(c => {
+    const costoOra = costOf(c.item.id).total;
+    const prezzoOra = sellingPrice(c.item.id);
+    let celleSim = '';
+    if (simula) {
+      const costoDopo = withTempCost(it, nuovo, () => costOf(c.item.id).total);
+      const delta = costoDopo - costoOra;
+      const segno = delta > 0 ? '+' : '';
+      const colore = Math.abs(delta) < 0.005 ? 'var(--text-dim)' : (delta > 0 ? 'var(--red)' : 'var(--green)');
+      celleSim = `<td style="text-align:right;font-family:var(--mono)">${fmtN(costoDopo)}</td>
+        <td style="text-align:right;font-family:var(--mono);color:${colore}">${segno}${fmtN(delta)}</td>`;
+    }
+    return `<tr>
+      <td style="font-family:var(--mono)">${esc(c.item.code)}</td>
+      <td>${esc(c.item.name)}</td>
+      <td style="text-align:right;font-family:var(--mono)">${fmtQty(c.qty)}</td>
+      <td style="text-align:right;font-family:var(--mono)">${fmtN(costoOra)}</td>
+      <td style="text-align:right;font-family:var(--mono)">${fmtN(prezzoOra)}</td>
+      ${celleSim}</tr>`;
+  }).join('');
+
+  return `${tabDiretti}
+    <div class="cat-group-title">${etichettaCime} (${cime.length})</div>
+    <table><thead><tr><th>Codice</th><th>Articolo</th>
+      <th style="text-align:right">Q.tà impiegata</th><th style="text-align:right">Costo attuale</th>
+      <th style="text-align:right">Prezzo vendita</th>${colonneSim}</tr></thead>
+    <tbody>${righe}</tbody></table>
+    <p style="color:var(--text-dim);font-size:12px;margin-top:10px">La quantità è quella necessaria per una unità dell'assieme di testa, scarto compreso.</p>`;
+}
+
+// ═══════════════════════════════════════════════════════════
 //  VISTE: ANAGRAFICHE ARTICOLI (Acquisti / Progetto)
 // ═══════════════════════════════════════════════════════════
 function onCatTypeChange(scope) {
   updateCatFamilyFilters(scope);
-  renderCatalog(scope);
+  catalogFilterChange(scope);
 }
 function onCatFamilyChange(scope) {
   updateCatFamilyFilters(scope);
-  renderCatalog(scope);
+  catalogFilterChange(scope);
 }
 // Ridisegna la vista di anagrafica attiva (le due condividono le funzioni di render)
 function renderCatalogs() {
@@ -1196,7 +1669,7 @@ function toggleFavFilter() {
   favOnly = !favOnly;
   const b = document.getElementById('buy-fav');
   if (b) b.classList.toggle('active', favOnly);
-  renderCatalog('buy');
+  catalogFilterChange('buy');
 }
 // Badge preferito/obsoleto, mostrati in ogni selezione dell'articolo (righe picker).
 function itemBadges(i) {
@@ -1214,9 +1687,14 @@ function catalogRow(i) {
     : (i.type === 'acquistato' ? (i.purchasePrice || 0) : (i.unitCost || 0));
   let meta = '';
   if (i.type === 'acquistato') { const s = db.suppliers.find(x => x.id === i.supplierId); meta = s ? s.name : '—'; }
+  else if (i.type === 'materiale' && priceRows(i).length) meta = '';
   else if (isAssembly(i.type)) meta = (i.components || []).length + ' comp. / ' + (i.operations || []).length + ' lav.';
   else if (i.type === 'parte') meta = (i.cycle || []).length ? (i.cycle.length + ' righe ciclo') : '—';
   else meta = '—';
+  // Più quotazioni a listino: si segnala qui, è il posto dove si confrontano i costi
+  const quot = hasPriceList(i) ? priceRows(i).length : 0;
+  if (quot > 1) meta = (meta && meta !== '—' ? meta + ' · ' : '') + quot + ' quotazioni';
+  else if (!meta) meta = '—';
   // Indicatori a sinistra, di sola visione (i flag si impostano nella scheda articolo)
   const flags = `${i.favorite ? '<span class="pick-fav" title="Preferito">★</span>' : ''}${i.obsolete ? '<span class="obs-mark" title="Obsoleto">⛔</span>' : ''}`;
   return `<tr class="${i.obsolete ? 'row-obsolete' : ''}">
@@ -1229,12 +1707,33 @@ function catalogRow(i) {
     <td style="font-family:var(--mono)">${fmtN(unit)}</td>
     <td style="color:var(--text-dim)">${esc(meta)}</td>
     <td style="text-align:right;white-space:nowrap">
+      ${hasPriceList(i) ? `<button class="mini-btn" title="Listino fornitori e storico prezzi" onclick="priceListModal('${i.id}')">💶</button>` : ''}
+      <button class="mini-btn" title="Dove è usato e impatto costi" onclick="usageModal('${i.id}')">🔗</button>
       <button class="mini-btn" onclick="editItemModal('${i.id}')">✏</button>
       <button class="mini-btn" title="Duplica" onclick="duplicateItemModal('${i.id}')">📋</button>
       <button class="mini-btn danger" onclick="delItem('${i.id}')">🗑</button>
     </td></tr>`;
 }
+// ─── Quante righe disegnare per volta ───
+// Il catalogo costruisce l'HTML di tutti gli articoli filtrati in una stringa
+// sola: oltre qualche centinaio di righe il ridisegno si vede. Si mostra un
+// blocco per volta, con i pulsanti per allargare. Il limite riparte da capo a
+// ogni cambio di filtro: chi filtra vuole vedere l'inizio del nuovo risultato.
+const CATALOG_PAGE = 200;
+const catalogLimit = { buy: CATALOG_PAGE, design: CATALOG_PAGE };
+function catalogShowMore(scope) { catalogLimit[scope] += CATALOG_PAGE; renderCatalog(scope); }
+function catalogShowAll(scope) { catalogLimit[scope] = Infinity; renderCatalog(scope); }
+// Punto d'ingresso di tutti i filtri: azzera il limite e ridisegna.
+function catalogFilterChange(scope) {
+  catalogLimit[scope] = CATALOG_PAGE;
+  renderCatalog(scope);
+}
+// Ricerca testuale: stesso effetto, ma dopo la pausa di digitazione.
+function catalogSearchInput(scope) {
+  debounced('cat-' + scope, () => catalogFilterChange(scope));
+}
 function renderCatalog(scope) {
+  invalidateCaches();
   const sc = CATALOG_SCOPES[scope]; if (!sc) return;
   updateCatFamilyFilters(scope);
   const pfx = sc.pfx;
@@ -1263,10 +1762,28 @@ function renderCatalog(scope) {
   const keys = Object.keys(groups).sort((a, b) => groups[a].ord - groups[b].ord || a.localeCompare(b));
 
   const head = `<thead><tr><th></th><th>Codice</th><th>Nome</th><th>Tipo</th><th>Famiglia</th><th>U.M.</th><th>Costo un.</th><th>Dettaglio</th><th></th></tr></thead>`;
-  const html = keys.map(k =>
-    `<div class="cat-group-title">${esc(k)} <span style="color:var(--text-dim);font-weight:500">(${groups[k].items.length})</span></div>
-     <table>${head}<tbody>${groups[k].items.map(catalogRow).join('')}</tbody></table>`).join('');
-  document.getElementById(pfx + '-table').innerHTML = rows.length ? html : '<div class="empty-text">Nessun articolo trovato.</div>';
+  // Si riempiono i gruppi nell'ordine di visualizzazione finché c'è spazio.
+  // Il titolo dice sempre quanti articoli contiene il gruppo per intero, anche
+  // quando ne sono disegnati solo i primi: il conteggio non deve mentire.
+  let restanti = catalogLimit[scope];
+  let disegnati = 0;
+  const html = keys.map(k => {
+    const tutti = groups[k].items;
+    const visibili = tutti.slice(0, Math.max(0, restanti));
+    restanti -= visibili.length;
+    disegnati += visibili.length;
+    if (!visibili.length) return '';
+    const conteggio = visibili.length < tutti.length ? `${visibili.length} di ${tutti.length}` : `${tutti.length}`;
+    return `<div class="cat-group-title">${esc(k)} <span style="color:var(--text-dim);font-weight:500">(${conteggio})</span></div>
+      <table>${head}<tbody>${visibili.map(catalogRow).join('')}</tbody></table>`;
+  }).join('');
+  const mancanti = rows.length - disegnati;
+  const piu = mancanti > 0 ? `<div class="cat-more">
+      <span>Mostrati ${disegnati} di ${rows.length} articoli</span>
+      <button class="btn-outline" onclick="catalogShowMore('${scope}')">Mostra altri ${Math.min(CATALOG_PAGE, mancanti)}</button>
+      <button class="btn-outline" onclick="catalogShowAll('${scope}')">Mostra tutti</button>
+    </div>` : '';
+  document.getElementById(pfx + '-table').innerHTML = rows.length ? html + piu : '<div class="empty-text">Nessun articolo trovato.</div>';
 }
 // Etichette del menu "Tipo" (l'elenco è ristretto ai tipi della vista di provenienza)
 const TYPE_OPTION_LABELS = {
@@ -1278,7 +1795,7 @@ function itemModalBody(it, scope) {
   const t = it ? it.type : sc.types[0];
   const sourcePicker = it ? '' : `
     <div class="modal-field"><label>Parti da (opzionale)</label>
-      <input type="text" id="src-search" class="search" placeholder="🔍 Duplica da un articolo esistente..." oninput="renderSourceResults()" autocomplete="off">
+      <input type="text" id="src-search" class="search" placeholder="🔍 Duplica da un articolo esistente..." oninput="debounced('src', renderSourceResults)" autocomplete="off">
       <div id="src-results" class="picker-results"></div>
     </div>`;
   // In modifica il tipo è bloccato: resta l'unica voce dell'articolo, qualunque sia lo scope
@@ -1303,9 +1820,9 @@ function itemModalBody(it, scope) {
     </div>
     <div class="modal-grid">
       <div class="modal-field"><label>Unità di misura</label><select id="it-uom">${uomOptions(it ? (it.uom || defaultUom()) : defaultUom())}</select></div>
-      <div class="modal-field" id="fld-unitcost"><label>Costo unitario (${cur()}/U.M.)</label><input type="number" id="it-unitcost" step="0.0001" value="${it && it.unitCost != null ? it.unitCost : ''}" oninput="onUnitCostInput()"></div>
+      <div class="modal-field" id="fld-unitcost"><label>Costo unitario (${cur()}/U.M.)</label><input type="number" id="it-unitcost" min="0" step="0.0001" value="${it && it.unitCost != null ? it.unitCost : ''}" oninput="onUnitCostInput()"></div>
       <div class="modal-field" id="fld-assembly-note" style="grid-column:1/-1"><label>Composizione</label><span class="empty-text" style="padding:0">La distinta (componenti e lavorazioni) si gestisce nella vista <strong>Distinte base</strong>.</span></div>
-      <div class="modal-field" id="fld-price"><label>Prezzo acquisto (${cur()}/U.M.)</label><input type="number" id="it-price" step="0.0001" value="${it && it.purchasePrice != null ? it.purchasePrice : ''}"></div>
+      <div class="modal-field" id="fld-price"><label>Prezzo acquisto (${cur()}/U.M.)</label><input type="number" id="it-price" min="0" step="0.0001" value="${it && it.purchasePrice != null ? it.purchasePrice : ''}"></div>
       <div class="modal-field" id="fld-supplier"><label>Fornitore</label><select id="it-supplier">${supplierOptions(it ? it.supplierId : '')}</select></div>
     </div>
     <div class="modal-grid" id="fld-supinfo">
@@ -1526,7 +2043,7 @@ function renderCycleTotals() {
   });
   const mode = val('it-costmode') || defaultPartCostMode();
   const cycleTot = cycleDraft.reduce((s, r) => s + cycleRowCost(r), 0);
-  const manual = numVal('it-unitcost');
+  const manual = numVal('it-unitcost', 0);
   // Il costo risultante dipende dal modo scelto; senza righe di ciclo resta il costo manuale.
   const resulting = (mode === 'unit' || !cycleDraft.length) ? manual
     : (mode === 'sum' ? cycleTot + manual : cycleTot);
@@ -1546,12 +2063,15 @@ function onUnitCostInput() { if (val('it-type') === 'parte') renderCycleTotals()
 function updateCycleRow(idx) {
   const row = cycleDraft[idx]; if (!row) return;
   if (row.kind === 'op') {
-    row.cost = numVal('cyc-cost-in-' + idx);
+    row.cost = numVal('cyc-cost-in-' + idx, 0);
     row.supplierId = val('cyc-sup-' + idx);
   } else {
-    row.qty = numVal('cyc-qty-' + idx);
+    row.qty = numVal('cyc-qty-' + idx, 0);
+    // Vuoto = nessun override, si usa il costo calcolato. Qui si corregge in
+    // silenzio: è una bozza che si ridisegna a ogni battuta, un messaggio
+    // d'errore per carattere sarebbe insopportabile.
     const ovr = val('cyc-ovr-' + idx);
-    row.costOverride = ovr === '' ? null : (parseFloat(ovr) || 0);
+    row.costOverride = ovr === '' ? null : clampNum(parseFloat(ovr), 0);
   }
   renderCycleTotals();
 }
@@ -1572,7 +2092,7 @@ function addCycleItemRow() {
     showToast('Nessun commerciale o materia prima a catalogo.', 'error'); return;
   }
   box.innerHTML = `<div class="cycle-picker-box">
-    <input type="text" id="cyc-search" class="search" placeholder="🔍 Cerca codice o nome..." oninput="renderCyclePickerResults()" autocomplete="off">
+    <input type="text" id="cyc-search" class="search" placeholder="🔍 Cerca codice o nome..." oninput="debounced('cyc', renderCyclePickerResults)" autocomplete="off">
     <div id="cyc-results" class="picker-results"></div>
     <div class="cycle-actions"><button type="button" class="btn-ghost" onclick="closeCyclePicker()">Annulla</button></div>
   </div>`;
@@ -1618,7 +2138,7 @@ function addCycleOpRow() {
 function pickCycleOp() {
   const wcId = val('cyc-wc');
   if (!wcId) { showToast('Seleziona un centro di lavoro', 'error'); return; }
-  cycleDraft.push({ kind: 'op', workCenterId: wcId, supplierId: val('cyc-opsup'), cost: numVal('cyc-opcost'), note: '' });
+  cycleDraft.push({ kind: 'op', workCenterId: wcId, supplierId: val('cyc-opsup'), cost: numVal('cyc-opcost', 0), note: '' });
   closeCyclePicker();
   renderCycleList();
 }
@@ -1710,8 +2230,8 @@ function readItemForm(it) {
   // Flag: preferito (solo commerciali e materie prime), obsoleto (anche parti)
   if (canFavorite(it.type)) it.favorite = isChecked('it-favorite');
   if (it.type === 'acquistato' || it.type === 'materiale' || it.type === 'parte') it.obsolete = isChecked('it-obsolete');
-  if (it.type === 'materiale' || it.type === 'parte') { it.unitCost = numVal('it-unitcost'); }
-  if (it.type === 'acquistato') { it.purchasePrice = numVal('it-price'); it.supplierId = val('it-supplier'); }
+  if (it.type === 'materiale' || it.type === 'parte') { it.unitCost = numVal('it-unitcost', 0); }
+  if (it.type === 'acquistato') { it.purchasePrice = numVal('it-price', 0); it.supplierId = val('it-supplier'); }
   if (it.type === 'materiale' || it.type === 'acquistato') { it.supplierCode = val('it-supcode'); it.supplierDesc = val('it-supdesc'); }
   if (usesFamily(it.type)) { it.familyId = val('it-family'); it.subFamilyId = val('it-subfamily'); }
   // Codifica gerarchica: schema sulla macchina, appartenenza sugli altri tipi
@@ -1750,6 +2270,13 @@ function validateItemCoding(id) {
   }
   return null;
 }
+// Costi e prezzi: un valore negativo ferma il salvataggio invece di essere
+// azzerato, così l'errore di battitura resta visibile e correggibile.
+function validateItemNumbers(type) {
+  if ((type === 'materiale' || type === 'parte') && isNeg('it-unitcost')) return 'Il costo unitario non può essere negativo';
+  if (type === 'acquistato' && isNeg('it-price')) return 'Il prezzo d\'acquisto non può essere negativo';
+  return null;
+}
 // Controlli sul nome secondo il tipo: le parti richiedono concetto + descrizione, gli altri il nome libero.
 function validateItemName(type) {
   if (type === 'parte') {
@@ -1765,6 +2292,8 @@ function saveNewItem() {
   if (nameErr) { showToast(nameErr, 'error'); return; }
   const codErr = validateItemCoding(null);
   if (codErr) { showToast(codErr, 'error'); return; }
+  const numErr = validateItemNumbers(val('it-type'));
+  if (numErr) { showToast(numErr, 'error'); return; }
   const it = { id: gid(), type: val('it-type') };
   if (isAssembly(it.type)) { it.components = []; it.operations = []; }
   readItemForm(it);
@@ -1799,6 +2328,8 @@ function saveItemEdit(id) {
   if (nameErr) { showToast(nameErr, 'error'); return; }
   const codErr = validateItemCoding(id);
   if (codErr) { showToast(codErr, 'error'); return; }
+  const numErr = validateItemNumbers(it.type);
+  if (numErr) { showToast(numErr, 'error'); return; }
   readItemForm(it);
   touch(it);
   saveDB(); closeModal(); renderCatalogs(); showToast('Articolo aggiornato');
@@ -1806,8 +2337,10 @@ function saveItemEdit(id) {
 function delItem(id) {
   if (!roleGuard('catalog')) return;
   const it = getItem(id); if (!it) return;
+  // Invece del solo elenco di codici, si apre direttamente il "dove è usato":
+  // da lì si vede chi lo contiene e si può risalire.
   const used = usedBy(id);
-  if (used.length) { showToast('Usato in: ' + used.map(u => u.code).join(', ') + '. Rimuovilo prima.', 'error'); return; }
+  if (used.length) { showToast('Usato in ' + used.length + ' articoli: rimuovilo prima.', 'error'); usageModal(id); return; }
   if (!confirm(`Eliminare "${it.name}"?`)) return;
   db.items = db.items.filter(x => x.id !== id);
   if (currentBomId === id) currentBomId = null;
@@ -1854,6 +2387,7 @@ function flattenBom(itemId, qty, scrap, level, rows, ancestors) {
   }
 }
 function renderReport() {
+  invalidateCaches();
   // sincronizza i due selettori
   if (!reportBomId) reportBomId = currentBomId;
   ensureCurrentBom(); if (!reportBomId) reportBomId = currentBomId;
@@ -2056,7 +2590,7 @@ function docFilterBar(kind, statusMap, shown, total) {
   const f = docFilters[kind];
   const sups = db.suppliers.slice().sort((a, b) => (a.name || '').localeCompare(b.name || ''));
   return `<div class="catalog-filters">
-    <input type="text" class="search" id="${kind}f-q" value="${esc(f.q)}" placeholder="🔍 Cerca numero, oggetto, fornitore o riga..." oninput="docFilterChange('${kind}')">
+    <input type="text" class="search" id="${kind}f-q" value="${esc(f.q)}" placeholder="🔍 Cerca numero, oggetto, fornitore o riga..." oninput="docFilterInput('${kind}')">
     <select id="${kind}f-status" onchange="docFilterChange('${kind}')">
       <option value="">Tutti gli stati</option>
       ${Object.entries(statusMap).map(([k, v]) => `<option value="${k}" ${f.status === k ? 'selected' : ''}>${v}</option>`).join('')}
@@ -2072,6 +2606,9 @@ function docFilterBar(kind, statusMap, shown, total) {
 }
 function docFilterCountText(shown, total) { return shown === total ? `${total} documenti` : `${shown} di ${total}`; }
 function docFilterActive(kind) { const f = docFilters[kind]; return !!(f.q || f.status || f.supplierId); }
+// Digitazione nel campo di ricerca: si aspetta la pausa. I menu a tendina
+// restano immediati — un click è già un'intenzione conclusa.
+function docFilterInput(kind) { debounced('doc-' + kind, () => docFilterChange(kind)); }
 function docFilterChange(kind) {
   const f = docFilters[kind];
   f.q = (val(kind + 'f-q') || '').toLowerCase();
@@ -2088,6 +2625,20 @@ function docFilterReset(kind) {
   docFilters[kind] = { q: '', status: '', supplierId: '' };
   if (kind === 'rfq') renderRfq(); else renderOrders();
 }
+// Testo cercabile di un documento, righe comprese. Costruirlo significa
+// scorrere tutte le righe: senza memoria si rifarebbe per ogni documento a
+// ogni carattere digitato. La chiave di validità è updatedAt, che cambia a
+// ogni touch() — se il documento non è stato toccato, il testo è ancora buono.
+const _docHay = new WeakMap();
+function docSearchText(d) {
+  const memo = _docHay.get(d);
+  if (memo && memo.stamp === d.updatedAt) return memo.hay;
+  const hay = [d.number, d.title, supplierName(d.supplierId), d.notes, d.notesInternal]
+    .concat((d.lines || []).map(l => [l.code, l.description, l.note].join(' ')))
+    .join(' ').toLowerCase();
+  _docHay.set(d, { stamp: d.updatedAt, hay });
+  return hay;
+}
 // Il testo cerca anche dentro le righe: spesso si risale al documento dal codice ordinato
 function docFilterApply(kind, docs) {
   const f = docFilters[kind];
@@ -2095,10 +2646,7 @@ function docFilterApply(kind, docs) {
     if (f.status && d.status !== f.status) return false;
     if (f.supplierId === 'none' ? !!d.supplierId : (f.supplierId && d.supplierId !== f.supplierId)) return false;
     if (!f.q) return true;
-    const hay = [d.number, d.title, supplierName(d.supplierId), d.notes, d.notesInternal]
-      .concat((d.lines || []).map(l => [l.code, l.description, l.note].join(' ')))
-      .join(' ').toLowerCase();
-    return hay.includes(f.q);
+    return docSearchText(d).includes(f.q);
   });
 }
 
@@ -2199,7 +2747,9 @@ function rfqSetLine(id, lineId, field, value) {
   const r = getRfq(id); if (!r) return;
   const l = (r.lines || []).find(x => x.id === lineId); if (!l) return;
   const before = r.status;
-  l[field] = (field === 'qty' || field === 'price') ? (value === '' ? '' : (parseFloat(value) || 0)) : value;
+  // Modifica diretta in tabella: niente messaggi, si riporta a 0 (il vincolo
+  // è anche sull'input, qui si copre l'incollaggio di testo).
+  l[field] = (field === 'qty' || field === 'price') ? (value === '' ? '' : clampNum(parseFloat(value), 0)) : value;
   rfqAutoStatus(r);
   touch(r); rfqMarkDirty();
   if (r.status !== before) { renderRfq(); showToast('Stato: ' + (RFQ_STATUS[r.status] || r.status)); }
@@ -2228,8 +2778,9 @@ function rfqAddManualLine(id) {
   if (!rfqGuard(id, 'contract')) return;
   const r = getRfq(id); if (!r) return;
   const desc = val('rl-desc'); if (!desc) { showToast('Descrizione richiesta', 'error'); return; }
+  if (isNeg('rl-qty')) { showToast('La quantità non può essere negativa', 'error'); return; }
   r.lines.push({ id: gid(), itemId: null, code: val('rl-code'), description: desc, uom: val('rl-uom') || defaultUom(),
-    qty: numVal('rl-qty') || 1, price: '', deliveryDate: '', note: val('rl-note') });
+    qty: numVal('rl-qty', 0) || 1, price: '', deliveryDate: '', note: val('rl-note') });
   rfqAutoStatus(r); touch(r); rfqMarkDirty(); closeModal(); renderRfq();
 }
 
@@ -2254,7 +2805,8 @@ function rfqSaveLineEdit(id, lineId) {
   const ro = !modeAllows(rfqMode(r), 'contract');
   if (!ro) {
     if (!readLineIdentity('rl', l)) return;
-    l.qty = numVal('rl-qty');
+    if (isNeg('rl-qty')) { showToast('La quantità non può essere negativa', 'error'); return; }
+    l.qty = numVal('rl-qty', 0);
   }
   l.note = val('rl-note');
   rfqAutoStatus(r); touch(r); rfqMarkDirty(); closeModal(); renderRfq();
@@ -2301,7 +2853,7 @@ function catalogPickerModal(onAddIds) {
   const famOpts = (db.families || []).map(f => `<option value="${f.id}">${esc(f.name)}</option>`).join('');
   openModal(`<h3>+ Aggiungi da catalogo</h3>
     <div class="rfq-pick-filters">
-      <input class="search" id="pick-search" placeholder="🔍 Codice o nome..." oninput="pickFilter()">
+      <input class="search" id="pick-search" placeholder="🔍 Codice o nome..." oninput="debounced('pick', pickFilter)">
       <select id="pick-type" onchange="pickFilter()"><option value="">Tutti i tipi</option>${typeOpts}</select>
       <select id="pick-fam" onchange="pickFamilyChange()"><option value="">Tutte le famiglie</option>${famOpts}</select>
       <select id="pick-sub" onchange="pickFilter()"><option value="">Tutte le sottofamiglie</option></select>
@@ -2419,6 +2971,24 @@ function renderRfqEdit(id) {
       <button class="export-btn-xls rfq-export-btn" onclick="exportRfqExcel('${id}')" ${dis}>📗 Excel</button>
       ${rfqDirty ? '<span class="rfq-dirty-hint">Salva per abilitare la generazione del documento</span>' : ''}
     </div>
+    ${rfqPriceBar(r)}
+  </div>`;
+}
+// I prezzi tornati con l'offerta valgono oltre questa richiesta: da qui
+// diventano quotazioni a listino, riutilizzabili e confrontabili nel tempo.
+// L'operazione è esplicita: non si tocca il costo di un articolo di nascosto.
+function rfqPriceBar(r) {
+  if (!canWrite('catalog')) return '';
+  const nuove = rfqPriceCandidates(r).length;
+  const già = (r.lines || []).filter(l => {
+    const it = l.itemId ? getItem(l.itemId) : null;
+    return hasPriceList(it) && priceRows(it).some(p => p.rfqId === r.id && p.lineId === l.id);
+  }).length;
+  if (!nuove && !già) return '';
+  return `<div class="rfq-export-bar">
+    <label>Prezzi d'offerta:</label>
+    <button class="btn-outline" onclick="rfqRecordPrices('${r.id}')" ${nuove ? '' : 'disabled'}>💶 Registra a listino${nuove ? ' (' + nuove + ')' : ''}</button>
+    <span class="rfq-dirty-hint" style="color:var(--text-dim)">${già ? già + ' già registrati. ' : ''}Le quotazioni restano nel listino dell'articolo; il costo in uso si sceglie da lì.</span>
   </div>`;
 }
 
@@ -2728,8 +3298,15 @@ function ordSetLine(id, lineId, field, value) {
   const o = getOrder(id); if (!o) return;
   const l = (o.lines || []).find(x => x.id === lineId); if (!l) return;
   const before = o.status;
-  if (field === 'qty' || field === 'price' || field === 'received') l[field] = (value === '' ? (field === 'received' ? 0 : '') : (parseFloat(value) || 0));
-  else l[field] = value;
+  if (field === 'qty' || field === 'price' || field === 'received') {
+    l[field] = (value === '' ? (field === 'received' ? 0 : '') : clampNum(parseFloat(value), 0));
+    // Non si può ricevere più di quanto ordinato: sarebbe una riga in eccedenza
+    // che manderebbe l'ordine in "evaso" con numeri incoerenti.
+    if (field === 'received') {
+      const ordinata = Number(l.qty) || 0;
+      if (l.received > ordinata) { l.received = ordinata; showToast('Non si può ricevere più di quanto ordinato', 'error'); }
+    }
+  } else l[field] = value;
   ordAutoStatus(o); // anche cambiare una quantità sposta la soglia di evasione
   touch(o); orderMarkDirty();
   if (o.status !== before) { renderOrders(); showToast('Stato: ' + (ORDER_STATUS[o.status] || o.status)); }
@@ -2766,8 +3343,10 @@ function ordAddManualLine(id) {
   if (!ordGuard(id, 'contract')) return;
   const o = getOrder(id); if (!o) return;
   const desc = val('ol-desc'); if (!desc) { showToast('Descrizione richiesta', 'error'); return; }
+  if (isNeg('ol-qty')) { showToast('La quantità non può essere negativa', 'error'); return; }
+  if (isNeg('ol-price')) { showToast('Il prezzo non può essere negativo', 'error'); return; }
   o.lines.push({ id: gid(), itemId: null, code: val('ol-code'), description: desc, uom: val('ol-uom') || defaultUom(),
-    qty: numVal('ol-qty') || 1, price: (val('ol-price') === '' ? '' : numVal('ol-price')), deliveryDate: '', received: 0, note: val('ol-note') });
+    qty: numVal('ol-qty', 0) || 1, price: (val('ol-price') === '' ? '' : numVal('ol-price', 0)), deliveryDate: '', received: 0, note: val('ol-note') });
   ordAutoStatus(o); touch(o); orderMarkDirty(); closeModal(); renderOrders();
 }
 function ordEditLineModal(id, lineId) {
@@ -2791,8 +3370,10 @@ function ordSaveLineEdit(id, lineId) {
     l.note = val('ol-note'); // a ordine bloccato passa la sola nota
   } else {
     if (!readLineIdentity('ol', l)) return;
-    l.qty = numVal('ol-qty');
-    l.price = val('ol-price') === '' ? '' : numVal('ol-price');
+    if (isNeg('ol-qty')) { showToast('La quantità non può essere negativa', 'error'); return; }
+    if (isNeg('ol-price')) { showToast('Il prezzo non può essere negativo', 'error'); return; }
+    l.qty = numVal('ol-qty', 0);
+    l.price = val('ol-price') === '' ? '' : numVal('ol-price', 0);
     l.note = val('ol-note');
   }
   ordAutoStatus(o); touch(o); orderMarkDirty(); closeModal(); renderOrders();
@@ -3402,25 +3983,27 @@ function renderWorkCenters() {
   return `<div class="mgmt-panel"><div class="mgmt-list">${list}</div>
     <div class="mgmt-form">
       <input id="wc-name" placeholder="Nome (es. Tornitura)">
-      <input id="wc-rate" type="number" step="0.5" placeholder="Tariffa €/h">
+      <input id="wc-rate" type="number" min="0" step="0.5" placeholder="Tariffa €/h">
       <button class="add-btn-sm" onclick="addWc()">+ Aggiungi</button></div></div>`;
 }
 function addWc() {
   const n = val('wc-name'); if (!n) { showToast('Nome richiesto', 'error'); return; }
-  db.workCenters.push(stampNew({ id: gid(), name: n, hourlyRate: numVal('wc-rate'), active: true }));
+  if (isNeg('wc-rate')) { showToast('La tariffa non può essere negativa', 'error'); return; }
+  db.workCenters.push(stampNew({ id: gid(), name: n, hourlyRate: numVal('wc-rate', 0), active: true }));
   saveDB(); renderManage(); showToast('Centro di lavoro aggiunto');
 }
 function editWcModal(id) {
   const w = db.workCenters.find(x => x.id === id); if (!w) return;
   openModal(`<h3>✏ Modifica centro di lavoro</h3>
     <div class="modal-field"><label>Nome</label><input id="ew-name" value="${esc(w.name)}"></div>
-    <div class="modal-field"><label>Tariffa (${cur()}/h)</label><input id="ew-rate" type="number" step="0.5" value="${w.hourlyRate}"></div>
+    <div class="modal-field"><label>Tariffa (${cur()}/h)</label><input id="ew-rate" type="number" min="0" step="0.5" value="${w.hourlyRate}"></div>
     <div class="modal-actions"><button class="btn-ghost" onclick="closeModal()">Annulla</button>
       <button class="add-btn-sm" onclick="saveWc('${id}')">Salva</button></div>`);
 }
 function saveWc(id) {
   const w = db.workCenters.find(x => x.id === id); if (!w) return;
-  w.name = val('ew-name'); w.hourlyRate = numVal('ew-rate');
+  if (isNeg('ew-rate')) { showToast('La tariffa non può essere negativa', 'error'); return; }
+  w.name = val('ew-name'); w.hourlyRate = numVal('ew-rate', 0);
   touch(w);
   saveDB(); closeModal(); renderManage(); showToast('Aggiornato');
 }
@@ -3569,8 +4152,8 @@ function renderSettings() {
   return `<div class="mgmt-panel">
     <h3 class="settings-group-title">💶 Costi e margini</h3>
     <div class="modal-grid">
-      <div class="modal-field"><label>Spese generali / overhead (%)</label><input type="number" id="set-ov" step="0.1" value="${s.overheadPct}"></div>
-      <div class="modal-field"><label>Margine / markup (%)</label><input type="number" id="set-mg" step="0.1" value="${s.marginPct}"></div>
+      <div class="modal-field"><label>Spese generali / overhead (%)</label><input type="number" id="set-ov" min="0" max="1000" step="0.1" value="${s.overheadPct}"></div>
+      <div class="modal-field"><label>Margine / markup (%)</label><input type="number" id="set-mg" min="0" max="1000" step="0.1" value="${s.marginPct}"></div>
       <div class="modal-field"><label>Simbolo valuta</label><input id="set-cur" value="${esc(s.currency)}" maxlength="3"></div>
       <div class="modal-field"><label>Calcolo costo parte (default)</label><select id="set-partcost">${partCostModeOptions(defaultPartCostMode())}</select></div>
     </div>
@@ -3589,8 +4172,9 @@ function renderSettings() {
 }
 function saveSettings() {
   if (!roleGuard('manage')) return;
-  db.settings.overheadPct = numVal('set-ov');
-  db.settings.marginPct = numVal('set-mg');
+  // Percentuali riportate dentro 0-1000 in silenzio, come già fa codeDigits qui sotto.
+  db.settings.overheadPct = numVal('set-ov', 0, 1000);
+  db.settings.marginPct = numVal('set-mg', 0, 1000);
   db.settings.currency = val('set-cur') || '€';
   const pcm = val('set-partcost');
   db.settings.partCostModeDefault = PART_COST_MODES[pcm] ? pcm : 'cycle';
@@ -3887,11 +4471,21 @@ function closeImportReport(kind) {
   showToast('Import completato');
 }
 
+// Lo spazio di localStorage è circa 5 MB per sito: oltre i 4 conviene saperlo
+// prima di sbatterci contro, non quando il salvataggio comincia a fallire.
+const DB_SIZE_WARN_MB = 4;
+function dbSizeLine() {
+  const { mb } = Store.sizeInfo();
+  const vicino = mb >= DB_SIZE_WARN_MB;
+  return `<p style="margin-top:6px">Spazio occupato: <strong${vicino ? ' style="color:var(--red)"' : ''}>${mb.toFixed(2)} MB</strong>
+    ${vicino ? '— vicino al limite del browser (circa 5 MB). Esporta un backup e alleggerisci il database.' : 'sui circa 5 MB che il browser riserva a questa app.'}</p>`;
+}
 function renderBackup() {
   return `<div class="cloud-section">
     <div style="flex:1">
       <strong>💾 Backup locale</strong>
       <p>I dati sono salvati nel browser (localStorage). Esporta un file JSON per conservare un backup o trasferire i dati su un altro PC. L'import sovrascrive i dati attuali.</p>
+      ${dbSizeLine()}
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
         <button class="add-btn-sm" onclick="exportBackup()">⬇ Esporta JSON</button>
         <button class="btn-outline" onclick="document.getElementById('import-file').click()">⬆ Importa JSON</button>
@@ -3991,7 +4585,7 @@ function resetViewState() {
 // ═══════════════════════════════════════════════════════════
 //  INIT
 // ═══════════════════════════════════════════════════════════
-(function init() {
+function init() {
   Store.load();
   const ver = 'v' + APP_VERSION;
   ['app-version', 'app-version-login'].forEach(id => {
@@ -3999,4 +4593,7 @@ function resetViewState() {
   });
   // Sessione salvata → si rientra diretti; altrimenti accesso (o setup del primo admin)
   if (!restoreSession()) renderLogin();
-})();
+}
+// Nel browser parte da sé; sotto test (Node, nessun DOM) il file si carica
+// senza avviare l'app, così la suite può pilotare Store e il motore di costo.
+if (typeof document !== 'undefined') init();
