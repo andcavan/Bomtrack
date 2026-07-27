@@ -3991,7 +3991,7 @@ function resetViewState() {
 // ═══════════════════════════════════════════════════════════
 //  INIT
 // ═══════════════════════════════════════════════════════════
-(function init() {
+function init() {
   Store.load();
   const ver = 'v' + APP_VERSION;
   ['app-version', 'app-version-login'].forEach(id => {
@@ -3999,4 +3999,7 @@ function resetViewState() {
   });
   // Sessione salvata → si rientra diretti; altrimenti accesso (o setup del primo admin)
   if (!restoreSession()) renderLogin();
-})();
+}
+// Nel browser parte da sé; sotto test (Node, nessun DOM) il file si carica
+// senza avviare l'app, così la suite può pilotare Store e il motore di costo.
+if (typeof document !== 'undefined') init();

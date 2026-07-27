@@ -362,12 +362,6 @@ function migrateDB() {
       if (l.note == null) l.note = '';
     });
   });
-  // Famiglie: tipizzazione (materie prime vs commerciali) + sigla per codifica automatica
-  (db.families || []).forEach(f => {
-    if (!f.kind) f.kind = 'acquistato'; // le famiglie storiche erano tutte commerciali
-    if (!f.sigla) f.sigla = siglaFromName(f.name);
-    (f.subs || []).forEach(s => { if (!s.sigla) s.sigla = siglaFromName(s.name); });
-  });
   // Seed una-tantum delle famiglie materie prime predefinite mancanti (non ripristina quelle cancellate)
   if (!db.settings.mpFamiliesSeeded) {
     const existingIds = new Set((db.families || []).map(f => f.id));
@@ -382,6 +376,14 @@ function migrateDB() {
       .forEach(f => db.families.push(JSON.parse(JSON.stringify(f))));
     db.settings.partFamiliesSeeded = true;
   }
+  // Famiglie: tipizzazione (materie prime vs commerciali) + sigla per codifica automatica.
+  // Va DOPO i seed: le famiglie appena seminate non hanno sigla e la codifica per
+  // famiglia (MAT-ACC-LAM-001) la richiede subito, non al ricaricamento successivo.
+  (db.families || []).forEach(f => {
+    if (!f.kind) f.kind = 'acquistato'; // le famiglie storiche erano tutte commerciali
+    if (!f.sigla) f.sigla = siglaFromName(f.name);
+    (f.subs || []).forEach(s => { if (!s.sigla) s.sigla = siglaFromName(s.name); });
+  });
   db.items.forEach(it => {
     // Migrazione vecchio tipo 'prodotto' + flag isMachine ai nuovi tipi
     if (it.type === 'prodotto') {
