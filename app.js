@@ -29,7 +29,27 @@ let orderDirty = false;      // modifiche non salvate nell'editor ordine
 function cur() { return (db.settings && db.settings.currency) || '€'; }
 function fmtN(n) { return cur() + (Number(n) || 0).toFixed(2); }
 function esc(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
-function getItem(id) { return db.items.find(i => i.id === id); }
+// ─── Indice articoli e cache dei costi ───
+// getItem era una scansione lineare di db.items, chiamata dentro costOf e per
+// ogni riga di catalogo. L'indice si ricostruisce da solo quando l'array cambia
+// identità o lunghezza: copre così anche le mutazioni dirette (db.items.push,
+// splice, riassegnazione di db in loadDB/importSnapshot) sparse per app.js.
+let _itemIdx = null, _itemIdxArr = null, _itemIdxLen = -1;
+function itemIndex() {
+  if (_itemIdx && db.items === _itemIdxArr && db.items.length === _itemIdxLen) return _itemIdx;
+  _itemIdx = new Map(db.items.map(i => [i.id, i]));
+  _itemIdxArr = db.items; _itemIdxLen = db.items.length;
+  return _itemIdx;
+}
+function getItem(id) { return itemIndex().get(id); }
+// Risultati di costOf già calcolati in questo giro di rendering.
+let _costCache = new Map();
+// Azzera indice e cache. Chiamata da Store.commit() — l'unico punto di scrittura
+// da cui passano tutti i salvataggi — e in testa alle viste che mostrano costi.
+function invalidateCaches() {
+  _costCache.clear();
+  _itemIdx = null; _itemIdxArr = null; _itemIdxLen = -1;
+}
 // Indirizzo strutturato → righe di testo (per documenti) o riga singola (per liste)
 function addressLines(o) {
   if (!o) return [];
@@ -485,12 +505,25 @@ function saveOwnPassword() {
 // ═══════════════════════════════════════════════════════════
 // Ritorna i costi unitari (per 1 unità) suddivisi in categorie.
 // material+purchased+labor+parts+overhead === total (= costo totale industriale).
+const ZERO_COST = { material: 0, purchased: 0, labor: 0, parts: 0, overhead: 0, base: 0, total: 0, cycle: false };
 function costOf(itemId, visited) {
-  visited = visited || new Set();
-  const zero = { material: 0, purchased: 0, labor: 0, parts: 0, overhead: 0, base: 0, total: 0, cycle: false };
   const it = getItem(itemId);
-  if (!it) return zero;
-  if (visited.has(itemId)) { return { ...zero, cycle: true }; }
+  if (!it) return { ...ZERO_COST };
+  if (visited && visited.has(itemId)) return { ...ZERO_COST, cycle: true };
+  // Un risultato senza anelli non dipende dal percorso di discesa: nessun
+  // antenato è stato incontrato nel sottoalbero, quindi vale per qualunque
+  // chiamante e si può riusare. Un risultato con cycle=true invece è troncato
+  // proprio in funzione degli antenati: quello non va mai in cache.
+  const hit = _costCache.get(itemId);
+  if (hit) return hit;
+  const res = computeCost(it, itemId, visited || new Set());
+  // Congelato: i chiamanti ricevono lo stesso oggetto, una modifica accidentale
+  // avvelenerebbe la cache invece di restare locale.
+  if (!res.cycle) _costCache.set(itemId, Object.freeze(res));
+  return res;
+}
+function computeCost(it, itemId, visited) {
+  const zero = ZERO_COST;
 
   if (it.type === 'materiale') {
     const v = Number(it.unitCost) || 0;
@@ -676,6 +709,7 @@ function ensureCurrentBom() {
 function onBomSelect() { currentBomId = val('bom-select'); bomExpanded = new Set(); renderBom(); }
 
 function renderBom() {
+  invalidateCaches();   // rete di sicurezza: la cache dei costi vive dentro un singolo disegno
   ensureCurrentBom();
   document.getElementById('bom-select').innerHTML = productOptions(currentBomId);
   const it = getItem(currentBomId);
@@ -1245,6 +1279,7 @@ function catalogRow(i) {
     </td></tr>`;
 }
 function renderCatalog(scope) {
+  invalidateCaches();
   const sc = CATALOG_SCOPES[scope]; if (!sc) return;
   updateCatFamilyFilters(scope);
   const pfx = sc.pfx;
@@ -1864,6 +1899,7 @@ function flattenBom(itemId, qty, scrap, level, rows, ancestors) {
   }
 }
 function renderReport() {
+  invalidateCaches();
   // sincronizza i due selettori
   if (!reportBomId) reportBomId = currentBomId;
   ensureCurrentBom(); if (!reportBomId) reportBomId = currentBomId;

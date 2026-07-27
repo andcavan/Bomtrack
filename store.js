@@ -456,6 +456,11 @@ function migrateV2() {
 const Store = {
   load() { loadDB(); },
   commit() {
+    // Unico punto di scrittura: ci passano i 57 saveDB() di app.js, insert/
+    // update/remove, load, reset, clearAll e importSnapshot. Invalidare qui
+    // copre ogni mutazione. Prima del salvataggio, non dopo: se setItem fallisce
+    // la cache resta comunque allineata a ciò che c'è in memoria.
+    if (typeof invalidateCaches === 'function') invalidateCaches();
     try { localStorage.setItem(DB_KEY, JSON.stringify(db)); }
     catch (e) {
       console.error('Errore salvataggio locale:', e);
