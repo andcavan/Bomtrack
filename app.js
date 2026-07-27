@@ -5,7 +5,7 @@
 // Revisione in esecuzione, mostrata accanto al logo. Va tenuta allineata alla
 // voce in cima al changelog del README (l'app si copia a mano tra PC: sapere
 // quale revisione sta girando su una postazione è l'unico modo per capirlo).
-const APP_VERSION = '0.13.0';
+const APP_VERSION = '0.14.0';
 
 let currentUser = null;      // utente della sessione (null = schermata di accesso)
 let currentBomId = null;     // articolo prodotto attualmente aperto nelle Distinte
@@ -1344,10 +1344,11 @@ function impactedTops(itemId) {
   return cime.sort((a, b) => (a.item.code || '').localeCompare(b.item.code || ''));
 }
 
-// ─── Simulazione: e se questo costasse diversamente? ───
-// Il campo di costo dipende dal tipo. Gli assiemi non ne hanno uno proprio (il
-// loro costo è derivato) e le parti a "solo ciclo" nemmeno: lì non si simula.
-function whatIfField(it) {
+// ─── Il campo dove vive il costo proprio dell'articolo ───
+// Dipende dal tipo. Gli assiemi non ne hanno uno (il loro costo è derivato) e
+// nemmeno le parti a "solo ciclo": lì non c'è un prezzo da simulare o da
+// prendere a listino.
+function costField(it) {
   if (!it) return null;
   if (it.type === 'acquistato') return 'purchasePrice';
   if (it.type === 'materiale') return 'unitCost';
@@ -1358,13 +1359,186 @@ function whatIfField(it) {
 // Nulla viene salvato: si tocca l'oggetto in memoria e lo si ripristina sempre,
 // anche se il calcolo solleva un'eccezione.
 function withTempCost(it, valore, fn) {
-  const campo = whatIfField(it);
+  const campo = costField(it);
   if (!campo) return fn();
   const prima = it[campo];
   it[campo] = valore;
   invalidateCaches();
   try { return fn(); }
   finally { it[campo] = prima; invalidateCaches(); }
+}
+
+// ═══════════════════════════════════════════════════════════
+//  LISTINO FORNITORI E STORICO PREZZI
+// ═══════════════════════════════════════════════════════════
+// Un articolo comprato viene quotato da più fornitori, e le quotazioni
+// cambiano nel tempo. Il listino le conserva tutte; una sola è "in uso" ed è
+// quella che finisce nei campi dell'articolo, cioè nella costificazione.
+// Nessun costo viene derivato dal listino di nascosto: il passaggio è sempre
+// una scelta esplicita, così un prezzo non cambia da solo sotto un'offerta.
+function hasPriceList(it) { return !!it && (it.type === 'acquistato' || it.type === 'materiale'); }
+function priceRows(it) { return (it && it.priceList) || []; }
+function activePriceRow(it) { return priceRows(it).find(r => r.id === it.activePriceId) || null; }
+// La quotazione più bassa tra quelle valorizzate (a parità, la più recente).
+function bestPriceRow(it) {
+  const quotate = priceRows(it).filter(r => r.price !== '' && r.price != null);
+  if (!quotate.length) return null;
+  return quotate.reduce((best, r) => {
+    const d = (Number(r.price) || 0) - (Number(best.price) || 0);
+    if (d < 0) return r;
+    if (d > 0) return best;
+    return (r.date || '') > (best.date || '') ? r : best;
+  });
+}
+// Porta una quotazione nei campi dell'articolo: da qui in poi è quella che costa.
+function applyPriceRow(it, row) {
+  const campo = costField(it);
+  if (campo) it[campo] = Number(row.price) || 0;
+  if (it.type === 'acquistato') it.supplierId = row.supplierId || null;
+  it.supplierCode = row.code || '';
+  it.supplierDesc = row.desc || '';
+  it.activePriceId = row.id;
+}
+
+function priceListModal(id) {
+  const it = getItem(id); if (!it) return;
+  if (!hasPriceList(it)) { showToast('Il listino vale solo per commerciali e materie prime', 'error'); return; }
+  window.__priceItemId = id;
+  openModal(`<h3>💶 Listino fornitori — ${esc(it.code)}</h3>
+    <p style="color:var(--text-dim);margin-bottom:14px">${esc(it.name)} · ${typeLabel(it.type)}</p>
+    <div id="pricelist-body">${priceListBody(id)}</div>
+    <div class="modal-actions"><button class="btn-ghost" onclick="closeModal()">Chiudi</button></div>`, true);
+}
+function priceListRefresh() {
+  const host = document.getElementById('pricelist-body');
+  if (host && window.__priceItemId) host.innerHTML = priceListBody(window.__priceItemId);
+}
+function priceListBody(id) {
+  const it = getItem(id); if (!it) return '';
+  const campo = costField(it);
+  const inUso = activePriceRow(it);
+  const migliore = bestPriceRow(it);
+  const scrivibile = canWrite('catalog');
+
+  // Le quotazioni più recenti in cima: è quello che si guarda per primo.
+  const righe = priceRows(it).slice().sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+
+  const corpo = righe.map(r => {
+    const attiva = inUso && r.id === inUso.id;
+    const best = migliore && r.id === migliore.id && righe.length > 1;
+    const ro = scrivibile ? '' : 'disabled';
+    return `<tr class="${attiva ? 'price-active' : ''}">
+      <td style="width:1%;white-space:nowrap">${attiva ? '<span title="Prezzo in uso nella costificazione">✓</span>' : ''}${best ? '<span class="price-best" title="Quotazione più bassa">↓</span>' : ''}</td>
+      <td><select ${ro} onchange="priceSetField('${r.id}','supplierId',this.value)">${supplierOptions(r.supplierId || '')}</select></td>
+      <td><input type="number" class="num" min="0" step="0.0001" value="${r.price === '' || r.price == null ? '' : r.price}" ${ro} onchange="priceSetField('${r.id}','price',this.value)"></td>
+      <td><input type="number" class="num" min="0" step="any" value="${r.minQty === '' || r.minQty == null ? '' : r.minQty}" placeholder="—" ${ro} onchange="priceSetField('${r.id}','minQty',this.value)"></td>
+      <td><input type="number" class="num" min="0" step="1" value="${r.leadDays === '' || r.leadDays == null ? '' : r.leadDays}" placeholder="—" ${ro} onchange="priceSetField('${r.id}','leadDays',this.value)"></td>
+      <td><input value="${esc(r.code || '')}" placeholder="—" ${ro} onchange="priceSetField('${r.id}','code',this.value)"></td>
+      <td><input type="date" value="${esc(r.date || '')}" ${ro} onchange="priceSetField('${r.id}','date',this.value)"></td>
+      <td style="color:var(--text-dim);font-size:12px">${esc(priceRowOrigin(r))}</td>
+      <td style="text-align:right;white-space:nowrap">
+        ${attiva || !campo ? '' : `<button class="mini-btn" title="Usa questo prezzo nella costificazione" onclick="priceUseRow('${r.id}')">✓ Usa</button>`}
+        <button class="mini-btn danger" title="Elimina la voce" onclick="priceDelRow('${r.id}')">🗑</button>
+      </td></tr>`;
+  }).join('');
+
+  const vuoto = `<tr><td colspan="9" class="empty-text">Nessuna quotazione registrata. Aggiungine una, oppure registrale da una richiesta di offerta ricevuta.</td></tr>`;
+  const attuale = campo ? `<p style="margin-bottom:12px">Prezzo in uso nella costificazione: <strong style="font-family:var(--mono)">${fmtN(Number(it[campo]) || 0)}</strong>${inUso ? '' : ' <span style="color:var(--text-dim)">(inserito a mano, non da listino)</span>'}</p>` : '';
+  return `${attuale}
+    <div class="table-wrap"><table>
+      <thead><tr><th></th><th>Fornitore</th><th>Prezzo</th><th>Q.tà min</th><th>Consegna gg</th><th>Codice forn.</th><th>Data</th><th>Origine</th><th></th></tr></thead>
+      <tbody>${corpo || vuoto}</tbody></table></div>
+    <div style="margin-top:10px"><button class="add-btn-sm" onclick="priceAddRow()">+ Aggiungi quotazione</button></div>`;
+}
+function priceRowOrigin(r) {
+  if (!r.rfqId) return 'a mano';
+  const q = db.rfqs.find(x => x.id === r.rfqId);
+  return q ? q.number : 'richiesta eliminata';
+}
+// ─── Mutatori del listino ───
+// Ogni operazione salva: il listino è un dato dell'articolo come gli altri.
+function priceRowById(rowId) {
+  const it = getItem(window.__priceItemId);
+  if (!it) return null;
+  return { it, row: priceRows(it).find(r => r.id === rowId) || null };
+}
+function priceAddRow() {
+  if (!roleGuard('catalog')) return;
+  const it = getItem(window.__priceItemId); if (!it) return;
+  it.priceList.push(stampNew({
+    id: gid(), supplierId: it.supplierId || null, price: '', minQty: '', leadDays: '',
+    code: '', desc: '', date: new Date().toISOString().slice(0, 10), rfqId: null, note: '',
+  }));
+  touch(it); saveDB(); priceListRefresh(); renderCatalogs();
+}
+function priceSetField(rowId, field, value) {
+  if (!roleGuard('catalog')) { priceListRefresh(); return; }
+  const found = priceRowById(rowId); if (!found || !found.row) return;
+  const { it, row } = found;
+  if (field === 'price' || field === 'minQty' || field === 'leadDays') {
+    row[field] = value === '' ? '' : clampNum(parseFloat(value), 0);
+  } else if (field === 'supplierId') {
+    row.supplierId = value || null;
+  } else {
+    row[field] = value;
+  }
+  touch(row); touch(it);
+  // Correggere il prezzo della quotazione in uso deve muovere anche il costo:
+  // altrimenti listino e costificazione direbbero due cose diverse.
+  if (field === 'price' && it.activePriceId === row.id) applyPriceRow(it, row);
+  saveDB(); priceListRefresh(); renderCatalogs();
+}
+function priceUseRow(rowId) {
+  if (!roleGuard('catalog')) return;
+  const found = priceRowById(rowId); if (!found || !found.row) return;
+  applyPriceRow(found.it, found.row);
+  touch(found.it); saveDB(); priceListRefresh(); renderCatalogs();
+  showToast('Prezzo in uso aggiornato: ' + fmtN(Number(found.row.price) || 0));
+}
+function priceDelRow(rowId) {
+  if (!roleGuard('catalog')) return;
+  const found = priceRowById(rowId); if (!found || !found.row) return;
+  const { it, row } = found;
+  const attiva = it.activePriceId === row.id;
+  if (!confirm(attiva
+    ? 'Questa è la quotazione in uso. Eliminandola il costo dell\'articolo resta quello attuale, ma non sarà più legato a un fornitore. Procedere?'
+    : 'Eliminare questa quotazione dal listino?')) return;
+  it.priceList = it.priceList.filter(r => r.id !== rowId);
+  if (attiva) it.activePriceId = null;   // il costo resta, si sgancia il riferimento
+  touch(it); saveDB(); priceListRefresh(); renderCatalogs();
+}
+
+// ─── Dalla richiesta di offerta al listino ───
+// Le righe da catalogo con un prezzo compilato diventano quotazioni. Una riga
+// già registrata non si duplica: la coppia richiesta + riga è la chiave.
+function rfqPriceCandidates(r) {
+  if (!r || !r.supplierId) return [];
+  return (r.lines || []).filter(l => {
+    if (!l.itemId || l.price === '' || l.price == null) return false;
+    const it = getItem(l.itemId);
+    if (!hasPriceList(it)) return false;
+    return !priceRows(it).some(p => p.rfqId === r.id && p.lineId === l.id);
+  });
+}
+function rfqRecordPrices(id) {
+  if (!roleGuard('catalog')) return;
+  const r = getRfq(id); if (!r) return;
+  if (!r.supplierId) { showToast('La richiesta non ha un fornitore', 'error'); return; }
+  const righe = rfqPriceCandidates(r);
+  if (!righe.length) { showToast('Nessun prezzo nuovo da registrare', 'error'); return; }
+  const data = (r.date || new Date().toISOString()).slice(0, 10);
+  righe.forEach(l => {
+    const it = getItem(l.itemId);
+    const si = rfqLineSupInfo(r, l);
+    it.priceList.push(stampNew({
+      id: gid(), supplierId: r.supplierId, price: Number(l.price) || 0,
+      minQty: '', leadDays: '', code: (si && si.code) || '', desc: (si && si.desc) || '',
+      date: data, rfqId: r.id, lineId: l.id, note: '',
+    }));
+    touch(it);
+  });
+  saveDB(); renderRfq(); renderCatalogs();
+  showToast(righe.length + (righe.length === 1 ? ' prezzo registrato a listino' : ' prezzi registrati a listino'));
 }
 
 function usageModal(id) {
@@ -1377,7 +1551,7 @@ function usageModal(id) {
     <div class="modal-actions"><button class="btn-ghost" onclick="closeModal()">Chiudi</button></div>`, true);
 }
 function usageWhatIfField(it) {
-  const campo = whatIfField(it);
+  const campo = costField(it);
   if (!campo) return '';
   const attuale = Number(it[campo]) || 0;
   return `<div class="modal-field">
@@ -1397,7 +1571,7 @@ function usageBody(id) {
   const it = getItem(id); if (!it) return '';
   const diretti = directUses(id);
   const cime = impactedTops(id);
-  const simula = whatIfField(it) && val('usage-whatif') !== '';
+  const simula = costField(it) && val('usage-whatif') !== '';
   const nuovo = simula ? numVal('usage-whatif', 0) : null;
 
   if (!diretti.length) {
@@ -1513,9 +1687,14 @@ function catalogRow(i) {
     : (i.type === 'acquistato' ? (i.purchasePrice || 0) : (i.unitCost || 0));
   let meta = '';
   if (i.type === 'acquistato') { const s = db.suppliers.find(x => x.id === i.supplierId); meta = s ? s.name : '—'; }
+  else if (i.type === 'materiale' && priceRows(i).length) meta = '';
   else if (isAssembly(i.type)) meta = (i.components || []).length + ' comp. / ' + (i.operations || []).length + ' lav.';
   else if (i.type === 'parte') meta = (i.cycle || []).length ? (i.cycle.length + ' righe ciclo') : '—';
   else meta = '—';
+  // Più quotazioni a listino: si segnala qui, è il posto dove si confrontano i costi
+  const quot = hasPriceList(i) ? priceRows(i).length : 0;
+  if (quot > 1) meta = (meta && meta !== '—' ? meta + ' · ' : '') + quot + ' quotazioni';
+  else if (!meta) meta = '—';
   // Indicatori a sinistra, di sola visione (i flag si impostano nella scheda articolo)
   const flags = `${i.favorite ? '<span class="pick-fav" title="Preferito">★</span>' : ''}${i.obsolete ? '<span class="obs-mark" title="Obsoleto">⛔</span>' : ''}`;
   return `<tr class="${i.obsolete ? 'row-obsolete' : ''}">
@@ -1528,6 +1707,7 @@ function catalogRow(i) {
     <td style="font-family:var(--mono)">${fmtN(unit)}</td>
     <td style="color:var(--text-dim)">${esc(meta)}</td>
     <td style="text-align:right;white-space:nowrap">
+      ${hasPriceList(i) ? `<button class="mini-btn" title="Listino fornitori e storico prezzi" onclick="priceListModal('${i.id}')">💶</button>` : ''}
       <button class="mini-btn" title="Dove è usato e impatto costi" onclick="usageModal('${i.id}')">🔗</button>
       <button class="mini-btn" onclick="editItemModal('${i.id}')">✏</button>
       <button class="mini-btn" title="Duplica" onclick="duplicateItemModal('${i.id}')">📋</button>
@@ -2791,6 +2971,24 @@ function renderRfqEdit(id) {
       <button class="export-btn-xls rfq-export-btn" onclick="exportRfqExcel('${id}')" ${dis}>📗 Excel</button>
       ${rfqDirty ? '<span class="rfq-dirty-hint">Salva per abilitare la generazione del documento</span>' : ''}
     </div>
+    ${rfqPriceBar(r)}
+  </div>`;
+}
+// I prezzi tornati con l'offerta valgono oltre questa richiesta: da qui
+// diventano quotazioni a listino, riutilizzabili e confrontabili nel tempo.
+// L'operazione è esplicita: non si tocca il costo di un articolo di nascosto.
+function rfqPriceBar(r) {
+  if (!canWrite('catalog')) return '';
+  const nuove = rfqPriceCandidates(r).length;
+  const già = (r.lines || []).filter(l => {
+    const it = l.itemId ? getItem(l.itemId) : null;
+    return hasPriceList(it) && priceRows(it).some(p => p.rfqId === r.id && p.lineId === l.id);
+  }).length;
+  if (!nuove && !già) return '';
+  return `<div class="rfq-export-bar">
+    <label>Prezzi d'offerta:</label>
+    <button class="btn-outline" onclick="rfqRecordPrices('${r.id}')" ${nuove ? '' : 'disabled'}>💶 Registra a listino${nuove ? ' (' + nuove + ')' : ''}</button>
+    <span class="rfq-dirty-hint" style="color:var(--text-dim)">${già ? già + ' già registrati. ' : ''}Le quotazioni restano nel listino dell'articolo; il costo in uso si sceglie da lì.</span>
   </div>`;
 }
 

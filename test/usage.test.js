@@ -162,11 +162,11 @@ describe('withTempCost — simulazione senza salvare', () => {
       parte('pc', { costMode: 'cycle', cycle: [{ kind: 'op', cost: 10 }] }),
       asm('g', 'gruppo', { components: [] }),
     ] }));
-    assert.equal(app.eval('whatIfField(getItem("c"))'), 'purchasePrice');
-    assert.equal(app.eval('whatIfField(getItem("m"))'), 'unitCost');
-    assert.equal(app.eval('whatIfField(getItem("pu"))'), 'unitCost');
-    assert.equal(app.eval('whatIfField(getItem("pc"))'), null, 'costo derivato dal ciclo: non si simula');
-    assert.equal(app.eval('whatIfField(getItem("g"))'), null, 'un assieme non ha un costo proprio');
+    assert.equal(app.eval('costField(getItem("c"))'), 'purchasePrice');
+    assert.equal(app.eval('costField(getItem("m"))'), 'unitCost');
+    assert.equal(app.eval('costField(getItem("pu"))'), 'unitCost');
+    assert.equal(app.eval('costField(getItem("pc"))'), null, 'costo derivato dal ciclo: non si simula');
+    assert.equal(app.eval('costField(getItem("g"))'), null, 'un assieme non ha un costo proprio');
   });
 
   it('su un articolo senza costo proprio la simulazione non altera nulla', () => {

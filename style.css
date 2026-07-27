@@ -189,6 +189,9 @@ tr{border-bottom:1px solid rgba(42,46,59,.4)}
 .catalog-filters .search{flex:1;min-width:200px}
 .cat-group-title{font-size:12px;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.05em;margin:18px 0 6px}
 .cat-group-title:first-child{margin-top:0}
+/* Listino fornitori: la quotazione in uso e quella più bassa vanno riconosciute a colpo d'occhio */
+.price-active{background:rgba(58,123,232,.10)}
+.price-best{color:var(--green);font-weight:700;margin-left:4px}
 /* Il catalogo disegna un blocco di righe per volta: qui i comandi per allargare */
 .cat-more{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:16px;padding-top:14px;border-top:1px solid var(--border);color:var(--text-dim);font-size:13px}
 /* Preferiti: stellina gialla in elenco e toggle di filtro */

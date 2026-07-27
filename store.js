@@ -395,6 +395,30 @@ function migrateDB() {
       if (!it.operations) it.operations = [];
     }
     if (it.type === 'parte' && !it.cycle) it.cycle = [];
+    // Listino fornitori: lo stesso articolo può essere quotato da più fornitori,
+    // e le quotazioni si accumulano nel tempo. I campi singoli dell'articolo
+    // (supplierId, purchasePrice/unitCost, supplierCode, supplierDesc) restano
+    // il "prezzo in uso", cioè quello che entra nella costificazione: il listino
+    // è la memoria da cui lo si sceglie, non un secondo calcolo parallelo.
+    if (it.type === 'acquistato' || it.type === 'materiale') {
+      if (!Array.isArray(it.priceList)) it.priceList = [];
+      // Chi ha già un fornitore parte con quella quotazione in elenco, marcata
+      // come in uso. Il flag rende il seed una-tantum: se poi si svuota il
+      // listino, non ricompare al caricamento successivo.
+      if (!it.priceListSeeded) {
+        if (it.supplierId) {
+          const prezzo = it.type === 'acquistato' ? it.purchasePrice : it.unitCost;
+          const riga = stampNew({
+            id: newId(), supplierId: it.supplierId, price: Number(prezzo) || 0,
+            minQty: '', leadDays: '', code: it.supplierCode || '', desc: it.supplierDesc || '',
+            date: (it.updatedAt || nowISO()).slice(0, 10), rfqId: null, note: '',
+          });
+          it.priceList.push(riga);
+          it.activePriceId = riga.id;
+        }
+        it.priceListSeeded = true;
+      }
+    }
     // Modo di calcolo del costo della parte. I dati storici conservano il
     // comportamento precedente: col ciclo il costo era derivato dal ciclo,
     // senza ciclo era quello del campo manuale.

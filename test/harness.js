@@ -45,7 +45,9 @@ function elementoFinto() {
     value: '', textContent: '', innerHTML: '', placeholder: '', title: '',
     disabled: false, checked: false, style: {},
     classList: { add() {}, remove() {}, contains() { return false; } },
-    appendChild() {}, removeChild() {}, focus() {}, click() {},
+    appendChild() {}, removeChild() {}, remove() {}, focus() {}, click() {},
+    querySelectorAll() { return []; }, querySelector() { return null; },
+    insertAdjacentHTML() {}, setAttribute() {}, removeAttribute() {},
   };
 }
 
@@ -99,6 +101,13 @@ function loadApp(opts) {
       return elementi.get(id);
     },
     html(id) { return this.el(id).innerHTML; },
+    // Sessione finta: i mutatori passano da roleGuard() e senza utente sono
+    // tutti bloccati. Il ruolo si sceglie, così si può verificare anche chi
+    // NON deve poter scrivere.
+    asRole(role) {
+      vm.runInContext(`currentUser = { id: 'u-test', name: 'Test', email: 't@t.it', role: ${JSON.stringify(role || 'admin')}, active: true };`, ctx);
+      return this;
+    },
     // Imposta il database in memoria senza passare da localStorage.
     // Serializzato apposta: evita ogni problema di oggetti cross-realm.
     setDb(obj) { vm.runInContext('db = ' + JSON.stringify(obj), ctx); return ref('db'); },
