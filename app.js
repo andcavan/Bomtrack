@@ -5,7 +5,7 @@
 // Revisione in esecuzione, mostrata accanto al logo. Va tenuta allineata alla
 // voce in cima al changelog del README (l'app si copia a mano tra PC: sapere
 // quale revisione sta girando su una postazione è l'unico modo per capirlo).
-const APP_VERSION = '0.12.0';
+const APP_VERSION = '0.13.0';
 
 let currentUser = null;      // utente della sessione (null = schermata di accesso)
 let currentBomId = null;     // articolo prodotto attualmente aperto nelle Distinte
@@ -849,10 +849,11 @@ function renderBomNode(comp, level, parentId, editable, idx, pathPrefix, ancesto
   const toggle = expandable
     ? `<span class="bom-toggle" onclick="toggleBom('${nodeKey}')">${expanded ? '▼' : '▶'}</span>`
     : `<span class="bom-toggle leaf">•</span>`;
-  const actions = editable
-    ? `<button class="mini-btn" title="Modifica" onclick="editComponentModal(${idx})">✏</button>
-       <button class="mini-btn danger" title="Elimina" onclick="delComponent(${idx})">🗑</button>`
-    : '';
+  const actions = `<button class="mini-btn" title="Dove è usato e impatto costi" onclick="usageModal('${comp.itemId}')">🔗</button>`
+    + (editable
+      ? `<button class="mini-btn" title="Modifica" onclick="editComponentModal(${idx})">✏</button>
+         <button class="mini-btn danger" title="Elimina" onclick="delComponent(${idx})">🗑</button>`
+      : '');
 
   let h = `<div class="bom-node" style="padding-left:${18 + indent}px">
     <span class="bom-name">${toggle}
@@ -1284,6 +1285,170 @@ function usedBy(itemId) {
 }
 
 // ═══════════════════════════════════════════════════════════
+//  DOVE È USATO E IMPATTO SUI COSTI
+// ═══════════════════════════════════════════════════════════
+// La distinta si è sempre potuta leggere dall'alto verso il basso. Qui si
+// risale: dato un articolo, chi lo contiene e quali macchine ne risentono se
+// il suo costo cambia.
+
+// Quantità di `childId` dentro una unità di `parent`, scarto compreso.
+// Un componente può comparire più volte nella stessa distinta: si sommano.
+function usageQty(parent, childId) {
+  let q = 0;
+  if (isAssembly(parent.type)) {
+    (parent.components || []).forEach(c => {
+      if (c.itemId === childId) q += (Number(c.qty) || 0) * (1 + (Number(c.scrapPct) || 0) / 100);
+    });
+  }
+  // Nel ciclo di lavorazione una riga con override non dipende più dal costo
+  // dell'articolo: conta come impiego, ma non propaga la variazione di prezzo.
+  if (parent.type === 'parte' && partCostMode(parent) !== 'unit') {
+    (parent.cycle || []).forEach(r => {
+      if (r.kind === 'item' && r.itemId === childId) q += Number(r.qty) || 0;
+    });
+  }
+  return q;
+}
+// Impieghi diretti: chi contiene l'articolo, con la quantità per unità.
+function directUses(itemId) {
+  return usedBy(itemId)
+    .map(p => ({ item: p, qty: usageQty(p, itemId) }))
+    .sort((a, b) => (a.item.code || '').localeCompare(b.item.code || ''));
+}
+// Tutti gli antenati, con la quantità complessiva che ne serve per una unità di
+// ciascuno: si moltiplicano le quantità lungo la risalita. Il percorso già
+// attraversato ferma gli anelli.
+function ancestorTotals(itemId) {
+  const totali = new Map();
+  const salita = (id, qty, percorso) => {
+    usedBy(id).forEach(p => {
+      if (percorso.has(p.id)) return;
+      const q = qty * usageQty(p, id);
+      totali.set(p.id, (totali.get(p.id) || 0) + q);
+      const oltre = new Set(percorso); oltre.add(p.id);
+      salita(p.id, q, oltre);
+    });
+  };
+  salita(itemId, 1, new Set([itemId]));
+  return totali;
+}
+// Assiemi di testa impattati: le macchine, oppure — se l'articolo non arriva a
+// nessuna macchina — gli assiemi più alti che lo contengono.
+function impactedTops(itemId) {
+  const totali = ancestorTotals(itemId);
+  const righe = [...totali.entries()]
+    .map(([id, qty]) => ({ item: getItem(id), qty }))
+    .filter(r => r.item);
+  const macchine = righe.filter(r => r.item.type === 'macchina');
+  const cime = macchine.length ? macchine : righe.filter(r => !usedBy(r.item.id).length);
+  return cime.sort((a, b) => (a.item.code || '').localeCompare(b.item.code || ''));
+}
+
+// ─── Simulazione: e se questo costasse diversamente? ───
+// Il campo di costo dipende dal tipo. Gli assiemi non ne hanno uno proprio (il
+// loro costo è derivato) e le parti a "solo ciclo" nemmeno: lì non si simula.
+function whatIfField(it) {
+  if (!it) return null;
+  if (it.type === 'acquistato') return 'purchasePrice';
+  if (it.type === 'materiale') return 'unitCost';
+  if (it.type === 'parte' && partCostMode(it) !== 'cycle') return 'unitCost';
+  return null;
+}
+// Esegue `fn` come se l'articolo costasse `valore`, poi rimette tutto a posto.
+// Nulla viene salvato: si tocca l'oggetto in memoria e lo si ripristina sempre,
+// anche se il calcolo solleva un'eccezione.
+function withTempCost(it, valore, fn) {
+  const campo = whatIfField(it);
+  if (!campo) return fn();
+  const prima = it[campo];
+  it[campo] = valore;
+  invalidateCaches();
+  try { return fn(); }
+  finally { it[campo] = prima; invalidateCaches(); }
+}
+
+function usageModal(id) {
+  const it = getItem(id); if (!it) return;
+  window.__usageItemId = id;
+  openModal(`<h3>🔗 Dove è usato — ${esc(it.code)}</h3>
+    <p style="color:var(--text-dim);margin-bottom:14px">${esc(it.name)} · ${typeLabel(it.type)}</p>
+    ${usageWhatIfField(it)}
+    <div id="usage-body">${usageBody(id)}</div>
+    <div class="modal-actions"><button class="btn-ghost" onclick="closeModal()">Chiudi</button></div>`, true);
+}
+function usageWhatIfField(it) {
+  const campo = whatIfField(it);
+  if (!campo) return '';
+  const attuale = Number(it[campo]) || 0;
+  return `<div class="modal-field">
+    <label>Simula un costo diverso (${cur()}/${esc(it.uom || 'U.M.')})</label>
+    <input type="number" id="usage-whatif" min="0" step="0.0001" placeholder="${attuale.toFixed(4)}"
+      oninput="debounced('whatif', usageRecalc)" autocomplete="off">
+    <small style="color:var(--text-dim)">Il valore non viene salvato: serve solo a vedere l'effetto sulle macchine qui sotto.</small>
+  </div>`;
+}
+// Ridisegna solo il corpo: la barra della simulazione resta com'è, altrimenti
+// il campo perderebbe il focus a ogni cifra digitata.
+function usageRecalc() {
+  const host = document.getElementById('usage-body');
+  if (host && window.__usageItemId) host.innerHTML = usageBody(window.__usageItemId);
+}
+function usageBody(id) {
+  const it = getItem(id); if (!it) return '';
+  const diretti = directUses(id);
+  const cime = impactedTops(id);
+  const simula = whatIfField(it) && val('usage-whatif') !== '';
+  const nuovo = simula ? numVal('usage-whatif', 0) : null;
+
+  if (!diretti.length) {
+    return `<div class="empty-text">Questo articolo non è usato da nessuna parte: si può eliminare senza conseguenze.</div>`;
+  }
+
+  const tabDiretti = `<div class="cat-group-title">Impieghi diretti (${diretti.length})</div>
+    <table><thead><tr><th>Codice</th><th>Articolo</th><th>Tipo</th><th style="text-align:right">Q.tà</th><th></th></tr></thead>
+    <tbody>${diretti.map(r => `<tr>
+      <td style="font-family:var(--mono)">${esc(r.item.code)}</td>
+      <td>${esc(r.item.name)}</td>
+      <td><span class="bom-type-tag tt-${r.item.type}">${typeShort(r.item.type)}</span> ${typeLabel(r.item.type)}</td>
+      <td style="text-align:right;font-family:var(--mono)">${fmtQty(r.qty)}</td>
+      <td style="text-align:right"><button class="mini-btn" title="Apri qui" onclick="usageModal('${r.item.id}')">🔗</button></td>
+    </tr>`).join('')}</tbody></table>`;
+
+  if (!cime.length) return tabDiretti;
+
+  const etichettaCime = cime.some(c => c.item.type === 'macchina') ? 'Macchine impattate' : 'Assiemi di testa impattati';
+  const colonneSim = simula ? '<th style="text-align:right">Costo simulato</th><th style="text-align:right">Differenza</th>' : '';
+  const righe = cime.map(c => {
+    const costoOra = costOf(c.item.id).total;
+    const prezzoOra = sellingPrice(c.item.id);
+    let celleSim = '';
+    if (simula) {
+      const costoDopo = withTempCost(it, nuovo, () => costOf(c.item.id).total);
+      const delta = costoDopo - costoOra;
+      const segno = delta > 0 ? '+' : '';
+      const colore = Math.abs(delta) < 0.005 ? 'var(--text-dim)' : (delta > 0 ? 'var(--red)' : 'var(--green)');
+      celleSim = `<td style="text-align:right;font-family:var(--mono)">${fmtN(costoDopo)}</td>
+        <td style="text-align:right;font-family:var(--mono);color:${colore}">${segno}${fmtN(delta)}</td>`;
+    }
+    return `<tr>
+      <td style="font-family:var(--mono)">${esc(c.item.code)}</td>
+      <td>${esc(c.item.name)}</td>
+      <td style="text-align:right;font-family:var(--mono)">${fmtQty(c.qty)}</td>
+      <td style="text-align:right;font-family:var(--mono)">${fmtN(costoOra)}</td>
+      <td style="text-align:right;font-family:var(--mono)">${fmtN(prezzoOra)}</td>
+      ${celleSim}</tr>`;
+  }).join('');
+
+  return `${tabDiretti}
+    <div class="cat-group-title">${etichettaCime} (${cime.length})</div>
+    <table><thead><tr><th>Codice</th><th>Articolo</th>
+      <th style="text-align:right">Q.tà impiegata</th><th style="text-align:right">Costo attuale</th>
+      <th style="text-align:right">Prezzo vendita</th>${colonneSim}</tr></thead>
+    <tbody>${righe}</tbody></table>
+    <p style="color:var(--text-dim);font-size:12px;margin-top:10px">La quantità è quella necessaria per una unità dell'assieme di testa, scarto compreso.</p>`;
+}
+
+// ═══════════════════════════════════════════════════════════
 //  VISTE: ANAGRAFICHE ARTICOLI (Acquisti / Progetto)
 // ═══════════════════════════════════════════════════════════
 function onCatTypeChange(scope) {
@@ -1363,6 +1528,7 @@ function catalogRow(i) {
     <td style="font-family:var(--mono)">${fmtN(unit)}</td>
     <td style="color:var(--text-dim)">${esc(meta)}</td>
     <td style="text-align:right;white-space:nowrap">
+      <button class="mini-btn" title="Dove è usato e impatto costi" onclick="usageModal('${i.id}')">🔗</button>
       <button class="mini-btn" onclick="editItemModal('${i.id}')">✏</button>
       <button class="mini-btn" title="Duplica" onclick="duplicateItemModal('${i.id}')">📋</button>
       <button class="mini-btn danger" onclick="delItem('${i.id}')">🗑</button>
@@ -1991,8 +2157,10 @@ function saveItemEdit(id) {
 function delItem(id) {
   if (!roleGuard('catalog')) return;
   const it = getItem(id); if (!it) return;
+  // Invece del solo elenco di codici, si apre direttamente il "dove è usato":
+  // da lì si vede chi lo contiene e si può risalire.
   const used = usedBy(id);
-  if (used.length) { showToast('Usato in: ' + used.map(u => u.code).join(', ') + '. Rimuovilo prima.', 'error'); return; }
+  if (used.length) { showToast('Usato in ' + used.length + ' articoli: rimuovilo prima.', 'error'); usageModal(id); return; }
   if (!confirm(`Eliminare "${it.name}"?`)) return;
   db.items = db.items.filter(x => x.id !== id);
   if (currentBomId === id) currentBomId = null;
