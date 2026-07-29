@@ -1,5 +1,5 @@
-// Carica store.js + app.js in un contesto `vm` isolato, riproducendo il modo in
-// cui index.html li include: due classic script nello stesso scope globale.
+// Carica i file dell'app in un contesto `vm` isolato, riproducendo il modo in
+// cui index.html li include: classic script in sequenza, un solo scope globale.
 //
 // Nota importante per chi scrive test: in un contesto vm le `function` top-level
 // finiscono su globalThis (quindi `ctx.costOf` esiste), ma `const Store` e
@@ -11,7 +11,11 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const ROOT = path.join(__dirname, '..');
-const SRC = ['store.js', 'app.js'];
+// Stessa sequenza di index.html: i file si caricano nello stesso contesto e
+// condividono lo scope globale, esattamente come i <script> della pagina.
+const SRC = ['store.js', 'core.js', 'auth.js', 'costing.js', 'shell.js',
+  'views-bom.js', 'views-catalog.js', 'views-report.js', 'views-mrp.js',
+  'views-docs.js', 'views-manage.js', 'import-export.js'];
 
 // localStorage finto. `quotaBytes` opzionale: oltre soglia lancia lo stesso
 // errore dei browser, per poter testare la gestione dello spazio esaurito.
@@ -51,7 +55,9 @@ function elementoFinto() {
     appendChild(c) { this.children.push(c); c.parentNode = this; return c; },
     removeChild(c) { this.children = this.children.filter(x => x !== c); c.parentNode = null; return c; },
     getBoundingClientRect() { return { left: 0, top: 0, width: 0, height: 0 }; },
-    classList: { add() {}, remove() {}, contains() { return false; } },
+    classList: { add() {}, remove() {}, toggle() {}, contains() { return false; } },
+    insertBefore(c) { this.children.unshift(c); c.parentNode = this; return c; },
+    firstChild: null,
     remove() {}, focus() {}, click() {}, closest() { return null; },
     querySelectorAll() { return []; }, querySelector() { return null; },
     insertAdjacentHTML() {}, setAttribute() {}, removeAttribute() {},
@@ -66,7 +72,7 @@ function loadApp(opts) {
     console: o.silent ? { log() {}, warn() {}, error() {} } : console,
     crypto: globalThis.crypto || require('node:crypto').webcrypto,
     localStorage: storage,
-    // Volutamente assenti: `document` e `window`. La guardia in fondo ad app.js
+    // Volutamente assenti: `document` e `window`. La guardia in fondo a import-export.js
     // (`if (typeof document !== 'undefined') init()`) impedisce l'avvio dell'app.
   };
   const ctx = vm.createContext(sandbox);
@@ -77,7 +83,7 @@ function loadApp(opts) {
   });
 
   // Il `document` finto si installa DOPO il caricamento, mai prima: la guardia
-  // in fondo ad app.js avvierebbe l'app. Serve solo a far passare a vuoto le
+  // in fondo a import-export.js avvierebbe l'app. Serve solo a far passare a vuoto le
   // funzioni di interfaccia (showToast, openModal, il badge) quando un test
   // esercita un percorso che le attraversa. Nessun test verifica il DOM.
   // Gli elementi sono memorizzati per id: quello che una funzione di render

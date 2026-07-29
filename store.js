@@ -1,6 +1,6 @@
 // ═══════════════════════════════════════════════════════════
 //  BOMTRACK — STORE (dati, migrazioni, persistenza)
-//  Caricato prima di app.js. Nessun codice di rete: l'adapter
+//  Caricato prima degli script dell'app. Nessun codice di rete: l'adapter
 //  attuale è localStorage; il contratto per un futuro adapter
 //  cloud (Supabase/Cloudflare D1) è documentato in
 //  docs/cloud-schema.md.
@@ -17,6 +17,7 @@ const defaultDB = {
   ],
   rfqs: [],
   orders: [],
+  plans: [],        // piani di produzione (fabbisogno materiali)
   workCenters: [
     { id: 'w1', name: 'Taglio laser', hourlyRate: 45, active: true },
     { id: 'w2', name: 'Saldatura', hourlyRate: 38, active: true },
@@ -209,7 +210,7 @@ function sha256Hex(str) {
 function newSalt() { return newId().replace(/-/g, ''); }
 function hashPassword(password, salt) { return sha256Hex(salt + ':' + password); }
 
-// Ruoli: chi può scrivere cosa è deciso in app.js, qui resta solo l'elenco valido
+// Ruoli: chi può scrivere cosa è deciso in core.js, qui resta solo l'elenco valido
 const USER_ROLES = ['admin', 'acquisti', 'progettazione', 'lettore'];
 
 // ── ID e timestamp ──────────────────────────────────────────
@@ -261,6 +262,7 @@ function migrateDB() {
   if (!db.suppliers) db.suppliers = [];
   if (!db.rfqs) db.rfqs = [];
   if (!db.orders) db.orders = [];
+  if (!db.plans) db.plans = [];
   if (!db.workCenters) db.workCenters = [];
   if (!db.families) db.families = JSON.parse(JSON.stringify(defaultDB.families));
   // Utenti: 1:1 con la futura tabella `profiles`. Nessun seed e nessuna
@@ -361,6 +363,13 @@ function migrateDB() {
       if (l.received == null) l.received = 0;
       if (l.note == null) l.note = '';
     });
+  });
+  // Piani di produzione: foglio di lavoro interno, nessuno stato da normalizzare
+  (db.plans || []).forEach(p => {
+    if (p.title == null) p.title = '';
+    if (p.notes == null) p.notes = '';
+    if (!Array.isArray(p.lines)) p.lines = [];
+    p.lines.forEach(l => { if (l.qty == null) l.qty = 0; });
   });
   // Seed una-tantum delle famiglie materie prime predefinite mancanti (non ripristina quelle cancellate)
   if (!db.settings.mpFamiliesSeeded) {
@@ -488,7 +497,7 @@ function isQuotaError(e) {
 }
 // kind: 'quota' (spazio esaurito) | 'storage' (salvataggio non disponibile,
 // es. navigazione privata) | 'serialize' (dati non serializzabili).
-// La segnalazione all'utente sta in app.js, dietro l'hook onPersistError:
+// La segnalazione all'utente sta in core.js, dietro l'hook onPersistError:
 // store.js resta senza codice di interfaccia.
 function commitFailed(kind, err, bytes) {
   dbUnsaved = true;
@@ -502,7 +511,7 @@ function commitFailed(kind, err, bytes) {
 const Store = {
   load() { loadDB(); },
   commit() {
-    // Unico punto di scrittura: ci passano i 57 saveDB() di app.js, insert/
+    // Unico punto di scrittura: ci passano tutti i saveDB() delle viste, insert/
     // update/remove, load, reset, clearAll e importSnapshot. Invalidare qui
     // copre ogni mutazione. Prima del salvataggio, non dopo: se setItem fallisce
     // la cache resta comunque allineata a ciò che c'è in memoria.
@@ -545,7 +554,7 @@ const Store = {
   // keepUser: l'utente che sta azzerando, ricreato come admin — chi svuota il
   // database non deve restare chiuso fuori dalla propria app.
   clearAll(keepUser) {
-    db = { suppliers: [], rfqs: [], orders: [], workCenters: [], families: [], items: [], users: [], settings: {}, schemaVersion: SCHEMA_VERSION };
+    db = { suppliers: [], rfqs: [], orders: [], plans: [], workCenters: [], families: [], items: [], users: [], settings: {}, schemaVersion: SCHEMA_VERSION };
     if (keepUser) {
       db.users.push(stampNew(Object.assign({}, keepUser, { role: 'admin', active: true })));
     }
@@ -593,5 +602,5 @@ const Store = {
   },
 };
 
-// Shim: i punti di mutazione esistenti in app.js chiamano saveDB()
+// Shim: i punti di mutazione esistenti nelle viste chiamano saveDB()
 function saveDB() { Store.commit(); }

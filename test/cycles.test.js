@@ -1,0 +1,327 @@
+// Vista Cicli di lavorazione: distinta parte e fasi vivono nello stesso array
+// `it.cycle`, distinti solo dal campo `kind`. Il punto delicato è tutto qui:
+// le due sezioni mostrano indici di sezione, ma chi modifica deve usare
+// l'indice assoluto — e riordinare le lavorazioni non deve spostare (né far
+// sparire) le righe della distinta, né cambiare di un centesimo il costo.
+
+const assert = require('node:assert/strict');
+const { describe, it, approx } = require('./tap.js');
+const { loadApp } = require('./harness.js');
+const { makeDb, mat, acq, parte, wc } = require('./fixtures.js');
+
+function conDb(dbObj, role) {
+  const app = loadApp({ silent: true });
+  app.setDb(dbObj);
+  app.asRole(role || 'admin');
+  return app;
+}
+// Parte con distinta e lavorazioni alternate: se una funzione confonde
+// l'indice di sezione con quello assoluto, qui si vede subito.
+function dbMisto() {
+  return makeDb({
+    workCenters: [wc('w1', 0), wc('w2', 0), wc('w3', 0)],
+    items: [
+      mat('m', 2), acq('a', 5),
+      parte('p', { costMode: 'cycle', cycle: [
+        { kind: 'item', itemId: 'm', qty: 3 },          // 0 — distinta
+        { kind: 'op', workCenterId: 'w1', cost: 10 },   // 1 — fase 10
+        { kind: 'item', itemId: 'a', qty: 1 },          // 2 — distinta
+        { kind: 'op', workCenterId: 'w2', cost: 20 },   // 3 — fase 20
+        { kind: 'op', workCenterId: 'w3', cost: 30 },   // 4 — fase 30
+      ] }),
+    ],
+  });
+}
+// Descrizione compatta dell'array, per confrontare l'ordine a colpo d'occhio
+const forma = app => app.snapshot().items.find(i => i.id === 'p').cycle
+  .map(r => r.kind === 'op' ? r.workCenterId : r.itemId).join(',');
+
+describe('moveKindRow — riordino di un solo kind', () => {
+  const righe = () => ([
+    { kind: 'item', itemId: 'm' }, { kind: 'op', workCenterId: 'w1' },
+    { kind: 'item', itemId: 'a' }, { kind: 'op', workCenterId: 'w2' },
+  ]);
+  // Array.from: quello che torna dal contesto vm è di un altro realm e
+  // deepEqual lo rifiuterebbe pur avendo lo stesso contenuto.
+  const mossa = (k, dir) => {
+    const app = loadApp({ silent: true });
+    return Array.from(app.eval(`moveKindRow(${JSON.stringify(righe())}, 'op', ${k}, ${dir})`))
+      .map(r => r.kind === 'op' ? r.workCenterId : r.itemId);
+  };
+
+  it('scambia due lavorazioni saltando le righe di distinta in mezzo', () => {
+    // w1 e w2 sono agli indici 1 e 3: si scambiano tra loro, m e a non si muovono
+    assert.deepEqual(mossa(0, 1), ['m', 'w2', 'a', 'w1']);
+  });
+
+  it('lo spostamento verso l\'alto è il simmetrico', () => {
+    assert.deepEqual(mossa(1, -1), ['m', 'w2', 'a', 'w1']);
+  });
+
+  it('le righe della distinta restano ai loro indici assoluti', () => {
+    const out = mossa(0, 1);
+    assert.equal(out[0], 'm');
+    assert.equal(out[2], 'a');
+  });
+
+  it('sui bordi ritorna l\'array ricevuto, senza copie né scambi', () => {
+    const app = loadApp({ silent: true });
+    // Identità dell'oggetto: il chiamante la usa per capire che non c'è nulla da salvare
+    assert.equal(app.eval(`(() => { const r = [{kind:'op'},{kind:'op'}]; return moveKindRow(r,'op',0,-1) === r; })()`), true);
+    assert.equal(app.eval(`(() => { const r = [{kind:'op'},{kind:'op'}]; return moveKindRow(r,'op',1,1) === r; })()`), true);
+    assert.equal(app.eval(`(() => { const r = [{kind:'item'}]; return moveKindRow(r,'op',0,1) === r; })()`), true);
+  });
+
+  it('array vuoto o indice fuori elenco: nessun errore', () => {
+    const app = loadApp({ silent: true });
+    assert.deepEqual(Array.from(app.eval(`moveKindRow([], 'op', 0, 1)`)), []);
+    assert.deepEqual(app.eval(`moveKindRow([{kind:'op'}], 'op', 7, 1).length`), 1);
+  });
+});
+
+describe('cyclePhaseNumber — numerazione delle fasi', () => {
+  it('10, 20, 30 dall\'ordine dell\'elenco', () => {
+    const app = loadApp({ silent: true });
+    assert.deepEqual([0, 1, 2].map(k => app.eval(`cyclePhaseNumber(${k})`)), [10, 20, 30]);
+  });
+});
+
+describe('moveCycleOp — riordino sulla parte aperta', () => {
+  it('sposta la fase e salva, lasciando ferma la distinta', () => {
+    const app = conDb(dbMisto());
+    app.eval('currentCycleItemId = "p"');
+    app.eval('moveCycleOp(0, 1)');   // prima lavorazione (w1) verso il basso
+    assert.equal(forma(app), 'm,w2,a,w1,w3');
+    // Salvato davvero: il blob persistito contiene il nuovo ordine
+    assert.equal(JSON.parse(app.storage.getItem(app.ref('DB_KEY')))
+      .items.find(i => i.id === 'p').cycle[1].workCenterId, 'w2');
+  });
+
+  it('il costo della parte non cambia dopo il riordino', () => {
+    const app = conDb(dbMisto());
+    app.eval('currentCycleItemId = "p"');
+    const prima = app.eval('costOf("p").total');
+    app.eval('moveCycleOp(1, 1)');
+    approx(app.eval('costOf("p").total'), prima);
+    approx(prima, 3 * 2 + 5 + 10 + 20 + 30);
+  });
+
+  it('in cima e in fondo non succede nulla', () => {
+    const app = conDb(dbMisto());
+    app.eval('currentCycleItemId = "p"');
+    app.eval('moveCycleOp(0, -1)');
+    app.eval('moveCycleOp(2, 1)');
+    assert.equal(forma(app), 'm,w1,a,w2,w3');
+  });
+
+  it('il ruolo lettore non riordina', () => {
+    const app = conDb(dbMisto(), 'lettore');
+    app.eval('currentCycleItemId = "p"');
+    app.eval('moveCycleOp(0, 1)');
+    assert.equal(forma(app), 'm,w1,a,w2,w3');
+  });
+});
+
+describe('Righe: aggiunta, modifica, eliminazione', () => {
+  it('delCycleRow usa l\'indice assoluto', () => {
+    const app = conDb(dbMisto());
+    app.eval('currentCycleItemId = "p"');
+    app.eval('delCycleRow(2)');   // la seconda riga di distinta, terza in assoluto
+    assert.equal(forma(app), 'm,w1,w2,w3');
+  });
+
+  it('pickCycleItem accoda un articolo alla distinta e salva', () => {
+    const app = conDb(dbMisto());
+    app.eval('currentCycleItemId = "p"');
+    app.eval('pickCycleItem("a")');
+    assert.equal(forma(app), 'm,w1,a,w2,w3,a');
+    approx(app.eval('costOf("p").total'), 3 * 2 + 5 + 10 + 20 + 30 + 5);
+  });
+
+  it('pickCycleOp accoda la lavorazione in fondo al ciclo', () => {
+    const app = conDb(dbMisto());
+    app.eval('currentCycleItemId = "p"');
+    app.el('cyc-wc').value = 'w1';
+    app.el('cyc-opcost').value = '7';
+    app.eval('pickCycleOp()');
+    assert.equal(forma(app), 'm,w1,a,w2,w3,w1');
+    approx(app.eval('costOf("p").total'), 3 * 2 + 5 + 10 + 20 + 30 + 7);
+  });
+
+  it('updateCycleRow cambia la quantità e il costo segue', () => {
+    const app = conDb(dbMisto());
+    app.eval('currentCycleItemId = "p"');
+    app.el('cyc-qty-0').value = '10';
+    app.eval('updateCycleRow(0)');
+    approx(app.eval('costOf("p").total'), 10 * 2 + 5 + 10 + 20 + 30);
+  });
+
+  it('override vuoto = nessun override, negativo riportato a zero', () => {
+    const app = conDb(dbMisto());
+    app.eval('currentCycleItemId = "p"');
+    app.el('cyc-qty-0').value = '3';
+    app.el('cyc-ovr-0').value = '';
+    app.eval('updateCycleRow(0)');
+    assert.equal(app.snapshot().items.find(i => i.id === 'p').cycle[0].costOverride, null);
+    app.el('cyc-ovr-0').value = '-5';
+    app.eval('updateCycleRow(0)');
+    assert.equal(app.snapshot().items.find(i => i.id === 'p').cycle[0].costOverride, 0);
+  });
+
+  it('il ruolo lettore non elimina né modifica', () => {
+    const app = conDb(dbMisto(), 'lettore');
+    app.eval('currentCycleItemId = "p"');
+    app.eval('delCycleRow(0)');
+    app.el('cyc-qty-0').value = '99';
+    app.eval('updateCycleRow(0)');
+    assert.equal(forma(app), 'm,w1,a,w2,w3');
+    approx(app.eval('costOf("p").total'), 3 * 2 + 5 + 10 + 20 + 30);
+  });
+
+  it('senza una parte selezionata i mutatori non lanciano', () => {
+    const app = conDb(dbMisto());
+    app.eval('currentCycleItemId = null');
+    app.eval('delCycleRow(0); moveCycleOp(0, 1); updateCycleRow(0); pickCycleItem("a")');
+    assert.equal(forma(app), 'm,w1,a,w2,w3');
+  });
+});
+
+describe('setCycleCostMode — modo di calcolo', () => {
+  it('salva il modo scelto e il costo cambia di conseguenza', () => {
+    const app = conDb(dbMisto());
+    app.eval('currentCycleItemId = "p"');
+    app.eval('getItem("p").unitCost = 100');
+    app.el('cyc-costmode').value = 'unit';
+    app.eval('setCycleCostMode()');
+    assert.equal(app.snapshot().items.find(i => i.id === 'p').costMode, 'unit');
+    approx(app.eval('costOf("p").total'), 100);
+    app.el('cyc-costmode').value = 'sum';
+    app.eval('setCycleCostMode()');
+    approx(app.eval('costOf("p").total'), 100 + 3 * 2 + 5 + 10 + 20 + 30);
+  });
+});
+
+describe('Selezione della parte', () => {
+  it('cycleFilteredParts applica famiglia, sottofamiglia e ricerca', () => {
+    const app = conDb(makeDb({ items: [
+      parte('p1', { code: 'PRT-1', familyId: 'f1', subFamilyId: 's1' }),
+      parte('p2', { code: 'PRT-2', familyId: 'f1', subFamilyId: 's2' }),
+      parte('p3', { code: 'ALT-3', familyId: 'f2' }),
+    ] }));
+    const ids = () => Array.from(app.eval('cycleFilteredParts().map(i => i.id)'));
+    assert.deepEqual(ids().sort(), ['p1', 'p2', 'p3']);
+    app.el('cyc-family').value = 'f1';
+    assert.deepEqual(ids().sort(), ['p1', 'p2']);
+    app.el('cyc-subfamily').value = 's2';
+    assert.deepEqual(ids(), ['p2']);
+    app.el('cyc-subfamily').value = '';
+    app.el('cyc-family').value = '';
+    app.el('cyc-search').value = 'alt';
+    assert.deepEqual(ids(), ['p3']);
+  });
+
+  it('i menu dei filtri elencano solo le famiglie delle parti', () => {
+    const app = conDb(makeDb({
+      families: [
+        { id: 'f1', name: 'Lamiere', kind: 'parte', subs: [{ id: 's1', name: 'Piegate' }] },
+        { id: 'f9', name: 'Viteria', kind: 'acquistato', subs: [] },
+      ],
+      items: [parte('p1', { familyId: 'f1' })],
+    }));
+    app.eval('updateCycleFamilyFilters()');
+    assert.ok(app.html('cyc-family').includes('Lamiere'));
+    assert.ok(!app.html('cyc-family').includes('Viteria'), 'le famiglie dei commerciali non c\'entrano');
+    // Le sottofamiglie compaiono solo con la famiglia scelta
+    assert.ok(!app.html('cyc-subfamily').includes('Piegate'));
+    app.el('cyc-family').value = 'f1';
+    app.eval('updateCycleFamilyFilters()');
+    assert.ok(app.html('cyc-subfamily').includes('Piegate'));
+  });
+
+  it('una selezione non più valida ricade sulla prima parte filtrata', () => {
+    const app = conDb(makeDb({ items: [parte('p1'), parte('p2')] }));
+    app.eval('currentCycleItemId = "sparita"');
+    app.eval('ensureCurrentCycleItem(cycleFilteredParts())');
+    assert.equal(app.eval('currentCycleItemId'), 'p1');
+    app.eval('ensureCurrentCycleItem([])');
+    assert.equal(app.eval('currentCycleItemId'), null);
+  });
+
+  it('openCycleFor azzera i filtri: la parte scelta deve comparire', () => {
+    const app = conDb(makeDb({ items: [parte('p1', { familyId: 'f1' }), parte('p2')] }));
+    app.el('cyc-family').value = 'f1';
+    app.el('cyc-search').value = 'xyz';
+    app.eval('openCycleFor("p2")');
+    assert.equal(app.eval('currentCycleItemId'), 'p2');
+    assert.equal(app.el('cyc-family').value, '');
+    assert.equal(app.el('cyc-subfamily').value, '');
+    assert.equal(app.el('cyc-search').value, '');
+  });
+
+  it('openCycleFor ignora ciò che non è una parte', () => {
+    const app = conDb(makeDb({ items: [mat('m', 1), parte('p1')] }));
+    app.eval('currentCycleItemId = "p1"');
+    app.eval('openCycleFor("m")');
+    assert.equal(app.eval('currentCycleItemId'), 'p1');
+  });
+});
+
+describe('renderCycles — disegno delle due sezioni', () => {
+  it('mostra distinta, ciclo e numeri di fase', () => {
+    const app = conDb(dbMisto());
+    app.eval('currentCycleItemId = "p"');
+    app.eval('renderCycles()');
+    const h = app.html('cyc-body');
+    assert.ok(h.includes('Distinta parte'), 'manca la sezione distinta');
+    assert.ok(h.includes('Ciclo di lavorazione'), 'manca la sezione ciclo');
+    assert.ok(h.includes('>10<') && h.includes('>20<') && h.includes('>30<'), 'mancano i numeri di fase');
+    // Le frecce dei bordi sono spente
+    assert.equal((h.match(/disabled/g) || []).length, 2);
+    assert.ok(app.html('cyc-summary').includes('Costo parte'));
+  });
+
+  it('senza parti a catalogo spiega dove crearne una', () => {
+    const app = conDb(makeDb({ items: [] }));
+    app.eval('renderCycles()');
+    assert.ok(app.html('cyc-body').includes('Progetto'));
+  });
+
+  it('cycleCountLabel riassume le due sezioni', () => {
+    const app = conDb(dbMisto());
+    assert.equal(app.eval('cycleCountLabel(getItem("p"))'), '2 articoli · 3 lavorazioni');
+    assert.equal(app.eval('cycleCountLabel({ cycle: [] })'), 'Distinta parte e ciclo vuoti');
+    assert.equal(app.eval('cycleCountLabel({ cycle: [{ kind: "item" }, { kind: "op" }] })'), '1 articolo · 1 lavorazione');
+  });
+});
+
+describe('Duplicazione di una parte', () => {
+  it('la copia porta con sé distinta, ciclo e modo di calcolo', () => {
+    const app = conDb(dbMisto());
+    app.el('it-type').value = 'parte';
+    app.el('it-concept').value = 'c1';
+    app.el('it-namefree').value = 'copia';
+    app.el('it-code').value = 'PRT-COPIA';
+    app.eval('window.__dupSourceId = "p"');
+    app.eval('saveNewItem()');
+    const nuova = app.snapshot().items.filter(i => i.type === 'parte' && i.id !== 'p')[0];
+    assert.ok(nuova, 'la copia non è stata creata');
+    assert.equal(nuova.costMode, 'cycle');
+    assert.deepEqual(nuova.cycle.map(r => r.kind === 'op' ? r.workCenterId : r.itemId),
+      ['m', 'w1', 'a', 'w2', 'w3']);
+    // Copia vera: modificarla non tocca l'originale
+    assert.notEqual(app.eval(`getItem(${JSON.stringify(nuova.id)}).cycle`), app.eval('getItem("p").cycle'));
+  });
+
+  it('una parte creata da zero nasce con distinta e ciclo vuoti', () => {
+    const app = conDb(makeDb({ items: [] }));
+    app.el('it-type').value = 'parte';
+    app.el('it-concept').value = 'c1';
+    app.el('it-namefree').value = 'nuova';
+    app.el('it-code').value = 'PRT-1';
+    app.eval('window.__dupSourceId = null');
+    app.eval('saveNewItem()');
+    const nuova = app.snapshot().items[0];
+    assert.deepEqual(nuova.cycle, []);
+    assert.equal(nuova.costMode, 'cycle');   // partCostModeDefault delle fixture
+  });
+});

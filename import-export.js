@@ -1,0 +1,437 @@
+// ═══════════════════════════════════════════════════════════
+//  BOMTRACK — import-export.js
+// ═══════════════════════════════════════════════════════════
+// Import massivo da Excel, backup JSON e avvio dell'applicazione.
+// L'avvio (init) sta in fondo all'ultimo script caricato: quando parte, tutte
+// le funzioni degli altri file esistono già.
+// Classic script, scope globale condiviso con gli altri: nessun modulo e
+// nessun build, così index.html continua ad aprirsi con un doppio click.
+
+// ═══════════════════════════════════════════════════════════
+//  IMPORT MASSIVO DA EXCEL (Articoli e Distinte)
+// ═══════════════════════════════════════════════════════════
+function renderImport() {
+  const types = ALL_TYPES.map(t => typeLabel(t)).join(', ');
+  return `<div class="cloud-section" style="flex-direction:column;align-items:stretch;gap:18px">
+    <div>
+      <strong>📦 Import Articoli</strong>
+      <p>Carica un foglio Excel per creare o aggiornare articoli in blocco (materie prime, commerciali, parti, assiemi). Se il <b>Codice</b> esiste già l'articolo viene <b>aggiornato</b>; se è vuoto viene generato automaticamente per materie prime, commerciali e parti. Colonne: <span style="font-family:var(--mono)">Tipo, Codice, Nome, UM, CostoUnitario, PrezzoAcquisto, Fornitore, Macrofamiglia, Sottofamiglia, Note</span>. Tipi ammessi: ${esc(types)}.</p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
+        <button class="btn-outline" onclick="downloadItemsTemplate()">⬇ Scarica template Articoli</button>
+        <button class="add-btn-sm" onclick="document.getElementById('imp-items-file').click()">⬆ Carica file Articoli</button>
+        <input type="file" id="imp-items-file" accept=".xlsx,.xls,.csv" style="display:none" onchange="onImportItems(event)">
+      </div>
+    </div>
+    <div style="border-top:1px solid var(--border, #2a2a2a);padding-top:16px">
+      <strong>🌳 Import Distinte</strong>
+      <p>Carica un foglio Excel con le relazioni <b>padre-figlio</b> per costruire le distinte. Gli articoli (padri e figli) devono già esistere in catalogo — importali prima con il foglio Articoli. Per ogni padre presente nel file i componenti vengono <b>sostituiti</b> (reimport idempotente); le lavorazioni non vengono toccate. Colonne: <span style="font-family:var(--mono)">CodicePadre, CodiceFiglio, Qta, Scarto%</span>.</p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
+        <button class="btn-outline" onclick="downloadBomTemplate()">⬇ Scarica template Distinte</button>
+        <button class="add-btn-sm" onclick="document.getElementById('imp-bom-file').click()">⬆ Carica file Distinte</button>
+        <input type="file" id="imp-bom-file" accept=".xlsx,.xls,.csv" style="display:none" onchange="onImportBom(event)">
+      </div>
+    </div></div>`;
+}
+
+// ─── Lettura foglio Excel → array di oggetti riga ───
+function readSheet(file, cb) {
+  const reader = new FileReader();
+  reader.onload = () => {
+    try {
+      const wb = XLSX.read(new Uint8Array(reader.result), { type: 'array' });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      if (!ws) throw new Error('foglio vuoto');
+      cb(XLSX.utils.sheet_to_json(ws, { defval: '' }));
+    } catch (e) { console.error(e); showToast('File non valido', 'error'); }
+  };
+  reader.readAsArrayBuffer(file);
+}
+// Normalizza un'intestazione: minuscolo, senza spazi/accenti/punteggiatura
+function normHeader(s) {
+  return String(s == null ? '' : s).toLowerCase()
+    .normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .replace(/[^a-z0-9]/g, '');
+}
+// Legge il primo valore non vuoto tra più nomi colonna alternativi (tollerante a varianti)
+function pick(row, ...names) {
+  const wanted = names.map(normHeader);
+  for (const k of Object.keys(row)) {
+    if (wanted.includes(normHeader(k))) {
+      const v = row[k];
+      if (v !== '' && v != null) return v;
+    }
+  }
+  return '';
+}
+function numOr(v, def) { const n = parseFloat(String(v).replace(',', '.')); return isNaN(n) ? def : n; }
+
+// Mappa un valore "Tipo" (label IT o chiave interna) al tipo articolo canonico
+function resolveType(raw) {
+  const n = normHeader(raw);
+  if (!n) return '';
+  for (const t of ALL_TYPES) {
+    if (normHeader(t) === n || normHeader(TYPE_LABELS[t]) === n || normHeader(TYPE_SHORTS[t]) === n) return t;
+  }
+  // sinonimi comuni
+  if (n === 'materiaprima' || n === 'materiaprime' || n === 'mp') return 'materiale';
+  if (n === 'commerciale' || n === 'commerciali' || n === 'comm') return 'acquistato';
+  return '';
+}
+// Trova (o crea) un fornitore per nome
+function findOrCreateSupplier(name, report) {
+  const n = String(name).trim(); if (!n) return '';
+  let s = db.suppliers.find(x => x.name.toLowerCase() === n.toLowerCase());
+  if (!s) { s = stampNew({ id: gid(), name: n, referente: '', email: '', active: true }); db.suppliers.push(s); report.createdSuppliers++; }
+  return s.id;
+}
+// Trova (o crea) famiglia e sottofamiglia per nome, coerenti col tipo
+function findOrCreateFamily(famName, subName, type, report) {
+  const fn = String(famName).trim();
+  const result = { familyId: '', subFamilyId: '' };
+  if (!fn) return result;
+  const kind = type;
+  let f = (db.families || []).find(x => x.name.toLowerCase() === fn.toLowerCase() && (x.kind || 'acquistato') === kind);
+  if (!f) { f = stampNew({ id: gid(), name: fn, kind, sigla: siglaFromName(fn), subs: [] }); db.families.push(f); report.createdFamilies++; }
+  result.familyId = f.id;
+  const sn = String(subName).trim();
+  if (sn) {
+    let s = (f.subs || []).find(x => x.name.toLowerCase() === sn.toLowerCase());
+    if (!s) { s = stampNew({ id: gid(), name: sn, sigla: siglaFromName(sn) }); (f.subs = f.subs || []).push(s); report.createdSubFamilies++; }
+    result.subFamilyId = s.id;
+  }
+  return result;
+}
+
+// ─── Import Articoli ───
+function onImportItems(ev) {
+  const file = ev.target.files[0]; ev.target.value = '';
+  if (!file) return;
+  readSheet(file, rows => { showImportReport(importItems(rows), 'items'); });
+}
+function importItems(rows) {
+  const report = { created: 0, updated: 0, skipped: 0, errors: [],
+    createdSuppliers: 0, createdFamilies: 0, createdSubFamilies: 0 };
+  rows.forEach((row, i) => {
+    const ln = i + 2; // riga foglio (1 = intestazioni)
+    const name = String(pick(row, 'Nome', 'Name', 'Descrizione')).trim();
+    const typeRaw = pick(row, 'Tipo', 'Type');
+    const type = resolveType(typeRaw);
+    if (!name && !type && !pick(row, 'Codice', 'Code')) { report.skipped++; return; } // riga vuota
+    if (!type) { report.errors.push(`Riga ${ln}: tipo non valido ("${esc(typeRaw)}")`); return; }
+    if (!name) { report.errors.push(`Riga ${ln}: nome mancante`); return; }
+    const code = String(pick(row, 'Codice', 'Code')).trim();
+
+    // Upsert per codice
+    let it = code ? db.items.find(x => String(x.code).toLowerCase() === code.toLowerCase()) : null;
+    const isNew = !it;
+    if (isNew) {
+      it = { id: gid(), type };
+      if (isAssembly(type)) { it.components = []; it.operations = []; }
+      db.items.push(it);
+    } else {
+      it.type = type;
+      if (isAssembly(type)) { if (!it.components) it.components = []; if (!it.operations) it.operations = []; }
+    }
+    it.name = name;
+    // Un'U.M. non ancora in elenco viene registrata, così resta selezionabile
+    it.uom = ensureUom(pick(row, 'UM', 'U.M.', 'UnitaDiMisura', 'Unità') || it.uom || defaultUom());
+    it.active = true;
+    const notes = String(pick(row, 'Note', 'Notes')).trim();
+    if (notes) it.notes = notes; else if (isNew) it.notes = '';
+
+    if (type === 'materiale' || type === 'parte') it.unitCost = numOr(pick(row, 'CostoUnitario', 'Costo', 'UnitCost'), it.unitCost || 0);
+    if (type === 'acquistato') {
+      it.purchasePrice = numOr(pick(row, 'PrezzoAcquisto', 'Prezzo', 'PurchasePrice'), it.purchasePrice || 0);
+      const supName = pick(row, 'Fornitore', 'Supplier');
+      if (supName) it.supplierId = findOrCreateSupplier(supName, report);
+    }
+    if (usesFamily(type)) {
+      const fam = findOrCreateFamily(pick(row, 'Macrofamiglia', 'Famiglia', 'Family'), pick(row, 'Sottofamiglia', 'SubFamily'), type, report);
+      it.familyId = fam.familyId; it.subFamilyId = fam.subFamilyId;
+    }
+    // Codice: dato esplicito, oppure auto per mat/acq, oppure id come fallback
+    if (code) it.code = code;
+    else if (isNew) it.code = genItemCode(it) || it.id;
+
+    if (isNew) { stampNew(it); report.created++; } else { touch(it); report.updated++; }
+  });
+  saveDB();
+  return report;
+}
+
+// ─── Import Distinte (righe padre-figlio) ───
+function onImportBom(ev) {
+  const file = ev.target.files[0]; ev.target.value = '';
+  if (!file) return;
+  readSheet(file, rows => { showImportReport(importBom(rows), 'bom'); });
+}
+function findByCode(code) {
+  const c = String(code).trim().toLowerCase();
+  if (!c) return null;
+  return db.items.find(x => String(x.code).toLowerCase() === c) || null;
+}
+function importBom(rows) {
+  const report = { added: 0, parents: 0, skipped: 0, errors: [] };
+  const clearedParents = new Set(); // padri già azzerati in questo import
+  rows.forEach((row, i) => {
+    const ln = i + 2;
+    const pCode = String(pick(row, 'CodicePadre', 'Padre', 'Parent')).trim();
+    const cCode = String(pick(row, 'CodiceFiglio', 'Figlio', 'Child', 'Componente')).trim();
+    if (!pCode && !cCode) { report.skipped++; return; } // riga vuota
+    const parent = findByCode(pCode);
+    if (!parent) { report.errors.push(`Riga ${ln}: padre "${esc(pCode)}" non trovato in catalogo`); return; }
+    if (!isAssembly(parent.type)) { report.errors.push(`Riga ${ln}: "${esc(pCode)}" è ${typeLabel(parent.type)}, non può avere una distinta`); return; }
+    const child = findByCode(cCode);
+    if (!child) { report.errors.push(`Riga ${ln}: figlio "${esc(cCode)}" non trovato in catalogo`); return; }
+    if (!isAllowedChild(parent.type, child.id)) {
+      report.errors.push(`Riga ${ln}: ${typeLabel(child.type)} non ammesso in ${typeLabel(parent.type)}`); return;
+    }
+    // Azzera i componenti del padre alla prima riga valida che lo riguarda
+    if (!clearedParents.has(parent.id)) { parent.components = []; clearedParents.add(parent.id); report.parents++; }
+    if (createsCycle(parent.id, child.id)) {
+      report.errors.push(`Riga ${ln}: "${esc(cCode)}" in "${esc(pCode)}" creerebbe un ciclo`); return;
+    }
+    parent.components.push({ itemId: child.id, qty: numOr(pick(row, 'Qta', 'Quantità', 'Qty', 'Quantita'), 1), scrapPct: numOr(pick(row, 'Scarto%', 'Scarto', 'ScrapPct'), 0) });
+    touch(parent);
+    report.added++;
+  });
+  saveDB();
+  return report;
+}
+
+// ─── Template scaricabili ───
+function downloadItemsTemplate() {
+  const header = ['Tipo', 'Codice', 'Nome', 'UM', 'CostoUnitario', 'PrezzoAcquisto', 'Fornitore', 'Macrofamiglia', 'Sottofamiglia', 'Note'];
+  const data = [header,
+    ['Materia prima', '', 'Lamiera acciaio S235', 'kg', 1.2, '', '', 'Acciaio', 'Lamiere', 'codice auto se vuoto'],
+    ['Componente commerciale', '', 'Cuscinetto SKF 6204', 'pz', '', 12.5, 'SKF', 'Meccanico', 'Cuscinetti', ''],
+    ['Parte', '', 'Fiancata lavorata', 'pz', 45, '', '', 'Carpenteria', 'Fiancate', 'codice auto se vuoto'],
+    ['Sottogruppo', 'SGR-100', 'Gruppo motore', 'pz', '', '', '', '', '', 'la distinta si carica con il foglio Distinte'],
+    ['Gruppo', 'GRP-100', 'Gruppo telaio', 'pz', '', '', '', '', '', ''],
+    ['Macchina', 'MAC-100', 'Nastro Trasportatore NT-200', 'pz', '', '', '', '', '', ''],
+  ];
+  const ws = XLSX.utils.aoa_to_sheet(data);
+  ws['!cols'] = header.map((h, i) => ({ wch: i === 2 ? 30 : 16 }));
+  const info = XLSX.utils.aoa_to_sheet([
+    ['ISTRUZIONI — Import Articoli'],
+    [],
+    ['Colonna', 'Descrizione'],
+    ['Tipo', 'Uno tra: ' + ALL_TYPES.map(t => typeLabel(t)).join(', ')],
+    ['Codice', 'Se esiste già viene aggiornato. Se vuoto: generato per materie prime/commerciali/parti, altrimenti interno.'],
+    ['Nome', 'Obbligatorio.'],
+    ['UM', 'Unità di misura (default pz).'],
+    ['CostoUnitario', 'Per Materia prima e Parte.'],
+    ['PrezzoAcquisto', 'Per Componente commerciale.'],
+    ['Fornitore', 'Per Commerciale. Creato se non esiste.'],
+    ['Macrofamiglia / Sottofamiglia', 'Per Materia prima, Commerciale e Parte. Create se non esistono.'],
+    ['Note', 'Opzionale.'],
+  ]);
+  info['!cols'] = [{ wch: 28 }, { wch: 70 }];
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Articoli');
+  XLSX.utils.book_append_sheet(wb, info, 'Istruzioni');
+  XLSX.writeFile(wb, 'Template_Articoli.xlsx');
+  showToast('Template scaricato');
+}
+function downloadBomTemplate() {
+  const data = [['CodicePadre', 'CodiceFiglio', 'Qta', 'Scarto%'],
+    ['MAC-100', 'GRP-100', 1, 0],
+    ['GRP-100', 'PRT-100', 2, 0],
+    ['GRP-100', 'SGR-100', 1, 0],
+  ];
+  const ws = XLSX.utils.aoa_to_sheet(data);
+  ws['!cols'] = [{ wch: 16 }, { wch: 16 }, { wch: 8 }, { wch: 10 }];
+  const info = XLSX.utils.aoa_to_sheet([
+    ['ISTRUZIONI — Import Distinte'],
+    [],
+    ['Ogni riga collega un padre (assieme) a un suo componente figlio.'],
+    ['I codici di padre e figlio devono già esistere in catalogo (importa prima gli Articoli).'],
+    ['Per ogni padre presente nel file i componenti vengono SOSTITUITI (le lavorazioni restano).'],
+    ['Le relazioni non ammesse o cicliche vengono segnalate e saltate.'],
+    [],
+    ['Colonna', 'Descrizione'],
+    ['CodicePadre', 'Codice dell\'assieme (macchina/gruppo/sottogruppo).'],
+    ['CodiceFiglio', 'Codice del componente contenuto.'],
+    ['Qta', 'Quantità (default 1).'],
+    ['Scarto%', 'Percentuale di scarto (default 0).'],
+  ]);
+  info['!cols'] = [{ wch: 16 }, { wch: 70 }];
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Distinte');
+  XLSX.utils.book_append_sheet(wb, info, 'Istruzioni');
+  XLSX.writeFile(wb, 'Template_Distinte.xlsx');
+  showToast('Template scaricato');
+}
+
+// ─── Report di esito import ───
+function showImportReport(r, kind) {
+  let stats, extra = '';
+  if (kind === 'items') {
+    stats = [['Creati', r.created], ['Aggiornati', r.updated], ['Saltati (vuote)', r.skipped], ['Errori', r.errors.length]];
+    const auto = [];
+    if (r.createdSuppliers) auto.push(`${r.createdSuppliers} fornitori`);
+    if (r.createdFamilies) auto.push(`${r.createdFamilies} famiglie`);
+    if (r.createdSubFamilies) auto.push(`${r.createdSubFamilies} sottofamiglie`);
+    if (auto.length) extra = `<p class="empty-text" style="text-align:left;padding:6px 0">Creati automaticamente: ${auto.join(', ')}.</p>`;
+  } else {
+    stats = [['Componenti aggiunti', r.added], ['Distinte aggiornate', r.parents], ['Saltati (vuote)', r.skipped], ['Errori', r.errors.length]];
+  }
+  const cards = stats.map(([l, v]) => `<div class="kpi-card ${l === 'Errori' && v ? 'orange' : ''}"><div class="kpi-value">${v}</div><div class="kpi-label">${l}</div></div>`).join('');
+  const errBlock = r.errors.length
+    ? `<div style="margin-top:12px"><strong style="color:var(--red)">Righe con problemi (${r.errors.length}):</strong>
+        <div class="picker-results" style="max-height:240px;margin-top:6px">${r.errors.map(e => `<div class="picker-row">${e}</div>`).join('')}</div></div>`
+    : `<p class="empty-text" style="padding:8px 0">Nessun errore. ✔</p>`;
+  openModal(`<h3>📋 Esito import ${kind === 'items' ? 'Articoli' : 'Distinte'}</h3>
+    <div class="cost-summary">${cards}</div>${extra}${errBlock}
+    <div class="modal-actions"><button class="add-btn-sm" onclick="closeImportReport('${kind}')">Chiudi</button></div>`);
+}
+function closeImportReport(kind) {
+  closeModal();
+  if (kind === 'bom') { currentBomId = null; reportBomId = null; }
+  renderManage();
+  showToast('Import completato');
+}
+
+// Lo spazio di localStorage è circa 5 MB per sito: oltre i 4 conviene saperlo
+// prima di sbatterci contro, non quando il salvataggio comincia a fallire.
+const DB_SIZE_WARN_MB = 4;
+function dbSizeLine() {
+  const { mb } = Store.sizeInfo();
+  const vicino = mb >= DB_SIZE_WARN_MB;
+  return `<p style="margin-top:6px">Spazio occupato: <strong${vicino ? ' style="color:var(--red)"' : ''}>${mb.toFixed(2)} MB</strong>
+    ${vicino ? '— vicino al limite del browser (circa 5 MB). Esporta un backup e alleggerisci il database.' : 'sui circa 5 MB che il browser riserva a questa app.'}</p>`;
+}
+function renderBackup() {
+  return `<div class="cloud-section">
+    <div style="flex:1">
+      <strong>💾 Backup locale</strong>
+      <p>I dati sono salvati nel browser (localStorage). Esporta un file JSON per conservare un backup o trasferire i dati su un altro PC. L'import sovrascrive i dati attuali.</p>
+      ${dbSizeLine()}
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
+        <button class="add-btn-sm" onclick="exportBackup()">⬇ Esporta JSON</button>
+        <button class="btn-outline" onclick="document.getElementById('import-file').click()">⬆ Importa JSON</button>
+        <input type="file" id="import-file" accept="application/json,.json" style="display:none" onchange="importBackup(event)">
+        <button class="btn-outline" style="color:var(--red);border-color:var(--red)" onclick="resetDB()">↺ Ripristina dati esempio</button>
+      </div>
+    </div></div>
+  <div class="cloud-section" style="border-color:var(--red);margin-top:16px">
+    <div style="flex:1">
+      <strong style="color:var(--red)">🗑 Azzera tutto</strong>
+      <p>Svuota completamente il database: articoli, distinte, richieste, ordini, fornitori, famiglie, centri di lavoro, unità di misura, dati azienda e impostazioni. Non restano nemmeno i dati di esempio. <strong>L'operazione è irreversibile</strong>: esporta prima un backup JSON.</p>
+      <div style="margin-top:8px">
+        <button class="btn-outline" style="color:var(--red);border-color:var(--red)" onclick="wipeAll()">🗑 AZZERA TUTTO</button>
+      </div>
+    </div></div>`;
+}
+function exportBackup() {
+  // Il backup contiene tutto, utenti e hash compresi: solo agli amministratori
+  if (!roleGuard('manage')) return;
+  const blob = new Blob([Store.exportSnapshot()], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = `bomtrack_backup_${new Date().toISOString().slice(0, 10)}.json`;
+  a.click(); URL.revokeObjectURL(url);
+  showToast('Backup esportato');
+}
+function importBackup(ev) {
+  if (!roleGuard('manage')) return;
+  const file = ev.target.files[0]; if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    try {
+      const data = JSON.parse(reader.result);
+      if (!data || !Array.isArray(data.items)) throw new Error('formato non valido');
+      const n = data.items.length;
+      askConfirm(`Importare questo file? I dati attuali verranno sovrascritti da un backup di ${n} articoli.`, () => {
+        Store.importSnapshot(data);
+        resetViewState();
+        if (!reconcileSession()) return;   // il backup può contenere altri utenti
+        setView('bom'); showToast('Backup importato');
+      }, { title: '📥 Importa backup', ok: 'Importa e sovrascrivi' });
+    } catch (e) { showToast('File non valido', 'error'); }
+  };
+  reader.readAsText(file);
+  ev.target.value = '';
+}
+function resetDB() {
+  if (!roleGuard('manage')) return;
+  askConfirm('Ripristinare i dati di esempio? Tutti i dati attuali saranno persi.', () => {
+    Store.reset();
+    resetViewState();
+    if (!reconcileSession()) return;
+    setView('bom'); showToast('Dati ripristinati');
+  }, { title: '↩ Ripristina dati di esempio', ok: 'Ripristina' });
+}
+// Dopo un reset o un import il database sotto i piedi è cambiato: l'utente della
+// sessione può non esserci più. Se il nuovo database non ha utenti si ricrea
+// (chi ha appena ripristinato resta dentro); se ne ha altri si esce e si rientra.
+function reconcileSession() {
+  if (!currentUser) return true;
+  const mine = getUser(currentUser.id);
+  if (mine) { currentUser = mine; renderUserPill(); return true; }
+  if (!userList().length) {
+    const u = JSON.parse(JSON.stringify(currentUser));
+    u.role = 'admin'; u.active = true;
+    db.users.push(stampNew(u));
+    saveDB();
+    currentUser = u; renderUserPill(); return true;
+  }
+  showToast('Il database importato ha altri utenti: accedi di nuovo', 'error');
+  logout();
+  return false;
+}
+// Azzeramento totale: doppia conferma, la seconda va digitata (il click distratto non basta).
+function wipeAll() {
+  if (!roleGuard('manage')) return;
+  const size = Store.sizeInfo();
+  openModal(`<h3>🧨 Azzera tutto</h3>
+    <p class="confirm-text">Il database verrà svuotato <strong>completamente</strong> e in modo <strong>irreversibile</strong>:
+      ${db.items.length} articoli, ${db.rfqs.length} richieste, ${db.orders.length} ordini, ${(db.plans || []).length} piani
+      (${size.mb} MB). Resti dentro come amministratore, tutto il resto sparisce.</p>
+    <p class="confirm-text">Hai esportato un backup JSON? Scrivi <strong>AZZERA</strong> qui sotto per confermare.</p>
+    <div class="modal-field"><input id="wipe-word" placeholder="AZZERA" autocomplete="off"
+      style="text-transform:uppercase;font-family:var(--mono);font-weight:700"></div>
+    <div class="modal-actions">
+      <button class="btn-ghost" onclick="closeModal()">Annulla</button>
+      <button class="btn-outline" onclick="exportBackup()">💾 Esporta backup ora</button>
+      <button class="add-btn-sm btn-danger" onclick="wipeAllConfirm()">Azzera tutto</button>
+    </div>`, false, 'confirm');
+}
+function wipeAllConfirm() {
+  if (!roleGuard('manage')) return;
+  if (val('wipe-word').toUpperCase() !== 'AZZERA') { showToast('Scrivi AZZERA per confermare', 'error'); return; }
+  closeModal();
+  // L'utente che azzera sopravvive come amministratore: la sessione resta valida
+  Store.clearAll(currentUser ? JSON.parse(JSON.stringify(currentUser)) : null);
+  currentUser = currentUser ? getUser(currentUser.id) : null;
+  resetViewState();
+  renderUserPill();
+  setView('bom'); showToast('Database azzerato');
+}
+// Nessun documento o articolo sopravvive a un reset: azzera anche ciò che le viste tengono aperto
+function resetViewState() {
+  currentBomId = null; reportBomId = null;
+  currentRfqId = null; currentOrderId = null;
+  rfqView = 'list'; orderView = 'list';
+  rfqUnlockedId = null; orderUnlockedId = null;
+  rfqDirty = false; orderDirty = false;
+  rfqCompareSel = []; bomExpanded = new Set(); favOnly = false;
+  docFilters.rfq = { q: '', status: '', supplierId: '' };
+  docFilters.order = { q: '', status: '', supplierId: '' };
+}
+
+// ═══════════════════════════════════════════════════════════
+//  INIT
+// ═══════════════════════════════════════════════════════════
+function init() {
+  Store.load();
+  const ver = 'v' + APP_VERSION;
+  ['app-version', 'app-version-login'].forEach(id => {
+    const el = document.getElementById(id); if (el) el.textContent = ver;
+  });
+  // Sessione salvata → si rientra diretti; altrimenti accesso (o setup del primo admin)
+  if (!restoreSession()) renderLogin();
+}
+// Nel browser parte da sé; sotto test (Node, nessun DOM) il file si carica
+// senza avviare l'app, così la suite può pilotare Store e il motore di costo.
+if (typeof document !== 'undefined') init();

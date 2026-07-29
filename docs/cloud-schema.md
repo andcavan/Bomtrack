@@ -29,6 +29,8 @@ con **tabelle normalizzate**.
 | `items[].components` | `item_components` | item_id uuid FK, child_item_id uuid FK, qty numeric, scrap_pct numeric |
 | `items[].operations` | `item_operations` | item_id uuid FK, work_center_id uuid FK, hours numeric, note |
 | `items[].cycle` | `item_cycle_rows` | item_id uuid FK, kind ('item'\|'op'), ref_item_id FK, work_center_id FK, supplier_id FK, qty, cost, cost_override |
+| `plans` | `production_plans` | id uuid PK, number unique per anno, title, date, notes, active, created_at, updated_at |
+| `plans[].lines` | `production_plan_lines` | id uuid PK, plan_id uuid FK, item_id uuid FK, qty numeric |
 | `settings` | `settings` | una riga per team (o coppie chiave/valore) |
 
 Ogni altra tabella porta anche `created_by` / `updated_by` uuid → `profiles(id)`: in locale sono già
@@ -50,7 +52,7 @@ campi vanno **cancellati** al momento della migrazione. Vale la pena ribadirlo: 
 stanno nel browser l'accesso non protegge nulla — chi apre i DevTools legge il blob e si assegna
 il ruolo che vuole. È RLS a rendere reali i permessi.
 
-Punti di innesto lato app (`app.js`), pensati per essere sostituiti uno a uno — il precedente
+Punti di innesto lato app (`core.js`, `views-*.js`), pensati per essere sostituiti uno a uno — il precedente
 funzionante è `timetrack-supabase` (`migrations/schema.sql`, `supabase/functions/invite-user`):
 
 | Oggi (locale) | Domani (Supabase) |
@@ -65,7 +67,7 @@ funzionante è `timetrack-supabase` (`migrations/schema.sql`, `supabase/function
 
 Schema delle policy: lettura a tutti i profili attivi; scrittura su `items`/`item_*` ai ruoli
 `admin` e `progettazione`, su `rfqs`/`orders` ad `admin` e `acquisti`, su `settings`, anagrafiche
-e `profiles` al solo `admin` — la stessa matrice di `ROLE_WRITE` in `app.js`.
+e `profiles` al solo `admin` — la stessa matrice di `ROLE_WRITE` in `core.js`.
 
 ## Interfaccia adapter
 
