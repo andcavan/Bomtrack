@@ -254,6 +254,22 @@ describe('priceListBody — contenuto della finestra', () => {
     assert.ok(!html.includes(`priceUseRow('q1')`), 'quella già in uso no');
   });
 
+  it('codice fornitore e origine restano, sulla seconda riga della quotazione', () => {
+    const app = conDb(conListino([quota({ code: 'BETA-1' })]));
+    const html = app.eval('priceListBody("a")');
+    assert.ok(html.includes('pl-sub'), 'la riga si sviluppa su due livelli');
+    assert.ok(html.includes('BETA-1'), 'il codice fornitore è ancora modificabile');
+    assert.ok(!html.includes('<th>Codice forn.</th>'), 'ma non occupa più una colonna');
+  });
+
+  it('i giorni di consegna non superano le quattro cifre', () => {
+    const app = conDb(conListino([quota()]));
+    app.eval('window.__priceItemId = "a"; priceSetField("q1","leadDays","123456");');
+    assert.equal(app.eval('priceRows(getItem("a"))[0].leadDays'), 9999);
+    app.eval('priceSetField("q1","leadDays","");');
+    assert.equal(app.eval('priceRows(getItem("a"))[0].leadDays'), '', 'vuoto resta vuoto');
+  });
+
   it('l\'origine indica la richiesta di provenienza', () => {
     const d = conListino([quota({ rfqId: 'r1' })]);
     d.rfqs = [{ id: 'r1', number: 'RFQ-2026-007', lines: [] }];

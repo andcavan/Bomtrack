@@ -43,9 +43,16 @@ function makeStorage(quotaBytes) {
 function elementoFinto() {
   return {
     value: '', textContent: '', innerHTML: '', placeholder: '', title: '',
-    disabled: false, checked: false, style: {},
+    disabled: false, checked: false, style: {}, className: '',
+    // I pannelli si contano e si cercano tra i figli di #modal-root: qui la
+    // parentela è finta ma reale abbastanza da farli comparire e sparire.
+    children: [], dataset: {}, parentNode: null,
+    offsetWidth: 0, offsetHeight: 0,
+    appendChild(c) { this.children.push(c); c.parentNode = this; return c; },
+    removeChild(c) { this.children = this.children.filter(x => x !== c); c.parentNode = null; return c; },
+    getBoundingClientRect() { return { left: 0, top: 0, width: 0, height: 0 }; },
     classList: { add() {}, remove() {}, contains() { return false; } },
-    appendChild() {}, removeChild() {}, remove() {}, focus() {}, click() {},
+    remove() {}, focus() {}, click() {}, closest() { return null; },
     querySelectorAll() { return []; }, querySelector() { return null; },
     insertAdjacentHTML() {}, setAttribute() {}, removeAttribute() {},
   };
@@ -86,6 +93,8 @@ function loadApp(opts) {
     body: elementoFinto(),
   };
   sandbox.window = sandbox;
+  sandbox.innerWidth = 1280; sandbox.innerHeight = 800;   // i pannelli si posizionano rispetto alla finestra
+  sandbox.confirm = () => true;   // le richieste di conferma si accettano: il test verifica l'effetto
   sandbox.setTimeout = (fn) => { void fn; return 0; };   // niente code differite nei test
 
   const ref = name => vm.runInContext(name, ctx);

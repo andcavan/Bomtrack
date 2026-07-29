@@ -5,7 +5,7 @@
 // Revisione in esecuzione, mostrata accanto al logo. Va tenuta allineata alla
 // voce in cima al changelog del README (l'app si copia a mano tra PC: sapere
 // quale revisione sta girando su una postazione è l'unico modo per capirlo).
-const APP_VERSION = '0.14.0';
+const APP_VERSION = '0.15.0';
 
 let currentUser = null;      // utente della sessione (null = schermata di accesso)
 let currentBomId = null;     // articolo prodotto attualmente aperto nelle Distinte
@@ -354,8 +354,10 @@ function showPersistErrorModal(kind, info) {
   // Il backup contiene gli utenti: il pulsante compare solo a chi può esportarlo.
   const btnBackup = canWrite('manage')
     ? `<button class="add-btn-sm" onclick="closeModal(); exportBackup()">⬇ Esporta backup JSON ora</button>` : '';
+  // Chiave propria: l'avviso si affianca a quello che è aperto invece di
+  // buttar via un form a metà compilazione.
   openModal(`<h3>⚠ Salvataggio non riuscito</h3>${testo}
-    <div class="modal-actions"><button class="btn-ghost" onclick="closeModal()">Ho capito</button>${btnBackup}</div>`);
+    <div class="modal-actions"><button class="btn-ghost" onclick="closeModal()">Ho capito</button>${btnBackup}</div>`, false, 'avviso');
 }
 // Indicatore fisso nell'header finché c'è divergenza tra memoria e persistito.
 function renderUnsavedBadge() {
@@ -366,13 +368,116 @@ function renderUnsavedBadge() {
   el.title = aperto ? 'Le ultime modifiche sono rimaste solo in memoria: esporta un backup prima di chiudere la scheda' : '';
 }
 
-// Il click fuori dalla finestra non chiude: si esce solo con Salva/Annulla (o Chiudi).
+// ─── Pannelli ───
+// Le schede non oscurano più la pagina: sono finestre mobili appoggiate sopra
+// il contenuto, si spostano trascinandole per il titolo e si ridimensionano
+// dall'angolo. Dietro si continua a navigare: si può tenere aperto il listino
+// di un articolo mentre si sfoglia una distinta.
+//
+// Ogni pannello ha una chiave e per ogni chiave ce n'è uno solo: riaprire la
+// stessa scheda riusa il pannello invece di duplicarlo. Non è una restrizione
+// grafica ma sostanziale — lo stato di una scheda aperta vive in una variabile
+// sola (window.__priceItemId e simili), quindi due listini affiancati
+// scriverebbero l'uno sull'articolo dell'altro. Chiavi diverse convivono
+// senza toccarsi.
+// Il click fuori dalla finestra non chiude: si esce solo con Salva/Annulla
+// (o Chiudi, la ✕, Esc).
 // wide = true per i form ampi, es. la scheda articolo col ciclo di lavorazione.
-function openModal(h, wide) {
-  document.getElementById('modal-root').innerHTML =
-    `<div class="modal-overlay"><div class="modal${wide ? ' modal-wide' : ''}">${h}</div></div>`;
+const PANEL_Z = 100;
+let _panelZ = PANEL_Z;
+function panelRoot() { return document.getElementById('modal-root'); }
+function openModal(h, wide, key) {
+  const root = panelRoot(); if (!root) return null;
+  const k = key || 'form';
+  let p = Array.prototype.find.call(root.children, el => el.dataset.panelKey === k);
+  // Con la pagina viva dietro, un form aperto si può lasciare lì e aprirne un
+  // altro: prima l'overlay lo impediva, ora va chiesto. Vale solo per i form,
+  // le schede di consultazione non hanno niente da perdere.
+  if (p && k === 'form' && !confirm('Una scheda è già aperta: le modifiche non salvate andranno perse. Continuare?')) return null;
+  const nuovo = !p;
+  if (nuovo) {
+    p = document.createElement('div');
+    p.dataset.panelKey = k;
+    root.appendChild(p);
+  }
+  p.className = 'panel' + (wide ? ' panel-wide' : '');
+  p.innerHTML = `<button class="panel-x" title="Chiudi (Esc)" onclick="closePanel(this.parentNode)">✕</button>${h}`;
+  if (nuovo) panelPlace(p);
+  panelRaise(p);
+  return p;
 }
-function closeModal() { document.getElementById('modal-root').innerHTML = ''; }
+// Il primo pannello al centro, i successivi a scalare: due schede aperte non
+// devono coprirsi esattamente, altrimenti sembra che sia una sola.
+function panelPlace(p) {
+  const n = panelRoot().children.length - 1;
+  const off = (n % 6) * 26;
+  const w = p.offsetWidth, h = p.offsetHeight;
+  const maxL = Math.max(8, window.innerWidth - w - 8);
+  const maxT = Math.max(8, window.innerHeight - h - 8);
+  p.style.left = Math.min(Math.max(8, (window.innerWidth - w) / 2 + off), maxL) + 'px';
+  p.style.top = Math.min(Math.max(8, window.innerHeight * 0.06 + off), maxT) + 'px';
+}
+// Portare avanti un pannello alza un contatore: in una sessione lunga
+// salirebbe sopra al toast (z-index 999), che deve restare visibile. Prima di
+// arrivarci si rinumera dal basso, mantenendo l'ordine attuale.
+function panelRaise(p) {
+  if (!p) return;
+  if (_panelZ > PANEL_Z + 600) {
+    const ord = Array.prototype.slice.call(panelRoot().children)
+      .sort((a, b) => (+a.style.zIndex || 0) - (+b.style.zIndex || 0));
+    _panelZ = PANEL_Z;
+    ord.forEach(el => { el.style.zIndex = ++_panelZ; });
+  }
+  p.style.zIndex = ++_panelZ;
+}
+// Il pannello davanti a tutti: è quello su cui si sta lavorando, ed è quello
+// che closeModal() chiude dopo un salvataggio.
+function panelTop() {
+  const root = panelRoot(); if (!root) return null;
+  return Array.prototype.reduce.call(root.children,
+    (best, el) => (!best || (+el.style.zIndex || 0) >= (+best.style.zIndex || 0)) ? el : best, null);
+}
+function closePanel(p) {
+  if (p && p.parentNode) p.parentNode.removeChild(p);
+  if (!panelRoot() || !panelRoot().children.length) _panelZ = PANEL_Z;   // gli z-index non crescono all'infinito
+}
+// Chiude la scheda in primo piano: le decine di "Annulla" e i salvataggi che
+// chiamano closeModal() intendono sempre quella con cui si sta lavorando.
+function closeModal() { closePanel(panelTop()); }
+function closeAllPanels() { const r = panelRoot(); if (r) r.innerHTML = ''; _panelZ = PANEL_Z; }
+
+// ─── Trascinamento e messa in primo piano ───
+// Delegato sulla radice: i pannelli nascono e muoiono di continuo, agganciare
+// gli ascoltatori a ognuno significherebbe ricordarsi di staccarli.
+let _drag = null;
+function panelDragStart(e) {
+  const p = e.target.closest ? e.target.closest('.panel') : null;
+  if (!p) return;
+  panelRaise(p);
+  // Si trascina solo per il titolo, e solo per quello del pannello (children[1]:
+  // children[0] è la ✕). Un <h3> dentro al corpo non deve muovere la finestra.
+  const h = e.target.closest('h3');
+  if (!h || h !== p.children[1] || e.button !== 0) return;
+  const r = p.getBoundingClientRect();
+  _drag = { p, dx: e.clientX - r.left, dy: e.clientY - r.top, w: r.width, h: r.height };
+  e.preventDefault();   // niente selezione del testo del titolo mentre si sposta
+}
+function panelDragMove(e) {
+  if (!_drag) return;
+  const maxL = Math.max(0, window.innerWidth - _drag.w);
+  const maxT = Math.max(0, window.innerHeight - 34);   // il titolo resta sempre afferrabile
+  _drag.p.style.left = Math.min(Math.max(0, e.clientX - _drag.dx), maxL) + 'px';
+  _drag.p.style.top = Math.min(Math.max(0, e.clientY - _drag.dy), maxT) + 'px';
+}
+function panelDragEnd() { _drag = null; }
+if (typeof document !== 'undefined') {
+  document.addEventListener('mousedown', panelDragStart, true);
+  document.addEventListener('mousemove', panelDragMove);
+  document.addEventListener('mouseup', panelDragEnd);
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && panelTop()) { closeModal(); e.preventDefault(); }
+  });
+}
 function val(id) { const e = document.getElementById(id); return e ? e.value.trim() : ''; }
 function setVal(id, v) { const e = document.getElementById(id); if (e) e.value = v; }
 // ─── Digitazione: rinvio del ridisegno ───
@@ -1407,7 +1512,7 @@ function priceListModal(id) {
   openModal(`<h3>💶 Listino fornitori — ${esc(it.code)}</h3>
     <p style="color:var(--text-dim);margin-bottom:14px">${esc(it.name)} · ${typeLabel(it.type)}</p>
     <div id="pricelist-body">${priceListBody(id)}</div>
-    <div class="modal-actions"><button class="btn-ghost" onclick="closeModal()">Chiudi</button></div>`, true);
+    <div class="modal-actions"><button class="btn-ghost" onclick="closeModal()">Chiudi</button></div>`, true, 'listino');
 }
 function priceListRefresh() {
   const host = document.getElementById('pricelist-body');
@@ -1428,25 +1533,29 @@ function priceListBody(id) {
     const best = migliore && r.id === migliore.id && righe.length > 1;
     const ro = scrivibile ? '' : 'disabled';
     return `<tr class="${attiva ? 'price-active' : ''}">
-      <td style="width:1%;white-space:nowrap">${attiva ? '<span title="Prezzo in uso nella costificazione">✓</span>' : ''}${best ? '<span class="price-best" title="Quotazione più bassa">↓</span>' : ''}</td>
-      <td><select ${ro} onchange="priceSetField('${r.id}','supplierId',this.value)">${supplierOptions(r.supplierId || '')}</select></td>
-      <td><input type="number" class="num" min="0" step="0.0001" value="${r.price === '' || r.price == null ? '' : r.price}" ${ro} onchange="priceSetField('${r.id}','price',this.value)"></td>
-      <td><input type="number" class="num" min="0" step="any" value="${r.minQty === '' || r.minQty == null ? '' : r.minQty}" placeholder="—" ${ro} onchange="priceSetField('${r.id}','minQty',this.value)"></td>
-      <td><input type="number" class="num" min="0" step="1" value="${r.leadDays === '' || r.leadDays == null ? '' : r.leadDays}" placeholder="—" ${ro} onchange="priceSetField('${r.id}','leadDays',this.value)"></td>
-      <td><input value="${esc(r.code || '')}" placeholder="—" ${ro} onchange="priceSetField('${r.id}','code',this.value)"></td>
-      <td><input type="date" value="${esc(r.date || '')}" ${ro} onchange="priceSetField('${r.id}','date',this.value)"></td>
-      <td style="color:var(--text-dim);font-size:12px">${esc(priceRowOrigin(r))}</td>
-      <td style="text-align:right;white-space:nowrap">
+      <td class="pl-flag">${attiva ? '<span title="Prezzo in uso nella costificazione">✓</span>' : ''}${best ? '<span class="price-best" title="Quotazione più bassa">↓</span>' : ''}</td>
+      <td class="pl-sup">
+        <select ${ro} onchange="priceSetField('${r.id}','supplierId',this.value)">${supplierOptions(r.supplierId || '')}</select>
+        <div class="pl-sub">
+          <input value="${esc(r.code || '')}" placeholder="codice fornitore" title="Codice dell'articolo presso il fornitore" ${ro} onchange="priceSetField('${r.id}','code',this.value)">
+          <span title="Da dove arriva la quotazione">${esc(priceRowOrigin(r))}</span>
+        </div>
+      </td>
+      <td><input type="number" class="num pl-price" min="0" step="0.0001" value="${r.price === '' || r.price == null ? '' : r.price}" ${ro} onchange="priceSetField('${r.id}','price',this.value)"></td>
+      <td><input type="number" class="num pl-small" min="0" step="any" value="${r.minQty === '' || r.minQty == null ? '' : r.minQty}" placeholder="—" ${ro} onchange="priceSetField('${r.id}','minQty',this.value)"></td>
+      <td><input type="number" class="num pl-small" min="0" max="9999" step="1" value="${r.leadDays === '' || r.leadDays == null ? '' : r.leadDays}" placeholder="—" title="Giorni di consegna" ${ro} onchange="priceSetField('${r.id}','leadDays',this.value)"></td>
+      <td><input type="date" class="pl-date" value="${esc(r.date || '')}" ${ro} onchange="priceSetField('${r.id}','date',this.value)"></td>
+      <td class="pl-act">
         ${attiva || !campo ? '' : `<button class="mini-btn" title="Usa questo prezzo nella costificazione" onclick="priceUseRow('${r.id}')">✓ Usa</button>`}
         <button class="mini-btn danger" title="Elimina la voce" onclick="priceDelRow('${r.id}')">🗑</button>
       </td></tr>`;
   }).join('');
 
-  const vuoto = `<tr><td colspan="9" class="empty-text">Nessuna quotazione registrata. Aggiungine una, oppure registrale da una richiesta di offerta ricevuta.</td></tr>`;
+  const vuoto = `<tr><td colspan="7" class="empty-text">Nessuna quotazione registrata. Aggiungine una, oppure registrale da una richiesta di offerta ricevuta.</td></tr>`;
   const attuale = campo ? `<p style="margin-bottom:12px">Prezzo in uso nella costificazione: <strong style="font-family:var(--mono)">${fmtN(Number(it[campo]) || 0)}</strong>${inUso ? '' : ' <span style="color:var(--text-dim)">(inserito a mano, non da listino)</span>'}</p>` : '';
   return `${attuale}
-    <div class="table-wrap"><table>
-      <thead><tr><th></th><th>Fornitore</th><th>Prezzo</th><th>Q.tà min</th><th>Consegna gg</th><th>Codice forn.</th><th>Data</th><th>Origine</th><th></th></tr></thead>
+    <div class="table-wrap"><table class="price-table">
+      <thead><tr><th></th><th>Fornitore</th><th>Prezzo</th><th>Q.tà min</th><th title="Giorni di consegna">GG</th><th>Data</th><th></th></tr></thead>
       <tbody>${corpo || vuoto}</tbody></table></div>
     <div style="margin-top:10px"><button class="add-btn-sm" onclick="priceAddRow()">+ Aggiungi quotazione</button></div>`;
 }
@@ -1475,8 +1584,11 @@ function priceSetField(rowId, field, value) {
   if (!roleGuard('catalog')) { priceListRefresh(); return; }
   const found = priceRowById(rowId); if (!found || !found.row) return;
   const { it, row } = found;
-  if (field === 'price' || field === 'minQty' || field === 'leadDays') {
+  if (field === 'price' || field === 'minQty') {
     row[field] = value === '' ? '' : clampNum(parseFloat(value), 0);
+  } else if (field === 'leadDays') {
+    // La colonna è larga quattro cifre: oltre 9999 giorni non è un termine di consegna.
+    row.leadDays = value === '' ? '' : clampNum(parseFloat(value), 0, 9999);
   } else if (field === 'supplierId') {
     row.supplierId = value || null;
   } else {
@@ -1548,7 +1660,7 @@ function usageModal(id) {
     <p style="color:var(--text-dim);margin-bottom:14px">${esc(it.name)} · ${typeLabel(it.type)}</p>
     ${usageWhatIfField(it)}
     <div id="usage-body">${usageBody(id)}</div>
-    <div class="modal-actions"><button class="btn-ghost" onclick="closeModal()">Chiudi</button></div>`, true);
+    <div class="modal-actions"><button class="btn-ghost" onclick="closeModal()">Chiudi</button></div>`, true, 'usage');
 }
 function usageWhatIfField(it) {
   const campo = costField(it);
@@ -1982,7 +2094,7 @@ function onItemFamilyChange() {
 function onItemSubFamilyChange() { refreshItemCode(); }
 
 // ─── Editor inline del ciclo di lavorazione (solo articoli "parte") ───
-// openModal() sostituisce l'intero #modal-root, quindi l'editor non può usare modali annidati:
+// I form condividono un solo pannello (chiave 'form'), quindi l'editor non può aprire schede annidate:
 // lavora su una bozza in memoria, committata su readItemForm().
 let cycleDraft = [];
 
