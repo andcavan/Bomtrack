@@ -1,4 +1,4 @@
-// Motore di costificazione (app.js, costOf / cycleRowCost / sellingPrice / flattenBom).
+// Motore di costificazione (costing.js, costOf / cycleRowCost / sellingPrice / flattenBom).
 // È il cuore dell'app: da qui escono i prezzi che finiscono su offerte e ordini.
 
 const assert = require('node:assert/strict');

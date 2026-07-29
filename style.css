@@ -31,6 +31,13 @@ input,select,button,textarea{font-family:var(--font)}
 .modal-field input:focus,.modal-field select:focus,.modal-field textarea:focus{border-color:var(--accent)}
 .modal-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
 @media(max-width:520px){.modal-grid{grid-template-columns:1fr}}
+/* Conferme in scheda (al posto di confirm()) */
+.confirm-text{font-size:14px;line-height:1.55;color:var(--text);margin-bottom:12px}
+.btn-danger{background:var(--red)!important}
+/* Ricerca globale */
+.gs-meta{margin-left:auto;color:var(--text-dim);font-size:11px;white-space:nowrap;padding-left:10px}
+/* Autore e data delle modifiche, in fondo alle schede */
+.stamp-line{margin-top:14px;padding-top:10px;border-top:1px solid var(--border);color:var(--text-dim);font-size:11px}
 .picker-results{margin-top:6px;max-height:240px;overflow-y:auto;border:1px solid var(--border);border-radius:8px;background:var(--bg)}
 .picker-results:empty{display:none}
 .picker-row{padding:8px 12px;font-size:13px;cursor:pointer;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;transition:background .12s}
@@ -62,6 +69,13 @@ input,select,button,textarea{font-family:var(--font)}
 .clock-date{font-size:11px;color:var(--text-dim)}
 .clock-time{font-family:var(--mono);font-size:14px;font-weight:700}
 .nav-ico{font-size:13px;line-height:1}
+/* Seconda riga: le voci del gruppo aperto. Vuota (gruppo a voce singola, o
+   nessuna sessione) sparisce da sé senza lasciare una striscia vuota. */
+.subnav{display:flex;gap:2px;justify-content:center;flex-wrap:wrap;padding:6px 16px;background:var(--card);border-bottom:1px solid var(--border)}
+.subnav:empty{display:none}
+.subnav-btn{background:transparent;border:none;color:var(--text-dim);padding:5px 12px;border-radius:6px;cursor:pointer;font-size:12.5px;font-weight:500;white-space:nowrap;transition:all .15s}
+.subnav-btn:hover{color:var(--text);background:var(--card-hover)}
+.subnav-btn.active{color:var(--accent);background:rgba(58,123,232,.12);font-weight:600}
 /* Degradazione progressiva: la barra resta su una riga sola cedendo, in ordine,
    il ruolo nella pill, le etichette del nav e solo per ultima la data. */
 @media(max-width:1420px){.user-role{display:none}}
@@ -151,11 +165,17 @@ input,select,button,textarea{font-family:var(--font)}
 
 /* Ciclo di lavorazione (parte) */
 .cycle-box{background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:10px 12px;overflow-x:auto}
-.cycle-row{display:grid;grid-template-columns:minmax(150px,2fr) minmax(110px,1fr) 74px 92px 88px 32px;align-items:center;gap:8px;padding:6px 0;font-size:13px;border-bottom:1px solid rgba(42,46,59,.35)}
+.cycle-row{display:grid;grid-template-columns:minmax(150px,2fr) minmax(110px,1fr) 56px 74px 92px 88px 32px;align-items:center;gap:8px;padding:6px 0;font-size:13px;border-bottom:1px solid rgba(42,46,59,.35)}
+/* Le lavorazioni hanno la fase in testa e le frecce di riordino in coda */
+.cycle-op-row{grid-template-columns:52px minmax(150px,2fr) minmax(110px,1fr) 92px 88px 62px 32px}
 .cycle-row:last-child{border-bottom:none}
 .cycle-head{font-size:10px;font-weight:600;color:var(--text-dim);text-transform:uppercase;letter-spacing:.05em}
 .cycle-row .num{font-family:var(--mono);text-align:right}
-.cycle-row input.num{width:100%;padding:5px 8px;font-size:12px}
+/* Fuori dalle schede non c'è .modal-field a vestirli: senza queste regole gli
+   input tornano al bianco di serie del browser. */
+.cycle-row input,.cycle-row select{background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:5px 8px;color:var(--text);font-size:12px;outline:none;width:100%}
+.cycle-row input:focus,.cycle-row select:focus{border-color:var(--accent)}
+.cycle-row input.num{font-family:var(--mono);text-align:right}
 .cycle-sup{width:100%;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:5px 6px;color:var(--text);font-size:12px;outline:none}
 .cycle-sup:focus{border-color:var(--accent)}
 .cycle-name{display:flex;align-items:center;gap:6px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -165,6 +185,37 @@ input,select,button,textarea{font-family:var(--font)}
 .cycle-total{margin-left:auto;font-size:13px;color:var(--text-dim)}
 .cycle-total strong{font-family:var(--mono);color:var(--text)}
 .cycle-picker-box{margin-top:10px;padding-top:10px;border-top:1px solid var(--border)}
+.cycle-picker-box .search{width:100%;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:9px 12px;color:var(--text);font-size:13px;outline:none}
+.cycle-picker-box .search:focus{border-color:var(--accent)}
+/* Vista Cicli di lavorazione */
+.cyc-part-select{flex:1;min-width:240px}
+.cycle-mode{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:18px}
+.cycle-mode label{font-size:11px;font-weight:600;color:var(--text-dim);text-transform:uppercase;letter-spacing:.05em}
+.cycle-mode select{background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:8px 10px;color:var(--text);font-size:13px;outline:none}
+.cycle-section{margin-bottom:20px}
+.cycle-section-head{display:flex;align-items:center;gap:10px;margin-bottom:8px}
+.cycle-section-head h3{font-size:14px;font-weight:700;margin:0;display:flex;align-items:center;gap:8px}
+.cycle-section-head .add-btn-sm{margin-left:auto}
+.cycle-phase{font-family:var(--mono);font-size:12px;font-weight:700;color:var(--text-dim)}
+.cycle-move{display:flex;gap:4px}
+.cycle-move .mini-btn{padding:3px 5px}
+.cycle-move .mini-btn[disabled]{opacity:.3;cursor:default}
+.cycle-move .mini-btn[disabled]:hover{color:var(--text-dim);border-color:var(--border)}
+/* Sola lettura: niente riordino e nessun campo modificabile nelle righe */
+.view-readonly .cycle-move{display:none}
+.view-readonly .cycle-row input,.view-readonly .cycle-row select,.view-readonly .cycle-mode select{pointer-events:none;opacity:.6}
+@media(max-width:640px){
+  .cycle-row,.cycle-op-row{grid-template-columns:1fr 1fr;gap:4px}
+  .cycle-head{display:none}
+  .cycle-row .cycle-name{grid-column:1/-1}
+}
+
+/* Fabbisogno materiali */
+.mrp-section{margin:20px 0}
+.mrp-group td{background:var(--bg);font-weight:600;font-size:12px;color:var(--text-dim)}
+.mrp-total td{border-top:2px solid var(--border);font-weight:700}
+.mrp-warn{color:var(--orange);font-size:11px;white-space:nowrap}
+.mrp-section .btn-outline.active{color:var(--text);border-color:var(--accent)}
 
 /* Summary card */
 .cost-summary{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:20px}
@@ -244,6 +295,29 @@ textarea.notes-internal{border-style:dashed}
 
 /* View toggle */
 .view-panel{display:none}.view-panel.active{display:block}
+
+/* ─── Stampa ───────────────────────────────────────────────
+   Si stampa la vista aperta, non un documento a parte: via barra di
+   navigazione, filtri, pulsanti e schede mobili; testo nero su bianco, che
+   il tema scuro in stampa è una tanica d'inchiostro. */
+#print-head{display:none}
+@media print{
+  :root{--bg:#fff;--card:#fff;--card-hover:#fff;--border:#bbb;--text:#000;--text-dim:#555}
+  body{background:#fff;color:#000;font-size:11px}
+  #app-header,#sub-nav,#toast,#modal-root,#login-screen,#unsaved-badge{display:none!important}
+  .catalog-filters,.mgmt-tabs,.doc-lock-banner,.ro-banner,.mgmt-item-actions,.line-actions,
+  .bom-row-actions,.cycle-move,.rfq-pick-filters,button{display:none!important}
+  #app-main{max-width:none;padding:0}
+  #print-head{display:block;margin-bottom:12px;border-bottom:2px solid #000;padding-bottom:6px}
+  .print-title{font-size:15px;font-weight:700}
+  .print-sub{font-size:11px;color:#333}
+  .kpi-card,.mgmt-panel,.bom-tree,.cycle-box,.table-wrap{border:1px solid #bbb;box-shadow:none;animation:none}
+  input,select,textarea{border:none!important;background:transparent!important;color:#000!important;padding:0!important;-webkit-appearance:none;appearance:none}
+  /* Le righe non si spezzano a metà tra due fogli */
+  tr,.bom-node,.cycle-row,.mgmt-item{page-break-inside:avoid}
+  thead{display:table-header-group}
+  a{text-decoration:none;color:#000}
+}
 @keyframes fadeIn{from{opacity:0}to{opacity:1}}
 @keyframes fadeUp{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
 .kpi-card,.breakdown-section,.mgmt-panel,.bom-tree,.bom-toolbar{animation:fadeUp .3s ease}

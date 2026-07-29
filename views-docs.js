@@ -1,0 +1,1101 @@
+// ═══════════════════════════════════════════════════════════
+//  BOMTRACK — views-docs.js
+// ═══════════════════════════════════════════════════════════
+// Documenti verso i fornitori: blocco per stato, richieste di offerta e ordini.
+// Classic script, scope globale condiviso con gli altri: nessun modulo e
+// nessun build, così index.html continua ad aprirsi con un doppio click.
+
+// ═══════════════════════════════════════════════════════════
+//  BLOCCO MODIFICHE PER STATO (condiviso RFQ / Ordini)
+// ═══════════════════════════════════════════════════════════
+// Un documento uscito verso il fornitore non va più toccato per distrazione, ma
+// deve restare correggibile: si blocca il contenuto *contrattuale* (fornitore,
+// condizioni, righe) lasciando libero l'avanzamento *operativo*.
+//   'full'      tutto modificabile        (bozza, o documento sbloccato a mano)
+//   'offer'     + prezzo/consegna riga    (RFQ inviata: l'offerta si compila al ritorno)
+//   'reception' + colonna Ricevuto        (ODA in corso: le merci arrivano dopo l'invio)
+//   'none'      sola lettura              (documento concluso o annullato)
+// Stato, note documento e note di riga ('ops') restano sempre modificabili.
+const LOCK_KINDS = { full: ['contract', 'offer', 'reception'], offer: ['offer'], reception: ['reception'], none: [] };
+function modeAllows(mode, kind) {
+  return kind === 'ops' || (LOCK_KINDS[mode] || LOCK_KINDS.full).includes(kind);
+}
+// Lo sblocco vale per il documento aperto e dura quanto la sessione di editing:
+// uscendo verso l'elenco il documento si richiude da solo.
+let rfqUnlockedId = null, orderUnlockedId = null;
+function docLockBanner(mode, kind, onUnlock) {
+  if (mode === 'full') return '';
+  const what = mode === 'offer' ? 'Prezzo unitario e data consegna restano compilabili'
+    : mode === 'reception' ? 'La colonna Ricevuto resta compilabile'
+      : 'Il documento è in sola lettura';
+  return `<div class="doc-lock-banner">
+    <span>🔒 ${esc(kind)} — i dati sono protetti dalle modifiche accidentali. ${what}; note e stato restano sempre modificabili.</span>
+    <button class="btn-outline" onclick="${onUnlock}">🔓 Sblocca per modifica</button></div>`;
+}
+// Disabilita in un passaggio gli input marcati, invece di condizionare ogni template.
+function applyDocLock(mode, host) {
+  if (!host) return;
+  ['contract', 'offer', 'reception'].forEach(kind => {
+    const off = !modeAllows(mode, kind);
+    host.querySelectorAll('.lock-' + kind).forEach(el => {
+      el.disabled = off;
+      if (off) el.title = 'Documento bloccato: usa 🔓 Sblocca per modifica';
+    });
+  });
+}
+function statusBadge(map, status) {
+  return `<span class="doc-badge st-${esc(status)}">${esc(map[status] || status)}</span>`;
+}
+// Generare il documento è il momento in cui esce verso il fornitore, ma capita
+// di stampare una bozza di controllo: si chiede, non si impone.
+function askMarkSent(doc, question, sentStatus, rerender) {
+  if (doc.status !== 'bozza') return;
+  askConfirm(question, () => {
+    doc.status = sentStatus;
+    touch(doc); saveDB(); rerender();
+    showToast('Stato: ' + sentStatus.charAt(0).toUpperCase() + sentStatus.slice(1));
+  }, { title: '📤 Documento generato', ok: 'Sì, segna come inviato', cancel: 'No, resta in bozza', safe: true });
+}
+
+// ═══════════════════════════════════════════════════════════
+//  VISTA: RICHIESTE DI OFFERTA (RFQ)
+// ═══════════════════════════════════════════════════════════
+const RFQ_STATUS = { bozza: 'Bozza', inviata: 'Inviata', ricevuta: 'Offerta ricevuta', chiusa: 'Chiusa' };
+const RFQ_LOCK = { bozza: 'full', inviata: 'offer', ricevuta: 'offer', chiusa: 'none' };
+function rfqMode(r) { return (r && rfqUnlockedId === r.id) ? 'full' : ((r && RFQ_LOCK[r.status]) || 'full'); }
+// Guard dei mutatori: il blocco vive qui, non nella UI (che si limita a disabilitare).
+function rfqGuard(id, kind) {
+  if (!roleGuard('docs')) return false;   // choke point: copre tutti i mutatori RFQ
+  const r = getRfq(id); if (!r) return false;
+  if (modeAllows(rfqMode(r), kind)) return true;
+  showToast(`Richiesta ${(RFQ_STATUS[r.status] || r.status).toLowerCase()}: usa 🔓 Sblocca per modificarla`, 'error');
+  return false;
+}
+function rfqUnlock(id) {
+  const r = getRfq(id); if (!r) return;
+  askConfirm(`La richiesta ${r.number} risulta ${(RFQ_STATUS[r.status] || r.status).toLowerCase()}.\nSbloccarla per modificarla?`, () => {
+    rfqUnlockedId = id; renderRfq(); showToast('Richiesta sbloccata');
+  }, { title: '🔓 Sblocca per modifica', ok: 'Sblocca', safe: true });
+}
+// Se tutte le righe hanno un prezzo l'offerta è tornata: è un fatto, non una scelta.
+function rfqAutoStatus(r) {
+  if (r.status !== 'inviata' && r.status !== 'ricevuta') return;
+  const lines = r.lines || [];
+  const priced = lines.length > 0 && lines.every(l => l.price !== '' && l.price != null);
+  r.status = priced ? 'ricevuta' : 'inviata';
+}
+function getRfq(id) { return db.rfqs.find(r => r.id === id); }
+function fmtDateIt(d) { return d ? new Date(d).toLocaleDateString('it-IT') : ''; }
+// Codice/descrizione del fornitore per una riga, ma solo se l'articolo è legato
+// allo stesso fornitore del documento (RFQ o ordine); altrimenti non è pertinente.
+function lineSupInfo(supplierId, l) {
+  if (!l.itemId || !supplierId) return null;
+  const it = getItem(l.itemId);
+  if (!it || it.supplierId !== supplierId) return null;
+  if (!it.supplierCode && !it.supplierDesc) return null;
+  return { code: it.supplierCode || '', desc: it.supplierDesc || '' };
+}
+function rfqLineSupInfo(r, l) { return lineSupInfo(r.supplierId, l); }
+// Nei documenti la nota di riga si stampa sotto la descrizione, nella stessa cella.
+function lineDescDoc(l) { return l.note ? (l.description || '') + '\n' + l.note : (l.description || ''); }
+
+// ─── Filtri degli elenchi documenti (condivisi tra richieste e ordini) ───
+// Gli elenchi si ridisegnano interi a ogni operazione: i criteri vivono qui
+// fuori, così sopravvivono al re-render, e la digitazione aggiorna solo la
+// lista (toccare la barra filtri farebbe perdere il focus al campo di ricerca).
+const docFilters = {
+  rfq: { q: '', status: '', supplierId: '' },
+  order: { q: '', status: '', supplierId: '' },
+};
+function docFilterBar(kind, statusMap, shown, total) {
+  const f = docFilters[kind];
+  const sups = db.suppliers.slice().sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+  return `<div class="catalog-filters">
+    <input type="text" class="search" id="${kind}f-q" value="${esc(f.q)}" placeholder="🔍 Cerca numero, oggetto, fornitore o riga..." oninput="docFilterInput('${kind}')">
+    <select id="${kind}f-status" onchange="docFilterChange('${kind}')">
+      <option value="">Tutti gli stati</option>
+      ${Object.entries(statusMap).map(([k, v]) => `<option value="${k}" ${f.status === k ? 'selected' : ''}>${v}</option>`).join('')}
+    </select>
+    <select id="${kind}f-sup" onchange="docFilterChange('${kind}')">
+      <option value="">Tutti i fornitori</option>
+      <option value="none" ${f.supplierId === 'none' ? 'selected' : ''}>— senza fornitore —</option>
+      ${sups.map(s => `<option value="${s.id}" ${f.supplierId === s.id ? 'selected' : ''}>${esc(s.name)}</option>`).join('')}
+    </select>
+    <span class="doc-filter-count" id="${kind}f-count">${docFilterCountText(shown, total)}</span>
+    ${docFilterActive(kind) ? `<button class="btn-outline" onclick="docFilterReset('${kind}')">✕ Azzera filtri</button>` : ''}
+  </div>`;
+}
+function docFilterCountText(shown, total) { return shown === total ? `${total} documenti` : `${shown} di ${total}`; }
+function docFilterActive(kind) { const f = docFilters[kind]; return !!(f.q || f.status || f.supplierId); }
+// Digitazione nel campo di ricerca: si aspetta la pausa. I menu a tendina
+// restano immediati — un click è già un'intenzione conclusa.
+function docFilterInput(kind) { debounced('doc-' + kind, () => docFilterChange(kind)); }
+function docFilterChange(kind) {
+  const f = docFilters[kind];
+  f.q = (val(kind + 'f-q') || '').toLowerCase();
+  f.status = val(kind + 'f-status');
+  f.supplierId = val(kind + 'f-sup');
+  // Solo la lista: la barra filtri resta com'è, altrimenti il campo perde il focus
+  const list = document.getElementById(kind + '-list');
+  const count = document.getElementById(kind + 'f-count');
+  const all = kind === 'rfq' ? db.rfqs : db.orders;
+  if (list) list.innerHTML = kind === 'rfq' ? rfqListRows() : orderListRows();
+  if (count) count.textContent = docFilterCountText(docFilterApply(kind, all).length, all.length);
+}
+function docFilterReset(kind) {
+  docFilters[kind] = { q: '', status: '', supplierId: '' };
+  if (kind === 'rfq') renderRfq(); else renderOrders();
+}
+// Testo cercabile di un documento, righe comprese. Costruirlo significa
+// scorrere tutte le righe: senza memoria si rifarebbe per ogni documento a
+// ogni carattere digitato. La chiave di validità è updatedAt, che cambia a
+// ogni touch() — se il documento non è stato toccato, il testo è ancora buono.
+const _docHay = new WeakMap();
+function docSearchText(d) {
+  const memo = _docHay.get(d);
+  if (memo && memo.stamp === d.updatedAt) return memo.hay;
+  const hay = [d.number, d.title, supplierName(d.supplierId), d.notes, d.notesInternal]
+    .concat((d.lines || []).map(l => [l.code, l.description, l.note].join(' ')))
+    .join(' ').toLowerCase();
+  _docHay.set(d, { stamp: d.updatedAt, hay });
+  return hay;
+}
+// Il testo cerca anche dentro le righe: spesso si risale al documento dal codice ordinato
+function docFilterApply(kind, docs) {
+  const f = docFilters[kind];
+  return docs.filter(d => {
+    if (f.status && d.status !== f.status) return false;
+    if (f.supplierId === 'none' ? !!d.supplierId : (f.supplierId && d.supplierId !== f.supplierId)) return false;
+    if (!f.q) return true;
+    return docSearchText(d).includes(f.q);
+  });
+}
+
+function renderRfq() {
+  const host = document.getElementById('view-rfq');
+  if (rfqView === 'edit' && getRfq(currentRfqId)) {
+    host.innerHTML = renderRfqEdit(currentRfqId);
+    applyDocLock(rfqMode(getRfq(currentRfqId)), host);
+  }
+  else if (rfqView === 'compare') host.innerHTML = renderRfqCompare();
+  else { rfqView = 'list'; host.innerHTML = renderRfqList(); }
+}
+
+// Progressivo per anno: RFQ-<anno>-NNN
+function nextRfqNumber() {
+  const prefix = `RFQ-${new Date().getFullYear()}-`;
+  const seqs = db.rfqs.filter(r => (r.number || '').startsWith(prefix))
+    .map(r => parseInt((r.number || '').slice(prefix.length), 10) || 0);
+  return prefix + String((seqs.length ? Math.max(...seqs) : 0) + 1).padStart(3, '0');
+}
+
+function rfqListRows() {
+  const list = docFilterApply('rfq', db.rfqs.slice().sort((a, b) => (b.number || '').localeCompare(a.number || '')));
+  return list.map(r => {
+    const nl = (r.lines || []).length;
+    const sup = r.supplierId ? supplierName(r.supplierId) : '— nessun fornitore —';
+    return `<div class="mgmt-item">
+      <span class="mgmt-item-name"><span style="font-family:var(--mono)">${esc(r.number)}</span> — ${esc(r.title || '(senza titolo)')}</span>
+      <span class="mgmt-item-meta">${esc(sup)} · ${nl} righe${r.date ? ' · ' + fmtDateIt(r.date) : ''}</span>
+      ${statusBadge(RFQ_STATUS, r.status)}
+      <div class="mgmt-item-actions">
+        <button class="mini-btn" onclick="openRfqEdit('${r.id}')" title="Modifica">✏</button>
+        <button class="mini-btn" onclick="orderFromRfq('${r.id}')" title="Crea ordine da questa richiesta">🧾</button>
+        <button class="mini-btn danger" onclick="delRfq('${r.id}')" title="Elimina">🗑</button>
+      </div></div>`;
+  }).join('') || `<div class="empty-text">${db.rfqs.length ? 'Nessuna richiesta con questi filtri.' : 'Nessuna richiesta di offerta. Creane una per chiedere prezzi a un fornitore.'}</div>`;
+}
+function renderRfqList() {
+  return `<div class="manage-wrap">
+    <div class="bom-toolbar">
+      <h2 class="section-title">📨 Richieste di offerta</h2>
+      <button class="add-btn-sm" onclick="newRfq()">+ Nuova richiesta</button>
+      <button class="btn-outline" onclick="openRfqCompare()">📊 Confronta offerte</button>
+    </div>
+    ${docFilterBar('rfq', RFQ_STATUS, docFilterApply('rfq', db.rfqs).length, db.rfqs.length)}
+    <div class="mgmt-list" id="rfq-list">${rfqListRows()}</div></div>`;
+}
+
+function newRfq() {
+  if (!roleGuard('docs')) return;
+  const r = stampNew({ id: gid(), number: nextRfqNumber(), title: '', date: nowISO().slice(0, 10),
+    status: 'bozza', notes: '', notesInternal: '', supplierId: null,
+    transport: db.settings.transportDefault || '', payment: db.settings.paymentDefault || '',
+    lines: [], active: true });
+  db.rfqs.push(r); saveDB();
+  currentRfqId = r.id; rfqView = 'edit'; rfqDirty = false; renderRfq();
+}
+function openRfqEdit(id) { currentRfqId = id; rfqView = 'edit'; rfqDirty = false; rfqUnlockedId = null; renderRfq(); }
+function openRfqCompare() { rfqView = 'compare'; renderRfq(); }
+function rfqBackToList() { if (rfqDirty) { saveDB(); rfqDirty = false; } rfqView = 'list'; currentRfqId = null; rfqUnlockedId = null; renderRfq(); }
+
+// Salvataggio differito: le modifiche restano in memoria e si persistono solo con "Salva".
+// Finché ci sono modifiche non salvate i pulsanti documento restano disabilitati.
+function rfqMarkDirty() {
+  rfqDirty = true;
+  const sv = document.getElementById('rfq-save-btn'); if (sv) sv.classList.add('dirty');
+  document.querySelectorAll('.rfq-export-btn').forEach(b => { b.disabled = true; b.title = 'Salva la richiesta prima di generare il documento'; });
+}
+function rfqSave(id) {
+  const r = getRfq(id); if (!r) return;
+  touch(r); saveDB(); rfqDirty = false; renderRfq(); showToast('Richiesta salvata');
+}
+function rfqSetField(id, field, value) {
+  // Stato e note restano liberi anche a documento inviato
+  const kind = (field === 'status' || field === 'notes' || field === 'notesInternal') ? 'ops' : 'contract';
+  if (!rfqGuard(id, kind)) { renderRfq(); return; }
+  const r = getRfq(id); if (!r) return;
+  r[field] = value || (field === 'supplierId' ? null : '');
+  touch(r); rfqMarkDirty();
+  if (field === 'status') renderRfq(); // il cambio stato cambia anche il livello di blocco
+}
+// Alla scelta del fornitore eredita le sue condizioni predefinite (se impostate)
+function rfqSetSupplier(id, sid) {
+  if (!rfqGuard(id, 'contract')) { renderRfq(); return; }
+  const r = getRfq(id); if (!r) return;
+  r.supplierId = sid || null;
+  const sup = sid ? db.suppliers.find(s => s.id === sid) : null;
+  if (sup) {
+    if (sup.defaultTransport) r.transport = sup.defaultTransport;
+    if (sup.defaultPayment) r.payment = sup.defaultPayment;
+  }
+  touch(r); rfqMarkDirty(); renderRfq();
+}
+function rfqSetLine(id, lineId, field, value) {
+  // Prezzo e consegna sono i dati che tornano con l'offerta: restano compilabili
+  const kind = (field === 'price' || field === 'deliveryDate') ? 'offer' : 'contract';
+  if (!rfqGuard(id, kind)) { renderRfq(); return; }
+  const r = getRfq(id); if (!r) return;
+  const l = (r.lines || []).find(x => x.id === lineId); if (!l) return;
+  const before = r.status;
+  // Modifica diretta in tabella: niente messaggi, si riporta a 0 (il vincolo
+  // è anche sull'input, qui si copre l'incollaggio di testo).
+  l[field] = (field === 'qty' || field === 'price') ? (value === '' ? '' : clampNum(parseFloat(value), 0)) : value;
+  rfqAutoStatus(r);
+  touch(r); rfqMarkDirty();
+  if (r.status !== before) { renderRfq(); showToast('Stato: ' + (RFQ_STATUS[r.status] || r.status)); }
+}
+function rfqDelLine(id, lineId) {
+  if (!rfqGuard(id, 'contract')) return;
+  const r = getRfq(id); if (!r) return;
+  r.lines = (r.lines || []).filter(x => x.id !== lineId);
+  rfqAutoStatus(r); touch(r); rfqMarkDirty(); renderRfq();
+}
+
+function rfqAddManualLineModal(id) {
+  if (!rfqGuard(id, 'contract')) return;
+  openModal(`<h3>+ Riga manuale</h3>
+    <div class="modal-field"><label>Descrizione</label><input id="rl-desc"></div>
+    <div class="modal-field"><label>Codice (opzionale)</label><input id="rl-code"></div>
+    <div class="modal-grid">
+      <div class="modal-field"><label>U.M.</label><select id="rl-uom">${uomOptions(defaultUom())}</select></div>
+      <div class="modal-field"><label>Quantità</label><input id="rl-qty" type="number" value="1" min="0" step="any"></div>
+    </div>
+    <div class="modal-field"><label>Nota (stampata sul documento)</label><textarea id="rl-note" rows="2" placeholder="Es. materiale certificato, disegno allegato…"></textarea></div>
+    <div class="modal-actions"><button class="btn-ghost" onclick="closeModal()">Annulla</button>
+      <button class="add-btn-sm" onclick="rfqAddManualLine('${id}')">Aggiungi</button></div>`);
+}
+function rfqAddManualLine(id) {
+  if (!rfqGuard(id, 'contract')) return;
+  const r = getRfq(id); if (!r) return;
+  const desc = val('rl-desc'); if (!desc) { showToast('Descrizione richiesta', 'error'); return; }
+  if (isNeg('rl-qty')) { showToast('La quantità non può essere negativa', 'error'); return; }
+  r.lines.push({ id: gid(), itemId: null, code: val('rl-code'), description: desc, uom: val('rl-uom') || defaultUom(),
+    qty: numVal('rl-qty', 0) || 1, price: '', deliveryDate: '', note: val('rl-note') });
+  rfqAutoStatus(r); touch(r); rfqMarkDirty(); closeModal(); renderRfq();
+}
+
+// Modifica riga: per le righe manuali si possono correggere anche codice,
+// descrizione e U.M.; per quelle da catalogo restano legate all'articolo.
+// Su documento bloccato resta modificabile la sola nota: gli altri campi si
+// mostrano comunque, in grigio, così la riga è consultabile per intero.
+function rfqEditLineModal(id, lineId) {
+  const r = getRfq(id); if (!r) return;
+  const l = (r.lines || []).find(x => x.id === lineId); if (!l) return;
+  const ro = !modeAllows(rfqMode(r), 'contract');
+  openModal(`<h3>✏ Modifica riga</h3>
+    ${lineIdentityFields('rl', l, ro)}
+    <div class="modal-field"><label>Quantità</label><input id="rl-qty" type="number" value="${l.qty}" min="0" step="any" ${ro ? 'disabled' : ''}></div>
+    <div class="modal-field"><label>Nota (stampata sul documento)</label><textarea id="rl-note" rows="2">${esc(l.note || '')}</textarea></div>
+    <div class="modal-actions"><button class="btn-ghost" onclick="closeModal()">Annulla</button>
+      <button class="add-btn-sm" onclick="rfqSaveLineEdit('${id}','${lineId}')">Salva</button></div>`);
+}
+function rfqSaveLineEdit(id, lineId) {
+  const r = getRfq(id); if (!r) return;
+  const l = (r.lines || []).find(x => x.id === lineId); if (!l) return;
+  const ro = !modeAllows(rfqMode(r), 'contract');
+  if (!ro) {
+    if (!readLineIdentity('rl', l)) return;
+    if (isNeg('rl-qty')) { showToast('La quantità non può essere negativa', 'error'); return; }
+    l.qty = numVal('rl-qty', 0);
+  }
+  l.note = val('rl-note');
+  rfqAutoStatus(r); touch(r); rfqMarkDirty(); closeModal(); renderRfq();
+}
+
+// ─── Campi identità riga (codice/descrizione/U.M.), condivisi RFQ e Ordini ───
+// Sola lettura per le righe da catalogo (seguono l'anagrafica) e per i
+// documenti bloccati dallo stato.
+function lineIdentityFields(pfx, l, locked) {
+  if (l.itemId) {
+    return `<div class="modal-field"><label>Articolo da catalogo</label>
+      <input value="${esc((l.code || '') + (l.code ? ' — ' : '') + (l.description || ''))}" disabled></div>
+      <p class="empty-text" style="text-align:left;padding:0 0 8px">Codice, descrizione e U.M. seguono l'anagrafica articolo. Modificali nell'anagrafica articolo.</p>`;
+  }
+  if (locked) {
+    return `<div class="modal-field"><label>Riga manuale</label>
+      <input value="${esc((l.code || '') + (l.code ? ' — ' : '') + (l.description || '') + ' · ' + (l.qty || 0) + ' ' + (l.uom || ''))}" disabled></div>
+      <p class="empty-text" style="text-align:left;padding:0 0 8px">Documento bloccato dallo stato: modificabile la sola nota. Usa <strong>🔓 Sblocca per modifica</strong> per correggere il resto.</p>`;
+  }
+  return `<div class="modal-field"><label>Descrizione</label><input id="${pfx}-desc" value="${esc(l.description || '')}"></div>
+    <div class="modal-field"><label>Codice (opzionale)</label><input id="${pfx}-code" value="${esc(l.code || '')}"></div>
+    <div class="modal-field"><label>U.M.</label><select id="${pfx}-uom">${uomOptions(l.uom)}</select></div>`;
+}
+// Scrive i campi identità sulla riga; ritorna false se la validazione fallisce.
+function readLineIdentity(pfx, l) {
+  if (l.itemId) return true;
+  const desc = val(pfx + '-desc');
+  if (!desc) { showToast('Descrizione richiesta', 'error'); return false; }
+  l.description = desc;
+  l.code = val(pfx + '-code');
+  l.uom = val(pfx + '-uom') || defaultUom();
+  return true;
+}
+
+// ─── Picker catalogo con filtri, condiviso tra RFQ e Ordini ───
+let __pickOnAdd = null;
+function catalogPickerModal(onAddIds) {
+  __pickOnAdd = onAddIds;
+  const opts = db.items.filter(i => i.active !== false).sort((a, b) => (a.code || '').localeCompare(b.code || ''))
+    .map(i => `<label class="rfq-pick-row" data-type="${i.type}" data-fam="${i.familyId || ''}" data-sub="${i.subFamilyId || ''}" data-sup="${i.supplierId || ''}"><input type="checkbox" value="${i.id}">
+      <span style="font-family:var(--mono)">${esc(i.code || '')}</span> ${esc(i.name)}${itemBadges(i)}
+      <span class="rfq-pick-type">${TYPE_LABELS[i.type] || i.type}</span></label>`).join('');
+  const typeOpts = ALL_TYPES.map(t => `<option value="${t}">${typeLabel(t)}</option>`).join('');
+  const famOpts = (db.families || []).map(f => `<option value="${f.id}">${esc(f.name)}</option>`).join('');
+  openModal(`<h3>+ Aggiungi da catalogo</h3>
+    <div class="rfq-pick-filters">
+      <input class="search" id="pick-search" placeholder="🔍 Codice o nome..." oninput="debounced('pick', pickFilter)">
+      <select id="pick-type" onchange="pickFilter()"><option value="">Tutti i tipi</option>${typeOpts}</select>
+      <select id="pick-fam" onchange="pickFamilyChange()"><option value="">Tutte le famiglie</option>${famOpts}</select>
+      <select id="pick-sub" onchange="pickFilter()"><option value="">Tutte le sottofamiglie</option></select>
+      <select id="pick-sup" onchange="pickFilter()"><option value="">Tutti i fornitori</option>${db.suppliers.map(s => `<option value="${s.id}">${esc(s.name)}</option>`).join('')}</select>
+    </div>
+    <div class="rfq-pick-list" id="pick-list">${opts || '<div class="empty-text">Catalogo vuoto.</div>'}</div>
+    <div class="empty-text" id="pick-empty" style="display:none">Nessun articolo con questi filtri.</div>
+    <div class="modal-actions"><button class="btn-ghost" onclick="closeModal()">Annulla</button>
+      <button class="add-btn-sm" onclick="pickConfirm()">Aggiungi selezionati</button></div>`, true);
+}
+function pickFamilyChange() {
+  const f = getFamily(val('pick-fam'));
+  const subs = (f && f.subs) || [];
+  const sel = document.getElementById('pick-sub');
+  if (sel) sel.innerHTML = '<option value="">Tutte le sottofamiglie</option>' + subs.map(s => `<option value="${s.id}">${esc(s.name)}</option>`).join('');
+  pickFilter();
+}
+function pickFilter() {
+  const q = (val('pick-search') || '').toLowerCase();
+  const ty = val('pick-type'), fam = val('pick-fam'), sub = val('pick-sub'), sup = val('pick-sup');
+  let shown = 0;
+  document.querySelectorAll('#pick-list .rfq-pick-row').forEach(el => {
+    const ok = el.textContent.toLowerCase().includes(q)
+      && (!ty || el.dataset.type === ty)
+      && (!fam || el.dataset.fam === fam)
+      && (!sub || el.dataset.sub === sub)
+      && (!sup || el.dataset.sup === sup);
+    el.style.display = ok ? '' : 'none';
+    if (ok) shown++;
+  });
+  const empty = document.getElementById('pick-empty');
+  if (empty) empty.style.display = shown ? 'none' : '';
+}
+function pickConfirm() {
+  const ids = Array.from(document.querySelectorAll('#pick-list input:checked')).map(c => c.value);
+  if (!ids.length) { showToast('Nessun articolo selezionato', 'error'); return; }
+  const cb = __pickOnAdd; __pickOnAdd = null;
+  if (cb) cb(ids);
+}
+function rfqAddCatalogModal(id) { if (!rfqGuard(id, 'contract')) return; catalogPickerModal(ids => rfqAddCatalogLines(id, ids)); }
+function rfqAddCatalogLines(id, ids) {
+  if (!rfqGuard(id, 'contract')) return;
+  const r = getRfq(id); if (!r) return;
+  ids.forEach(itemId => {
+    const it = getItem(itemId); if (!it) return;
+    r.lines.push({ id: gid(), itemId, code: it.code || '', description: it.name || '', uom: it.uom || defaultUom(), qty: 1, price: '', deliveryDate: '', note: '' });
+  });
+  rfqAutoStatus(r); touch(r); rfqMarkDirty(); closeModal(); renderRfq();
+  showToast(ids.length + ' righe aggiunte');
+}
+
+function renderRfqEdit(id) {
+  const r = getRfq(id); if (!r) { rfqView = 'list'; return renderRfqList(); }
+  const lines = (r.lines || []).map((l, i) => {
+    const si = rfqLineSupInfo(r, l);
+    const siSub = si ? `<div class="rfq-cmp-sub">🏷 ${esc(si.code || '—')}${si.desc ? ' · ' + esc(si.desc) : ''}</div>` : '';
+    const noteSub = l.note ? `<div class="line-note">📝 ${esc(l.note)}</div>` : '';
+    return `<tr>
+    <td>${i + 1}</td>
+    <td style="font-family:var(--mono)">${esc(l.code || '')}</td>
+    <td>${esc(l.description)}${l.itemId ? '' : ' <span class="rfq-manual-tag">manuale</span>'}${siSub}${noteSub}</td>
+    <td>${esc(l.uom || '')}</td>
+    <td><input type="number" class="rfq-qty-input lock-contract" value="${l.qty}" min="0" step="any" onchange="rfqSetLine('${id}','${l.id}','qty',this.value)"></td>
+    <td><input type="number" class="rfq-price-input lock-offer" value="${l.price === '' || l.price == null ? '' : l.price}" min="0" step="any" placeholder="—" onchange="rfqSetLine('${id}','${l.id}','price',this.value)"></td>
+    <td><input type="date" class="rfq-date-input lock-offer" value="${esc(l.deliveryDate || '')}" onchange="rfqSetLine('${id}','${l.id}','deliveryDate',this.value)"></td>
+    <td class="line-actions"><button class="mini-btn" onclick="rfqEditLineModal('${id}','${l.id}')" title="Modifica riga / nota">✏</button>
+      <button class="mini-btn danger lock-contract" onclick="rfqDelLine('${id}','${l.id}')">🗑</button></td></tr>`;
+  }).join('')
+    || `<tr><td colspan="8" class="empty-text">Nessuna riga. Aggiungi articoli dal catalogo o manualmente.</td></tr>`;
+  const co = db.settings.company || {};
+  const coWarn = co.name ? '' : `<div class="rfq-warn">⚠ Dati azienda non impostati: compilali in <strong>Gestione › Dati azienda</strong> per stamparli sul documento.</div>`;
+  const dis = rfqDirty ? 'disabled title="Salva la richiesta prima di generare il documento"' : '';
+  const mode = rfqMode(r);
+  const lockBanner = docLockBanner(mode, 'Richiesta ' + (RFQ_STATUS[r.status] || r.status).toLowerCase(), `rfqUnlock('${id}')`);
+  return `<div class="manage-wrap">
+    <div class="bom-toolbar">
+      <button class="btn-outline" onclick="rfqBackToList()">← Elenco</button>
+      <h2 class="section-title" style="font-family:var(--mono)">${esc(r.number)}</h2>
+      ${statusBadge(RFQ_STATUS, r.status)}
+      <button class="add-btn-sm rfq-save-btn ${rfqDirty ? 'dirty' : ''}" id="rfq-save-btn" onclick="rfqSave('${id}')">💾 Salva</button>
+    </div>
+    ${coWarn}${lockBanner}${stampLine(r)}
+    <div class="rfq-head">
+      <div class="modal-field"><label>Titolo / oggetto</label><input class="lock-contract" value="${esc(r.title || '')}" onchange="rfqSetField('${id}','title',this.value)"></div>
+      <div class="rfq-head-row">
+        <div class="modal-field"><label>Fornitore</label><select class="lock-contract" onchange="rfqSetSupplier('${id}',this.value)">${supplierOptions(r.supplierId)}</select></div>
+        <div class="modal-field"><label>Data</label><input type="date" class="lock-contract" value="${(r.date || '').slice(0, 10)}" onchange="rfqSetField('${id}','date',this.value)"></div>
+        <div class="modal-field"><label>Stato</label><select onchange="rfqSetField('${id}','status',this.value)">
+          ${Object.entries(RFQ_STATUS).map(([k, v]) => `<option value="${k}" ${r.status === k ? 'selected' : ''}>${v}</option>`).join('')}
+        </select></div>
+      </div>
+      <div class="rfq-head-row">
+        <div class="modal-field"><label>Tipo di trasporto / resa</label>
+          <input list="rfq-transport-opts" class="lock-contract" value="${esc(r.transport || '')}" placeholder="es. Porto franco, EXW, DAP…" onchange="rfqSetField('${id}','transport',this.value)">
+          <datalist id="rfq-transport-opts">${(db.settings.transportOptions || []).map(o => `<option value="${esc(o)}"></option>`).join('')}</datalist></div>
+        <div class="modal-field"><label>Tipo di pagamento</label>
+          <input list="rfq-payment-opts" class="lock-contract" value="${esc(r.payment || '')}" placeholder="es. Bonifico 30gg, RiBa 60gg…" onchange="rfqSetField('${id}','payment',this.value)">
+          <datalist id="rfq-payment-opts">${(db.settings.paymentOptions || []).map(o => `<option value="${esc(o)}"></option>`).join('')}</datalist></div>
+      </div>
+      <div class="modal-field"><label>Note per il fornitore</label><textarea rows="2" onchange="rfqSetField('${id}','notes',this.value)">${esc(r.notes || '')}</textarea></div>
+      <div class="modal-field"><label>🔒 Note interne (non stampate sui documenti)</label><textarea rows="2" class="notes-internal" onchange="rfqSetField('${id}','notesInternal',this.value)">${esc(r.notesInternal || '')}</textarea></div>
+    </div>
+    <h3 class="rfq-subhead">Righe richiesta
+      <span class="rfq-head-actions">
+        <button class="add-btn-sm lock-contract" onclick="rfqAddCatalogModal('${id}')">+ Da catalogo</button>
+        <button class="btn-outline lock-contract" onclick="rfqAddManualLineModal('${id}')">+ Riga manuale</button>
+      </span></h3>
+    <p class="empty-text" style="text-align:left;padding:0 0 8px">Prezzo unitario e data consegna si lasciano vuoti nel documento inviato e si compilano al ritorno dell'offerta.</p>
+    <div class="table-wrap"><table class="rfq-table">
+      <thead><tr><th>#</th><th>Codice</th><th>Descrizione</th><th>U.M.</th><th>Q.tà</th><th>Prezzo unit.</th><th>Data consegna</th><th></th></tr></thead>
+      <tbody>${lines}</tbody></table></div>
+    <div class="rfq-export-bar">
+      <label>Documento di richiesta:</label>
+      <button class="export-btn-pdf rfq-export-btn" onclick="exportRfqPDF('${id}')" ${dis}>📄 PDF</button>
+      <button class="export-btn-xls rfq-export-btn" onclick="exportRfqExcel('${id}')" ${dis}>📗 Excel</button>
+      ${rfqDirty ? '<span class="rfq-dirty-hint">Salva per abilitare la generazione del documento</span>' : ''}
+    </div>
+    ${rfqPriceBar(r)}
+  </div>`;
+}
+// I prezzi tornati con l'offerta valgono oltre questa richiesta: da qui
+// diventano quotazioni a listino, riutilizzabili e confrontabili nel tempo.
+// L'operazione è esplicita: non si tocca il costo di un articolo di nascosto.
+function rfqPriceBar(r) {
+  if (!canWrite('catalog')) return '';
+  const nuove = rfqPriceCandidates(r).length;
+  const già = (r.lines || []).filter(l => {
+    const it = l.itemId ? getItem(l.itemId) : null;
+    return hasPriceList(it) && priceRows(it).some(p => p.rfqId === r.id && p.lineId === l.id);
+  }).length;
+  if (!nuove && !già) return '';
+  return `<div class="rfq-export-bar">
+    <label>Prezzi d'offerta:</label>
+    <button class="btn-outline" onclick="rfqRecordPrices('${r.id}')" ${nuove ? '' : 'disabled'}>💶 Registra a listino${nuove ? ' (' + nuove + ')' : ''}</button>
+    <span class="rfq-dirty-hint" style="color:var(--text-dim)">${già ? già + ' già registrati. ' : ''}Le quotazioni restano nel listino dell'articolo; il costo in uso si sceglie da lì.</span>
+  </div>`;
+}
+
+function exportRfqPDF(id) {
+  const r = getRfq(id); if (!r) return;
+  if (!(r.lines || []).length) { showToast('Nessuna riga da esportare', 'error'); return; }
+  const { jsPDF } = window.jspdf;
+  const co = db.settings.company || {};
+  const sup = r.supplierId ? db.suppliers.find(s => s.id === r.supplierId) : null;
+  // Le colonne "codice/descrizione fornitore" compaiono solo se qualche riga è legata
+  // allo stesso fornitore della richiesta; in tal caso si usa l'orientamento orizzontale.
+  const hasSup = (r.lines || []).some(l => rfqLineSupInfo(r, l));
+  const doc = new jsPDF(hasSup ? { orientation: 'landscape' } : undefined);
+  // Documento bilingue IT / EN per fornitori esteri
+  doc.setFontSize(15); doc.setTextColor(30); doc.text(`Richiesta di offerta / Request for Quotation — ${r.number}`, 14, 16);
+  doc.setFontSize(9); doc.setTextColor(90);
+  doc.text(`Data / Date: ${fmtDateIt(r.date) || fmtDateIt(nowISO())}`, 14, 22);
+  if (r.title) doc.text(`Oggetto / Subject: ${r.title}`, 14, 27);
+  const yTop = 36;
+  const block = (x, title, rowsTxt) => {
+    doc.setFontSize(8); doc.setTextColor(130); doc.text(title, x, yTop);
+    doc.setFontSize(9); doc.setTextColor(40);
+    const rows = rowsTxt.filter(Boolean);
+    rows.forEach((t, i) => doc.text(String(t), x, yTop + 5 + i * 4.5));
+    return rows.length;
+  };
+  const n1 = block(14, 'RICHIEDENTE / BUYER', [co.name, ...addressLines(co), co.vat ? 'P.IVA / VAT ' + co.vat : '', co.referente, co.email, co.phone]);
+  const n2 = block(hasSup ? 160 : 110, 'FORNITORE / SUPPLIER', [sup ? sup.name : '(fornitore non selezionato / not selected)', ...(sup ? addressLines(sup) : []), sup && sup.vat ? 'P.IVA / VAT ' + sup.vat : '', sup && sup.referente, sup && sup.email, sup && sup.phone]);
+  const startY = yTop + 5 + Math.max(n1, n2) * 4.5 + 4;
+  const head = hasSup
+    ? ['#', 'Codice\nCode', 'Descrizione\nDescription', 'Cod. forn.\nSuppl. code', 'Descr. forn.\nSuppl. desc.', 'Q.tà\nQty', 'Prezzo unit.\nUnit price', 'Data consegna\nDelivery date']
+    : ['#', 'Codice\nCode', 'Descrizione\nDescription', 'Q.tà\nQty', 'Prezzo unit.\nUnit price', 'Data consegna\nDelivery date'];
+  const body = (r.lines || []).map((l, i) => {
+    const si = rfqLineSupInfo(r, l);
+    const price = l.price === '' || l.price == null ? '' : fmtN(l.price);
+    const tail = [(l.qty || 0) + ' ' + (l.uom || ''), price, fmtDateIt(l.deliveryDate)];
+    return hasSup ? [i + 1, l.code || '', lineDescDoc(l), si ? si.code : '', si ? si.desc : '', ...tail]
+      : [i + 1, l.code || '', lineDescDoc(l), ...tail];
+  });
+  doc.autoTable({ startY, head: [head], body, styles: { fontSize: 8 }, headStyles: { fillColor: [58, 123, 232] } });
+  let fy = doc.lastAutoTable.finalY + 8;
+  doc.setTextColor(80); doc.setFontSize(9);
+  if (r.transport) { doc.text('Trasporto / Shipping: ' + r.transport, 14, fy); fy += 5; }
+  if (r.payment) { doc.text('Pagamento / Payment: ' + r.payment, 14, fy); fy += 5; }
+  // Solo r.notes: le note interne (notesInternal) non escono mai sul documento.
+  if (r.notes) { doc.text('Note / Notes: ' + r.notes, 14, fy); }
+  doc.save(`${r.number}${sup ? '_' + (sup.name || '').replace(/\s+/g, '_') : ''}.pdf`);
+  showToast('PDF esportato');
+  askMarkSent(r, `PDF generato.\nSegnare la richiesta ${r.number} come inviata?`, 'inviata', renderRfq);
+}
+
+function exportRfqExcel(id) {
+  const r = getRfq(id); if (!r) return;
+  if (!(r.lines || []).length) { showToast('Nessuna riga da esportare', 'error'); return; }
+  const co = db.settings.company || {};
+  const sup = r.supplierId ? db.suppliers.find(s => s.id === r.supplierId) : null;
+  const data = [['Richiesta di offerta', r.number], ['Data', fmtDateIt(r.date)]];
+  if (r.title) data.push(['Oggetto', r.title]);
+  if (r.transport) data.push(['Trasporto / Shipping', r.transport]);
+  if (r.payment) data.push(['Pagamento / Payment', r.payment]);
+  data.push([]);
+  data.push(['RICHIEDENTE', '', 'FORNITORE']);
+  const coLines = [co.name || '', ...addressLines(co), co.vat ? 'P.IVA ' + co.vat : '', co.referente || '', co.email || '', co.phone || ''];
+  const supLines = sup ? [sup.name, ...addressLines(sup), sup.vat ? 'P.IVA ' + sup.vat : '', sup.referente || '', sup.email || '', sup.phone || ''] : [''];
+  for (let i = 0; i < Math.max(coLines.length, supLines.length); i++) data.push([coLines[i] || '', '', supLines[i] || '']);
+  data.push([]);
+  const hasSup = (r.lines || []).some(l => rfqLineSupInfo(r, l));
+  data.push(hasSup
+    ? ['#', 'Codice', 'Descrizione', 'Codice fornitore', 'Descrizione fornitore', 'Q.tà', 'U.M.', 'Prezzo unitario', 'Data consegna', 'Nota']
+    : ['#', 'Codice', 'Descrizione', 'Q.tà', 'U.M.', 'Prezzo unitario', 'Data consegna', 'Nota']);
+  (r.lines || []).forEach((l, i) => {
+    const si = rfqLineSupInfo(r, l);
+    const price = l.price === '' || l.price == null ? '' : l.price;
+    data.push(hasSup
+      ? [i + 1, l.code || '', l.description, si ? si.code : '', si ? si.desc : '', l.qty || 0, l.uom || '', price, fmtDateIt(l.deliveryDate), l.note || '']
+      : [i + 1, l.code || '', l.description, l.qty || 0, l.uom || '', price, fmtDateIt(l.deliveryDate), l.note || '']);
+  });
+  // Solo r.notes: le note interne (notesInternal) non escono mai sul documento.
+  if (r.notes) { data.push([]); data.push(['Note', r.notes]); }
+  const ws = XLSX.utils.aoa_to_sheet(data);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'RFQ');
+  XLSX.writeFile(wb, `${r.number}${sup ? '_' + (sup.name || '').replace(/\s+/g, '_') : ''}.xlsx`);
+  showToast('Excel esportato');
+  askMarkSent(r, `Excel generato.\nSegnare la richiesta ${r.number} come inviata?`, 'inviata', renderRfq);
+}
+
+// ─── Confronto offerte tra più richieste (una per fornitore) ───
+function rfqLineKey(l) { return l.itemId || ('m:' + (l.code || '') + '|' + (l.description || '')); }
+function rfqToggleCompare(rid, on) {
+  if (on) { if (!rfqCompareSel.includes(rid)) rfqCompareSel.push(rid); }
+  else rfqCompareSel = rfqCompareSel.filter(x => x !== rid);
+  renderRfq();
+}
+function renderRfqCompare() {
+  rfqCompareSel = rfqCompareSel.filter(id => getRfq(id));
+  const head = `<div class="bom-toolbar">
+      <button class="btn-outline" onclick="rfqBackToList()">← Elenco</button>
+      <h2 class="section-title">📊 Confronto offerte tra richieste</h2></div>`;
+  const picker = db.rfqs.slice().sort((a, b) => (b.number || '').localeCompare(a.number || '')).map(r => {
+    const on = rfqCompareSel.includes(r.id);
+    return `<label class="rfq-sup-chk"><input type="checkbox" ${on ? 'checked' : ''} onchange="rfqToggleCompare('${r.id}',this.checked)">
+      <span style="font-family:var(--mono)">${esc(r.number)}</span> ${esc(r.supplierId ? supplierName(r.supplierId) : '(nessun fornitore)')}</label>`;
+  }).join('') || '<div class="empty-text">Nessuna richiesta disponibile.</div>';
+  const sel = rfqCompareSel.map(id => getRfq(id)).filter(Boolean);
+  let matrix;
+  if (sel.length < 2) {
+    matrix = '<div class="empty-text">Seleziona almeno due richieste per confrontare i prezzi articolo per articolo.</div>';
+  } else {
+    const keys = [], meta = {};
+    sel.forEach(r => (r.lines || []).forEach(l => {
+      const k = rfqLineKey(l);
+      if (!(k in meta)) { keys.push(k); meta[k] = { code: l.code, description: l.description }; }
+    }));
+    const totals = sel.map(() => 0);
+    const bodyRows = keys.map(k => {
+      const cellsData = sel.map(r => {
+        const l = (r.lines || []).find(x => rfqLineKey(x) === k);
+        return (l && l.price !== '' && l.price != null) ? { price: Number(l.price), qty: Number(l.qty) || 0, del: l.deliveryDate } : null;
+      });
+      const valid = cellsData.filter(p => p && p.price > 0).map(p => p.price);
+      const min = valid.length ? Math.min(...valid) : null;
+      const cells = cellsData.map((p, ci) => {
+        if (!p) return `<td class="rfq-cmp-cell">—</td>`;
+        totals[ci] += p.price * p.qty;
+        const isMin = min != null && p.price === min;
+        return `<td class="rfq-cmp-cell ${isMin ? 'rfq-min' : ''}">${fmtN(p.price)}<span class="rfq-line-tot">${p.qty} pz${p.del ? ' · ' + fmtDateIt(p.del) : ''}</span></td>`;
+      }).join('');
+      const m = meta[k];
+      return `<tr><td>${esc(m.description || '')}<div class="rfq-cmp-sub">${esc(m.code || '')}</div></td>${cells}</tr>`;
+    }).join('');
+    const posTotals = totals.filter(t => t > 0);
+    const minTot = posTotals.length ? Math.min(...posTotals) : null;
+    const totalRow = `<tr class="rfq-cmp-total"><td>Totale offerta</td>${totals.map(t => `<td class="${minTot != null && t === minTot ? 'rfq-min' : ''}">${fmtN(t)}</td>`).join('')}</tr>`;
+    const header = `<tr><th>Articolo</th>${sel.map(r => `<th>${esc(r.supplierId ? supplierName(r.supplierId) : r.number)}<div class="rfq-cmp-sub">${esc(r.number)}</div></th>`).join('')}</tr>`;
+    matrix = `<div class="table-wrap"><table class="rfq-table rfq-cmp-table">
+      <thead>${header}</thead><tbody>${bodyRows}${totalRow}</tbody></table></div>
+      <p class="empty-text" style="text-align:left">Prezzo minimo per riga e totale offerta più basso evidenziati in verde. I totali usano la quantità indicata in ciascuna richiesta.</p>`;
+  }
+  return `<div class="manage-wrap">${head}
+    <h3 class="rfq-subhead">Richieste da confrontare</h3>
+    <div class="rfq-sup-grid">${picker}</div>
+    <h3 class="rfq-subhead">Confronto prezzi</h3>
+    ${matrix}
+  </div>`;
+}
+
+function delRfq(id) {
+  if (!roleGuard('docs')) return;
+  const r = getRfq(id); if (!r) return;
+  const warn = r.status === 'bozza' ? '' : `\nAttenzione: risulta ${(RFQ_STATUS[r.status] || r.status).toLowerCase()}.`;
+  askConfirm(`Eliminare la richiesta ${r.number}?${warn}`, () => {
+    db.rfqs = db.rfqs.filter(x => x.id !== id);
+    rfqCompareSel = rfqCompareSel.filter(x => x !== id);
+    saveDB();
+    if (currentRfqId === id) { currentRfqId = null; rfqView = 'list'; }
+    renderRfq(); showToast('Richiesta eliminata');
+  });
+}
+
+// ═══════════════════════════════════════════════════════════
+//  VISTA: ORDINI A FORNITORE (ODA)
+// ═══════════════════════════════════════════════════════════
+const ORDER_STATUS = { bozza: 'Bozza', inviato: 'Inviato', confermato: 'Confermato', parziale: 'Parziale', evaso: 'Evaso', annullato: 'Annullato' };
+// Dopo l'invio le merci continuano ad arrivare: si blocca il contenuto dell'ordine
+// ma non la registrazione dei ricevimenti.
+const ORDER_LOCK = { bozza: 'full', inviato: 'reception', confermato: 'reception', parziale: 'reception', evaso: 'reception', annullato: 'none' };
+function getOrder(id) { return db.orders.find(o => o.id === id); }
+function ordMode(o) { return (o && orderUnlockedId === o.id) ? 'full' : ((o && ORDER_LOCK[o.status]) || 'full'); }
+function ordGuard(id, kind) {
+  if (!roleGuard('docs')) return false;   // choke point: copre tutti i mutatori ordine
+  const o = getOrder(id); if (!o) return false;
+  if (modeAllows(ordMode(o), kind)) return true;
+  showToast(`Ordine ${(ORDER_STATUS[o.status] || o.status).toLowerCase()}: usa 🔓 Sblocca per modificarlo`, 'error');
+  return false;
+}
+function ordUnlock(id) {
+  const o = getOrder(id); if (!o) return;
+  askConfirm(`L'ordine ${o.number} risulta ${(ORDER_STATUS[o.status] || o.status).toLowerCase()}.\nSbloccarlo per modificarlo?`, () => {
+    orderUnlockedId = id; renderOrders(); showToast('Ordine sbloccato');
+  }, { title: '🔓 Sblocca per modifica', ok: 'Sblocca', safe: true });
+}
+function fmtQty(n) { n = Number(n) || 0; return Number.isInteger(n) ? String(n) : String(+n.toFixed(3)); }
+function orderTotal(o) { return (o.lines || []).reduce((s, l) => s + (Number(l.qty) || 0) * (Number(l.price) || 0), 0); }
+function orderReception(o) {
+  let ordered = 0, received = 0;
+  (o.lines || []).forEach(l => { ordered += Number(l.qty) || 0; received += Number(l.received) || 0; });
+  return { ordered, received, residual: ordered - received };
+}
+// Parziale/Evaso sono un fatto misurabile sui ricevimenti, non una scelta: li
+// deriviamo. Bozza e Annullato restano decisioni dell'utente e non si toccano.
+// Azzerando i ricevimenti si torna indietro, a Confermato o Inviato a seconda
+// che la conferma d'ordine del fornitore sia arrivata.
+function ordAutoStatus(o) {
+  if (o.status === 'bozza' || o.status === 'annullato') return;
+  const { ordered, received } = orderReception(o);
+  if (received <= 0) o.status = o.supplierConfirmation ? 'confermato' : 'inviato';
+  else if (ordered > 0 && received >= ordered) o.status = 'evaso';
+  else o.status = 'parziale';
+}
+function nextOrderNumber() {
+  const prefix = `ODA-${new Date().getFullYear()}-`;
+  const seqs = db.orders.filter(o => (o.number || '').startsWith(prefix)).map(o => parseInt((o.number || '').slice(prefix.length), 10) || 0);
+  return prefix + String((seqs.length ? Math.max(...seqs) : 0) + 1).padStart(3, '0');
+}
+
+function renderOrders() {
+  const host = document.getElementById('view-orders');
+  if (orderView === 'edit' && getOrder(currentOrderId)) {
+    host.innerHTML = renderOrderEdit(currentOrderId);
+    applyDocLock(ordMode(getOrder(currentOrderId)), host);
+  }
+  else { orderView = 'list'; host.innerHTML = renderOrderList(); }
+}
+
+function orderListRows() {
+  const list = docFilterApply('order', db.orders.slice().sort((a, b) => (b.number || '').localeCompare(a.number || '')));
+  return list.map(o => {
+    const sup = o.supplierId ? supplierName(o.supplierId) : '— nessun fornitore —';
+    const rec = orderReception(o);
+    const recTxt = rec.ordered ? `ric. ${fmtQty(rec.received)}/${fmtQty(rec.ordered)}` : '';
+    return `<div class="mgmt-item">
+      <span class="mgmt-item-name"><span style="font-family:var(--mono)">${esc(o.number)}</span> — ${esc(o.title || '(senza titolo)')}</span>
+      <span class="mgmt-item-meta">${esc(sup)} · ${fmtN(orderTotal(o))}${recTxt ? ' · ' + recTxt : ''}${o.date ? ' · ' + fmtDateIt(o.date) : ''}</span>
+      ${statusBadge(ORDER_STATUS, o.status)}
+      <div class="mgmt-item-actions">
+        <button class="mini-btn" onclick="openOrderEdit('${o.id}')" title="Modifica">✏</button>
+        <button class="mini-btn danger" onclick="delOrder('${o.id}')" title="Elimina">🗑</button>
+      </div></div>`;
+  }).join('') || `<div class="empty-text">${db.orders.length ? 'Nessun ordine con questi filtri.' : 'Nessun ordine. Creane uno o generane uno da una richiesta di offerta.'}</div>`;
+}
+function renderOrderList() {
+  return `<div class="manage-wrap">
+    <div class="bom-toolbar">
+      <h2 class="section-title">🧾 Ordini a fornitore</h2>
+      <button class="add-btn-sm" onclick="newOrder()">+ Nuovo ordine</button>
+    </div>
+    ${docFilterBar('order', ORDER_STATUS, docFilterApply('order', db.orders).length, db.orders.length)}
+    <div class="mgmt-list" id="order-list">${orderListRows()}</div></div>`;
+}
+
+function newOrder() {
+  if (!roleGuard('docs')) return;
+  const o = stampNew({ id: gid(), number: nextOrderNumber(), title: '', date: nowISO().slice(0, 10),
+    status: 'bozza', supplierId: null, transport: db.settings.transportDefault || '', payment: db.settings.paymentDefault || '',
+    requestedDelivery: '', rfqId: null, supplierConfirmation: '', notes: '', notesInternal: '', lines: [], active: true });
+  db.orders.push(o); saveDB();
+  currentOrderId = o.id; orderView = 'edit'; orderDirty = false; renderOrders();
+}
+function orderFromRfq(rfqId) {
+  if (!roleGuard('docs')) return;
+  const r = getRfq(rfqId); if (!r) return;
+  const sup = r.supplierId ? db.suppliers.find(s => s.id === r.supplierId) : null;
+  const o = stampNew({ id: gid(), number: nextOrderNumber(),
+    title: r.title || ('Da ' + r.number), date: nowISO().slice(0, 10), status: 'bozza',
+    supplierId: r.supplierId || null,
+    transport: r.transport || (sup && sup.defaultTransport) || db.settings.transportDefault || '',
+    payment: r.payment || (sup && sup.defaultPayment) || db.settings.paymentDefault || '',
+    requestedDelivery: '', rfqId: r.id, supplierConfirmation: '', notes: r.notes || '', notesInternal: r.notesInternal || '',
+    lines: (r.lines || []).map(l => ({ id: gid(), itemId: l.itemId || null, code: l.code || '', description: l.description || '',
+      uom: l.uom || defaultUom(), qty: Number(l.qty) || 0, price: (l.price === '' || l.price == null) ? '' : Number(l.price),
+      deliveryDate: l.deliveryDate || '', received: 0, note: l.note || '' })),
+    active: true });
+  db.orders.push(o);
+  // La richiesta ha esaurito il suo scopo: si chiude da sé, ma solo se era
+  // davvero uscita (da una bozza si può generare un ordine di prova).
+  let closed = false;
+  if (r.status === 'inviata' || r.status === 'ricevuta') { r.status = 'chiusa'; touch(r); closed = true; }
+  saveDB();
+  currentOrderId = o.id; orderView = 'edit'; orderDirty = false; orderUnlockedId = null;
+  setView('orders');
+  showToast(`Ordine ${o.number} creato dalla richiesta${closed ? ' · ' + r.number + ' chiusa' : ''}`);
+}
+function openOrderEdit(id) { currentOrderId = id; orderView = 'edit'; orderDirty = false; orderUnlockedId = null; renderOrders(); }
+function orderBackToList() { if (orderDirty) { saveDB(); orderDirty = false; } orderView = 'list'; currentOrderId = null; orderUnlockedId = null; renderOrders(); }
+function orderMarkDirty() {
+  orderDirty = true;
+  const sv = document.getElementById('order-save-btn'); if (sv) sv.classList.add('dirty');
+  document.querySelectorAll('.order-export-btn').forEach(b => { b.disabled = true; b.title = "Salva l'ordine prima di generare il documento"; });
+}
+function ordSave(id) { const o = getOrder(id); if (!o) return; touch(o); saveDB(); orderDirty = false; renderOrders(); showToast('Ordine salvato'); }
+
+function ordSetField(id, field, value) {
+  const kind = (field === 'status' || field === 'notes' || field === 'notesInternal' || field === 'supplierConfirmation') ? 'ops' : 'contract';
+  if (!ordGuard(id, kind)) { renderOrders(); return; }
+  const o = getOrder(id); if (!o) return;
+  const before = o.status;
+  o[field] = value || (field === 'supplierId' ? null : '');
+  // Il n° di conferma d'ordine è la prova che il fornitore ha accettato
+  if (field === 'supplierConfirmation' && value && o.status === 'inviato') o.status = 'confermato';
+  touch(o); orderMarkDirty();
+  if (o.status !== before || field === 'status') {
+    renderOrders();
+    if (o.status !== before) showToast('Stato: ' + (ORDER_STATUS[o.status] || o.status));
+  }
+}
+function ordSetSupplier(id, sid) {
+  if (!ordGuard(id, 'contract')) { renderOrders(); return; }
+  const o = getOrder(id); if (!o) return;
+  o.supplierId = sid || null;
+  const sup = sid ? db.suppliers.find(s => s.id === sid) : null;
+  if (sup) { if (sup.defaultTransport) o.transport = sup.defaultTransport; if (sup.defaultPayment) o.payment = sup.defaultPayment; }
+  touch(o); orderMarkDirty(); renderOrders();
+}
+function ordSetLine(id, lineId, field, value) {
+  // I ricevimenti si registrano proprio a ordine inviato: restano sempre aperti
+  const kind = field === 'received' ? 'reception' : 'contract';
+  if (!ordGuard(id, kind)) { renderOrders(); return; }
+  const o = getOrder(id); if (!o) return;
+  const l = (o.lines || []).find(x => x.id === lineId); if (!l) return;
+  const before = o.status;
+  if (field === 'qty' || field === 'price' || field === 'received') {
+    l[field] = (value === '' ? (field === 'received' ? 0 : '') : clampNum(parseFloat(value), 0));
+    // Non si può ricevere più di quanto ordinato: sarebbe una riga in eccedenza
+    // che manderebbe l'ordine in "evaso" con numeri incoerenti.
+    if (field === 'received') {
+      const ordinata = Number(l.qty) || 0;
+      if (l.received > ordinata) { l.received = ordinata; showToast('Non si può ricevere più di quanto ordinato', 'error'); }
+    }
+  } else l[field] = value;
+  ordAutoStatus(o); // anche cambiare una quantità sposta la soglia di evasione
+  touch(o); orderMarkDirty();
+  if (o.status !== before) { renderOrders(); showToast('Stato: ' + (ORDER_STATUS[o.status] || o.status)); }
+  else if (field === 'received' || field === 'qty' || field === 'price') renderOrders();
+}
+function ordDelLine(id, lineId) {
+  if (!ordGuard(id, 'contract')) return;
+  const o = getOrder(id); if (!o) return;
+  o.lines = (o.lines || []).filter(x => x.id !== lineId);
+  ordAutoStatus(o); touch(o); orderMarkDirty(); renderOrders();
+}
+function ordMarkAllReceived(id) {
+  if (!ordGuard(id, 'reception')) return;
+  const o = getOrder(id); if (!o) return;
+  (o.lines || []).forEach(l => { l.received = Number(l.qty) || 0; });
+  ordAutoStatus(o); touch(o); orderMarkDirty(); renderOrders();
+}
+
+function ordAddManualLineModal(id) {
+  if (!ordGuard(id, 'contract')) return;
+  openModal(`<h3>+ Riga manuale</h3>
+    <div class="modal-field"><label>Descrizione</label><input id="ol-desc"></div>
+    <div class="modal-field"><label>Codice (opzionale)</label><input id="ol-code"></div>
+    <div class="modal-grid">
+      <div class="modal-field"><label>U.M.</label><select id="ol-uom">${uomOptions(defaultUom())}</select></div>
+      <div class="modal-field"><label>Quantità</label><input id="ol-qty" type="number" value="1" min="0" step="any"></div>
+      <div class="modal-field"><label>Prezzo unitario</label><input id="ol-price" type="number" min="0" step="any"></div>
+    </div>
+    <div class="modal-field"><label>Nota (stampata sul documento)</label><textarea id="ol-note" rows="2" placeholder="Es. consegna parziale ammessa, rif. disegno…"></textarea></div>
+    <div class="modal-actions"><button class="btn-ghost" onclick="closeModal()">Annulla</button>
+      <button class="add-btn-sm" onclick="ordAddManualLine('${id}')">Aggiungi</button></div>`);
+}
+function ordAddManualLine(id) {
+  if (!ordGuard(id, 'contract')) return;
+  const o = getOrder(id); if (!o) return;
+  const desc = val('ol-desc'); if (!desc) { showToast('Descrizione richiesta', 'error'); return; }
+  if (isNeg('ol-qty')) { showToast('La quantità non può essere negativa', 'error'); return; }
+  if (isNeg('ol-price')) { showToast('Il prezzo non può essere negativo', 'error'); return; }
+  o.lines.push({ id: gid(), itemId: null, code: val('ol-code'), description: desc, uom: val('ol-uom') || defaultUom(),
+    qty: numVal('ol-qty', 0) || 1, price: (val('ol-price') === '' ? '' : numVal('ol-price', 0)), deliveryDate: '', received: 0, note: val('ol-note') });
+  ordAutoStatus(o); touch(o); orderMarkDirty(); closeModal(); renderOrders();
+}
+function ordEditLineModal(id, lineId) {
+  const o = getOrder(id); if (!o) return;
+  const l = (o.lines || []).find(x => x.id === lineId); if (!l) return;
+  const ro = !modeAllows(ordMode(o), 'contract');
+  openModal(`<h3>✏ Modifica riga</h3>
+    ${lineIdentityFields('ol', l, ro)}
+    <div class="modal-grid">
+      <div class="modal-field"><label>Quantità</label><input id="ol-qty" type="number" value="${l.qty}" min="0" step="any" ${ro ? 'disabled' : ''}></div>
+      <div class="modal-field"><label>Prezzo unitario</label><input id="ol-price" type="number" min="0" step="any" value="${l.price === '' || l.price == null ? '' : l.price}" ${ro ? 'disabled' : ''}></div>
+    </div>
+    <div class="modal-field"><label>Nota (stampata sul documento)</label><textarea id="ol-note" rows="2">${esc(l.note || '')}</textarea></div>
+    <div class="modal-actions"><button class="btn-ghost" onclick="closeModal()">Annulla</button>
+      <button class="add-btn-sm" onclick="ordSaveLineEdit('${id}','${lineId}')">Salva</button></div>`);
+}
+function ordSaveLineEdit(id, lineId) {
+  const o = getOrder(id); if (!o) return;
+  const l = (o.lines || []).find(x => x.id === lineId); if (!l) return;
+  if (!modeAllows(ordMode(o), 'contract')) {
+    l.note = val('ol-note'); // a ordine bloccato passa la sola nota
+  } else {
+    if (!readLineIdentity('ol', l)) return;
+    if (isNeg('ol-qty')) { showToast('La quantità non può essere negativa', 'error'); return; }
+    if (isNeg('ol-price')) { showToast('Il prezzo non può essere negativo', 'error'); return; }
+    l.qty = numVal('ol-qty', 0);
+    l.price = val('ol-price') === '' ? '' : numVal('ol-price', 0);
+    l.note = val('ol-note');
+  }
+  ordAutoStatus(o); touch(o); orderMarkDirty(); closeModal(); renderOrders();
+}
+function ordAddCatalogModal(id) { if (!ordGuard(id, 'contract')) return; catalogPickerModal(ids => ordAddCatalogLines(id, ids)); }
+function ordAddCatalogLines(id, ids) {
+  if (!ordGuard(id, 'contract')) return;
+  const o = getOrder(id); if (!o) return;
+  ids.forEach(itemId => {
+    const it = getItem(itemId); if (!it) return;
+    const price = (it.type === 'acquistato' && it.purchasePrice != null) ? Number(it.purchasePrice)
+      : (it.type === 'materiale' && it.unitCost != null) ? Number(it.unitCost) : '';
+    o.lines.push({ id: gid(), itemId, code: it.code || '', description: it.name || '', uom: it.uom || defaultUom(), qty: 1, price, deliveryDate: '', received: 0, note: '' });
+  });
+  ordAutoStatus(o); touch(o); orderMarkDirty(); closeModal(); renderOrders();
+  showToast(ids.length + ' righe aggiunte');
+}
+
+function renderOrderEdit(id) {
+  const o = getOrder(id); if (!o) { orderView = 'list'; return renderOrderList(); }
+  const lines = (o.lines || []).map((l, i) => {
+    const si = lineSupInfo(o.supplierId, l);
+    const siSub = si ? `<div class="rfq-cmp-sub">🏷 ${esc(si.code || '—')}${si.desc ? ' · ' + esc(si.desc) : ''}</div>` : '';
+    const qty = Number(l.qty) || 0, price = (l.price === '' || l.price == null) ? null : Number(l.price);
+    const amount = price != null ? qty * price : null;
+    const rec = Number(l.received) || 0, residual = qty - rec;
+    return `<tr>
+      <td>${i + 1}</td>
+      <td style="font-family:var(--mono)">${esc(l.code || '')}</td>
+      <td>${esc(l.description)}${l.itemId ? '' : ' <span class="rfq-manual-tag">manuale</span>'}${siSub}${l.note ? `<div class="line-note">📝 ${esc(l.note)}</div>` : ''}</td>
+      <td>${esc(l.uom || '')}</td>
+      <td><input type="number" class="rfq-qty-input lock-contract" value="${l.qty}" min="0" step="any" onchange="ordSetLine('${id}','${l.id}','qty',this.value)"></td>
+      <td><input type="number" class="rfq-price-input lock-contract" value="${price != null ? price : ''}" min="0" step="any" placeholder="—" onchange="ordSetLine('${id}','${l.id}','price',this.value)"></td>
+      <td class="ord-amount">${amount != null ? fmtN(amount) : '—'}</td>
+      <td><input type="date" class="rfq-date-input lock-contract" value="${esc(l.deliveryDate || '')}" onchange="ordSetLine('${id}','${l.id}','deliveryDate',this.value)"></td>
+      <td><input type="number" class="rfq-qty-input lock-reception" value="${rec}" min="0" step="any" onchange="ordSetLine('${id}','${l.id}','received',this.value)"></td>
+      <td class="ord-residual ${residual > 0 ? 'pos' : ''}">${fmtQty(residual)}</td>
+      <td class="line-actions"><button class="mini-btn" onclick="ordEditLineModal('${id}','${l.id}')" title="Modifica riga / nota">✏</button>
+        <button class="mini-btn danger lock-contract" onclick="ordDelLine('${id}','${l.id}')">🗑</button></td></tr>`;
+  }).join('') || `<tr><td colspan="11" class="empty-text">Nessuna riga. Aggiungi articoli dal catalogo o manualmente.</td></tr>`;
+  const total = orderTotal(o);
+  const co = db.settings.company || {};
+  const coWarn = co.name ? '' : `<div class="rfq-warn">⚠ Dati azienda non impostati: compilali in <strong>Gestione › Dati azienda</strong> per stamparli sul documento.</div>`;
+  const rfqRef = (o.rfqId && getRfq(o.rfqId)) ? `<div class="ord-ref">📨 Generato dalla richiesta <strong>${esc(getRfq(o.rfqId).number)}</strong></div>` : '';
+  const dis = orderDirty ? 'disabled title="Salva l\'ordine prima di generare il documento"' : '';
+  const mode = ordMode(o);
+  const lockBanner = docLockBanner(mode, 'Ordine ' + (ORDER_STATUS[o.status] || o.status).toLowerCase(), `ordUnlock('${id}')`);
+  return `<div class="manage-wrap">
+    <div class="bom-toolbar">
+      <button class="btn-outline" onclick="orderBackToList()">← Elenco</button>
+      <h2 class="section-title" style="font-family:var(--mono)">${esc(o.number)}</h2>
+      ${statusBadge(ORDER_STATUS, o.status)}
+      <button class="add-btn-sm rfq-save-btn ${orderDirty ? 'dirty' : ''}" id="order-save-btn" onclick="ordSave('${id}')">💾 Salva</button>
+    </div>
+    ${coWarn}${rfqRef}${lockBanner}${stampLine(o)}
+    <div class="rfq-head">
+      <div class="modal-field"><label>Titolo / oggetto</label><input class="lock-contract" value="${esc(o.title || '')}" onchange="ordSetField('${id}','title',this.value)"></div>
+      <div class="rfq-head-row">
+        <div class="modal-field"><label>Fornitore</label><select class="lock-contract" onchange="ordSetSupplier('${id}',this.value)">${supplierOptions(o.supplierId)}</select></div>
+        <div class="modal-field"><label>Data ordine</label><input type="date" class="lock-contract" value="${(o.date || '').slice(0, 10)}" onchange="ordSetField('${id}','date',this.value)"></div>
+        <div class="modal-field"><label>Stato</label><select onchange="ordSetField('${id}','status',this.value)">
+          ${Object.entries(ORDER_STATUS).map(([k, v]) => `<option value="${k}" ${o.status === k ? 'selected' : ''}>${v}</option>`).join('')}
+        </select></div>
+      </div>
+      <div class="rfq-head-row">
+        <div class="modal-field"><label>Tipo di trasporto / resa</label>
+          <input list="ord-transport-opts" class="lock-contract" value="${esc(o.transport || '')}" placeholder="es. Porto franco, EXW…" onchange="ordSetField('${id}','transport',this.value)">
+          <datalist id="ord-transport-opts">${(db.settings.transportOptions || []).map(x => `<option value="${esc(x)}"></option>`).join('')}</datalist></div>
+        <div class="modal-field"><label>Tipo di pagamento</label>
+          <input list="ord-payment-opts" class="lock-contract" value="${esc(o.payment || '')}" placeholder="es. Bonifico 60gg…" onchange="ordSetField('${id}','payment',this.value)">
+          <datalist id="ord-payment-opts">${(db.settings.paymentOptions || []).map(x => `<option value="${esc(x)}"></option>`).join('')}</datalist></div>
+      </div>
+      <div class="rfq-head-row">
+        <div class="modal-field"><label>Consegna richiesta</label><input type="date" class="lock-contract" value="${esc(o.requestedDelivery || '')}" onchange="ordSetField('${id}','requestedDelivery',this.value)"></div>
+        <div class="modal-field"><label>N° conferma d'ordine fornitore</label><input value="${esc(o.supplierConfirmation || '')}" onchange="ordSetField('${id}','supplierConfirmation',this.value)"></div>
+      </div>
+      <div class="modal-field"><label>Note</label><textarea rows="2" onchange="ordSetField('${id}','notes',this.value)">${esc(o.notes || '')}</textarea></div>
+      <div class="modal-field"><label>🔒 Note interne (non stampate sui documenti)</label><textarea rows="2" class="notes-internal" onchange="ordSetField('${id}','notesInternal',this.value)">${esc(o.notesInternal || '')}</textarea></div>
+    </div>
+    <h3 class="rfq-subhead">Righe ordine
+      <span class="rfq-head-actions">
+        <button class="add-btn-sm lock-contract" onclick="ordAddCatalogModal('${id}')">+ Da catalogo</button>
+        <button class="btn-outline lock-contract" onclick="ordAddManualLineModal('${id}')">+ Riga manuale</button>
+        <button class="btn-outline lock-reception" onclick="ordMarkAllReceived('${id}')">✓ Segna tutto ricevuto</button>
+      </span></h3>
+    <div class="table-wrap"><table class="rfq-table">
+      <thead><tr><th>#</th><th>Codice</th><th>Descrizione</th><th>U.M.</th><th>Q.tà</th><th>Prezzo unit.</th><th>Importo</th><th>Consegna</th><th>Ricevuto</th><th>Residuo</th><th></th></tr></thead>
+      <tbody>${lines}</tbody>
+      <tfoot><tr class="rfq-cmp-total"><td colspan="6" style="text-align:right">Totale imponibile</td><td>${fmtN(total)}</td><td colspan="4"></td></tr></tfoot>
+    </table></div>
+    <div class="rfq-export-bar">
+      <label>Documento d'ordine:</label>
+      <button class="export-btn-pdf order-export-btn" onclick="exportOrderPDF('${id}')" ${dis}>📄 PDF</button>
+      <button class="export-btn-xls order-export-btn" onclick="exportOrderExcel('${id}')" ${dis}>📗 Excel</button>
+      ${orderDirty ? '<span class="rfq-dirty-hint">Salva per abilitare la generazione del documento</span>' : ''}
+    </div>
+  </div>`;
+}
+
+function exportOrderPDF(id) {
+  const o = getOrder(id); if (!o) return;
+  if (!(o.lines || []).length) { showToast('Nessuna riga da esportare', 'error'); return; }
+  const { jsPDF } = window.jspdf;
+  const co = db.settings.company || {};
+  const sup = o.supplierId ? db.suppliers.find(s => s.id === o.supplierId) : null;
+  const hasSup = (o.lines || []).some(l => lineSupInfo(o.supplierId, l));
+  const doc = new jsPDF({ orientation: 'landscape' });
+  doc.setFontSize(15); doc.setTextColor(30); doc.text(`Ordine di acquisto / Purchase Order — ${o.number}`, 14, 16);
+  doc.setFontSize(9); doc.setTextColor(90);
+  doc.text(`Data / Date: ${fmtDateIt(o.date) || fmtDateIt(nowISO())}`, 14, 22);
+  if (o.title) doc.text(`Oggetto / Subject: ${o.title}`, 14, 27);
+  const yTop = 36;
+  const block = (x, title, rowsTxt) => {
+    doc.setFontSize(8); doc.setTextColor(130); doc.text(title, x, yTop);
+    doc.setFontSize(9); doc.setTextColor(40);
+    const rows = rowsTxt.filter(Boolean);
+    rows.forEach((t, i) => doc.text(String(t), x, yTop + 5 + i * 4.5));
+    return rows.length;
+  };
+  const n1 = block(14, 'RICHIEDENTE / BUYER', [co.name, ...addressLines(co), co.vat ? 'P.IVA / VAT ' + co.vat : '', co.referente, co.email, co.phone]);
+  const n2 = block(160, 'FORNITORE / SUPPLIER', [sup ? sup.name : '(fornitore non selezionato / not selected)', ...(sup ? addressLines(sup) : []), sup && sup.vat ? 'P.IVA / VAT ' + sup.vat : '', sup && sup.referente, sup && sup.email, sup && sup.phone]);
+  const startY = yTop + 5 + Math.max(n1, n2) * 4.5 + 4;
+  const head = hasSup
+    ? ['#', 'Codice\nCode', 'Descrizione\nDescription', 'Cod. forn.\nSuppl. code', 'Descr. forn.\nSuppl. desc.', 'Q.tà\nQty', 'Prezzo unit.\nUnit price', 'Importo\nAmount', 'Data consegna\nDelivery date']
+    : ['#', 'Codice\nCode', 'Descrizione\nDescription', 'Q.tà\nQty', 'Prezzo unit.\nUnit price', 'Importo\nAmount', 'Data consegna\nDelivery date'];
+  const body = (o.lines || []).map((l, i) => {
+    const si = lineSupInfo(o.supplierId, l);
+    const qty = Number(l.qty) || 0, price = (l.price === '' || l.price == null) ? null : Number(l.price);
+    const tail = [qty + ' ' + (l.uom || ''), price != null ? fmtN(price) : '', price != null ? fmtN(qty * price) : '', fmtDateIt(l.deliveryDate)];
+    return hasSup ? [i + 1, l.code || '', lineDescDoc(l), si ? si.code : '', si ? si.desc : '', ...tail] : [i + 1, l.code || '', lineDescDoc(l), ...tail];
+  });
+  const totLabel = { content: 'Totale / Total', styles: { halign: 'right', fontStyle: 'bold' } };
+  const totVal = { content: fmtN(orderTotal(o)), styles: { fontStyle: 'bold' } };
+  const foot = hasSup ? [['', '', '', '', '', '', totLabel, totVal, '']] : [['', '', '', '', totLabel, totVal, '']];
+  doc.autoTable({ startY, head: [head], body, foot, styles: { fontSize: 8 }, headStyles: { fillColor: [58, 123, 232] }, footStyles: { fillColor: [235, 238, 245], textColor: 20 } });
+  let fy = doc.lastAutoTable.finalY + 8;
+  doc.setTextColor(80); doc.setFontSize(9);
+  if (o.transport) { doc.text('Trasporto / Shipping: ' + o.transport, 14, fy); fy += 5; }
+  if (o.payment) { doc.text('Pagamento / Payment: ' + o.payment, 14, fy); fy += 5; }
+  if (o.requestedDelivery) { doc.text('Consegna richiesta / Requested delivery: ' + fmtDateIt(o.requestedDelivery), 14, fy); fy += 5; }
+  if (o.supplierConfirmation) { doc.text('Conferma fornitore / Order confirmation: ' + o.supplierConfirmation, 14, fy); fy += 5; }
+  // Solo o.notes: le note interne (notesInternal) non escono mai sul documento.
+  if (o.notes) { doc.text('Note / Notes: ' + o.notes, 14, fy); }
+  doc.save(`${o.number}${sup ? '_' + (sup.name || '').replace(/\s+/g, '_') : ''}.pdf`);
+  showToast('PDF esportato');
+  askMarkSent(o, `PDF generato.\nSegnare l'ordine ${o.number} come inviato?`, 'inviato', renderOrders);
+}
+
+function exportOrderExcel(id) {
+  const o = getOrder(id); if (!o) return;
+  if (!(o.lines || []).length) { showToast('Nessuna riga da esportare', 'error'); return; }
+  const co = db.settings.company || {};
+  const sup = o.supplierId ? db.suppliers.find(s => s.id === o.supplierId) : null;
+  const data = [['Ordine di acquisto / Purchase Order', o.number], ['Data', fmtDateIt(o.date)]];
+  if (o.title) data.push(['Oggetto', o.title]);
+  if (o.rfqId && getRfq(o.rfqId)) data.push(['Da richiesta', getRfq(o.rfqId).number]);
+  if (o.transport) data.push(['Trasporto / Shipping', o.transport]);
+  if (o.payment) data.push(['Pagamento / Payment', o.payment]);
+  if (o.requestedDelivery) data.push(['Consegna richiesta / Requested delivery', fmtDateIt(o.requestedDelivery)]);
+  if (o.supplierConfirmation) data.push(['Conferma fornitore / Order confirmation', o.supplierConfirmation]);
+  data.push([]);
+  data.push(['RICHIEDENTE', '', 'FORNITORE']);
+  const coLines = [co.name || '', ...addressLines(co), co.vat ? 'P.IVA ' + co.vat : '', co.referente || '', co.email || '', co.phone || ''];
+  const supLines = sup ? [sup.name, ...addressLines(sup), sup.vat ? 'P.IVA ' + sup.vat : '', sup.referente || '', sup.email || '', sup.phone || ''] : [''];
+  for (let i = 0; i < Math.max(coLines.length, supLines.length); i++) data.push([coLines[i] || '', '', supLines[i] || '']);
+  data.push([]);
+  const hasSup = (o.lines || []).some(l => lineSupInfo(o.supplierId, l));
+  data.push(hasSup
+    ? ['#', 'Codice', 'Descrizione', 'Codice fornitore', 'Descrizione fornitore', 'Q.tà', 'U.M.', 'Prezzo unitario', 'Importo', 'Consegna', 'Ricevuto', 'Residuo', 'Nota']
+    : ['#', 'Codice', 'Descrizione', 'Q.tà', 'U.M.', 'Prezzo unitario', 'Importo', 'Consegna', 'Ricevuto', 'Residuo', 'Nota']);
+  (o.lines || []).forEach((l, i) => {
+    const si = lineSupInfo(o.supplierId, l);
+    const qty = Number(l.qty) || 0, price = (l.price === '' || l.price == null) ? '' : Number(l.price);
+    const amount = price === '' ? '' : qty * price;
+    const rec = Number(l.received) || 0;
+    const supCols = hasSup ? [si ? si.code : '', si ? si.desc : ''] : [];
+    data.push([i + 1, l.code || '', l.description, ...supCols, qty, l.uom || '', price, amount, fmtDateIt(l.deliveryDate), rec, qty - rec, l.note || '']);
+  });
+  data.push([]);
+  data.push(['', 'TOTALE IMPONIBILE / TOTAL', orderTotal(o)]);
+  // Solo o.notes: le note interne (notesInternal) non escono mai sul documento.
+  if (o.notes) { data.push([]); data.push(['Note', o.notes]); }
+  const ws = XLSX.utils.aoa_to_sheet(data);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Ordine');
+  XLSX.writeFile(wb, `${o.number}${sup ? '_' + (sup.name || '').replace(/\s+/g, '_') : ''}.xlsx`);
+  showToast('Excel esportato');
+  askMarkSent(o, `Excel generato.\nSegnare l'ordine ${o.number} come inviato?`, 'inviato', renderOrders);
+}
+
+function delOrder(id) {
+  if (!roleGuard('docs')) return;
+  const o = getOrder(id); if (!o) return;
+  const rec = orderReception(o);
+  const warn = o.status === 'bozza' ? ''
+    : `\nAttenzione: risulta ${(ORDER_STATUS[o.status] || o.status).toLowerCase()}${rec.received ? ` con ${fmtQty(rec.received)} già ricevuti` : ''}.`;
+  askConfirm(`Eliminare l'ordine ${o.number}?${warn}`, () => {
+    db.orders = db.orders.filter(x => x.id !== id); saveDB();
+    if (currentOrderId === id) { currentOrderId = null; orderView = 'list'; }
+    renderOrders(); showToast('Ordine eliminato');
+  });
+}
