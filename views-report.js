@@ -8,30 +8,37 @@
 // ═══════════════════════════════════════════════════════════
 //  VISTA: COSTIFICAZIONE & REPORT
 // ═══════════════════════════════════════════════════════════
-function flattenBom(itemId, qty, scrap, level, rows, ancestors) {
+// `pos` è la posizione gerarchica della riga (1, 1.1, 1.1.1…, vedi bomPos in views-bom.js):
+// vuota sulla radice, così i componenti di primo livello partono da 1.
+function flattenBom(itemId, qty, scrap, level, rows, ancestors, pos) {
   const it = getItem(itemId); if (!it) return;
   const cyc = ancestors.includes(itemId);
   const unit = cyc ? 0 : costOf(itemId).total;
   const factor = (Number(qty) || 0) * (1 + (Number(scrap) || 0) / 100);
-  rows.push({ level, code: it.code, name: it.name + (cyc ? ' (ciclo!)' : ''), type: typeLabel(it.type),
+  pos = pos || '';
+  rows.push({ level, pos, code: it.code, name: it.name + (cyc ? ' (ciclo!)' : ''), type: typeLabel(it.type),
     qty: Number(qty) || 0, uom: it.uom || '', unit, line: unit * factor });
   if (isAssembly(it.type) && !cyc) {
-    (it.components || []).forEach(c => flattenBom(c.itemId, c.qty, c.scrapPct, level + 1, rows, ancestors.concat(itemId)));
+    (it.components || []).forEach((c, i) => flattenBom(c.itemId, c.qty, c.scrapPct, level + 1, rows, ancestors.concat(itemId), bomPos(pos, i)));
   }
   // Una Parte esplode il proprio ciclo di lavorazione: i costi riga sono scalati per la quantità del padre,
   // così la somma dei figli coincide col costo riga della Parte.
   // (col calcolo "solo costo unitario" il ciclo non concorre al costo: niente esplosione)
   if (it.type === 'parte' && !cyc && partCostMode(it) !== 'unit') {
+    // Le fasi di lavorazione non prendono posizione: il contatore avanza solo sugli
+    // articoli della distinta parte, come nell'albero della distinta.
+    let n = 0;
     (it.cycle || []).forEach(row => {
       const rowCost = cycleRowCost(row);
       if (row.kind === 'op') {
         const wc = db.workCenters.find(w => w.id === row.workCenterId);
         const sup = supplierName(row.supplierId);
-        rows.push({ level: level + 1, code: '', name: '🔧 ' + (wc ? wc.name : '?') + (sup ? ' · ' + sup : ''),
+        rows.push({ level: level + 1, pos: '', code: '', name: '🔧 ' + (wc ? wc.name : '?') + (sup ? ' · ' + sup : ''),
           type: 'Lavorazione', qty: 1, uom: '', unit: rowCost, line: rowCost * factor });
       } else {
+        const rowPos = bomPos(pos, n++);
         const ci = getItem(row.itemId); if (!ci) return;
-        rows.push({ level: level + 1, code: ci.code, name: ci.name, type: typeLabel(ci.type),
+        rows.push({ level: level + 1, pos: rowPos, code: ci.code, name: ci.name, type: typeLabel(ci.type),
           qty: Number(row.qty) || 0, uom: ci.uom || '', unit: costOf(row.itemId).total, line: rowCost * factor });
       }
     });
@@ -39,7 +46,7 @@ function flattenBom(itemId, qty, scrap, level, rows, ancestors) {
     // altrimenti la somma dei figli non tornerebbe col costo della Parte.
     const manual = Number(it.unitCost) || 0;
     if (partCostMode(it) === 'sum' && manual) {
-      rows.push({ level: level + 1, code: '', name: 'Costo unitario (manuale)', type: 'Costo',
+      rows.push({ level: level + 1, pos: bomPos(pos, n), code: '', name: 'Costo unitario (manuale)', type: 'Costo',
         qty: 1, uom: it.uom || '', unit: manual, line: manual * factor });
     }
   }
@@ -75,8 +82,9 @@ function renderReport() {
   const rows = [];
   flattenBom(it.id, 1, 0, 0, rows, []);
   const tableRows = rows.map(r => `<tr>
-    <td style="font-family:var(--mono)">${esc(r.code)}</td>
-    <td style="padding-left:${12 + r.level * 18}px">${r.level ? '└ ' : ''}${esc(r.name)}</td>
+    <td style="font-family:var(--mono);color:var(--text-dim)">${esc(r.pos)}</td>
+    <td style="font-family:var(--mono);padding-left:${12 + r.level * 18}px">${r.level ? '└ ' : ''}${esc(r.code)}</td>
+    <td>${esc(r.name)}</td>
     <td style="color:var(--text-dim)">${esc(r.type)}</td>
     <td style="font-family:var(--mono)">${r.qty} ${esc(r.uom)}</td>
     <td style="font-family:var(--mono)">${fmtN(r.unit)}</td>
@@ -94,7 +102,7 @@ function renderReport() {
     </div>
     <div class="breakdown-section" style="margin-bottom:20px"><h3 class="sub-title">Incidenza voci di costo</h3>${bars}</div>
     <div class="breakdown-section"><h3 class="sub-title">Distinta base esplosa</h3>
-      <div class="table-wrap"><table><thead><tr><th>Codice</th><th>Articolo</th><th>Tipo</th><th>Q.tà</th><th>Costo un.</th><th>Costo riga</th></tr></thead>
+      <div class="table-wrap"><table><thead><tr><th>Pos.</th><th>Codice</th><th>Articolo</th><th>Tipo</th><th>Q.tà</th><th>Costo un.</th><th>Costo riga</th></tr></thead>
       <tbody>${tableRows}</tbody></table></div></div>`;
 }
 
@@ -104,16 +112,16 @@ function exportBomExcel() {
   const it = getItem(reportBomId || currentBomId); if (!it) { showToast('Seleziona un prodotto', 'error'); return; }
   const c = costOf(it.id);
   const rows = reportRows();
-  const data = [['Codice', 'Articolo', 'Livello', 'Tipo', 'Quantità', 'U.M.', 'Costo unitario', 'Costo riga']];
-  rows.forEach(r => data.push([r.code, '  '.repeat(r.level) + r.name, r.level, r.type, r.qty, r.uom, +r.unit.toFixed(4), +r.line.toFixed(4)]));
+  const data = [['Pos.', 'Codice', 'Articolo', 'Livello', 'Tipo', 'Quantità', 'U.M.', 'Costo unitario', 'Costo riga']];
+  rows.forEach(r => data.push([r.pos, '  '.repeat(r.level) + r.code, r.name, r.level, r.type, r.qty, r.uom, +r.unit.toFixed(4), +r.line.toFixed(4)]));
   data.push([]);
-  data.push(['', 'Materiale', '', '', '', '', '', +c.material.toFixed(2)]);
-  data.push(['', 'Commerciali', '', '', '', '', '', +c.purchased.toFixed(2)]);
-  data.push(['', 'Parti', '', '', '', '', '', +c.parts.toFixed(2)]);
-  data.push(['', 'Lavorazioni', '', '', '', '', '', +c.labor.toFixed(2)]);
-  data.push(['', 'Spese generali', '', '', '', '', '', +c.overhead.toFixed(2)]);
-  data.push(['', 'COSTO TOTALE', '', '', '', '', '', +c.total.toFixed(2)]);
-  data.push(['', 'PREZZO VENDITA', '', '', '', '', '', +sellingPrice(it.id).toFixed(2)]);
+  data.push(['', '', 'Materiale', '', '', '', '', '', +c.material.toFixed(2)]);
+  data.push(['', '', 'Commerciali', '', '', '', '', '', +c.purchased.toFixed(2)]);
+  data.push(['', '', 'Parti', '', '', '', '', '', +c.parts.toFixed(2)]);
+  data.push(['', '', 'Lavorazioni', '', '', '', '', '', +c.labor.toFixed(2)]);
+  data.push(['', '', 'Spese generali', '', '', '', '', '', +c.overhead.toFixed(2)]);
+  data.push(['', '', 'COSTO TOTALE', '', '', '', '', '', +c.total.toFixed(2)]);
+  data.push(['', '', 'PREZZO VENDITA', '', '', '', '', '', +sellingPrice(it.id).toFixed(2)]);
   const ws = XLSX.utils.aoa_to_sheet(data);
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Distinta');
@@ -128,9 +136,10 @@ function exportBomPDF() {
   doc.setFontSize(15); doc.text(`Distinta base — ${it.name}`, 14, 16);
   doc.setFontSize(10); doc.setTextColor(120);
   doc.text(`Codice: ${it.code || '-'}   Data: ${new Date().toLocaleDateString('it-IT')}`, 14, 23);
-  const rows = reportRows().map(r => ['  '.repeat(r.level) + r.code, '  '.repeat(r.level) + r.name, r.type, r.qty + ' ' + r.uom, fmtN(r.unit), fmtN(r.line)]);
+  // Il rientro sta sul codice, come a video: la descrizione parte sempre dallo stesso margine.
+  const rows = reportRows().map(r => [r.pos, '  '.repeat(r.level) + r.code, r.name, r.type, r.qty + ' ' + r.uom, fmtN(r.unit), fmtN(r.line)]);
   doc.autoTable({
-    startY: 28, head: [['Codice', 'Articolo', 'Tipo', 'Q.tà', 'Costo un.', 'Costo riga']], body: rows,
+    startY: 28, head: [['Pos.', 'Codice', 'Articolo', 'Tipo', 'Q.tà', 'Costo un.', 'Costo riga']], body: rows,
     styles: { fontSize: 8 }, headStyles: { fillColor: [58, 123, 232] },
   });
   let y = doc.lastAutoTable.finalY + 8;

@@ -56,7 +56,7 @@ function renderBom() {
     <span class="num">Costo un.</span><span class="num">Scarto %</span><span class="num">Costo riga</span><span style="text-align:right">Azioni</span></div>`;
   const rootRow = renderBomRootNode(it);
   const rows = (it.components || []).map((comp, idx) =>
-    renderBomNode(comp, 1, it.id, true, idx, it.id, [it.id])).join('');
+    renderBomNode(comp, 1, it.id, true, idx, it.id, [it.id], bomPos('', idx))).join('');
   const opsRow = renderOpsBlock(it, true);
   tree.innerHTML = head + rootRow + (rows || `<div class="empty-text">Nessun componente. Usa "+ Aggiungi componente".</div>`) + opsRow;
 }
@@ -64,10 +64,14 @@ function kpi(label, value, cls) {
   return `<div class="kpi-card ${cls}"><div class="kpi-value">${value}</div><div class="kpi-label">${label}</div></div>`;
 }
 
+// Posizione gerarchica di una riga: "1", poi "1.2", "1.2.1"… La radice non ha numero,
+// e sotto ogni padre la numerazione riparte da 1.
+function bomPos(parentPos, idx) { return parentPos ? parentPos + '.' + (idx + 1) : String(idx + 1); }
+
 // Render ricorsivo di un nodo (componente). editable = riga di primo livello dell'articolo aperto.
-function renderBomNode(comp, level, parentId, editable, idx, pathPrefix, ancestorIds) {
+function renderBomNode(comp, level, parentId, editable, idx, pathPrefix, ancestorIds, pos) {
   const child = getItem(comp.itemId);
-  if (!child) return `<div class="bom-node"><span class="bom-name">⚠ articolo mancante</span></div>`;
+  if (!child) return `<div class="bom-node"><span class="bom-name"><span class="bom-pos">${esc(pos || '')}</span>⚠ articolo mancante</span></div>`;
   const nodeKey = pathPrefix + '>' + comp.itemId + '#' + idx;
   const cyc = ancestorIds.includes(comp.itemId);
   const isProd = isAssembly(child.type);
@@ -92,7 +96,7 @@ function renderBomNode(comp, level, parentId, editable, idx, pathPrefix, ancesto
       : '');
 
   let h = `<div class="bom-node" style="padding-left:${18 + indent}px">
-    <span class="bom-name">${toggle}
+    <span class="bom-name"><span class="bom-pos">${esc(pos || '')}</span>${toggle}
       <span class="bom-code">${esc(child.code)}</span>
       <span class="bom-type-tag tt-${child.type}">${typeShort(child.type)}</span>
       <span class="nm" title="${esc(child.name)}">${esc(child.name)}${cyc ? ' ⚠' : ''}</span>
@@ -107,11 +111,15 @@ function renderBomNode(comp, level, parentId, editable, idx, pathPrefix, ancesto
 
   if (expandable && expanded) {
     if (hasCycle) {
-      h += (child.cycle || []).map(row => renderCycleBomNode(row, level + 1)).join('');
-      h += renderPartManualCostNode(child, level + 1);
+      // Le fasi di lavorazione non prendono posizione: numerata è la distinta parte,
+      // quindi il contatore avanza solo sugli articoli e la serie resta senza buchi.
+      let n = 0;
+      h += (child.cycle || []).map(row =>
+        renderCycleBomNode(row, level + 1, row.kind === 'op' ? '' : bomPos(pos, n++))).join('');
+      h += renderPartManualCostNode(child, level + 1, bomPos(pos, n));
     } else {
       h += (child.components || []).map((cc, i) =>
-        renderBomNode(cc, level + 1, child.id, false, i, nodeKey, ancestorIds.concat(child.id))).join('');
+        renderBomNode(cc, level + 1, child.id, false, i, nodeKey, ancestorIds.concat(child.id), bomPos(pos, i))).join('');
       if ((child.operations || []).length) h += renderOpsBlock(child, false, 18 + indent + 18);
     }
   }
@@ -120,7 +128,7 @@ function renderBomNode(comp, level, parentId, editable, idx, pathPrefix, ancesto
 
 // Riga del ciclo di lavorazione di una Parte, mostrata nell'albero della distinta (sola lettura:
 // distinta parte e ciclo si modificano nella vista Cicli di lavorazione).
-function renderCycleBomNode(row, level) {
+function renderCycleBomNode(row, level, pos) {
   const indent = (level - 1) * 18;
   const lineCost = cycleRowCost(row);
   let name, qtyCell, uom, unit;
@@ -132,14 +140,14 @@ function renderCycleBomNode(row, level) {
     qtyCell = '—'; uom = ''; unit = lineCost;
   } else {
     const ci = getItem(row.itemId);
-    if (!ci) return `<div class="bom-node" style="padding-left:${18 + indent}px"><span class="bom-name">⚠ articolo mancante</span></div>`;
+    if (!ci) return `<div class="bom-node" style="padding-left:${18 + indent}px"><span class="bom-name"><span class="bom-pos">${esc(pos || '')}</span>⚠ articolo mancante</span></div>`;
     name = `<span class="bom-code">${esc(ci.code)}</span>
       <span class="bom-type-tag tt-${ci.type}">${typeShort(ci.type)}</span>
       <span class="nm" title="${esc(ci.name)}">${esc(ci.name)}</span>`;
     qtyCell = Number(row.qty) || 0; uom = ci.uom || ''; unit = costOf(row.itemId).total;
   }
   return `<div class="bom-node bom-node-cycle" style="padding-left:${18 + indent}px">
-    <span class="bom-name"><span class="bom-toggle leaf">•</span>${name}</span>
+    <span class="bom-name"><span class="bom-pos">${esc(pos || '')}</span><span class="bom-toggle leaf">•</span>${name}</span>
     <span class="num">${qtyCell}</span>
     <span>${esc(uom)}</span>
     <span class="num cost">${fmtN(unit)}</span>
@@ -151,12 +159,12 @@ function renderCycleBomNode(row, level) {
 
 // Col calcolo "costo unitario + ciclo" la quota manuale è una riga a sé, così le
 // righe mostrate sotto la Parte sommano al suo costo unitario.
-function renderPartManualCostNode(it, level) {
+function renderPartManualCostNode(it, level, pos) {
   const manual = Number(it.unitCost) || 0;
   if (partCostMode(it) !== 'sum' || !manual) return '';
   const indent = (level - 1) * 18;
   return `<div class="bom-node bom-node-cycle" style="padding-left:${18 + indent}px">
-    <span class="bom-name"><span class="bom-toggle leaf">•</span>
+    <span class="bom-name"><span class="bom-pos">${esc(pos || '')}</span><span class="bom-toggle leaf">•</span>
       <span class="nm">💠 Costo unitario (manuale)</span></span>
     <span class="num">1</span>
     <span>${esc(it.uom || '')}</span>
@@ -172,6 +180,7 @@ function renderBomRootNode(it) {
   const unit = costOf(it.id).total;
   return `<div class="bom-node bom-node-root">
     <span class="bom-name">
+      <span class="bom-pos"></span>
       <span class="bom-toggle leaf">•</span>
       <span class="bom-code">${esc(it.code)}</span>
       <span class="bom-type-tag tt-${it.type}">${typeShort(it.type)}</span>

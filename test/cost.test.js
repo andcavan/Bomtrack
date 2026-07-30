@@ -348,3 +348,49 @@ describe('flattenBom — coerenza con il motore', () => {
     assert.ok(rows.some(r => /ciclo!/.test(r.name)), 'la riga in anello è segnalata');
   });
 });
+
+describe('posizione gerarchica delle righe (1, 1.1, 1.1.1…)', () => {
+  it('bomPos numera dal padre e riparte da 1 sotto ogni ramo', () => {
+    const app = withDb(makeDb({ items: [] }));
+    const bomPos = app.ref('bomPos');
+    assert.equal(bomPos('', 0), '1', 'primo livello senza padre');
+    assert.equal(bomPos('', 1), '2');
+    assert.equal(bomPos('1', 0), '1.1');
+    assert.equal(bomPos('1.2', 2), '1.2.3');
+  });
+
+  it('la radice non ha posizione e i figli scendono di livello in livello', () => {
+    const app = withDb(makeDb({
+      items: [
+        mat('m', 10), acq('a', 20),
+        asm('sg', 'sottogruppo', { components: [comp('m', 1)] }),
+        asm('g', 'gruppo', { components: [comp('sg', 1), comp('a', 2)] }),
+        asm('mac', 'macchina', { components: [comp('g', 1), comp('a', 1)] }),
+      ],
+    }));
+    const rows = [];
+    app.ref('flattenBom')('mac', 1, 0, 0, rows, []);
+    assert.deepEqual(rows.map(r => r.pos), ['', '1', '1.1', '1.1.1', '1.2', '2']);
+  });
+
+  it('la distinta parte continua la numerazione, le lavorazioni restano senza numero', () => {
+    const app = withDb(makeDb({
+      items: [
+        mat('m', 10), acq('a', 5),
+        parte('p', { unitCost: 30, costMode: 'sum', cycle: [
+          { kind: 'item', itemId: 'm', qty: 2 },
+          { kind: 'op', workCenterId: 'w', cost: 15 },
+          { kind: 'item', itemId: 'a', qty: 1 },
+        ] }),
+        asm('mac', 'macchina', { components: [comp('a', 1), comp('p', 1)] }),
+      ],
+    }));
+    const rows = [];
+    app.ref('flattenBom')('mac', 1, 0, 0, rows, []);
+    // La fase in mezzo non consuma un numero: la serie degli articoli resta 2.1, 2.2.
+    assert.deepEqual(rows.map(r => r.pos), ['', '1', '2', '2.1', '', '2.2', '2.3']);
+    assert.equal(rows[4].type, 'Lavorazione');
+    // La quota manuale chiude la serie, subito dopo l'ultimo articolo del ciclo.
+    assert.equal(rows[6].name, 'Costo unitario (manuale)');
+  });
+});
