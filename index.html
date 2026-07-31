@@ -78,13 +78,24 @@
   <div id="view-bom" class="view-panel active">
     <div class="bom-toolbar">
       <h2 class="section-title">🌳 Distinta Base &amp; Costificazione</h2>
-      <div class="field-group" style="position:relative">
-        <label>Macchina / Prodotto</label>
-        <select id="bom-select" onchange="onBomSelect()"></select>
-      </div>
       <button class="add-btn-sm" onclick="newMachineModal()">+ Nuova macchina</button>
       <button class="btn-outline" id="bom-edit-btn" onclick="editCurrentItemModal()">✏ Modifica testata</button>
       <button class="btn-outline" id="bom-del-btn" onclick="deleteCurrentMachine()">🗑 Elimina</button>
+    </div>
+
+    <div class="catalog-filters">
+      <input type="text" class="search" id="bom-search" placeholder="🔍 Cerca codice o nome distinta..." oninput="bomSearchInput()">
+      <select id="bom-type" onchange="onBomFilterChange()">
+        <option value="">Tutti i livelli</option>
+        <option value="macchina">Macchine</option>
+        <option value="gruppo">Gruppi</option>
+        <option value="sottogruppo">Sottogruppi</option>
+      </select>
+      <select id="bom-machine" onchange="onBomFilterChange()">
+        <option value="">Tutte le macchine</option>
+      </select>
+      <select id="bom-select" class="cyc-part-select" onchange="onBomSelect()"></select>
+      <span class="doc-filter-count" id="bom-count"></span>
     </div>
 
     <div id="bom-cost-summary" class="cost-summary"></div>

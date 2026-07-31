@@ -19,7 +19,7 @@
 function mrpExplode(lines) {
   const buy = new Map(), make = new Map();
   const out = { cycle: false };
-  (lines || []).forEach(l => mrpDescend(l.itemId, Number(l.qty) || 0, [], buy, make, out));
+  (lines || []).forEach(l => mrpDescend(l.itemId, Number(l.qty) || 0, new Set(), buy, make, out));
   const perCodice = m => Array.from(m.values()).sort((a, b) => String(a.item.code).localeCompare(String(b.item.code)));
   return { buy: perCodice(buy), make: perCodice(make), cycle: out.cycle };
 }
@@ -32,14 +32,15 @@ function mrpDescend(itemId, qty, ancestors, buy, make, out) {
   const it = getItem(itemId);
   if (!it || !(qty > 0)) return;
   // Anello: si segnala e si smette di scendere, come fa flattenBom
-  if (ancestors.includes(itemId)) { out.cycle = true; return; }
+  if (ancestors.has(itemId)) { out.cycle = true; return; }
   if (it.type === 'materiale' || it.type === 'acquistato') { mrpAdd(buy, it, qty); return; }
-  const next = ancestors.concat(itemId);
+  const next = new Set(ancestors); next.add(itemId);
   if (it.type === 'parte') {
+    // Parte comprata già lavorata da terzi: è una foglia d'acquisto come un
+    // commerciale. Il ciclo resta salvato, ma non si scende — quel materiale
+    // e quelle lavorazioni li mette il fornitore, non noi.
+    if (partSourcing(it) === 'buy') { mrpAdd(buy, it, qty); return; }
     mrpAdd(make, it, qty);
-    // Col calcolo "solo costo unitario" distinta e ciclo sono documentali: non
-    // concorrono al costo e non generano fabbisogno (stessa regola dell'albero).
-    if (partCostMode(it) === 'unit') return;
     (it.cycle || []).forEach(r => {
       if (r.kind === 'op') return;   // le lavorazioni non si comprano a magazzino
       mrpDescend(r.itemId, qty * (Number(r.qty) || 0), next, buy, make, out);
@@ -67,6 +68,10 @@ function mrpBuyRow(entry) {
     price, amount: price * entry.qty,
     bestPrice, saving: (bestPrice != null && bestPrice < price) ? (price - bestPrice) * entry.qty : 0,
     minQty, underMin: minQty > 0 && entry.qty < minQty,
+    // Righe che manderebbero un ordine a zero o senza intestatario: si segnalano
+    // qui, prima di generare il documento, non dopo averlo mandato al fornitore.
+    noSupplier: !((attiva && attiva.supplierId) || it.supplierId),
+    noPrice: !(price > 0),
   };
 }
 function mrpBuyRows(plan) { return mrpExplode(plan.lines).buy.map(mrpBuyRow); }
@@ -163,6 +168,184 @@ function planDelLine(id, lineId) {
 }
 function toggleMrpGroup() { mrpGrouped = !mrpGrouped; renderMrp(); }
 
+// ═══════════════════════════════════════════════════════════
+//  DAL FABBISOGNO AI DOCUMENTI (richieste di offerta e ordini)
+// ═══════════════════════════════════════════════════════════
+// Il piano sa già cosa comprare e da chi: fin qui finiva in un export e la
+// stessa lista si riscriveva a mano nei documenti. Qui il giro si chiude — un
+// documento per fornitore, con le righe scelte. Nulla parte da solo: la modale
+// è il momento in cui si guarda cosa manca (fornitori, prezzi, minimi d'ordine)
+// prima di mandare qualcosa fuori.
+const PLAN_DOC_KINDS = { rfq: 'Richieste di offerta', order: 'Ordini a fornitore' };
+
+// Righe d'acquisto del piano indicizzate per id articolo: la modale lavora su
+// spunte, e alla conferma deve poter ritrovare la riga da un id.
+function planBuyIndex(plan) {
+  const map = new Map();
+  mrpBuyRows(plan).forEach(r => map.set(r.item.id, r));
+  return map;
+}
+function planDocsModal(id) {
+  if (!roleGuard('docs')) return;
+  const p = getPlan(id); if (!p) return;
+  const gruppi = mrpGroupBySupplier(mrpBuyRows(p));
+  if (!gruppi.length) { showToast('Il piano non ha nulla da comprare', 'error'); return; }
+  window.__planDocsId = id;
+  openModal(`<h3>📄 Genera documenti — ${esc(p.number)}</h3>
+    <div class="modal-field"><label>Tipo di documento</label>
+      <select id="plandoc-kind" onchange="planDocsRefresh()">
+        ${Object.entries(PLAN_DOC_KINDS).map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}
+      </select></div>
+    <p class="empty-text" style="text-align:left;padding:4px 0 12px" id="plandoc-hint">${planDocsHint('rfq')}</p>
+    <div id="plandoc-body">${planDocsBody(gruppi)}</div>
+    <div class="modal-actions">
+      <button class="btn-ghost" onclick="closeModal()">Annulla</button>
+      <button class="add-btn-sm" onclick="planCreateDocs()">Genera</button>
+    </div>`, true, 'plandocs');
+}
+function planDocsHint(kind) {
+  return kind === 'rfq'
+    ? 'Le richieste nascono senza prezzo: è quello che si sta chiedendo. Quando l\'offerta arriva, i prezzi si registrano a listino dalla richiesta stessa.'
+    : 'Gli ordini portano il prezzo in uso nella costificazione. Le righe senza prezzo varrebbero zero: correggile a listino prima, o dopo nell\'ordine.';
+}
+function planDocsRefresh() {
+  const h = document.getElementById('plandoc-hint');
+  if (h) h.textContent = planDocsHint(val('plandoc-kind'));
+}
+function planDocsBody(gruppi) {
+  const corpo = gruppi.map(g => {
+    const key = g.supplierId || '';
+    const righe = g.rows.map(r => {
+      const seg = [];
+      if (r.underMin) seg.push(`<span class="mrp-warn" title="Quantità minima del fornitore: ${r.minQty}">⚠ sotto il minimo di ${fmtQty(r.minQty)}</span>`);
+      if (r.noPrice) seg.push('<span class="mrp-warn" title="Senza prezzo la riga vale zero">⚠ senza prezzo</span>');
+      return `<label class="plandoc-row">
+        <input type="checkbox" class="plandoc-line" data-sup="${esc(key)}" value="${r.item.id}" checked onchange="planDocsCount()">
+        <span style="font-family:var(--mono)">${esc(r.item.code)}</span> ${esc(r.item.name)}
+        <span class="plandoc-qty">${fmtQty(r.qty)} ${esc(r.uom)} · ${fmtN(r.amount)}</span> ${seg.join(' ')}</label>`;
+    }).join('');
+    return `<div class="plandoc-group">
+      <label class="plandoc-head">
+        <input type="checkbox" class="plandoc-sup" data-sup="${esc(key)}" checked onchange="planDocsToggleGroup(this)">
+        🏭 <strong>${esc(g.name)}</strong>
+        <span class="plandoc-qty">${g.rows.length} ${g.rows.length === 1 ? 'riga' : 'righe'} · ${fmtN(g.total)}</span>
+        ${g.supplierId ? '' : '<span class="mrp-warn" title="Nessun fornitore: il documento nasce da intestare">⚠ da assegnare</span>'}
+      </label>
+      ${righe}</div>`;
+  }).join('');
+  return `${corpo}<p class="empty-text" style="text-align:left;padding:8px 0 0" id="plandoc-count"></p>`;
+}
+// Spunta di gruppo: trascina le sue righe, ed è il modo rapido di escludere un
+// fornitore intero senza toccare riga per riga.
+function planDocsToggleGroup(cb) {
+  document.querySelectorAll(`.plandoc-line[data-sup="${cb.dataset.sup}"]`).forEach(x => { x.checked = cb.checked; });
+  planDocsCount();
+}
+function planDocsCount() {
+  const el = document.getElementById('plandoc-count'); if (!el) return;
+  const sel = planDocsSelection();
+  const n = Array.from(sel.values()).reduce((s, ids) => s + ids.length, 0);
+  el.textContent = n
+    ? `${sel.size} ${sel.size === 1 ? 'documento' : 'documenti'} · ${n} ${n === 1 ? 'riga' : 'righe'}`
+    : 'Nessuna riga selezionata.';
+}
+// → Map<supplierId|'', [itemId]>, solo i gruppi con almeno una riga spuntata
+function planDocsSelection() {
+  const sel = new Map();
+  document.querySelectorAll('.plandoc-line').forEach(cb => {
+    if (!cb.checked) return;
+    const k = cb.dataset.sup || '';
+    if (!sel.has(k)) sel.set(k, []);
+    sel.get(k).push(cb.value);
+  });
+  return sel;
+}
+function planCreateDocs() {
+  if (!roleGuard('docs')) return;
+  const p = getPlan(window.__planDocsId); if (!p) return;
+  const kind = PLAN_DOC_KINDS[val('plandoc-kind')] ? val('plandoc-kind') : 'rfq';
+  const sel = planDocsSelection();
+  if (!sel.size) { showToast('Nessuna riga selezionata', 'error'); return; }
+  const index = planBuyIndex(p);
+  const creati = [];
+  sel.forEach((itemIds, supplierId) => {
+    const righe = itemIds.map(id => index.get(id)).filter(Boolean);
+    if (!righe.length) return;
+    creati.push(kind === 'rfq' ? planNewRfq(p, supplierId, righe) : planNewOrder(p, supplierId, righe));
+  });
+  if (!creati.length) { showToast('Nessun documento generato', 'error'); return; }
+  saveDB(); closeModal();
+  // Un documento solo: si apre. Più d'uno: si va all'elenco, non c'è una scelta
+  // sensata su quale aprire per primo.
+  if (creati.length === 1) {
+    if (kind === 'rfq') { currentRfqId = creati[0].id; rfqView = 'edit'; rfqDirty = false; rfqUnlockedId = null; }
+    else { currentOrderId = creati[0].id; orderView = 'edit'; orderDirty = false; orderUnlockedId = null; }
+  } else if (kind === 'rfq') { rfqView = 'list'; currentRfqId = null; }
+  else { orderView = 'list'; currentOrderId = null; }
+  setView(kind === 'rfq' ? 'rfq' : 'orders');
+  showToast(creati.length === 1
+    ? (kind === 'rfq' ? 'Richiesta ' : 'Ordine ') + creati[0].number + ' creato da ' + p.number
+    : creati.length + (kind === 'rfq' ? ' richieste create da ' : ' ordini creati da ') + p.number);
+}
+// Testata comune ai due tipi: intestatario, condizioni e legame col piano.
+function planDocHead(p, supplierId) {
+  const sup = supplierId ? getSupplier(supplierId) : null;
+  return {
+    title: p.title ? p.title + ' — ' + (sup ? sup.name : 'da assegnare') : ('Da ' + p.number),
+    date: nowISO().slice(0, 10), status: 'bozza', supplierId: supplierId || null,
+    transport: (sup && sup.defaultTransport) || db.settings.transportDefault || '',
+    payment: (sup && sup.defaultPayment) || db.settings.paymentDefault || '',
+    planId: p.id, notes: '', notesInternal: '', active: true,
+  };
+}
+function planDocLine(r, price) {
+  const it = r.item;
+  return { id: gid(), itemId: it.id, code: it.code || '', description: it.name || '',
+    uom: it.uom || defaultUom(), qty: Number(r.qty) || 0, price, deliveryDate: '', note: '' };
+}
+function planNewRfq(p, supplierId, righe) {
+  // Una richiesta d'offerta non porta il prezzo: è la domanda, non la risposta.
+  const r = stampNew(Object.assign({ id: gid(), number: nextRfqNumber() }, planDocHead(p, supplierId),
+    { lines: righe.map(x => planDocLine(x, '')) }));
+  db.rfqs.push(r);
+  return r;
+}
+function planNewOrder(p, supplierId, righe) {
+  const o = stampNew(Object.assign({ id: gid(), number: nextOrderNumber() }, planDocHead(p, supplierId),
+    { requestedDelivery: '', rfqId: null, supplierConfirmation: '',
+      lines: righe.map(x => Object.assign(planDocLine(x, x.price > 0 ? x.price : ''), { received: 0 })) }));
+  db.orders.push(o);
+  return o;
+}
+// ─── Documenti già generati da un piano ───
+function planDocs(planId) {
+  return {
+    rfqs: (db.rfqs || []).filter(r => r.planId === planId),
+    orders: (db.orders || []).filter(o => o.planId === planId),
+  };
+}
+function planDocsList(planId) {
+  const d = planDocs(planId);
+  if (!d.rfqs.length && !d.orders.length) return '';
+  const riga = (x, apri, icona) => `<span class="plandoc-link" onclick="${apri}"><span style="font-family:var(--mono)">${icona} ${esc(x.number)}</span> · ${esc(supplierName(x.supplierId) || 'da assegnare')}</span>`;
+  return `<div class="mrp-section">
+    <div class="cycle-section-head"><h3>📄 Documenti generati</h3></div>
+    <div class="plandoc-links">
+      ${d.rfqs.map(r => riga(r, `openRfqFromPlan('${r.id}')`, '📨')).join('')}
+      ${d.orders.map(o => riga(o, `openOrderFromPlan('${o.id}')`, '🧾')).join('')}
+    </div></div>`;
+}
+// Stato prima, vista dopo: setView disegna già, chiamare open*Edit prima
+// significherebbe disegnare due volte la stessa scheda.
+function openRfqFromPlan(id) {
+  currentRfqId = id; rfqView = 'edit'; rfqDirty = false; rfqUnlockedId = null;
+  setView('rfq');
+}
+function openOrderFromPlan(id) {
+  currentOrderId = id; orderView = 'edit'; orderDirty = false; orderUnlockedId = null;
+  setView('orders');
+}
+
 // ─── Disegno ───
 function renderMrp() {
   invalidateCaches();
@@ -222,6 +405,7 @@ function renderPlanEdit(id) {
     <div class="bom-toolbar">
       <button class="btn-outline" onclick="planBackToList()">← Elenco</button>
       <h2 class="section-title" style="margin:0">📋 ${esc(p.number)}</h2>
+      <button class="add-btn-sm" onclick="planDocsModal('${id}')" ${buy.length ? '' : 'disabled title="Niente da comprare in questo piano"'}>📄 Genera documenti</button>
       <button class="export-btn-xls" onclick="exportMrpExcel('${id}')">📗 Esporta Excel</button>
       <button class="export-btn-pdf" onclick="exportMrpPDF('${id}')">📄 Esporta PDF</button>
     </div>
@@ -265,12 +449,14 @@ function renderPlanEdit(id) {
     <div class="mrp-section">
       <div class="cycle-section-head"><h3>🏭 Da fabbricare</h3></div>
       ${mrpMakeTable(exp.make)}
-    </div></div>`;
+    </div>
+    ${planDocsList(id)}</div>`;
 }
 function mrpBuyLineHtml(r) {
   const seg = [];
   if (r.bestPrice != null && r.saving > 0) seg.push(`<span class="price-best" title="A listino c'è ${fmtN(r.bestPrice)}: risparmio ${fmtN(r.saving)}">↓ ${fmtN(r.saving)}</span>`);
   if (r.underMin) seg.push(`<span class="mrp-warn" title="Quantità minima del fornitore: ${r.minQty}">⚠ sotto il minimo</span>`);
+  if (r.noPrice) seg.push(`<span class="mrp-warn" title="Nessun prezzo in uso: la riga varrebbe zero in un ordine">⚠ senza prezzo</span>`);
   return `<tr>
     <td style="font-family:var(--mono)">${esc(r.item.code)}</td>
     <td>${esc(r.item.name)} ${seg.join(' ')}</td>
@@ -336,6 +522,7 @@ function exportMrpExcel(id) {
     const c = costOf(e.item.id).total;
     produzione.push([e.item.code, e.item.name, e.item.uom || '', +e.qty.toFixed(3), +c.toFixed(4), +(c * e.qty).toFixed(2)]);
   });
+  if (!requireXlsx()) return;
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(acquisti), 'Acquisti');
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(produzione), 'Produzione');
@@ -346,7 +533,7 @@ function exportMrpPDF(id) {
   const p = getPlan(id); if (!p) return;
   const exp = mrpExplode(p.lines);
   const buy = exp.buy.map(mrpBuyRow);
-  const { jsPDF } = window.jspdf;
+  const jsPDF = requirePdf(); if (!jsPDF) return;
   const doc = new jsPDF();
   doc.setFontSize(15); doc.text(`Fabbisogno materiali — ${p.number}`, 14, 16);
   doc.setFontSize(10); doc.setTextColor(120);

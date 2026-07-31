@@ -1,0 +1,177 @@
+// Dal fabbisogno ai documenti: richieste di offerta e ordini generati da un piano.
+// Il punto delicato è la differenza fra i due: una richiesta CHIEDE il prezzo e
+// quindi nasce senza, un ordine LO PORTA. Se le due strade si confondessero, si
+// manderebbe al fornitore un'offerta col prezzo già scritto dentro.
+
+const assert = require('node:assert/strict');
+const { describe, it, approx } = require('./tap.js');
+const { loadApp } = require('./harness.js');
+const { makeDb, mat, acq, parte, asm, comp } = require('./fixtures.js');
+
+// Piano: 2 macchine, ciascuna con una vite (fornitore Alfa) e un tondo (Beta),
+// più una parte comprata da Alfa. Un commerciale senza fornitore né prezzo fa
+// da caso limite: deve arrivare al documento come riga "da assegnare".
+function conPiano(over) {
+  const app = loadApp({ silent: true });
+  app.asRole('admin');
+  app.setDb(makeDb(Object.assign({
+    suppliers: [
+      { id: 's1', name: 'Alfa', defaultTransport: 'EXW', defaultPayment: 'Bonifico 30gg', active: true },
+      { id: 's2', name: 'Beta', active: true },
+    ],
+    items: [
+      Object.assign(acq('vite', 2), { supplierId: 's1', uom: 'pz' }),
+      Object.assign(mat('tondo', 5), { supplierId: 's2', uom: 'kg' }),
+      Object.assign(acq('orfano', 0), { uom: 'pz' }),
+      parte('flangia', { sourcing: 'buy', unitCost: 30, supplierId: 's1' }),
+      asm('mac', 'macchina', { components: [comp('vite', 4), comp('tondo', 2), comp('orfano', 1), comp('flangia', 1)] }),
+    ],
+    plans: [{ id: 'pl1', number: 'FAB-2026-001', title: 'Lotto luglio', date: '2026-07-01', notes: '', lines: [{ id: 'l1', itemId: 'mac', qty: 2 }], active: true }],
+    settings: { transportDefault: 'Porto franco', paymentDefault: 'RiBa 60gg' },
+  }, over || {})));
+  return app;
+}
+// Righe d'acquisto del piano, raggruppate, in oggetti del realm di Node
+function gruppi(app) {
+  return JSON.parse(app.eval(`JSON.stringify(mrpGroupBySupplier(mrpBuyRows(getPlan("pl1")))
+    .map(g => ({ supplierId: g.supplierId, name: g.name, codes: g.rows.map(r => r.item.code), total: g.total })))`));
+}
+// Genera un documento per il fornitore indicato con tutte le sue righe
+function genera(app, kind, supplierId) {
+  return JSON.parse(app.eval(`(() => {
+    const p = getPlan('pl1');
+    const g = mrpGroupBySupplier(mrpBuyRows(p)).find(x => x.supplierId === ${JSON.stringify(supplierId)});
+    const d = ${kind === 'rfq' ? 'planNewRfq' : 'planNewOrder'}(p, ${JSON.stringify(supplierId)}, g.rows);
+    return JSON.stringify(d);
+  })()`));
+}
+
+describe('il piano si raggruppa per fornitore, pronto per i documenti', () => {
+  it('un gruppo per fornitore, e chi non ce l\'ha finisce in coda', () => {
+    const g = gruppi(conPiano());
+    assert.deepEqual(g.map(x => x.name), ['Alfa', 'Beta', 'Da assegnare']);
+    assert.deepEqual(g[2].codes, ['ORFANO']);
+  });
+
+  it('la parte acquistata sta col suo fornitore, non fra le cose da fabbricare', () => {
+    const g = gruppi(conPiano());
+    assert.deepEqual(g[0].codes.sort(), ['FLANGIA', 'VITE']);
+  });
+
+  it('i totali seguono le quantità esplose', () => {
+    const g = gruppi(conPiano());
+    approx(g[0].total, 2 * 4 * 2 + 2 * 1 * 30, 'viti + flange');
+    approx(g[1].total, 2 * 2 * 5);
+  });
+});
+
+describe('planNewRfq — la richiesta chiede il prezzo', () => {
+  it('nasce in bozza, intestata al fornitore e legata al piano', () => {
+    const r = genera(conPiano(), 'rfq', 's1');
+    assert.equal(r.status, 'bozza');
+    assert.equal(r.supplierId, 's1');
+    assert.equal(r.planId, 'pl1');
+    assert.equal(r.rfqId, undefined, 'una richiesta non nasce da una richiesta');
+    assert.match(r.number, /^RFQ-\d{4}-001$/);
+  });
+
+  it('le righe non portano prezzo: è quello che si sta chiedendo', () => {
+    const r = genera(conPiano(), 'rfq', 's1');
+    r.lines.forEach(l => assert.equal(l.price, '', l.code + ' non deve avere prezzo'));
+  });
+
+  it('codice, descrizione, U.M. e quantità arrivano dal fabbisogno', () => {
+    const r = genera(conPiano(), 'rfq', 's1');
+    const vite = r.lines.find(l => l.code === 'VITE');
+    assert.equal(vite.itemId, 'vite');
+    assert.equal(vite.description, 'Commerciale vite');
+    assert.equal(vite.uom, 'pz');
+    approx(vite.qty, 8);
+  });
+
+  it('trasporto e pagamento dal fornitore, con ripiego sui default d\'azienda', () => {
+    const app = conPiano();
+    const conAlfa = genera(app, 'rfq', 's1');
+    assert.equal(conAlfa.transport, 'EXW');
+    assert.equal(conAlfa.payment, 'Bonifico 30gg');
+    const conBeta = genera(app, 'rfq', 's2');
+    assert.equal(conBeta.transport, 'Porto franco', 'Beta non ha condizioni proprie');
+    assert.equal(conBeta.payment, 'RiBa 60gg');
+  });
+
+  it('il gruppo senza fornitore produce un documento da intestare', () => {
+    const r = genera(conPiano(), 'rfq', '');
+    assert.equal(r.supplierId, null);
+    assert.deepEqual(r.lines.map(l => l.code), ['ORFANO']);
+  });
+});
+
+describe('planNewOrder — l\'ordine porta il prezzo', () => {
+  it('le righe portano il prezzo in uso nella costificazione', () => {
+    const o = genera(conPiano(), 'order', 's1');
+    approx(o.lines.find(l => l.code === 'VITE').price, 2);
+    approx(o.lines.find(l => l.code === 'FLANGIA').price, 30, 'anche una parte acquistata');
+  });
+
+  it('una riga senza prezzo resta vuota invece di valere zero', () => {
+    const o = genera(conPiano(), 'order', '');
+    assert.equal(o.lines[0].price, '', 'meglio un campo da compilare che uno zero credibile');
+  });
+
+  it('nasce in bozza, coi ricevimenti a zero e il legame al piano', () => {
+    const o = genera(conPiano(), 'order', 's1');
+    assert.equal(o.status, 'bozza');
+    assert.equal(o.planId, 'pl1');
+    assert.equal(o.rfqId, null, 'non viene da una richiesta');
+    o.lines.forEach(l => assert.equal(l.received, 0));
+    assert.match(o.number, /^ODA-\d{4}-001$/);
+  });
+
+  it('due ordini di seguito hanno numeri diversi', () => {
+    const app = conPiano();
+    const a = genera(app, 'order', 's1');
+    const b = genera(app, 'order', 's2');
+    assert.notEqual(a.number, b.number);
+  });
+});
+
+describe('i documenti restano legati al piano che li ha generati', () => {
+  it('planDocs elenca richieste e ordini nati dal piano', () => {
+    const app = conPiano();
+    genera(app, 'rfq', 's1');
+    genera(app, 'order', 's2');
+    const d = JSON.parse(app.eval(`(() => { const d = planDocs('pl1');
+      return JSON.stringify({ rfqs: d.rfqs.map(x => x.number), orders: d.orders.map(x => x.number) }); })()`));
+    assert.equal(d.rfqs.length, 1);
+    assert.equal(d.orders.length, 1);
+  });
+
+  it('i documenti di altri piani non vengono raccolti', () => {
+    const app = conPiano();
+    genera(app, 'rfq', 's1');
+    assert.equal(app.eval('planDocs("altro").rfqs.length'), 0);
+  });
+
+  it('l\'ordine generato da una richiesta eredita il piano di origine', () => {
+    const app = conPiano();
+    const r = genera(app, 'rfq', 's1');
+    app.eval(`orderFromRfq(${JSON.stringify(r.id)})`);
+    assert.equal(app.snapshot().orders[0].planId, 'pl1', 'la catena piano → richiesta → ordine non si spezza');
+  });
+
+  it('un ordine creato a mano non risulta legato ad alcun piano', () => {
+    const app = conPiano();
+    app.eval('newOrder()');
+    assert.equal(app.eval('db.orders[0].planId'), null);
+  });
+});
+
+describe('permessi', () => {
+  it('chi non scrive documenti non apre la modale né genera nulla', () => {
+    const app = conPiano();
+    app.asRole('progettazione');   // scrive il catalogo, non i documenti
+    app.eval('planDocsModal("pl1")');
+    app.eval('planCreateDocs()');
+    assert.equal(app.eval('db.rfqs.length + db.orders.length'), 0);
+  });
+});

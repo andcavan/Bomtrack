@@ -152,3 +152,119 @@ describe('catalogo — disegno a blocchi', () => {
     assert.ok(app.html('buy-table').includes('Nessun articolo trovato'));
   });
 });
+
+describe('filtri della vista Distinta base', () => {
+  const { asm } = require('./fixtures.js');
+  function conAssiemi() {
+    const app = loadApp({ silent: true });
+    app.asRole('admin');
+    app.setDb(makeDb({ items: [
+      asm('m1', 'macchina', { code: 'TRN-001', name: 'Tornio' }),
+      asm('m2', 'macchina', { code: 'FRS-001', name: 'Fresa' }),
+      asm('g1', 'gruppo', { code: 'TRN-BAS-001', name: 'Basamento', machineItemId: 'm1' }),
+      asm('g2', 'gruppo', { code: 'FRS-TAV-001', name: 'Tavola', machineItemId: 'm2' }),
+      asm('s1', 'sottogruppo', { code: 'TRN-BAS-S01', name: 'Slitta', machineItemId: 'm1' }),
+    ] }));
+    return app;
+  }
+  const codici = (app) => JSON.parse(app.eval('JSON.stringify(bomFilteredProducts().map(i => i.code))'));
+
+  it('senza filtri ci sono tutti gli assiemi, ordinati per codice', () => {
+    assert.deepEqual(codici(conAssiemi()), ['FRS-001', 'FRS-TAV-001', 'TRN-001', 'TRN-BAS-001', 'TRN-BAS-S01']);
+  });
+
+  it('il testo cerca su codice e nome', () => {
+    const app = conAssiemi();
+    app.el('bom-search').value = 'basamento';
+    assert.deepEqual(codici(app), ['TRN-BAS-001']);
+    app.el('bom-search').value = 'frs';
+    assert.deepEqual(codici(app), ['FRS-001', 'FRS-TAV-001']);
+  });
+
+  it('il livello restringe al tipo scelto', () => {
+    const app = conAssiemi();
+    app.el('bom-type').value = 'gruppo';
+    assert.deepEqual(codici(app), ['FRS-TAV-001', 'TRN-BAS-001']);
+  });
+
+  it('la macchina porta con se i suoi gruppi, e anche se stessa', () => {
+    const app = conAssiemi();
+    app.el('bom-machine').value = 'm1';
+    assert.deepEqual(codici(app), ['TRN-001', 'TRN-BAS-001', 'TRN-BAS-S01']);
+  });
+
+  it('i filtri si sommano', () => {
+    const app = conAssiemi();
+    app.el('bom-machine').value = 'm1';
+    app.el('bom-type').value = 'sottogruppo';
+    assert.deepEqual(codici(app), ['TRN-BAS-S01']);
+  });
+
+  it('la distinta aperta resta nel menu anche se il filtro la escluderebbe', () => {
+    const app = conAssiemi();
+    app.eval('currentBomId = "m2"');
+    app.el('bom-machine').value = 'm1';
+    assert.ok(app.eval('productOptions(currentBomId)').includes('FRS-001'), 'chiuderebbe l albero sotto le mani');
+  });
+
+  it('la selezione non cade su un filtro che non trova nulla', () => {
+    const app = conAssiemi();
+    app.eval('currentBomId = "m2"');
+    app.el('bom-search').value = 'inesistente';
+    app.eval('ensureCurrentBom()');
+    assert.equal(app.eval('currentBomId'), 'm2', 'i filtri restringono l elenco, non cambiano cosa si guarda');
+  });
+});
+
+describe('cancellazione di un fornitore ancora citato', () => {
+  const { makeDb: mk, acq: cmm, mat: mp, parte: prt } = require('./fixtures.js');
+  function conFornitore(over) {
+    const app = loadApp({ silent: true });
+    app.asRole('admin');
+    app.setDb(mk(Object.assign({ suppliers: [{ id: 's1', name: 'Alfa', active: true }] }, over || {})));
+    return app;
+  }
+  const usi = app => JSON.parse(app.eval('JSON.stringify(supplierUses("s1"))'));
+
+  it('un fornitore libero si cancella', () => {
+    const app = conFornitore();
+    assert.equal(usi(app).length, 0);
+    app.eval('delSupplier("s1"); confirmYes();');
+    assert.equal(app.snapshot().suppliers.length, 0);
+  });
+
+  it('citato da un articolo: bloccato', () => {
+    const app = conFornitore({ items: [Object.assign(cmm('a', 1), { supplierId: 's1' })] });
+    app.eval('delSupplier("s1"); confirmYes();');
+    assert.equal(app.snapshot().suppliers.length, 1);
+  });
+
+  it('citato solo da una quotazione a listino: bloccato', () => {
+    const app = conFornitore({ items: [Object.assign(mp('m', 2), {
+      priceList: [{ id: 'q1', supplierId: 's1', price: 2, date: '2026-01-01' }], priceListSeeded: true })] });
+    assert.deepEqual(usi(app), ['1 listino']);
+    app.eval('delSupplier("s1"); confirmYes();');
+    assert.equal(app.snapshot().suppliers.length, 1, 'lasciava uno storico prezzi orfano');
+  });
+
+  it('citato solo da una lavorazione esterna di ciclo: bloccato', () => {
+    const app = conFornitore({ items: [prt('p', { cycle: [{ kind: 'op', workCenterId: null, supplierId: 's1', cost: 9 }] })] });
+    assert.deepEqual(usi(app), ['1 ciclo']);
+  });
+
+  it('citato solo da documenti: bloccato', () => {
+    const app = conFornitore({
+      rfqs: [{ id: 'r1', number: 'RFQ-2026-001', supplierId: 's1', status: 'bozza', lines: [] }],
+      orders: [{ id: 'o1', number: 'ODA-2026-001', supplierId: 's1', status: 'bozza', lines: [] }],
+    });
+    assert.deepEqual(usi(app), ['1 richiesta', '1 ordine']);
+  });
+
+  it('gli usi si elencano tutti insieme, non solo il primo', () => {
+    const app = conFornitore({
+      items: [Object.assign(cmm('a', 1), { supplierId: 's1', priceList: [{ id: 'q1', supplierId: 's1', price: 1 }] })],
+      orders: [{ id: 'o1', number: 'ODA-2026-001', supplierId: 's1', status: 'bozza', lines: [] }],
+    });
+    assert.deepEqual(usi(app), ['1 articolo', '1 listino', '1 ordine']);
+  });
+});

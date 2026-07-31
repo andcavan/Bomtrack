@@ -287,8 +287,9 @@ function migrateDB() {
   if (!db.settings.paymentOptions) db.settings.paymentOptions = ['Bonifico anticipato', 'Bonifico 30gg', 'Bonifico 60gg', 'RiBa 30gg', 'RiBa 60gg'];
   if (db.settings.transportDefault == null) db.settings.transportDefault = '';
   if (db.settings.paymentDefault == null) db.settings.paymentDefault = '';
-  // Modo di calcolo del costo proposto alle nuove parti: 'unit' | 'cycle' | 'sum'
-  if (!db.settings.partCostModeDefault) db.settings.partCostModeDefault = 'cycle';
+  // Approvvigionamento proposto alle nuove parti: 'make' | 'buy'
+  if (!db.settings.partSourcingDefault) db.settings.partSourcingDefault = 'buy';
+  delete db.settings.partCostModeDefault;   // sostituito da partSourcingDefault
   // Unità di misura gestite: seed una-tantum con le predefinite + quelle già
   // presenti nei dati (finora l'U.M. era testo libero, non va persa).
   if (!Array.isArray(db.settings.uoms)) {
@@ -339,6 +340,7 @@ function migrateDB() {
     if (r.transport == null) r.transport = '';
     if (r.payment == null) r.payment = '';
     if (r.notesInternal == null) r.notesInternal = '';
+    if (r.planId == null) r.planId = null;   // richiesta nata da un piano di fabbisogno
     (r.lines || []).forEach(l => {
       if (l.price == null) {
         const o = r.offers && r.supplierId && r.offers[r.supplierId];
@@ -355,6 +357,7 @@ function migrateDB() {
     if (o.payment == null) o.payment = '';
     if (o.requestedDelivery == null) o.requestedDelivery = '';
     if (o.rfqId == null) o.rfqId = null;
+    if (o.planId == null) o.planId = null;   // ordine nato da un piano di fabbisogno
     if (o.supplierConfirmation == null) o.supplierConfirmation = '';
     if (o.notesInternal == null) o.notesInternal = '';
     (o.lines || []).forEach(l => {
@@ -409,16 +412,21 @@ function migrateDB() {
     // (supplierId, purchasePrice/unitCost, supplierCode, supplierDesc) restano
     // il "prezzo in uso", cioè quello che entra nella costificazione: il listino
     // è la memoria da cui lo si sceglie, non un secondo calcolo parallelo.
-    if (it.type === 'acquistato' || it.type === 'materiale') {
+    // Anche le parti hanno listino: molte si comprano già lavorate da terzi, e il
+    // prezzo del fornitore va conservato con la stessa memoria dei commerciali.
+    if (it.type === 'acquistato' || it.type === 'materiale' || it.type === 'parte') {
       if (!Array.isArray(it.priceList)) it.priceList = [];
       // Chi ha già un fornitore parte con quella quotazione in elenco, marcata
       // come in uso. Il flag rende il seed una-tantum: se poi si svuota il
       // listino, non ricompare al caricamento successivo.
       if (!it.priceListSeeded) {
-        if (it.supplierId) {
-          const prezzo = it.type === 'acquistato' ? it.purchasePrice : it.unitCost;
+        // Anche un prezzo senza fornitore diventa una quotazione "a mano": ora
+        // che i prezzi si toccano solo dal listino, altrimenti resterebbe un
+        // valore nella costificazione che nessuna schermata può più correggere.
+        const prezzo = it.type === 'acquistato' ? it.purchasePrice : it.unitCost;
+        if (it.supplierId || Number(prezzo) > 0) {
           const riga = stampNew({
-            id: newId(), supplierId: it.supplierId, price: Number(prezzo) || 0,
+            id: newId(), supplierId: it.supplierId || null, price: Number(prezzo) || 0,
             minQty: '', leadDays: '', code: it.supplierCode || '', desc: it.supplierDesc || '',
             date: (it.updatedAt || nowISO()).slice(0, 10), rfqId: null, note: '',
           });
@@ -428,10 +436,25 @@ function migrateDB() {
         it.priceListSeeded = true;
       }
     }
-    // Modo di calcolo del costo della parte. I dati storici conservano il
-    // comportamento precedente: col ciclo il costo era derivato dal ciclo,
-    // senza ciclo era quello del campo manuale.
-    if (it.type === 'parte' && !it.costMode) it.costMode = (it.cycle || []).length ? 'cycle' : 'unit';
+    // Approvvigionamento della parte: si produce in casa o si compra. Ha preso il
+    // posto del vecchio modo di calcolo (costMode), che rispondeva alla stessa
+    // domanda per metà — da dove viene il costo — lasciando all'utente il compito
+    // di tenere i due interruttori d'accordo. La conversione conserva il
+    // comportamento precedente, costo e fabbisogno insieme:
+    //   'unit' → il costo era il campo manuale e la distinta non si esplodeva:
+    //            è esattamente una parte comprata.
+    //   'cycle'/'sum' → il costo veniva dal ciclo e la distinta si esplodeva:
+    //            produzione interna. Per 'sum' si perde la quota manuale che si
+    //            sommava al ciclo, ed è una scelta: il ciclo è il costo del farla.
+    if (it.type === 'parte') {
+      if (it.costMode != null) {
+        it.sourcing = it.costMode === 'unit' ? 'buy' : 'make';
+        delete it.costMode;
+      } else if (it.sourcing == null) {
+        // Parte mai passata dal modo di calcolo: col ciclo la si fa, senza la si compra
+        it.sourcing = (it.cycle || []).length ? 'make' : 'buy';
+      }
+    }
     // Righe lavorazione del ciclo: da ore × tariffa a costo fisso (conserva il valore già calcolato)
     (it.cycle || []).forEach(row => {
       if (row.kind !== 'op' || row.cost != null) return;

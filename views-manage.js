@@ -297,9 +297,27 @@ function saveSupplier(id) {
   touch(s);
   saveDB(); closeModal(); renderManage(); showToast('Aggiornato');
 }
+// Dove compare un fornitore: articoli, quotazioni a listino, documenti e
+// lavorazioni esterne di ciclo. Controllare i soli articoli lasciava riferimenti
+// orfani — uno storico prezzi che punta a un fornitore che non esiste più.
+function supplierUses(id) {
+  const usi = [];
+  const n = (a) => a.length;
+  const articoli = (db.items || []).filter(i => i.supplierId === id);
+  if (n(articoli)) usi.push(articoli.length + (articoli.length === 1 ? ' articolo' : ' articoli'));
+  const quotati = (db.items || []).filter(i => (i.priceList || []).some(r => r.supplierId === id));
+  if (n(quotati)) usi.push(quotati.length + (quotati.length === 1 ? ' listino' : ' listini'));
+  const cicli = (db.items || []).filter(i => (i.cycle || []).some(r => r.kind === 'op' && r.supplierId === id));
+  if (n(cicli)) usi.push(cicli.length + (cicli.length === 1 ? ' ciclo' : ' cicli'));
+  const rfqs = (db.rfqs || []).filter(r => r.supplierId === id);
+  if (n(rfqs)) usi.push(rfqs.length + (rfqs.length === 1 ? ' richiesta' : ' richieste'));
+  const ordini = (db.orders || []).filter(o => o.supplierId === id);
+  if (n(ordini)) usi.push(ordini.length + (ordini.length === 1 ? ' ordine' : ' ordini'));
+  return usi;
+}
 function delSupplier(id) {
-  const used = db.items.filter(i => i.supplierId === id);
-  if (used.length) { showToast('Fornitore usato da ' + used.length + ' articoli', 'error'); return; }
+  const usi = supplierUses(id);
+  if (usi.length) { showToast('Fornitore usato in: ' + usi.join(', '), 'error'); return; }
   askConfirm('Eliminare il fornitore?', () => {
     db.suppliers = db.suppliers.filter(x => x.id !== id); saveDB(); renderManage(); showToast('Eliminato');
   });
@@ -592,9 +610,9 @@ function renderSettings() {
       <div class="modal-field"><label>Spese generali / overhead (%)</label><input type="number" id="set-ov" min="0" max="1000" step="0.1" value="${s.overheadPct}"></div>
       <div class="modal-field"><label>Margine / markup (%)</label><input type="number" id="set-mg" min="0" max="1000" step="0.1" value="${s.marginPct}"></div>
       <div class="modal-field"><label>Simbolo valuta</label><input id="set-cur" value="${esc(s.currency)}" maxlength="3"></div>
-      <div class="modal-field"><label>Calcolo costo parte (default)</label><select id="set-partcost">${partCostModeOptions(defaultPartCostMode())}</select></div>
+      <div class="modal-field"><label>Approvvigionamento parte (default)</label><select id="set-partsourcing">${partSourcingOptions(defaultPartSourcing())}</select></div>
     </div>
-    <p class="empty-text" style="text-align:left;padding:4px 0 12px">Le percentuali sono i valori di default applicati a tutti i prodotti. Si possono sovrascrivere per singola macchina dalla "Modifica testata".<br>Il calcolo del costo parte è quello proposto alle <strong>nuove</strong> parti: su ciascuna resta poi modificabile nella sua scheda.</p>
+    <p class="empty-text" style="text-align:left;padding:4px 0 12px">Le percentuali sono i valori di default applicati a tutti i prodotti. Si possono sovrascrivere per singola macchina dalla "Modifica testata".<br>L'approvvigionamento è quello proposto alle <strong>nuove</strong> parti, e da esso dipende anche da dove viene il costo: dal ciclo se prodotta in casa, dal listino se acquistata. Su ciascuna parte resta modificabile nella sua scheda; quelle già a catalogo non si toccano.</p>
 
     <h3 class="settings-group-title">🏷 Codifica automatica articoli</h3>
     <div class="modal-grid">
@@ -613,8 +631,8 @@ function saveSettings() {
   db.settings.overheadPct = numVal('set-ov', 0, 1000);
   db.settings.marginPct = numVal('set-mg', 0, 1000);
   db.settings.currency = val('set-cur') || '€';
-  const pcm = val('set-partcost');
-  db.settings.partCostModeDefault = PART_COST_MODES[pcm] ? pcm : 'cycle';
+  const pso = val('set-partsourcing');
+  db.settings.partSourcingDefault = PART_SOURCING[pso] ? pso : 'buy';
   const d = parseInt(val('set-digits'), 10);
   db.settings.codeDigits = (d >= 1 && d <= 10) ? d : 3;
   db.settings.codePrefixAcquistato = (val('set-pfx-acq') || 'CMM').toUpperCase();

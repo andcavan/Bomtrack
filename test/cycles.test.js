@@ -22,7 +22,7 @@ function dbMisto() {
     workCenters: [wc('w1', 0), wc('w2', 0), wc('w3', 0)],
     items: [
       mat('m', 2), acq('a', 5),
-      parte('p', { costMode: 'cycle', cycle: [
+      parte('p', { cycle: [
         { kind: 'item', itemId: 'm', qty: 3 },          // 0 — distinta
         { kind: 'op', workCenterId: 'w1', cost: 10 },   // 1 — fase 10
         { kind: 'item', itemId: 'a', qty: 1 },          // 2 — distinta
@@ -186,18 +186,27 @@ describe('Righe: aggiunta, modifica, eliminazione', () => {
   });
 });
 
-describe('setCycleCostMode — modo di calcolo', () => {
-  it('salva il modo scelto e il costo cambia di conseguenza', () => {
+// La vista Cicli non ha più un selettore del modo di calcolo: da dove viene il
+// costo lo decide l'approvvigionamento, che si sceglie nella scheda articolo.
+describe('Cicli — il costo segue l\'approvvigionamento, senza un secondo interruttore', () => {
+  it('prodotta in casa: il costo è quello del ciclo, il prezzo a listino non conta', () => {
     const app = conDb(dbMisto());
-    app.eval('currentCycleItemId = "p"');
-    app.eval('getItem("p").unitCost = 100');
-    app.el('cyc-costmode').value = 'unit';
-    app.eval('setCycleCostMode()');
-    assert.equal(app.snapshot().items.find(i => i.id === 'p').costMode, 'unit');
+    app.eval('getItem("p").unitCost = 100; getItem("p").sourcing = "make"; invalidateCaches();');
+    approx(app.eval('costOf("p").total'), 3 * 2 + 5 + 10 + 20 + 30);
+  });
+
+  it('acquistata: il costo è il prezzo a listino, il ciclo non conta', () => {
+    const app = conDb(dbMisto());
+    app.eval('getItem("p").unitCost = 100; getItem("p").sourcing = "buy"; invalidateCaches();');
     approx(app.eval('costOf("p").total'), 100);
-    app.el('cyc-costmode').value = 'sum';
-    app.eval('setCycleCostMode()');
-    approx(app.eval('costOf("p").total'), 100 + 3 * 2 + 5 + 10 + 20 + 30);
+  });
+
+  it('la nota in cima alla vista dice da dove viene il costo', () => {
+    const app = conDb(dbMisto());
+    app.eval('currentCycleItemId = "p"; getItem("p").sourcing = "make"; renderCycles();');
+    assert.ok(app.html('cyc-body').includes('prodotta in casa'), 'deve dirlo, e rimandare alla scheda');
+    app.eval('getItem("p").sourcing = "buy"; renderCycles();');
+    assert.ok(app.html('cyc-body').includes('Parte acquistata'));
   });
 });
 
@@ -295,7 +304,7 @@ describe('renderCycles — disegno delle due sezioni', () => {
 });
 
 describe('Duplicazione di una parte', () => {
-  it('la copia porta con sé distinta, ciclo e modo di calcolo', () => {
+  it('la copia porta con sé distinta e ciclo', () => {
     const app = conDb(dbMisto());
     app.el('it-type').value = 'parte';
     app.el('it-concept').value = 'c1';
@@ -305,7 +314,6 @@ describe('Duplicazione di una parte', () => {
     app.eval('saveNewItem()');
     const nuova = app.snapshot().items.filter(i => i.type === 'parte' && i.id !== 'p')[0];
     assert.ok(nuova, 'la copia non è stata creata');
-    assert.equal(nuova.costMode, 'cycle');
     assert.deepEqual(nuova.cycle.map(r => r.kind === 'op' ? r.workCenterId : r.itemId),
       ['m', 'w1', 'a', 'w2', 'w3']);
     // Copia vera: modificarla non tocca l'originale
@@ -322,6 +330,22 @@ describe('Duplicazione di una parte', () => {
     app.eval('saveNewItem()');
     const nuova = app.snapshot().items[0];
     assert.deepEqual(nuova.cycle, []);
-    assert.equal(nuova.costMode, 'cycle');   // partCostModeDefault delle fixture
+    assert.equal(nuova.sourcing, 'buy', 'una parte nuova si compra, salvo dirlo diversamente');
+  });
+
+  it('l\'approvvigionamento delle parti nuove segue le impostazioni', () => {
+    const app = conDb(makeDb({ items: [], settings: { partSourcingDefault: 'make' } }));
+    app.el('it-type').value = 'parte';
+    app.el('it-concept').value = 'c1';
+    app.el('it-namefree').value = 'nuova';
+    app.el('it-code').value = 'PRT-2';
+    app.eval('window.__dupSourceId = null');
+    app.eval('saveNewItem()');
+    assert.equal(app.snapshot().items[0].sourcing, 'make');
+  });
+
+  it('un default non valido nelle impostazioni ricade sull\'acquisto', () => {
+    const app = conDb(makeDb({ items: [], settings: { partSourcingDefault: 'inventato' } }));
+    assert.equal(app.eval('defaultPartSourcing()'), 'buy');
   });
 });

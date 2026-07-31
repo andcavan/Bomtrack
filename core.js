@@ -13,7 +13,7 @@
 // Revisione in esecuzione, mostrata accanto al logo. Va tenuta allineata alla
 // voce in cima al changelog del README (l'app si copia a mano tra PC: sapere
 // quale revisione sta girando su una postazione è l'unico modo per capirlo).
-const APP_VERSION = '0.20.0';
+const APP_VERSION = '0.21.0';
 
 let currentUser = null;      // utente della sessione (null = schermata di accesso)
 let currentBomId = null;     // articolo prodotto attualmente aperto nelle Distinte
@@ -54,6 +54,44 @@ function itemIndex() {
   return _itemIdx;
 }
 function getItem(id) { return itemIndex().get(id); }
+// ─── Indici per fornitori e centri di lavoro ───
+// Stesso motivo dell'indice articoli: `db.suppliers.find(...)` compariva dentro
+// il disegno di ogni riga di elenco e di ogni lavorazione del rollup.
+let _supIdx = null, _wcIdx = null;
+function supplierIndex() {
+  if (!_supIdx) _supIdx = new Map((db.suppliers || []).map(s => [s.id, s]));
+  return _supIdx;
+}
+function getSupplier(id) { return id ? supplierIndex().get(id) : undefined; }
+function workCenterIndex() {
+  if (!_wcIdx) _wcIdx = new Map((db.workCenters || []).map(w => [w.id, w]));
+  return _wcIdx;
+}
+function getWorkCenter(id) { return id ? workCenterIndex().get(id) : undefined; }
+// ─── Indice inverso figlio → padri ───
+// usedBy() scansionava tutto il catalogo a ogni chiamata, e "Dove è usato" la
+// invoca una volta per antenato e una seconda per ogni riga della simulazione:
+// su un catalogo grande il costo diventava quadratico. L'indice si costruisce
+// una volta sola per giro di disegno, come quello degli articoli.
+let _parentIdx = null;
+function parentIndex() {
+  if (_parentIdx) return _parentIdx;
+  const idx = new Map();
+  const aggiungi = (childId, padre) => {
+    if (!childId) return;
+    let l = idx.get(childId);
+    if (!l) { l = []; idx.set(childId, l); }
+    // Lo stesso figlio può comparire più volte nella stessa distinta: il padre
+    // va elencato una volta sola, le quantità le somma usageQty().
+    if (l[l.length - 1] !== padre) l.push(padre);
+  };
+  (db.items || []).forEach(i => {
+    if (isAssembly(i.type)) (i.components || []).forEach(c => aggiungi(c.itemId, i));
+    else if (i.type === 'parte') (i.cycle || []).forEach(r => { if (r.kind !== 'op') aggiungi(r.itemId, i); });
+  });
+  _parentIdx = idx;
+  return idx;
+}
 // Risultati di costOf già calcolati in questo giro di rendering.
 let _costCache = new Map();
 // Azzera indice e cache. Chiamata da Store.commit() — l'unico punto di scrittura
@@ -61,6 +99,23 @@ let _costCache = new Map();
 function invalidateCaches() {
   _costCache.clear();
   _itemIdx = null; _itemIdxArr = null; _itemIdxLen = -1;
+  _supIdx = null; _wcIdx = null; _parentIdx = null;
+}
+// ─── Librerie esterne (PDF ed Excel) ───
+// Arrivano da CDN, ma l'app è fatta per aprirsi con un doppio click su file://
+// e girare anche offline. Senza rete `window.jspdf` semplicemente non esiste: la
+// destrutturazione lanciava un TypeError che nessuno intercettava e l'utente
+// premeva "Esporta" senza vedere accadere nulla.
+function requirePdf() {
+  const lib = typeof window !== 'undefined' && window.jspdf;
+  if (lib && lib.jsPDF) return lib.jsPDF;
+  showToast('Libreria PDF non disponibile: serve la connessione a internet al primo caricamento', 'error');
+  return null;
+}
+function requireXlsx() {
+  if (typeof XLSX !== 'undefined' && XLSX) return XLSX;
+  showToast('Libreria Excel non disponibile: serve la connessione a internet al primo caricamento', 'error');
+  return null;
 }
 // Indirizzo strutturato → righe di testo (per documenti) o riga singola (per liste)
 function addressLines(o) {

@@ -22,16 +22,16 @@ La barra dei comandi ha **cinque gruppi**; le voci del gruppo aperto compaiono s
 | 📨 **Documenti** | Fabbisogno · Richieste offerta · Ordini |
 | ⚙ **Gestione** | — (solo amministratori) |
 
-- **🌳 Distinta base → Gestione DB** — albero multi-livello espandibile della macchina selezionata, con **numerazione di posizione** (1, 1.1, 1.1.1, 1.2, 2…), costo unitario e di riga per ogni componente, lavorazioni interne e card di riepilogo costi. Aggiunta/modifica/eliminazione di componenti e lavorazioni. I sottogruppi possono contenere altri sottogruppi, senza limite di profondità.
-- **📇 Anagrafica → Acquisti** — anagrafica di ciò che si compra: **materie prime** (costo unitario per U.M., es. €/kg) e **componenti commerciali** (prezzo d'acquisto da fornitore), con flag **preferito ★** (e filtro dedicato) e flag **obsoleto ⛔**.
-- **📇 Anagrafica → Progetto** — anagrafica di ciò che si costruisce: **macchina**, **gruppo**, **sottogruppo** (assiemi, con propria distinta e lavorazioni) e **parte** (foglia con distinta parte e ciclo di lavorazione, con flag **obsoleto ⛔**).
-- **🔧 Cicli di lavorazione** — vista dedicata alle parti: in alto la scelta della parte con i filtri per famiglia, sottofamiglia e testo; sotto la **distinta parte** (materie prime e commerciali necessari) e il **ciclo di lavorazione** (fasi 10, 20, 30… riordinabili con ↑ ↓). Ogni modifica si salva subito.
+- **🌳 Distinta base → Gestione DB** — albero multi-livello espandibile della macchina selezionata, con **numerazione di posizione** (1, 1.1, 1.1.1, 1.2, 2…), costo unitario e di riga per ogni componente, lavorazioni interne e card di riepilogo costi. Aggiunta/modifica/eliminazione di componenti e lavorazioni. I sottogruppi possono contenere altri sottogruppi, senza limite di profondità. Una **barra filtri** (testo, livello, macchina di appartenenza) restringe l'elenco delle distinte; la distinta aperta resta sempre raggiungibile anche quando il filtro la escluderebbe.
+- **📇 Anagrafica → Acquisti** — anagrafica di ciò che si compra: **materie prime** (costo unitario per U.M., es. €/kg) e **componenti commerciali**, con flag **preferito ★** (e filtro dedicato) e flag **obsoleto ⛔**. Fornitore e prezzo non si scrivono qui: la scheda li mostra in sola lettura e rimanda al **listino fornitori**.
+- **📇 Anagrafica → Progetto** — anagrafica di ciò che si costruisce: **macchina**, **gruppo**, **sottogruppo** (assiemi, con propria distinta e lavorazioni) e **parte** (foglia con distinta parte e ciclo di lavorazione, con flag **obsoleto ⛔**). Ogni parte dichiara il proprio **approvvigionamento**: prodotta in casa oppure acquistata da un fornitore.
+- **🔧 Cicli di lavorazione** — vista dedicata alle parti: in alto la scelta della parte con i filtri per famiglia, sottofamiglia e testo; sotto la **distinta parte** (materie prime e commerciali necessari) e il **ciclo di lavorazione** (fasi 10, 20, 30… riordinabili con ↑ ↓). In testa una riga dice da dove viene il costo di quella parte, secondo il suo approvvigionamento. Ogni modifica si salva subito.
 - **🌳 Distinta base → Visualizza DB** — costificazione: incidenza delle voci di costo e distinta esplosa; **export PDF ed Excel**.
-- **📨 Documenti → Fabbisogno materiali** — piani di produzione salvati (3 × macchina A, 2 × macchina B): le distinte si esplodono e si sommano in una **lista d'acquisto consolidata**, raggruppabile per fornitore, più l'elenco delle **parti da fabbricare**. Export Excel e PDF.
-- **💶 Listino fornitori** — più quotazioni per articolo (fornitore, prezzo, q.tà minima, giorni di consegna, data), alimentate anche dai prezzi tornati con le richieste di offerta. Il prezzo che entra nella costificazione si sceglie esplicitamente dal listino.
+- **📨 Documenti → Fabbisogno materiali** — piani di produzione salvati (3 × macchina A, 2 × macchina B): le distinte si esplodono e si sommano in una **lista d'acquisto consolidata**, raggruppabile per fornitore, più l'elenco delle **parti da fabbricare**. Da qui si **generano richieste di offerta e ordini**, un documento per fornitore, scegliendo quali righe includere. Export Excel e PDF.
+- **💶 Listino fornitori** — l'unico posto dove nasce un prezzo d'acquisto. Più quotazioni per articolo (fornitore, codice e descrizione presso il fornitore, prezzo, q.tà minima, giorni di consegna, data), alimentate anche dai prezzi tornati con le richieste di offerta. Vale per commerciali, materie prime **e parti**. Il prezzo che entra nella costificazione si sceglie esplicitamente dal listino.
 - **🔗 Dove è usato** — da ogni articolo si risale a chi lo contiene e alle macchine impattate, con **simulazione del costo**: si prova un prezzo diverso e si vede subito l'effetto sul costo delle macchine, senza salvare nulla.
 - **📨 Richieste di offerta (RFQ)** — una richiesta per fornitore, righe da catalogo o manuali, documento bilingue IT/EN in PDF ed Excel, compilazione dei prezzi al ritorno dell'offerta e **confronto offerte** tra più richieste.
-- **🧾 Ordini a fornitore (ODA)** — generabili da una richiesta o da zero, con prezzi, importi, consegne e **registrazione dei ricevimenti** (ricevuto/residuo per riga).
+- **🧾 Ordini a fornitore (ODA)** — generabili da una richiesta, da un piano di fabbisogno o da zero, con prezzi, importi, consegne e **registrazione dei ricevimenti** (ricevuto/residuo per riga).
 - Gli elenchi di richieste e ordini si filtrano per **stato**, **fornitore** e **testo** (numero, oggetto, fornitore, note e righe del documento).
 - **🔎 Ricerca globale (Ctrl+K)** — un campo solo per articoli, richieste, ordini e piani: si scrive un codice o un numero e si salta dove serve, senza passare dalla vista giusta e dai suoi filtri.
 - **🖨 Stampa della vista aperta (Ctrl+P)** — distinta, costificazione, fabbisogno, richiesta o ordine escono su carta ripuliti di navigazione, filtri e pulsanti, con intestazione, data e autore.
@@ -39,7 +39,7 @@ La barra dei comandi ha **cinque gruppi**; le voci del gruppo aperto compaiono s
 - **Schede mobili** — le finestre di dialogo non bloccano più la pagina: si spostano trascinandole per il titolo, si ridimensionano dall'angolo e si chiudono con ✕ o Esc. Dietro si continua a navigare, e listino, *Dove è usato* e un form possono restare aperti insieme.
 - Le anagrafiche mostrano **200 articoli per volta** (*Mostra altri* / *Mostra tutti* in fondo all'elenco): i cataloghi grandi restano scorrevoli.
 - **🔒 Note interne** su richieste e ordini: restano nell'app, non compaiono mai su PDF ed Excel. Passano dalla richiesta all'ordine generato e sono modificabili in qualunque stato del documento.
-- **⚙ Gestione** — dati azienda, fornitori, condizioni di offerta (trasporto/pagamento), famiglie articolo, **concetti** (nomenclatura delle parti), centri di lavoro (tariffe €/h), **unità di misura**, impostazioni globali (spese generali %, margine %, valuta, calcolo costo parte), **import massivo da Excel** e backup JSON (esporta/importa/ripristina/**azzera tutto**).
+- **⚙ Gestione** — dati azienda, fornitori, condizioni di offerta (trasporto/pagamento), famiglie articolo, **concetti** (nomenclatura delle parti), centri di lavoro (tariffe €/h), **unità di misura**, impostazioni globali (spese generali %, margine %, valuta, approvvigionamento parte), **import massivo da Excel** e backup JSON (esporta/importa/ripristina/**azzera tutto**).
 
 ### Utenti e ruoli
 
@@ -135,17 +135,28 @@ prezzo vendita = costo totale × (1 + margine %)
 
 Le percentuali di spese generali e margine sono globali (Impostazioni) e sovrascrivibili per singola macchina dalla *Modifica testata*; sono ammesse tra 0 e 1000%. I riferimenti ciclici sono rilevati e impediti sia nella distinta sia nel ciclo di lavorazione delle parti: un articolo coinvolto in un anello viene segnalato invece di restituire un costo troncato.
 
-Gli articoli di tipo **parte** fanno eccezione: oltre al costo unitario a mano possono avere una **distinta parte** (materie prime e commerciali) e un **ciclo di lavorazione** (fasi a costo fisso), gestiti nella vista *🔧 Cicli di lavorazione*. Ogni parte sceglie lì come combinare le due cose:
+### Parti: una domanda sola, la facciamo o la compriamo?
 
-| Calcolo | Costo della parte |
-|---|---|
-| Solo costo unitario | il campo manuale; distinta e ciclo restano documentali e non entrano nel costo |
-| Solo valore ciclo | la somma delle righe di distinta parte e ciclo (il campo manuale si disabilita) |
-| Costo unitario + valore ciclo | la somma dei due |
+Gli articoli di tipo **parte** fanno eccezione: possono avere una **distinta parte** (materie prime e commerciali) e un **ciclo di lavorazione** (fasi a costo fisso), gestiti nella vista *🔧 Cicli di lavorazione*. Da dove venga il loro costo lo decide un campo solo, l'**approvvigionamento**, nella scheda articolo:
 
-Il **fabbisogno materiali** scende nelle distinte con queste stesse regole (scarto compreso, e distinta parte esplosa solo quando concorre al costo): quantità e importi della lista d'acquisto tornano con la costificazione della stessa macchina.
+| Approvvigionamento | Costo della parte | Nel fabbisogno |
+|---|---|---|
+| 🏭 Produzione interna | la somma delle righe di distinta parte e ciclo | si scende nella distinta e si compra quel che serve per farla |
+| 🛒 Acquisto da fornitore | il prezzo scelto nel **listino fornitori** | è una foglia d'acquisto come un commerciale: la distinta non si esplode |
 
-L'ordine delle fasi è documentale: riordinarle non cambia il costo. Il modo proposto alle nuove parti si imposta in *Gestione → Impostazioni*. Le parti già esistenti conservano il comportamento precedente (ciclo se ne avevano uno, altrimenti costo manuale).
+Una parte in produzione interna ma **senza righe di ciclo** non ha niente da calcolare: vale anche lì il prezzo a listino.
+
+Costo e fabbisogno partono così dalla stessa risposta e non possono contraddirsi. La distinta e il ciclo di una parte acquistata **restano salvati** e consultabili — servono a sapere quanto costerebbe farla in casa — semplicemente non concorrono al costo.
+
+Il **fabbisogno materiali** scende nelle distinte con queste stesse regole (scarto compreso): quantità e importi della lista d'acquisto tornano con la costificazione della stessa macchina. L'ordine delle fasi è documentale: riordinarle non cambia il costo.
+
+Le parti nuove nascono **da acquisto** — è il caso più frequente, la parte la lavora un terzista — e chi la produce in casa lo dichiara; il valore proposto si cambia in *Gestione → Impostazioni*. Le parti **già a catalogo non si toccano**: cambiare l'impostazione vale per le prossime.
+
+### Da dove arriva un prezzo d'acquisto
+
+Fornitore, prezzo, codice e descrizione presso il fornitore **nascono solo nel listino**. La scheda articolo li mostra in sola lettura, con un pulsante che apre il listino; creando un articolo che si compra, il listino si apre da solo. Un prezzo senza fornitore resta possibile — è una quotazione con il fornitore vuoto, marcata *a mano*.
+
+Il motivo è lo storico: finché lo stesso dato si poteva scrivere in due posti, un prezzo corretto nella scheda spariva senza lasciare traccia, e alla domanda «quando e da chi l'abbiamo pagato così?» non c'era risposta. Vale per commerciali, materie prime e parti; su una parte prodotta in casa, scegliere una quotazione chiede prima di segnarla come acquistata, invece di spostare il costo di nascosto.
 
 ## File
 
@@ -168,6 +179,7 @@ L'ordine delle fasi è documentale: riordinarle non cambia il costo. Il modo pro
 | `import-export.js` | import da Excel, backup JSON e avvio dell'app |
 - `style.css` — tema dark.
 - `docs/cloud-schema.md` — contratto per il futuro backend condiviso (mappatura tabelle, adapter).
+- `docs/analisi-tecnica.md` — controllo generale del codice: cosa è stato risolto, cosa resta aperto e perché.
 - `test/` — suite di verifica del motore di costo, delle migrazioni e del salvataggio. **Non serve all'app**: `index.html` non la carica, e copiando la cartella su un altro PC si può anche omettere.
 
 ### Test
@@ -177,11 +189,51 @@ node test/run.js      # suite completa
 node test/bench.js    # benchmark del motore di costificazione
 ```
 
-Richiede solo **Node 18 o superiore** — nessun `npm install`, nessuna dipendenza: la suite usa i moduli core e carica `store.js` e `app.js` in un contesto isolato, esattamente come li carica `index.html`.
+Richiede solo **Node 18 o superiore** — nessun `npm install`, nessuna dipendenza: la suite usa i moduli core e carica i sorgenti dell'app in un contesto isolato, nella stessa sequenza di `index.html`.
 
 ## Changelog
 
-Le revisioni seguono il versionamento semantico `0.MINOR.PATCH`: **MINOR** per nuove funzionalità, **PATCH** per correzioni. La versione in cima è quella in `APP_VERSION` (`app.js`) e mostrata nell'header dell'app.
+Le revisioni seguono il versionamento semantico `0.MINOR.PATCH`: **MINOR** per nuove funzionalità, **PATCH** per correzioni. La versione in cima è quella in `APP_VERSION` (`core.js`) e mostrata nell'header dell'app.
+
+### 0.21.0 — 2026-07-31
+
+**Cambiato**
+- **Il calcolo del costo di una parte non è più una scelta a parte.** C'erano due interruttori che rispondevano alla stessa domanda per metà: il *modo di calcolo* nella vista Cicli (solo costo unitario / solo ciclo / la somma dei due) e, da questa versione, l'*approvvigionamento* nella scheda articolo. Potevano contraddirsi — comprare la parte da un terzista ma continuare a costificarla dal ciclo interno — e tenerli d'accordo era un lavoro a mano. Ora la domanda è una sola: **la parte la facciamo o la compriamo?**
+  - **Produzione interna** → il costo lo determinano distinta parte e ciclo di lavorazione (se sono vuoti, vale il prezzo a listino).
+  - **Acquisto da fornitore** → il costo è il prezzo scelto nel listino, e la distinta non si esplode nel fabbisogno.
+  - Il selettore *Calcolo del costo della parte* sparisce dalla vista Cicli, che al suo posto **dice da dove viene il costo** e rimanda alla scheda articolo. Distinta e ciclo di una parte acquistata restano salvati e consultabili.
+- **Fornitore e prezzo d'acquisto escono dalla scheda articolo.** Prima lo stesso dato si poteva scrivere in due posti — nella scheda e nel listino — e un prezzo corretto a mano nella scheda spariva senza lasciare traccia: lo storico aveva buchi proprio dove serviva. Ora c'è **una porta sola, il listino 💶**. La scheda mostra prezzo, fornitore, codice e descrizione presso il fornitore **in sola lettura**, con un pulsante che apre il listino; creando un articolo che si compra, il listino si apre da solo. Un prezzo senza fornitore resta possibile: è una quotazione con il fornitore vuoto, marcata *a mano*.
+- **Nel listino si può scrivere anche la descrizione presso il fornitore**, accanto al codice: è il campo che prima stava nella scheda articolo. Ora vive dove sta il resto della quotazione, e cambia insieme al fornitore invece di restare quello dell'ultimo.
+- **Il costo unitario di una materia prima o di una parte si imposta dal listino**, come il prezzo di un commerciale. Un articolo già esistente col suo costo se lo ritrova come prima quotazione, senza perdere niente.
+
+**Aggiunto**
+- **Le parti hanno il listino, come i commerciali.** Molte si comprano già lavorate da terzi: adesso si possono registrare più fornitori, confrontare le quotazioni e tenerne lo storico, **senza toccare i cicli di lavorazione**, che restano come sono. Su una parte prodotta in casa, scegliere una quotazione **chiede prima di segnarla come acquistata**: il costo non si sposta mai di nascosto.
+- **Ogni parte dichiara se si produce o si compra.** Nuovo campo *Approvvigionamento* nella scheda parte. Con *Acquisto da fornitore* la parte finisce nel **fabbisogno fra le cose da acquistare**, col suo fornitore, e la sua distinta non viene esplosa — quel materiale e quelle lavorazioni li mette il fornitore. Il ciclo resta salvato: serve a confrontare quanto costerebbe farla in casa. In elenco la parte acquistata si riconosce dal segno 🛒.
+  - Le parti **nuove nascono da acquisto**; il valore proposto si cambia in *Gestione → Impostazioni*. Le parti **già a catalogo non si toccano**, così nessun fabbisogno già calcolato si muove da solo.
+- **Dal fabbisogno si generano richieste di offerta e ordini.** Il piano sapeva già cosa comprare e da chi, ma la lista si riscriveva a mano nei documenti. Il pulsante **📄 Genera documenti** apre una scheda con le righe raggruppate per fornitore: si spuntano fornitori e singole righe, si sceglie *richiesta* o *ordine*, e nasce **un documento per fornitore**. Le righe senza fornitore fanno gruppo a sé, «Da assegnare».
+  - Le **richieste nascono senza prezzo** — è quello che si sta chiedendo. Gli **ordini portano il prezzo in uso** nella costificazione.
+  - Prima di generare si vedono i problemi: righe **senza prezzo** e quantità **sotto il minimo** del fornitore sono segnalate nella scheda, non dopo aver mandato l'ordine.
+  - Il legame resta scritto: il piano elenca i documenti che ha generato, e ogni documento dice da quale fabbisogno viene. Un ordine generato da una richiesta nata da un piano conserva la catena intera.
+- **Filtri nella distinta base.** La vista aveva solo un menu a tendina, inservibile oltre il centinaio di assiemi. Ora una barra filtra per **testo**, **livello** (macchine / gruppi / sottogruppi) e **macchina di appartenenza**, con il conteggio «N di M». La distinta aperta resta sempre nel menu anche se il filtro la escluderebbe: restringere la ricerca non chiude più l'albero sotto le mani.
+
+**Corretto**
+- **La finestra *Dove è usato* era lentissima sui cataloghi grandi**: per ogni articolo ricontrollava l'intero catalogo, e la simulazione del costo lo rifaceva a ogni riga. Ora la risalita usa un indice: sul banco di prova (700 articoli) è passata da **8 secondi a un decimo di secondo**. Stesso trattamento per fornitori e centri di lavoro, cercati fin qui uno per uno a ogni riga disegnata.
+- **Un fornitore si poteva cancellare anche se citato solo nei listini, nei cicli o nei documenti**, lasciando uno storico prezzi che puntava nel vuoto. Ora l'app controlla tutti i posti e dice esattamente dove è ancora usato.
+- **Gli export PDF ed Excel morivano in silenzio senza connessione.** Le librerie arrivano da internet al primo caricamento: senza, il pulsante sembrava semplicemente non funzionare. Ora compare un messaggio che spiega cosa manca. Stessa cosa per un file d'importazione illeggibile.
+- Nell'albero della distinta e in *Dove è usato*, una riga di ciclo salvata **senza tipo esplicito** ora conta come articolo, come già faceva il motore di costo: le due letture non possono più divergere.
+
+**Per chi aggiorna**
+- Non serve fare nulla: i dati esistenti si adeguano da soli al primo avvio. Costi e prezzi già inseriti diventano la prima quotazione a listino e restano quelli in uso nella costificazione.
+- Il vecchio modo di calcolo di ogni parte diventa il suo approvvigionamento, **conservando insieme il costo e il comportamento nel fabbisogno**:
+
+  | Modo di calcolo (prima) | Approvvigionamento (ora) | Cosa cambia |
+  |---|---|---|
+  | Solo costo unitario | 🛒 Acquisto da fornitore | nulla: costava già il campo manuale e la distinta non si esplodeva |
+  | Solo valore ciclo | 🏭 Produzione interna | nulla |
+  | Costo unitario + valore ciclo | 🏭 Produzione interna | **il costo scende**: resta il valore del ciclo, si perde la quota manuale che ci si sommava |
+
+  L'ultima riga è l'unico caso in cui un numero si muove. Se avevi parti impostate sulla somma, controllale: ora il ciclo è il costo del farle, e quello che prima era la quota aggiuntiva va portato in una riga di ciclo, oppure la parte va segnata come acquistata.
+- Le parti **già a catalogo mantengono il comportamento di prima**: solo le nuove nascono da acquisto.
 
 ### 0.20.0 — 2026-07-30
 

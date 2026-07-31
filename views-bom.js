@@ -8,18 +8,55 @@
 // ═══════════════════════════════════════════════════════════
 //  VISTA: DISTINTE BASE
 // ═══════════════════════════════════════════════════════════
+// ─── Filtri dell'elenco distinte ───
+// Oltre il centinaio di assiemi il menu a tendina non si scorre più. I criteri
+// sono gli stessi della vista Cicli: testo, livello e — al posto della famiglia,
+// che gli assiemi non usano — la macchina di appartenenza.
+function bomProducts() { return (db.items || []).filter(i => isAssembly(i.type)); }
+function bomFilteredProducts() {
+  const q = (val('bom-search') || '').toLowerCase();
+  const tipo = val('bom-type');
+  const mac = val('bom-machine');
+  let rows = bomProducts();
+  if (tipo) rows = rows.filter(i => i.type === tipo);
+  // La macchina stessa vale come "appartenente a sé": filtrando per una macchina
+  // ci si aspetta di trovarci dentro anche lei, non solo i suoi gruppi.
+  if (mac) rows = rows.filter(i => i.id === mac || i.machineItemId === mac);
+  if (q) rows = rows.filter(i => (i.code + ' ' + i.name).toLowerCase().includes(q));
+  return rows.sort((a, b) => String(a.code).localeCompare(String(b.code)));
+}
+// Ripopola il menu delle macchine conservando la scelta, se ancora valida
+// (stesso patto di updateCycleFamilyFilters).
+function updateBomMachineFilter() {
+  const sel = document.getElementById('bom-machine'); if (!sel) return;
+  const macs = (db.items || []).filter(i => i.type === 'macchina')
+    .sort((a, b) => String(a.code).localeCompare(String(b.code)));
+  const keep = macs.some(m => m.id === sel.value) ? sel.value : '';
+  sel.innerHTML = `<option value="">Tutte le macchine</option>` +
+    macs.map(m => `<option value="${m.id}" ${m.id === keep ? 'selected' : ''}>${esc(m.code)} — ${esc(m.name)}</option>`).join('');
+}
+function bomSearchInput() { debounced('bom', renderBom); }
+function onBomFilterChange() { renderBom(); }
+
 function productOptions(selectedId) {
   const opt = (i) => `<option value="${i.id}" ${i.id === selectedId ? 'selected' : ''}>${itemBadgesTxt(i)}${esc(i.code)} — ${esc(i.name)}</option>`;
+  // La distinta aperta resta sempre in elenco, anche se non passa i filtri:
+  // altrimenti restringere la ricerca chiuderebbe l'albero sotto le mani.
+  const rows = bomFilteredProducts();
+  const aperta = getItem(selectedId);
+  if (aperta && isAssembly(aperta.type) && !rows.some(i => i.id === selectedId)) rows.push(aperta);
   const groups = [['macchina', 'Macchine'], ['gruppo', 'Gruppi'], ['sottogruppo', 'Sottogruppi']];
   let h = groups.map(([t, lbl]) => {
-    const items = db.items.filter(i => i.type === t);
+    const items = rows.filter(i => i.type === t);
     return items.length ? `<optgroup label="${lbl}">${items.map(opt).join('')}</optgroup>` : '';
   }).join('');
   if (!h) h = '<option value="">— nessun assieme —</option>';
   return h;
 }
+// La selezione ricade sui prodotti NON filtrati: i filtri restringono l'elenco,
+// non decidono cosa si sta guardando.
 function ensureCurrentBom() {
-  const products = db.items.filter(i => isAssembly(i.type));
+  const products = bomProducts();
   if (!currentBomId || !products.some(p => p.id === currentBomId)) {
     const m = products.find(p => p.type === 'macchina') || products[0];
     currentBomId = m ? m.id : null;
@@ -29,8 +66,14 @@ function onBomSelect() { currentBomId = val('bom-select'); bomExpanded = new Set
 
 function renderBom() {
   invalidateCaches();   // rete di sicurezza: la cache dei costi vive dentro un singolo disegno
+  updateBomMachineFilter();
   ensureCurrentBom();
   document.getElementById('bom-select').innerHTML = productOptions(currentBomId);
+  const conta = document.getElementById('bom-count');
+  if (conta) {
+    const n = bomFilteredProducts().length, tot = bomProducts().length;
+    conta.textContent = n === tot ? `${tot} ${tot === 1 ? 'distinta' : 'distinte'}` : `${n} di ${tot}`;
+  }
   const it = getItem(currentBomId);
   const summary = document.getElementById('bom-cost-summary');
   const tree = document.getElementById('bom-tree');
@@ -77,7 +120,7 @@ function renderBomNode(comp, level, parentId, editable, idx, pathPrefix, ancesto
   const isProd = isAssembly(child.type);
   // Anche una Parte è espandibile: mostra il proprio ciclo di lavorazione (articoli + lavorazioni).
   // Col calcolo "solo costo unitario" il ciclo non concorre al costo e non va mostrato nell'albero.
-  const hasCycle = child.type === 'parte' && (child.cycle || []).length > 0 && partCostMode(child) !== 'unit';
+  const hasCycle = child.type === 'parte' && (child.cycle || []).length > 0 && partSourcing(child) !== 'buy';
   const expandable = !cyc && (hasCycle || (isProd && (child.components || []).length > 0));
   const expanded = bomExpanded.has(nodeKey);
   const unit = cyc ? 0 : costOf(comp.itemId).total;
@@ -116,7 +159,6 @@ function renderBomNode(comp, level, parentId, editable, idx, pathPrefix, ancesto
       let n = 0;
       h += (child.cycle || []).map(row =>
         renderCycleBomNode(row, level + 1, row.kind === 'op' ? '' : bomPos(pos, n++))).join('');
-      h += renderPartManualCostNode(child, level + 1, bomPos(pos, n));
     } else {
       h += (child.components || []).map((cc, i) =>
         renderBomNode(cc, level + 1, child.id, false, i, nodeKey, ancestorIds.concat(child.id), bomPos(pos, i))).join('');
@@ -133,7 +175,7 @@ function renderCycleBomNode(row, level, pos) {
   const lineCost = cycleRowCost(row);
   let name, qtyCell, uom, unit;
   if (row.kind === 'op') {
-    const wc = db.workCenters.find(w => w.id === row.workCenterId);
+    const wc = getWorkCenter(row.workCenterId);
     const sup = supplierName(row.supplierId);
     name = `<span class="bom-type-tag tt-lav">LAV</span>
       <span class="nm" title="${esc(wc ? wc.name : '?')}">🔧 ${esc(wc ? wc.name : '?')}${sup ? ' · ' + esc(sup) : ''}</span>`;
@@ -157,23 +199,6 @@ function renderCycleBomNode(row, level, pos) {
   </div>`;
 }
 
-// Col calcolo "costo unitario + ciclo" la quota manuale è una riga a sé, così le
-// righe mostrate sotto la Parte sommano al suo costo unitario.
-function renderPartManualCostNode(it, level, pos) {
-  const manual = Number(it.unitCost) || 0;
-  if (partCostMode(it) !== 'sum' || !manual) return '';
-  const indent = (level - 1) * 18;
-  return `<div class="bom-node bom-node-cycle" style="padding-left:${18 + indent}px">
-    <span class="bom-name"><span class="bom-pos">${esc(pos || '')}</span><span class="bom-toggle leaf">•</span>
-      <span class="nm">💠 Costo unitario (manuale)</span></span>
-    <span class="num">1</span>
-    <span>${esc(it.uom || '')}</span>
-    <span class="num cost">${fmtN(manual)}</span>
-    <span class="num">—</span>
-    <span class="num cost">${fmtN(manual)}</span>
-    <span class="bom-row-actions"></span>
-  </div>`;
-}
 
 // Riga radice: mostra l'articolo padre (macchina/gruppo selezionata) come prima riga dell'albero.
 function renderBomRootNode(it) {
@@ -199,7 +224,7 @@ function renderOpsBlock(item, editable, padLeft) {
   const ops = item.operations || [];
   const pl = padLeft != null ? padLeft : 18;
   const tags = ops.map((o, i) => {
-    const wc = db.workCenters.find(w => w.id === o.workCenterId);
+    const wc = getWorkCenter(o.workCenterId);
     const cost = (Number(o.hours) || 0) * (wc ? (Number(wc.hourlyRate) || 0) : 0);
     const del = editable ? ` <span style="cursor:pointer;color:var(--red)" title="Elimina" onclick="delOperation(${i})">✕</span>` : '';
     const ed = editable ? `<span style="cursor:pointer" onclick="editOperationModal(${i})">` : '<span>';
@@ -368,7 +393,7 @@ function createsCycle(parentId, childId) {
   return dfs(childId);
 }
 
-function supplierName(id) { const s = db.suppliers.find(x => x.id === id); return s ? s.name : ''; }
+function supplierName(id) { const s = getSupplier(id); return s ? s.name : ''; }
 function supplierOptions(selectedId) {
   return `<option value="">—</option>` + db.suppliers
     .map(s => `<option value="${s.id}" ${s.id === selectedId ? 'selected' : ''}>${esc(s.name)}</option>`).join('');
@@ -526,10 +551,11 @@ function deleteCurrentMachine() {
     currentBomId = null; saveDB(); renderBom(); showToast('Eliminato');
   });
 }
+// Chi contiene questo articolo, dall'indice inverso: una lettura invece di una
+// scansione del catalogo. La copia protegge l'indice da chi ordina il risultato.
 function usedBy(itemId) {
-  return db.items.filter(i =>
-    (isAssembly(i.type) && (i.components || []).some(c => c.itemId === itemId)) ||
-    (i.type === 'parte' && (i.cycle || []).some(r => r.kind === 'item' && r.itemId === itemId)));
+  const l = parentIndex().get(itemId);
+  return l ? l.slice() : [];
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -550,9 +576,11 @@ function usageQty(parent, childId) {
   }
   // Nel ciclo di lavorazione una riga con override non dipende più dal costo
   // dell'articolo: conta come impiego, ma non propaga la variazione di prezzo.
-  if (parent.type === 'parte' && partCostMode(parent) !== 'unit') {
+  if (parent.type === 'parte' && partSourcing(parent) !== 'buy') {
+    // kind assente vale 'item', come nel motore di costo: una riga di ciclo è
+    // una lavorazione solo se lo dice esplicitamente.
     (parent.cycle || []).forEach(r => {
-      if (r.kind === 'item' && r.itemId === childId) q += Number(r.qty) || 0;
+      if (r.kind !== 'op' && r.itemId === childId) q += Number(r.qty) || 0;
     });
   }
   return q;
@@ -594,13 +622,15 @@ function impactedTops(itemId) {
 
 // ─── Il campo dove vive il costo proprio dell'articolo ───
 // Dipende dal tipo. Gli assiemi non ne hanno uno (il loro costo è derivato) e
-// nemmeno le parti a "solo ciclo": lì non c'è un prezzo da simulare o da
-// prendere a listino.
+// nemmeno le parti prodotte in casa con un ciclo: lì non c'è un prezzo da
+// simulare o da prendere a listino, lo determinano distinta e lavorazioni.
 function costField(it) {
   if (!it) return null;
   if (it.type === 'acquistato') return 'purchasePrice';
   if (it.type === 'materiale') return 'unitCost';
-  if (it.type === 'parte' && partCostMode(it) !== 'cycle') return 'unitCost';
+  // Una parte prodotta in casa ha il costo derivato dal ciclo: non c'è un campo
+  // da scrivere. Senza righe di ciclo il costo torna a essere il prezzo a listino.
+  if (it.type === 'parte') return (partSourcing(it) === 'buy' || !(it.cycle || []).length) ? 'unitCost' : null;
   return null;
 }
 // Esegue `fn` come se l'articolo costasse `valore`, poi rimette tutto a posto.

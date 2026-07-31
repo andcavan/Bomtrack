@@ -14,7 +14,7 @@ function makeDb(over) {
     items: o.items || [],
     settings: Object.assign({
       overheadPct: 0, marginPct: 0, currency: '€', codeDigits: 3,
-      partCostModeDefault: 'cycle',
+      partSourcingDefault: 'buy',
       uoms: [], uomDefault: 'pz', concepts: [],
       mpFamiliesSeeded: true, partFamiliesSeeded: true,
     }, o.settings || {}),
@@ -29,8 +29,11 @@ function mat(id, unitCost) {
 function acq(id, purchasePrice) {
   return { id, code: id.toUpperCase(), name: 'Commerciale ' + id, type: 'acquistato', uom: 'pz', purchasePrice, active: true };
 }
+// Di default prodotta in casa: è il caso che esercita il rollup del ciclo.
+// Le prove sull'acquisto passano `sourcing: 'buy'` esplicitamente.
 function parte(id, o) {
-  return Object.assign({ id, code: id.toUpperCase(), name: 'Parte ' + id, type: 'parte', uom: 'pz', unitCost: 0, cycle: [], active: true }, o || {});
+  return Object.assign({ id, code: id.toUpperCase(), name: 'Parte ' + id, type: 'parte', uom: 'pz',
+    unitCost: 0, cycle: [], sourcing: 'make', active: true }, o || {});
 }
 function asm(id, type, o) {
   return Object.assign({ id, code: id.toUpperCase(), name: 'Assieme ' + id, type, uom: 'pz', components: [], operations: [], active: true }, o || {});

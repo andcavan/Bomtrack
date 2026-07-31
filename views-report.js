@@ -23,15 +23,15 @@ function flattenBom(itemId, qty, scrap, level, rows, ancestors, pos) {
   }
   // Una Parte esplode il proprio ciclo di lavorazione: i costi riga sono scalati per la quantità del padre,
   // così la somma dei figli coincide col costo riga della Parte.
-  // (col calcolo "solo costo unitario" il ciclo non concorre al costo: niente esplosione)
-  if (it.type === 'parte' && !cyc && partCostMode(it) !== 'unit') {
+  // (una parte comprata non si esplode: il suo costo è il prezzo del fornitore)
+  if (it.type === 'parte' && !cyc && partSourcing(it) !== 'buy') {
     // Le fasi di lavorazione non prendono posizione: il contatore avanza solo sugli
     // articoli della distinta parte, come nell'albero della distinta.
     let n = 0;
     (it.cycle || []).forEach(row => {
       const rowCost = cycleRowCost(row);
       if (row.kind === 'op') {
-        const wc = db.workCenters.find(w => w.id === row.workCenterId);
+        const wc = getWorkCenter(row.workCenterId);
         const sup = supplierName(row.supplierId);
         rows.push({ level: level + 1, pos: '', code: '', name: '🔧 ' + (wc ? wc.name : '?') + (sup ? ' · ' + sup : ''),
           type: 'Lavorazione', qty: 1, uom: '', unit: rowCost, line: rowCost * factor });
@@ -42,13 +42,6 @@ function flattenBom(itemId, qty, scrap, level, rows, ancestors, pos) {
           qty: Number(row.qty) || 0, uom: ci.uom || '', unit: costOf(row.itemId).total, line: rowCost * factor });
       }
     });
-    // Col calcolo "costo unitario + ciclo" anche la quota manuale è una riga,
-    // altrimenti la somma dei figli non tornerebbe col costo della Parte.
-    const manual = Number(it.unitCost) || 0;
-    if (partCostMode(it) === 'sum' && manual) {
-      rows.push({ level: level + 1, pos: bomPos(pos, n), code: '', name: 'Costo unitario (manuale)', type: 'Costo',
-        qty: 1, uom: it.uom || '', unit: manual, line: manual * factor });
-    }
   }
 }
 function renderReport() {
@@ -122,6 +115,7 @@ function exportBomExcel() {
   data.push(['', '', 'Spese generali', '', '', '', '', '', +c.overhead.toFixed(2)]);
   data.push(['', '', 'COSTO TOTALE', '', '', '', '', '', +c.total.toFixed(2)]);
   data.push(['', '', 'PREZZO VENDITA', '', '', '', '', '', +sellingPrice(it.id).toFixed(2)]);
+  if (!requireXlsx()) return;
   const ws = XLSX.utils.aoa_to_sheet(data);
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Distinta');
@@ -130,7 +124,7 @@ function exportBomExcel() {
 }
 function exportBomPDF() {
   const it = getItem(reportBomId || currentBomId); if (!it) { showToast('Seleziona un prodotto', 'error'); return; }
-  const { jsPDF } = window.jspdf;
+  const jsPDF = requirePdf(); if (!jsPDF) return;
   const doc = new jsPDF();
   const c = costOf(it.id);
   doc.setFontSize(15); doc.text(`Distinta base — ${it.name}`, 14, 16);

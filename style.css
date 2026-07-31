@@ -191,9 +191,10 @@ input,select,button,textarea{font-family:var(--font)}
 .cycle-picker-box .search:focus{border-color:var(--accent)}
 /* Vista Cicli di lavorazione */
 .cyc-part-select{flex:1;min-width:240px}
-.cycle-mode{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:18px}
-.cycle-mode label{font-size:11px;font-weight:600;color:var(--text-dim);text-transform:uppercase;letter-spacing:.05em}
-.cycle-mode select{background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:8px 10px;color:var(--text);font-size:13px;outline:none}
+/* Da dove viene il costo della parte: si legge qui, si sceglie nella scheda articolo */
+.cycle-note{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:18px;padding:10px 12px;
+  background:var(--bg);border:1px solid var(--border);border-radius:8px;font-size:13px;color:var(--text-dim);line-height:1.5}
+.cycle-note strong{color:var(--text)}
 .cycle-section{margin-bottom:20px}
 .cycle-section-head{display:flex;align-items:center;gap:10px;margin-bottom:8px}
 .cycle-section-head h3{font-size:14px;font-weight:700;margin:0;display:flex;align-items:center;gap:8px}
@@ -205,7 +206,7 @@ input,select,button,textarea{font-family:var(--font)}
 .cycle-move .mini-btn[disabled]:hover{color:var(--text-dim);border-color:var(--border)}
 /* Sola lettura: niente riordino e nessun campo modificabile nelle righe */
 .view-readonly .cycle-move{display:none}
-.view-readonly .cycle-row input,.view-readonly .cycle-row select,.view-readonly .cycle-mode select{pointer-events:none;opacity:.6}
+.view-readonly .cycle-row input,.view-readonly .cycle-row select{pointer-events:none;opacity:.6}
 @media(max-width:640px){
   .cycle-row,.cycle-op-row{grid-template-columns:1fr 1fr;gap:4px}
   .cycle-head{display:none}
@@ -218,6 +219,16 @@ input,select,button,textarea{font-family:var(--font)}
 .mrp-total td{border-top:2px solid var(--border);font-weight:700}
 .mrp-warn{color:var(--orange);font-size:11px;white-space:nowrap}
 .mrp-section .btn-outline.active{color:var(--text);border-color:var(--accent)}
+/* Modale "Genera documenti": fornitori a gruppi, righe a spunta */
+.plandoc-group{border:1px solid var(--border);border-radius:8px;margin-bottom:10px;overflow:hidden}
+.plandoc-head{display:flex;align-items:center;gap:8px;padding:9px 12px;background:var(--bg);font-size:13px;cursor:pointer}
+.plandoc-row{display:flex;align-items:center;gap:8px;padding:6px 12px 6px 30px;font-size:13px;cursor:pointer;border-top:1px solid var(--border)}
+.plandoc-row:hover{background:var(--bg)}
+.plandoc-qty{margin-left:auto;font-family:var(--mono);font-size:12px;color:var(--text-dim);white-space:nowrap}
+.plandoc-head .plandoc-qty{margin-left:auto}
+.plandoc-links{display:flex;flex-wrap:wrap;gap:8px}
+.plandoc-link{border:1px solid var(--border);border-radius:6px;padding:6px 10px;font-size:12px;cursor:pointer}
+.plandoc-link:hover{border-color:var(--accent);color:var(--text)}
 
 /* Summary card */
 .cost-summary{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:20px}
@@ -265,9 +276,11 @@ tr{border-bottom:1px solid rgba(42,46,59,.4)}
 .price-table input:focus,.price-table select:focus{border-color:var(--accent)}
 .price-table .num{font-family:var(--mono);text-align:right}
 .price-table .pl-flag{width:1%;white-space:nowrap;padding-top:14px}
-.pl-sup{min-width:170px}
+.pl-sup{min-width:240px}
 .pl-sub{display:flex;align-items:center;gap:8px;margin-top:4px}
 .pl-sub input{font-family:var(--mono);font-size:11px;padding:4px 6px;max-width:150px}
+/* La descrizione presso il fornitore è testo corrente, non un codice */
+.pl-sub input.pl-desc{font-family:inherit;max-width:210px}
 .pl-sub span{color:var(--text-dim);font-size:11px;white-space:nowrap}
 .price-table .pl-price{width:88px}
 .price-table .pl-small{width:62px}
@@ -281,6 +294,8 @@ tr{border-bottom:1px solid rgba(42,46,59,.4)}
 .fav-star.off{color:var(--border)}
 .fav-star.off:hover{color:var(--orange)}
 .obs-mark{font-size:12px;margin-left:2px}
+/* Parte comprata da fornitore invece che prodotta in casa */
+.buy-mark{font-size:12px;margin-left:2px}
 .pick-fav{color:var(--orange);font-size:12px}
 .row-obsolete td{opacity:.55}
 .flag-check{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:400;color:var(--text);text-transform:none;letter-spacing:normal;cursor:pointer;padding:9px 0}

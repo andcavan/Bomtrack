@@ -14,7 +14,9 @@
 // quella che finisce nei campi dell'articolo, cioè nella costificazione.
 // Nessun costo viene derivato dal listino di nascosto: il passaggio è sempre
 // una scelta esplicita, così un prezzo non cambia da solo sotto un'offerta.
-function hasPriceList(it) { return !!it && (it.type === 'acquistato' || it.type === 'materiale'); }
+// Anche le parti: molte si comprano già lavorate da terzi, e chi le produce in
+// casa usa comunque il listino come unico posto dove nasce un costo unitario.
+function hasPriceList(it) { return !!it && (it.type === 'acquistato' || it.type === 'materiale' || it.type === 'parte'); }
 function priceRows(it) { return (it && it.priceList) || []; }
 function activePriceRow(it) { return priceRows(it).find(r => r.id === it.activePriceId) || null; }
 // La quotazione più bassa tra quelle valorizzate (a parità, la più recente).
@@ -32,7 +34,9 @@ function bestPriceRow(it) {
 function applyPriceRow(it, row) {
   const campo = costField(it);
   if (campo) it[campo] = Number(row.price) || 0;
-  if (it.type === 'acquistato') it.supplierId = row.supplierId || null;
+  // Il fornitore vale per ogni tipo con listino: senza, una materia prima o una
+  // parte acquistata arriverebbero al fabbisogno e ai documenti senza intestatario.
+  it.supplierId = row.supplierId || null;
   it.supplierCode = row.code || '';
   it.supplierDesc = row.desc || '';
   it.activePriceId = row.id;
@@ -71,6 +75,7 @@ function priceListBody(id) {
         <select ${ro} onchange="priceSetField('${r.id}','supplierId',this.value)">${supplierOptions(r.supplierId || '')}</select>
         <div class="pl-sub">
           <input value="${esc(r.code || '')}" placeholder="codice fornitore" title="Codice dell'articolo presso il fornitore" ${ro} onchange="priceSetField('${r.id}','code',this.value)">
+          <input class="pl-desc" value="${esc(r.desc || '')}" placeholder="descrizione fornitore" title="Descrizione dell'articolo presso il fornitore" ${ro} onchange="priceSetField('${r.id}','desc',this.value)">
           <span title="Da dove arriva la quotazione">${esc(priceRowOrigin(r))}</span>
         </div>
       </td>
@@ -79,13 +84,15 @@ function priceListBody(id) {
       <td><input type="number" class="num pl-small" min="0" max="9999" step="1" value="${r.leadDays === '' || r.leadDays == null ? '' : r.leadDays}" placeholder="—" title="Giorni di consegna" ${ro} onchange="priceSetField('${r.id}','leadDays',this.value)"></td>
       <td><input type="date" class="pl-date" value="${esc(r.date || '')}" ${ro} onchange="priceSetField('${r.id}','date',this.value)"></td>
       <td class="pl-act">
-        ${attiva || !campo ? '' : `<button class="mini-btn" title="Usa questo prezzo nella costificazione" onclick="priceUseRow('${r.id}')">✓ Usa</button>`}
+        ${attiva ? '' : `<button class="mini-btn" title="Usa questo prezzo nella costificazione" onclick="priceUseRow('${r.id}')">✓ Usa</button>`}
         <button class="mini-btn danger" title="Elimina la voce" onclick="priceDelRow('${r.id}')">🗑</button>
       </td></tr>`;
   }).join('');
 
   const vuoto = `<tr><td colspan="7" class="empty-text">Nessuna quotazione registrata. Aggiungine una, oppure registrale da una richiesta di offerta ricevuta.</td></tr>`;
-  const attuale = campo ? `<p style="margin-bottom:12px">Prezzo in uso nella costificazione: <strong style="font-family:var(--mono)">${fmtN(Number(it[campo]) || 0)}</strong>${inUso ? '' : ' <span style="color:var(--text-dim)">(inserito a mano, non da listino)</span>'}</p>` : '';
+  const attuale = campo
+    ? `<p style="margin-bottom:12px">Prezzo in uso nella costificazione: <strong style="font-family:var(--mono)">${fmtN(Number(it[campo]) || 0)}</strong>${inUso ? '' : ' <span style="color:var(--text-dim)">(inserito a mano, non da listino)</span>'}</p>`
+    : `<p style="margin-bottom:12px;color:var(--text-dim)">Il costo di questa parte è derivato dalla distinta parte e dal ciclo di lavorazione. Con “✓ Usa” si può passare al prezzo del fornitore, cambiando il modo di calcolo.</p>`;
   return `${attuale}
     <div class="table-wrap"><table class="price-table">
       <thead><tr><th></th><th>Fornitore</th><th>Prezzo</th><th>Q.tà min</th><th title="Giorni di consegna">GG</th><th>Data</th><th></th></tr></thead>
@@ -136,9 +143,40 @@ function priceSetField(rowId, field, value) {
 function priceUseRow(rowId) {
   if (!roleGuard('catalog')) return;
   const found = priceRowById(rowId); if (!found || !found.row) return;
+  // Parte prodotta in casa: il costo lo determina il ciclo, non c'è un campo dove
+  // scrivere il prezzo. Usarlo significa dire che quella parte la si compra —
+  // decisione che sposta il costo di ogni distinta che la contiene, quindi si chiede.
+  if (!costField(found.it)) { priceSourcingModal(rowId); return; }
+  priceApplyRow(rowId);
+}
+// Il passaggio vero e proprio, una volta che c'è un campo dove scrivere.
+function priceApplyRow(rowId) {
+  if (!roleGuard('catalog')) return;
+  const found = priceRowById(rowId); if (!found || !found.row) return;
   applyPriceRow(found.it, found.row);
   touch(found.it); saveDB(); priceListRefresh(); renderCatalogs();
   showToast('Prezzo in uso aggiornato: ' + fmtN(Number(found.row.price) || 0));
+}
+function priceSourcingModal(rowId) {
+  const found = priceRowById(rowId); if (!found || !found.row) return;
+  openModal(`<h3>Questa parte risulta prodotta in casa</h3>
+    <p style="margin-bottom:14px">Il costo di <strong>${esc(found.it.code)}</strong> lo determinano la sua distinta parte e il suo
+      ciclo di lavorazione. Per usare il prezzo del fornitore va segnata come <strong>acquistata</strong>: il costo diventa
+      quello a listino e nel fabbisogno la sua distinta smette di esplodersi.</p>
+    <p style="margin-bottom:14px;color:var(--text-dim)">Distinta e ciclo restano salvati: si può tornare indietro dalla scheda articolo.</p>
+    <div class="modal-actions">
+      <button class="btn-ghost" onclick="closeModal()">Annulla</button>
+      <button class="add-btn-sm" onclick="priceUseAsBought('${rowId}')">Segna come acquistata e usa il prezzo</button>
+    </div>`, true, 'listino-sourcing');
+}
+function priceUseAsBought(rowId) {
+  if (!roleGuard('catalog')) return;
+  const found = priceRowById(rowId); if (!found || !found.row) return;
+  found.it.sourcing = 'buy';
+  closeModal();
+  priceApplyRow(rowId);
+  renderBom();
+  showToast(found.it.code + ': parte acquistata da fornitore');
 }
 function priceDelRow(rowId) {
   if (!roleGuard('catalog')) return;
@@ -335,17 +373,23 @@ function catalogRow(i) {
   const unit = (isAssembly(i.type) || i.type === 'parte') ? costOf(i.id).total
     : (i.type === 'acquistato' ? (i.purchasePrice || 0) : (i.unitCost || 0));
   let meta = '';
-  if (i.type === 'acquistato') { const s = db.suppliers.find(x => x.id === i.supplierId); meta = s ? s.name : '—'; }
+  if (i.type === 'acquistato') { const s = getSupplier(i.supplierId); meta = s ? s.name : '—'; }
   else if (i.type === 'materiale' && priceRows(i).length) meta = '';
   else if (isAssembly(i.type)) meta = (i.components || []).length + ' comp. / ' + (i.operations || []).length + ' lav.';
-  else if (i.type === 'parte') meta = (i.cycle || []).length ? cycleCountLabel(i) : '—';
+  else if (i.type === 'parte') {
+    // Una parte comprata si riconosce dal fornitore, non dal suo ciclo
+    meta = partSourcing(i) === 'buy'
+      ? (supplierName(i.supplierId) || 'da acquistare')
+      : ((i.cycle || []).length ? cycleCountLabel(i) : '—');
+  }
   else meta = '—';
   // Più quotazioni a listino: si segnala qui, è il posto dove si confrontano i costi
   const quot = hasPriceList(i) ? priceRows(i).length : 0;
   if (quot > 1) meta = (meta && meta !== '—' ? meta + ' · ' : '') + quot + ' quotazioni';
   else if (!meta) meta = '—';
   // Indicatori a sinistra, di sola visione (i flag si impostano nella scheda articolo)
-  const flags = `${i.favorite ? '<span class="pick-fav" title="Preferito">★</span>' : ''}${i.obsolete ? '<span class="obs-mark" title="Obsoleto">⛔</span>' : ''}`;
+  const flags = `${i.favorite ? '<span class="pick-fav" title="Preferito">★</span>' : ''}${i.obsolete ? '<span class="obs-mark" title="Obsoleto">⛔</span>' : ''}`
+    + (i.type === 'parte' && partSourcing(i) === 'buy' ? '<span class="buy-mark" title="Parte acquistata da fornitore">🛒</span>' : '');
   return `<tr class="${i.obsolete ? 'row-obsolete' : ''}">
     <td style="width:1%;white-space:nowrap">${flags}</td>
     <td style="font-family:var(--mono)">${esc(i.code)}</td>
@@ -440,6 +484,29 @@ const TYPE_OPTION_LABELS = {
   acquistato: 'Componente commerciale', materiale: 'Materia prima', parte: 'Parte (lavorato)',
   sottogruppo: 'Sottogruppo', gruppo: 'Gruppo', macchina: 'Macchina',
 };
+// Riepilogo in sola lettura di fornitore e prezzo dentro la scheda articolo.
+// Non sono campi: fornitore, prezzo, codice e descrizione presso il fornitore
+// nascono tutti nel listino, e il listino è l'unico posto che li scrive. Con due
+// porte sullo stesso dato lo storico dei prezzi resterebbe pieno di buchi.
+function itemPricingSummary(it) {
+  const apri = it
+    ? `<button class="btn-outline" style="margin-left:8px" onclick="closeModal();priceListModal('${it.id}')">💶 Apri il listino</button>`
+    : '';
+  if (!it) return `<span class="empty-text" style="padding:0">Fornitore e prezzo si inseriscono nel <strong>listino fornitori</strong>, che si apre da solo appena l'articolo è creato.</span>`;
+  const campo = costField(it);
+  const riga = activePriceRow(it);
+  const n = priceRows(it).length;
+  const prezzo = campo
+    ? `<strong style="font-family:var(--mono)">${fmtN(Number(it[campo]) || 0)}</strong> ${cur()}/${esc(it.uom || 'U.M.')}`
+    : '<em>derivato dal ciclo di lavorazione</em>';
+  const forn = riga && riga.supplierId
+    ? esc(supplierName(riga.supplierId) || '—')
+    : (it.supplierId ? esc(supplierName(it.supplierId) || '—') : '<span style="color:var(--text-dim)">nessun fornitore</span>');
+  const rif = [it.supplierCode, it.supplierDesc].filter(Boolean).map(esc).join(' · ');
+  return `<span class="empty-text" style="padding:0">
+    ${prezzo} · ${forn}${rif ? ' · ' + rif : ''}<br>
+    ${n ? `${n} ${n === 1 ? 'quotazione a listino' : 'quotazioni a listino'}${riga ? '' : ' — nessuna in uso'}` : 'Nessuna quotazione a listino'}${apri}</span>`;
+}
 function itemModalBody(it, scope) {
   const sc = CATALOG_SCOPES[scope] || CATALOG_SCOPES.buy;
   const t = it ? it.type : sc.types[0];
@@ -470,14 +537,13 @@ function itemModalBody(it, scope) {
     </div>
     <div class="modal-grid">
       <div class="modal-field"><label>Unità di misura</label><select id="it-uom">${uomOptions(it ? (it.uom || defaultUom()) : defaultUom())}</select></div>
-      <div class="modal-field" id="fld-unitcost"><label>Costo unitario (${cur()}/U.M.)</label><input type="number" id="it-unitcost" min="0" step="0.0001" value="${it && it.unitCost != null ? it.unitCost : ''}"></div>
+      <div class="modal-field" id="fld-sourcing"><label>Approvvigionamento</label>
+        <select id="it-sourcing">${partSourcingOptions(it ? partSourcing(it) : defaultPartSourcing())}</select></div>
       <div class="modal-field" id="fld-assembly-note" style="grid-column:1/-1"><label>Composizione</label><span class="empty-text" style="padding:0">La distinta (componenti e lavorazioni) si gestisce in <strong>Distinta base → Gestione DB</strong>.</span></div>
-      <div class="modal-field" id="fld-price"><label>Prezzo acquisto (${cur()}/U.M.)</label><input type="number" id="it-price" min="0" step="0.0001" value="${it && it.purchasePrice != null ? it.purchasePrice : ''}"></div>
-      <div class="modal-field" id="fld-supplier"><label>Fornitore</label><select id="it-supplier">${supplierOptions(it ? it.supplierId : '')}</select></div>
     </div>
-    <div class="modal-grid" id="fld-supinfo">
-      <div class="modal-field"><label>Codice fornitore</label><input id="it-supcode" value="${it ? esc(it.supplierCode || '') : ''}"></div>
-      <div class="modal-field"><label>Descrizione fornitore</label><input id="it-supdesc" value="${it ? esc(it.supplierDesc || '') : ''}"></div>
+    <div class="modal-field" id="fld-pricing">
+      <label>Fornitore e prezzo d'acquisto</label>
+      ${itemPricingSummary(it)}
     </div>
     <div class="modal-grid" id="fld-family">
       <div class="modal-field"><label>Macrofamiglia</label><select id="it-family" onchange="onItemFamilyChange()">${familyOptions(it ? it.familyId : '', usesFamily(t) ? t : '')}</select></div>
@@ -590,10 +656,9 @@ function toggleItemFields() {
   document.getElementById('fld-name-std').style.display = t === 'parte' ? 'none' : '';
   document.getElementById('fld-name-parte').style.display = t === 'parte' ? '' : 'none';
   if (t === 'parte') updatePartNamePreview();
-  document.getElementById('fld-unitcost').style.display = (t === 'materiale' || t === 'parte') ? '' : 'none';
-  document.getElementById('fld-price').style.display = t === 'acquistato' ? '' : 'none';
-  document.getElementById('fld-supplier').style.display = t === 'acquistato' ? '' : 'none';
-  document.getElementById('fld-supinfo').style.display = (t === 'acquistato' || t === 'materiale') ? '' : 'none';
+  // Prezzo e fornitore: riepilogo in sola lettura, si modificano solo dal listino
+  document.getElementById('fld-pricing').style.display = hasPriceList({ type: t }) ? '' : 'none';
+  document.getElementById('fld-sourcing').style.display = t === 'parte' ? '' : 'none';
   const showFam = usesFamily(t);
   document.getElementById('fld-family').style.display = showFam ? '' : 'none';
   document.getElementById('fld-assembly-note').style.display = isAssembly(t) ? '' : 'none';
@@ -615,15 +680,6 @@ function toggleItemFields() {
     const cur = famSel.value;
     famSel.innerHTML = familyOptions(cur, t);
     if (famSel.value !== cur) document.getElementById('it-subfamily').innerHTML = subFamilyOptions('', '');
-  }
-  // Col calcolo "solo ciclo" (e almeno una riga) il costo unitario è derivato:
-  // il campo manuale non concorre e resta bloccato.
-  const editing = window.__editingItemId ? getItem(window.__editingItemId) : null;
-  const uc = document.getElementById('it-unitcost');
-  if (uc) {
-    const derived = t === 'parte' && editing && partCostMode(editing) === 'cycle' && (editing.cycle || []).length > 0;
-    uc.disabled = !!derived;
-    uc.title = derived ? 'Costo derivato da distinta parte e ciclo di lavorazione' : '';
   }
   refreshItemCode();
 }
@@ -674,7 +730,7 @@ function cycleCountLabel(it) {
 }
 function cycleRowLabel(row) {
   if (row.kind === 'op') {
-    const wc = db.workCenters.find(w => w.id === row.workCenterId);
+    const wc = getWorkCenter(row.workCenterId);
     // Nella tabella delle fasi il tipo è già dato dalla sezione: basta il centro di lavoro
     return `🔧 ${esc(wc ? wc.name : '?')}`;
   }
@@ -732,6 +788,22 @@ function currentCycleItem() {
   return it && it.type === 'parte' ? it : null;
 }
 
+// Da dove viene il costo di questa parte, detto qui perché è la vista in cui si
+// costruisce il ciclo — e vedere le righe senza sapere se contano sarebbe
+// fuorviante. La scelta si fa nella scheda articolo, non qui: un solo posto.
+function cycleSourcingNote(it) {
+  const apri = `<button class="mini-btn" style="margin-left:8px" onclick="editItemModal('${it.id}')">✏ Scheda articolo</button>`;
+  if (partSourcing(it) === 'buy') {
+    const forn = supplierName(it.supplierId);
+    return `<div class="cycle-note">🛒 <strong>Parte acquistata</strong>${forn ? ' da ' + esc(forn) : ' (nessun fornitore a listino)'}:
+      il costo è il prezzo scelto nel listino. Distinta e ciclo qui sotto restano documentali — non concorrono al costo e nel
+      fabbisogno non vengono esplosi.${apri}</div>`;
+  }
+  const vuoto = !(it.cycle || []).length;
+  return `<div class="cycle-note">🏭 <strong>Parte prodotta in casa</strong>: il costo lo determinano la distinta parte e il ciclo
+    qui sotto.${vuoto ? ' Finché sono vuoti vale il prezzo a listino.' : ''}${apri}</div>`;
+}
+
 // ─── Disegno della vista ───
 function renderCycles() {
   invalidateCaches();   // la cache dei costi vive dentro un singolo disegno
@@ -756,16 +828,8 @@ function renderCycles() {
   const rows = (it.cycle || []).map((r, i) => ({ r, i }));
   const bomRows = rows.filter(x => x.r.kind !== 'op');
   const opRows = rows.filter(x => x.r.kind === 'op');
-  const mode = partCostMode(it);
   body.innerHTML = `
-    <div class="cycle-mode">
-      <label for="cyc-costmode">Calcolo del costo della parte</label>
-      <select id="cyc-costmode" onchange="setCycleCostMode()">${partCostModeOptions(mode)}</select>
-      <span class="cycle-dim">${mode === 'unit'
-        ? 'Distinta e ciclo restano documentali: il costo è quello unitario della scheda articolo.'
-        : (mode === 'sum' ? 'Al valore di distinta e ciclo si aggiunge il costo unitario della scheda articolo.'
-                          : 'Il costo unitario della scheda articolo non si usa: lo determinano distinta e ciclo.')}</span>
-    </div>
+    ${cycleSourcingNote(it)}
     <div class="cycle-section">
       <div class="cycle-section-head">
         <h3>📦 Distinta parte <span class="cycle-dim">${bomRows.length} ${bomRows.length === 1 ? 'articolo' : 'articoli'}</span></h3>
@@ -849,12 +913,6 @@ function refreshCycleCosts(it) {
 }
 
 // ─── Modifiche (salvataggio immediato) ───
-function setCycleCostMode() {
-  const it = currentCycleItem(); if (!it) return;
-  if (!roleGuard('catalog')) { renderCycles(); return; }
-  it.costMode = val('cyc-costmode') || defaultPartCostMode();
-  touch(it); saveDB(); renderCycles();
-}
 function updateCycleRow(idx) {
   const it = currentCycleItem(); if (!it) return;
   // Il ridisegno rimette il valore salvato: senza permessi il campo non resta modificato a video
@@ -1013,11 +1071,7 @@ function applyItemSource(id) {
     setVal('it-name', src.name + ' (copia)');
   }
   setVal('it-uom', src.uom || defaultUom());
-  setVal('it-unitcost', src.unitCost != null ? src.unitCost : '');
-  setVal('it-price', src.purchasePrice != null ? src.purchasePrice : '');
-  setVal('it-supplier', src.supplierId || '');
-  setVal('it-supcode', src.supplierCode || '');
-  setVal('it-supdesc', src.supplierDesc || '');
+  if (src.type === 'parte') setVal('it-sourcing', partSourcing(src));
   setVal('it-notes', src.notes || '');
   setVal('it-code', '');
   refreshItemCode();
@@ -1045,9 +1099,11 @@ function readItemForm(it) {
   // Flag: preferito (solo commerciali e materie prime), obsoleto (anche parti)
   if (canFavorite(it.type)) it.favorite = isChecked('it-favorite');
   if (it.type === 'acquistato' || it.type === 'materiale' || it.type === 'parte') it.obsolete = isChecked('it-obsolete');
-  if (it.type === 'materiale' || it.type === 'parte') { it.unitCost = numVal('it-unitcost', 0); }
-  if (it.type === 'acquistato') { it.purchasePrice = numVal('it-price', 0); it.supplierId = val('it-supplier'); }
-  if (it.type === 'materiale' || it.type === 'acquistato') { it.supplierCode = val('it-supcode'); it.supplierDesc = val('it-supdesc'); }
+  // Prezzo, fornitore, codice e descrizione presso il fornitore NON si leggono
+  // da qui: li scrive solo applyPriceRow() quando si sceglie una quotazione.
+  // Solo un valore valido sovrascrive: in creazione il campo può non esserci
+  // ancora, e lì vale il default delle impostazioni scritto da saveNewItem.
+  if (it.type === 'parte') { const s = val('it-sourcing'); if (PART_SOURCING[s]) it.sourcing = s; }
   if (usesFamily(it.type)) { it.familyId = val('it-family'); it.subFamilyId = val('it-subfamily'); }
   // Codifica gerarchica: schema sulla macchina, appartenenza sugli altri tipi
   const d = itemDraftFromForm();
@@ -1082,13 +1138,6 @@ function validateItemCoding(id) {
   }
   return null;
 }
-// Costi e prezzi: un valore negativo ferma il salvataggio invece di essere
-// azzerato, così l'errore di battitura resta visibile e correggibile.
-function validateItemNumbers(type) {
-  if ((type === 'materiale' || type === 'parte') && isNeg('it-unitcost')) return 'Il costo unitario non può essere negativo';
-  if (type === 'acquistato' && isNeg('it-price')) return 'Il prezzo d\'acquisto non può essere negativo';
-  return null;
-}
 // Controlli sul nome secondo il tipo: le parti richiedono concetto + descrizione, gli altri il nome libero.
 function validateItemName(type) {
   if (type === 'parte') {
@@ -1104,11 +1153,9 @@ function saveNewItem() {
   if (nameErr) { showToast(nameErr, 'error'); return; }
   const codErr = validateItemCoding(null);
   if (codErr) { showToast(codErr, 'error'); return; }
-  const numErr = validateItemNumbers(val('it-type'));
-  if (numErr) { showToast(numErr, 'error'); return; }
   const it = { id: gid(), type: val('it-type') };
   if (isAssembly(it.type)) { it.components = []; it.operations = []; }
-  if (it.type === 'parte') { it.cycle = []; it.costMode = defaultPartCostMode(); }
+  if (it.type === 'parte') { it.cycle = []; it.sourcing = defaultPartSourcing(); }
   readItemForm(it);
   const src = window.__dupSourceId ? getItem(window.__dupSourceId) : null;
   if (src && isAssembly(it.type)) {
@@ -1118,14 +1165,35 @@ function saveNewItem() {
   // Duplicando una parte si porta dietro distinta e ciclo, come gli assiemi coi componenti
   if (src && it.type === 'parte') {
     it.cycle = (src.cycle || []).map(r => Object.assign({}, r));
-    it.costMode = partCostMode(src);
   }
   if (src) {
     if (src.overheadPctOverride != null) it.overheadPctOverride = src.overheadPctOverride;
     if (src.marginPctOverride != null) it.marginPctOverride = src.marginPctOverride;
   }
+  // Il listino è dove vive il prezzo: duplicando un articolo si porta dietro
+  // anche le sue quotazioni, altrimenti la copia nascerebbe a costo zero.
+  if (hasPriceList(it)) {
+    it.priceList = [];
+    it.priceListSeeded = true;
+    if (src && hasPriceList(src)) {
+      const rimappa = {};
+      it.priceList = priceRows(src).map(r => {
+        const n = stampNew(Object.assign({}, r, { id: gid() }));
+        rimappa[r.id] = n.id;
+        return n;
+      });
+      if (src.activePriceId && rimappa[src.activePriceId]) {
+        const attiva = it.priceList.find(r => r.id === rimappa[src.activePriceId]);
+        if (attiva) applyPriceRow(it, attiva);
+      }
+    }
+  }
   db.items.push(stampNew(it));
   saveDB(); closeModal(); renderCatalogs(); showToast(src ? 'Copia creata' : 'Articolo creato');
+  // Un articolo appena creato non ha modo di ricevere un prezzo: la scheda non
+  // lo chiede più. Il listino si apre da solo, ma solo se non è già arrivato
+  // dalla copia — lì il prezzo c'è già.
+  if (hasPriceList(it) && !priceRows(it).length) priceListModal(it.id);
 }
 function editItemModal(id) {
   if (!roleGuard('catalog')) return;
@@ -1145,8 +1213,6 @@ function saveItemEdit(id) {
   if (nameErr) { showToast(nameErr, 'error'); return; }
   const codErr = validateItemCoding(id);
   if (codErr) { showToast(codErr, 'error'); return; }
-  const numErr = validateItemNumbers(it.type);
-  if (numErr) { showToast(numErr, 'error'); return; }
   readItemForm(it);
   touch(it);
   saveDB(); closeModal(); renderCatalogs(); showToast('Articolo aggiornato');

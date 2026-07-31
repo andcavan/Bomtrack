@@ -35,6 +35,7 @@ function renderImport() {
 
 // ─── Lettura foglio Excel → array di oggetti riga ───
 function readSheet(file, cb) {
+  if (!requireXlsx()) return;
   const reader = new FileReader();
   reader.onload = () => {
     try {
@@ -44,6 +45,8 @@ function readSheet(file, cb) {
       cb(XLSX.utils.sheet_to_json(ws, { defval: '' }));
     } catch (e) { console.error(e); showToast('File non valido', 'error'); }
   };
+  // Un file illeggibile (disco rimosso, permessi) non deve restare in silenzio
+  reader.onerror = () => { console.error(reader.error); showToast('Impossibile leggere il file', 'error'); };
   reader.readAsArrayBuffer(file);
 }
 // Normalizza un'intestazione: minuscolo, senza spazi/accenti/punteggiatura

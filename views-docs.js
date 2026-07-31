@@ -98,6 +98,15 @@ function lineSupInfo(supplierId, l) {
 function rfqLineSupInfo(r, l) { return lineSupInfo(r.supplierId, l); }
 // Nei documenti la nota di riga si stampa sotto la descrizione, nella stessa cella.
 function lineDescDoc(l) { return l.note ? (l.description || '') + '\n' + l.note : (l.description || ''); }
+// Da dove arriva un documento: da una richiesta di offerta o da un piano di
+// fabbisogno. Serve a ritrovare il perché di un ordine mesi dopo averlo fatto.
+function docOriginRef(d) {
+  const parti = [];
+  if (d.rfqId && getRfq(d.rfqId)) parti.push(`📨 Generato dalla richiesta <strong>${esc(getRfq(d.rfqId).number)}</strong>`);
+  const p = d.planId && (db.plans || []).find(x => x.id === d.planId);
+  if (p) parti.push(`📋 Dal fabbisogno <strong>${esc(p.number)}</strong>`);
+  return parti.length ? `<div class="ord-ref">${parti.join(' · ')}</div>` : '';
+}
 
 // ─── Filtri degli elenchi documenti (condivisi tra richieste e ordini) ───
 // Gli elenchi si ridisegnano interi a ogni operazione: i criteri vivono qui
@@ -219,7 +228,7 @@ function renderRfqList() {
 function newRfq() {
   if (!roleGuard('docs')) return;
   const r = stampNew({ id: gid(), number: nextRfqNumber(), title: '', date: nowISO().slice(0, 10),
-    status: 'bozza', notes: '', notesInternal: '', supplierId: null,
+    status: 'bozza', notes: '', notesInternal: '', supplierId: null, planId: null,
     transport: db.settings.transportDefault || '', payment: db.settings.paymentDefault || '',
     lines: [], active: true });
   db.rfqs.push(r); saveDB();
@@ -254,7 +263,7 @@ function rfqSetSupplier(id, sid) {
   if (!rfqGuard(id, 'contract')) { renderRfq(); return; }
   const r = getRfq(id); if (!r) return;
   r.supplierId = sid || null;
-  const sup = sid ? db.suppliers.find(s => s.id === sid) : null;
+  const sup = sid ? getSupplier(sid) : null;
   if (sup) {
     if (sup.defaultTransport) r.transport = sup.defaultTransport;
     if (sup.defaultPayment) r.payment = sup.defaultPayment;
@@ -456,7 +465,7 @@ function renderRfqEdit(id) {
       ${statusBadge(RFQ_STATUS, r.status)}
       <button class="add-btn-sm rfq-save-btn ${rfqDirty ? 'dirty' : ''}" id="rfq-save-btn" onclick="rfqSave('${id}')">💾 Salva</button>
     </div>
-    ${coWarn}${lockBanner}${stampLine(r)}
+    ${coWarn}${lockBanner}${docOriginRef(r)}${stampLine(r)}
     <div class="rfq-head">
       <div class="modal-field"><label>Titolo / oggetto</label><input class="lock-contract" value="${esc(r.title || '')}" onchange="rfqSetField('${id}','title',this.value)"></div>
       <div class="rfq-head-row">
@@ -516,9 +525,9 @@ function rfqPriceBar(r) {
 function exportRfqPDF(id) {
   const r = getRfq(id); if (!r) return;
   if (!(r.lines || []).length) { showToast('Nessuna riga da esportare', 'error'); return; }
-  const { jsPDF } = window.jspdf;
+  const jsPDF = requirePdf(); if (!jsPDF) return;
   const co = db.settings.company || {};
-  const sup = r.supplierId ? db.suppliers.find(s => s.id === r.supplierId) : null;
+  const sup = r.supplierId ? getSupplier(r.supplierId) : null;
   // Le colonne "codice/descrizione fornitore" compaiono solo se qualche riga è legata
   // allo stesso fornitore della richiesta; in tal caso si usa l'orientamento orizzontale.
   const hasSup = (r.lines || []).some(l => rfqLineSupInfo(r, l));
@@ -565,7 +574,7 @@ function exportRfqExcel(id) {
   const r = getRfq(id); if (!r) return;
   if (!(r.lines || []).length) { showToast('Nessuna riga da esportare', 'error'); return; }
   const co = db.settings.company || {};
-  const sup = r.supplierId ? db.suppliers.find(s => s.id === r.supplierId) : null;
+  const sup = r.supplierId ? getSupplier(r.supplierId) : null;
   const data = [['Richiesta di offerta', r.number], ['Data', fmtDateIt(r.date)]];
   if (r.title) data.push(['Oggetto', r.title]);
   if (r.transport) data.push(['Trasporto / Shipping', r.transport]);
@@ -589,6 +598,7 @@ function exportRfqExcel(id) {
   });
   // Solo r.notes: le note interne (notesInternal) non escono mai sul documento.
   if (r.notes) { data.push([]); data.push(['Note', r.notes]); }
+  if (!requireXlsx()) return;
   const ws = XLSX.utils.aoa_to_sheet(data);
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'RFQ');
@@ -755,20 +765,20 @@ function newOrder() {
   if (!roleGuard('docs')) return;
   const o = stampNew({ id: gid(), number: nextOrderNumber(), title: '', date: nowISO().slice(0, 10),
     status: 'bozza', supplierId: null, transport: db.settings.transportDefault || '', payment: db.settings.paymentDefault || '',
-    requestedDelivery: '', rfqId: null, supplierConfirmation: '', notes: '', notesInternal: '', lines: [], active: true });
+    requestedDelivery: '', rfqId: null, planId: null, supplierConfirmation: '', notes: '', notesInternal: '', lines: [], active: true });
   db.orders.push(o); saveDB();
   currentOrderId = o.id; orderView = 'edit'; orderDirty = false; renderOrders();
 }
 function orderFromRfq(rfqId) {
   if (!roleGuard('docs')) return;
   const r = getRfq(rfqId); if (!r) return;
-  const sup = r.supplierId ? db.suppliers.find(s => s.id === r.supplierId) : null;
+  const sup = r.supplierId ? getSupplier(r.supplierId) : null;
   const o = stampNew({ id: gid(), number: nextOrderNumber(),
     title: r.title || ('Da ' + r.number), date: nowISO().slice(0, 10), status: 'bozza',
     supplierId: r.supplierId || null,
     transport: r.transport || (sup && sup.defaultTransport) || db.settings.transportDefault || '',
     payment: r.payment || (sup && sup.defaultPayment) || db.settings.paymentDefault || '',
-    requestedDelivery: '', rfqId: r.id, supplierConfirmation: '', notes: r.notes || '', notesInternal: r.notesInternal || '',
+    requestedDelivery: '', rfqId: r.id, planId: r.planId || null, supplierConfirmation: '', notes: r.notes || '', notesInternal: r.notesInternal || '',
     lines: (r.lines || []).map(l => ({ id: gid(), itemId: l.itemId || null, code: l.code || '', description: l.description || '',
       uom: l.uom || defaultUom(), qty: Number(l.qty) || 0, price: (l.price === '' || l.price == null) ? '' : Number(l.price),
       deliveryDate: l.deliveryDate || '', received: 0, note: l.note || '' })),
@@ -810,7 +820,7 @@ function ordSetSupplier(id, sid) {
   if (!ordGuard(id, 'contract')) { renderOrders(); return; }
   const o = getOrder(id); if (!o) return;
   o.supplierId = sid || null;
-  const sup = sid ? db.suppliers.find(s => s.id === sid) : null;
+  const sup = sid ? getSupplier(sid) : null;
   if (sup) { if (sup.defaultTransport) o.transport = sup.defaultTransport; if (sup.defaultPayment) o.payment = sup.defaultPayment; }
   touch(o); orderMarkDirty(); renderOrders();
 }
@@ -907,8 +917,10 @@ function ordAddCatalogLines(id, ids) {
   const o = getOrder(id); if (!o) return;
   ids.forEach(itemId => {
     const it = getItem(itemId); if (!it) return;
-    const price = (it.type === 'acquistato' && it.purchasePrice != null) ? Number(it.purchasePrice)
-      : (it.type === 'materiale' && it.unitCost != null) ? Number(it.unitCost) : '';
+    // Il prezzo in uso nella costificazione, qualunque sia il tipo: dalla
+    // versione con le parti acquistate anche una parte può finire in ordine.
+    const campo = costField(it);
+    const price = (campo && it[campo] != null) ? Number(it[campo]) : '';
     o.lines.push({ id: gid(), itemId, code: it.code || '', description: it.name || '', uom: it.uom || defaultUom(), qty: 1, price, deliveryDate: '', received: 0, note: '' });
   });
   ordAutoStatus(o); touch(o); orderMarkDirty(); closeModal(); renderOrders();
@@ -940,7 +952,7 @@ function renderOrderEdit(id) {
   const total = orderTotal(o);
   const co = db.settings.company || {};
   const coWarn = co.name ? '' : `<div class="rfq-warn">⚠ Dati azienda non impostati: compilali in <strong>Gestione › Dati azienda</strong> per stamparli sul documento.</div>`;
-  const rfqRef = (o.rfqId && getRfq(o.rfqId)) ? `<div class="ord-ref">📨 Generato dalla richiesta <strong>${esc(getRfq(o.rfqId).number)}</strong></div>` : '';
+  const rfqRef = docOriginRef(o);
   const dis = orderDirty ? 'disabled title="Salva l\'ordine prima di generare il documento"' : '';
   const mode = ordMode(o);
   const lockBanner = docLockBanner(mode, 'Ordine ' + (ORDER_STATUS[o.status] || o.status).toLowerCase(), `ordUnlock('${id}')`);
@@ -999,9 +1011,9 @@ function renderOrderEdit(id) {
 function exportOrderPDF(id) {
   const o = getOrder(id); if (!o) return;
   if (!(o.lines || []).length) { showToast('Nessuna riga da esportare', 'error'); return; }
-  const { jsPDF } = window.jspdf;
+  const jsPDF = requirePdf(); if (!jsPDF) return;
   const co = db.settings.company || {};
-  const sup = o.supplierId ? db.suppliers.find(s => s.id === o.supplierId) : null;
+  const sup = o.supplierId ? getSupplier(o.supplierId) : null;
   const hasSup = (o.lines || []).some(l => lineSupInfo(o.supplierId, l));
   const doc = new jsPDF({ orientation: 'landscape' });
   doc.setFontSize(15); doc.setTextColor(30); doc.text(`Ordine di acquisto / Purchase Order — ${o.number}`, 14, 16);
@@ -1049,7 +1061,7 @@ function exportOrderExcel(id) {
   const o = getOrder(id); if (!o) return;
   if (!(o.lines || []).length) { showToast('Nessuna riga da esportare', 'error'); return; }
   const co = db.settings.company || {};
-  const sup = o.supplierId ? db.suppliers.find(s => s.id === o.supplierId) : null;
+  const sup = o.supplierId ? getSupplier(o.supplierId) : null;
   const data = [['Ordine di acquisto / Purchase Order', o.number], ['Data', fmtDateIt(o.date)]];
   if (o.title) data.push(['Oggetto', o.title]);
   if (o.rfqId && getRfq(o.rfqId)) data.push(['Da richiesta', getRfq(o.rfqId).number]);
@@ -1079,6 +1091,7 @@ function exportOrderExcel(id) {
   data.push(['', 'TOTALE IMPONIBILE / TOTAL', orderTotal(o)]);
   // Solo o.notes: le note interne (notesInternal) non escono mai sul documento.
   if (o.notes) { data.push([]); data.push(['Note', o.notes]); }
+  if (!requireXlsx()) return;
   const ws = XLSX.utils.aoa_to_sheet(data);
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Ordine');
