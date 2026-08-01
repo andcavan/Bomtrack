@@ -7,9 +7,20 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="style.css">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<!-- Librerie di export, da CDN. `integrity` (SRI): il browser verifica l'impronta
+     del file scaricato e lo rifiuta se non corrisponde — un CDN compromesso non
+     può iniettare codice in un'app che maneggia listini e ordini. Cambiando
+     versione va rigenerato anche l'hash, altrimenti la libreria non si carica
+     (requirePdf/requireXlsx in core.js lo dicono all'utente invece di tacere). -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"
+        integrity="sha512-qZvrmS2ekKPF2mSznTQsxqPgnpkI4DNTlrdUmTzrDgektczlKNRRhy5X5AAOnx5S09ydFYWWNSfcEqDTTHgtNA=="
+        crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"
+        integrity="sha512-2/YdOMV+YNpanLCF5MdQwaoFRVbTmrJ4u4EpqS/USXAQNUDgI5uwYi6J98WVtJKcfe1AbgerygzDFToxAlOGEQ=="
+        crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"
+        integrity="sha512-r22gChDnGvBylk90+2e/ycr3RVrDi8DIOkIGNhJlKfuyQM4tIRAI062MaV8sfjQKYVGjOBaZBOA87z+IhZE9DA=="
+        crossorigin="anonymous" referrerpolicy="no-referrer"></script>
 </head>
 <body>
 
@@ -74,6 +85,9 @@
 
 <div id="app-main" style="display:none">
 
+  <!-- RIEPILOGO — riempita da renderHome() -->
+  <div id="view-home" class="view-panel"></div>
+
   <!-- DISTINTE BASE -->
   <div id="view-bom" class="view-panel active">
     <div class="bom-toolbar">
@@ -97,6 +111,9 @@
       <select id="bom-select" class="cyc-part-select" onchange="onBomSelect()"></select>
       <span class="doc-filter-count" id="bom-count"></span>
     </div>
+
+    <!-- Revisione in lavorazione, rilascio e storico: riempita da renderBomRevBar() -->
+    <div id="bom-rev-bar" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px"></div>
 
     <div id="bom-cost-summary" class="cost-summary"></div>
 
@@ -168,6 +185,8 @@
       </select>
       <select id="cyc-part" class="cyc-part-select" onchange="onCyclePartSelect()"></select>
     </div>
+    <!-- Revisione del ciclo: riempita da renderCyclesRevBar() -->
+    <div id="cycles-rev-bar" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px"></div>
     <div id="cyc-summary" class="cost-summary"></div>
     <div id="cyc-body"></div>
   </div>
@@ -185,6 +204,9 @@
     </div>
     <div id="report-content"></div>
   </div>
+
+  <!-- COMMESSE — riempita da renderJobs() -->
+  <div id="view-jobs" class="view-panel"></div>
 
   <!-- FABBISOGNO MATERIALI (piani di produzione) -->
   <div id="view-mrp" class="view-panel"></div>
@@ -210,13 +232,20 @@
      build, così la pagina si apre anche con un doppio click (file://).
      L'ordine conta solo per l'avvio, che sta in fondo all'ultimo file. -->
 <script src="store.js"></script>
+<!-- Traduzione annidato ↔ normalizzato: legge SCHEMA da store.js, non dipende
+     da altro. Nessun codice di rete: l'app resta locale. -->
+<script src="cloud-map.js"></script>
 <script src="core.js"></script>
 <script src="auth.js"></script>
 <script src="costing.js"></script>
 <script src="shell.js"></script>
 <script src="views-bom.js"></script>
+<script src="views-rev.js"></script>
+<script src="views-stock.js"></script>
 <script src="views-catalog.js"></script>
 <script src="views-report.js"></script>
+<script src="views-jobs.js"></script>
+<script src="views-home.js"></script>
 <script src="views-mrp.js"></script>
 <script src="views-docs.js"></script>
 <script src="views-manage.js"></script>

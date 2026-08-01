@@ -75,9 +75,12 @@ function resolveType(raw) {
   for (const t of ALL_TYPES) {
     if (normHeader(t) === n || normHeader(TYPE_LABELS[t]) === n || normHeader(TYPE_SHORTS[t]) === n) return t;
   }
-  // sinonimi comuni
-  if (n === 'materiaprima' || n === 'materiaprime' || n === 'mp') return 'materiale';
-  if (n === 'commerciale' || n === 'commerciali' || n === 'comm') return 'acquistato';
+  // Sinonimi. `componentecommerciale` non è un vezzo: è la dicitura che scrive
+  // il template scaricabile qui sotto, e fino alla 0.21.0 l'import rifiutava le
+  // righe del proprio esempio. `materieprime` è il plurale che si usa davvero.
+  if (n === 'materiaprima' || n === 'materiaprime' || n === 'materieprime' || n === 'mp') return 'materiale';
+  if (n === 'commerciale' || n === 'commerciali' || n === 'comm'
+    || n === 'componentecommerciale' || n === 'componenticommerciali') return 'acquistato';
   return '';
 }
 // Trova (o crea) un fornitore per nome
@@ -124,8 +127,9 @@ function importItems(rows) {
     if (!name) { report.errors.push(`Riga ${ln}: nome mancante`); return; }
     const code = String(pick(row, 'Codice', 'Code')).trim();
 
-    // Upsert per codice
-    let it = code ? db.items.find(x => String(x.code).toLowerCase() === code.toLowerCase()) : null;
+    // Upsert per codice, risolto sull'indice: la scansione lineare qui dentro
+    // rendeva l'import quadratico sulla dimensione del catalogo.
+    let it = code ? getItemByCode(code) : null;
     const isNew = !it;
     if (isNew) {
       it = { id: gid(), type };
@@ -142,6 +146,15 @@ function importItems(rows) {
     const notes = String(pick(row, 'Note', 'Notes')).trim();
     if (notes) it.notes = notes; else if (isNew) it.notes = '';
 
+    // Doppia unità: vanno insieme o non valgono. Un'unità senza fattore non
+    // converte niente, un fattore senza unità non si applica a niente — e nel
+    // dubbio è meglio nessuna conversione che una conversione inventata.
+    if (hasPriceList({ type })) {
+      const au = String(pick(row, 'UMAcquisto', 'UMPrezzo', 'UnitaAcquisto')).trim();
+      const af = numOr(pick(row, 'Fattore', 'FattoreConversione', 'Conversione'), 0);
+      if (au && af > 0 && au !== it.uom) { it.altUom = ensureUom(au); it.altFactor = af; }
+      else if (isNew) { delete it.altUom; delete it.altFactor; }
+    }
     if (type === 'materiale' || type === 'parte') it.unitCost = numOr(pick(row, 'CostoUnitario', 'Costo', 'UnitCost'), it.unitCost || 0);
     if (type === 'acquistato') {
       it.purchasePrice = numOr(pick(row, 'PrezzoAcquisto', 'Prezzo', 'PurchasePrice'), it.purchasePrice || 0);
@@ -154,9 +167,18 @@ function importItems(rows) {
     }
     // Codice: dato esplicito, oppure auto per mat/acq, oppure id come fallback
     if (code) it.code = code;
-    else if (isNew) it.code = genItemCode(it) || it.id;
+    else if (isNew) {
+      // Il codice generato può collidere con uno inserito a mano fuori schema:
+      // nextCodeForPrefix() guarda solo i codici che seguono il proprio
+      // pattern. Un duplicato qui farebbe risolvere l'import successivo
+      // sull'articolo sbagliato, quindi si ripiega sull'id (unico per
+      // costruzione) invece di crearlo.
+      const auto = genItemCode(it);
+      it.code = (auto && !getItemByCode(auto)) ? auto : it.id;
+      if (auto && it.code !== auto) report.errors.push(`Riga ${ln}: codice automatico "${esc(auto)}" già in uso, assegnato un codice provvisorio`);
+    }
 
-    if (isNew) { stampNew(it); report.created++; } else { touch(it); report.updated++; }
+    if (isNew) { stampNew(it); codeIndexAdd(it); report.created++; } else { touch(it); report.updated++; }
   });
   saveDB();
   return report;
@@ -168,11 +190,7 @@ function onImportBom(ev) {
   if (!file) return;
   readSheet(file, rows => { showImportReport(importBom(rows), 'bom'); });
 }
-function findByCode(code) {
-  const c = String(code).trim().toLowerCase();
-  if (!c) return null;
-  return db.items.find(x => String(x.code).toLowerCase() === c) || null;
-}
+function findByCode(code) { return getItemByCode(code) || null; }
 function importBom(rows) {
   const report = { added: 0, parents: 0, skipped: 0, errors: [] };
   const clearedParents = new Set(); // padri già azzerati in questo import
@@ -204,14 +222,15 @@ function importBom(rows) {
 
 // ─── Template scaricabili ───
 function downloadItemsTemplate() {
-  const header = ['Tipo', 'Codice', 'Nome', 'UM', 'CostoUnitario', 'PrezzoAcquisto', 'Fornitore', 'Macrofamiglia', 'Sottofamiglia', 'Note'];
+  const header = ['Tipo', 'Codice', 'Nome', 'UM', 'UMAcquisto', 'Fattore', 'CostoUnitario', 'PrezzoAcquisto', 'Fornitore', 'Macrofamiglia', 'Sottofamiglia', 'Note'];
   const data = [header,
-    ['Materia prima', '', 'Lamiera acciaio S235', 'kg', 1.2, '', '', 'Acciaio', 'Lamiere', 'codice auto se vuoto'],
-    ['Componente commerciale', '', 'Cuscinetto SKF 6204', 'pz', '', 12.5, 'SKF', 'Meccanico', 'Cuscinetti', ''],
-    ['Parte', '', 'Fiancata lavorata', 'pz', 45, '', '', 'Carpenteria', 'Fiancate', 'codice auto se vuoto'],
-    ['Sottogruppo', 'SGR-100', 'Gruppo motore', 'pz', '', '', '', '', '', 'la distinta si carica con il foglio Distinte'],
-    ['Gruppo', 'GRP-100', 'Gruppo telaio', 'pz', '', '', '', '', '', ''],
-    ['Macchina', 'MAC-100', 'Nastro Trasportatore NT-200', 'pz', '', '', '', '', '', ''],
+    ['Materia prima', '', 'Lamiera acciaio S235', 'kg', '', '', 1.2, '', '', 'Acciaio', 'Lamiere', 'codice auto se vuoto'],
+    ['Materia prima', '', 'Barra tonda Ø30 S355', 'm', 'kg', 5.55, '', '', 'Rossi Acciai', 'Acciaio', 'Barre', 'gestita a metri, comprata a chilo'],
+    ['Componente commerciale', '', 'Cuscinetto SKF 6204', 'pz', '', '', '', 12.5, 'SKF', 'Meccanico', 'Cuscinetti', ''],
+    ['Parte', '', 'Fiancata lavorata', 'pz', '', '', 45, '', '', 'Carpenteria', 'Fiancate', 'codice auto se vuoto'],
+    ['Sottogruppo', 'SGR-100', 'Gruppo motore', 'pz', '', '', '', '', '', '', '', 'la distinta si carica con il foglio Distinte'],
+    ['Gruppo', 'GRP-100', 'Gruppo telaio', 'pz', '', '', '', '', '', '', '', ''],
+    ['Macchina', 'MAC-100', 'Nastro Trasportatore NT-200', 'pz', '', '', '', '', '', '', '', ''],
   ];
   const ws = XLSX.utils.aoa_to_sheet(data);
   ws['!cols'] = header.map((h, i) => ({ wch: i === 2 ? 30 : 16 }));
@@ -222,7 +241,9 @@ function downloadItemsTemplate() {
     ['Tipo', 'Uno tra: ' + ALL_TYPES.map(t => typeLabel(t)).join(', ')],
     ['Codice', 'Se esiste già viene aggiornato. Se vuoto: generato per materie prime/commerciali/parti, altrimenti interno.'],
     ['Nome', 'Obbligatorio.'],
-    ['UM', 'Unità di misura (default pz).'],
+    ['UM', 'Unità di misura di gestione: quella con cui l\'articolo va in distinta e a magazzino (default pz).'],
+    ['UMAcquisto', 'Solo se il fornitore quota in un\'altra unità (es. barra gestita a metri, comprata a chilo). Vuoto = come UM.'],
+    ['Fattore', 'Quante UMAcquisto stanno in una UM (es. 5,55 kg per ogni metro). Serve insieme a UMAcquisto: da soli non valgono.'],
     ['CostoUnitario', 'Per Materia prima e Parte.'],
     ['PrezzoAcquisto', 'Per Componente commerciale.'],
     ['Fornitore', 'Per Commerciale. Creato se non esiste.'],
@@ -317,6 +338,17 @@ function renderBackup() {
         <button class="btn-outline" style="color:var(--red);border-color:var(--red)" onclick="resetDB()">↺ Ripristina dati esempio</button>
       </div>
     </div></div>
+  ${renderTrash()}
+  ${renderDuplicateCodes()}
+  <div class="cloud-section" style="margin-top:16px">
+    <div style="flex:1">
+      <strong>🐞 Registro errori</strong>
+      <p>Gli errori non previsti di questa sessione (al massimo gli ultimi ${ERROR_LOG_MAX}). Serve a chi ripara: si azzera ricaricando la pagina, quindi va scaricato prima.
+        ${appErrorLog().length ? `<strong style="color:var(--red)">${appErrorLog().length} errori registrati.</strong>` : 'Nessun errore finora.'}</p>
+      <div style="margin-top:8px">
+        <button class="btn-outline" onclick="downloadErrorLog()">⬇ Scarica registro errori</button>
+      </div>
+    </div></div>
   <div class="cloud-section" style="border-color:var(--red);margin-top:16px">
     <div style="flex:1">
       <strong style="color:var(--red)">🗑 Azzera tutto</strong>
@@ -326,6 +358,95 @@ function renderBackup() {
       </div>
     </div></div>`;
 }
+// ─── Cestino ───
+// Le eliminazioni non spariscono più: restano qui per TRASH_DAYS giorni, poi se
+// ne vanno da sole al caricamento successivo. L'annulla nel toast copre il
+// pentimento immediato; questo copre quello di domani mattina.
+const TRASH_LABELS = { items: 'Articolo', suppliers: 'Fornitore', workCenters: 'Centro di lavoro',
+  families: 'Macrofamiglia', rfqs: 'Richiesta', orders: 'Ordine', plans: 'Piano', users: 'Utente',
+  jobs: 'Commessa', movements: 'Movimento', revisions: 'Revisione' };
+function trashDescr(t) {
+  const r = t.record || {};
+  return r.number || r.code || r.name || r.title || '(senza nome)';
+}
+function renderTrash() {
+  const voci = Store.trashList();
+  if (!voci.length) {
+    return `<div class="cloud-section" style="margin-top:16px">
+      <div style="flex:1">
+        <strong>🗑 Cestino</strong>
+        <p>Vuoto. Ciò che elimini resta qui <strong>${TRASH_DAYS} giorni</strong> e si può rimettere a posto; passati quelli sparisce da solo.</p>
+      </div></div>`;
+  }
+  const righe = voci.map(t => `<div class="mgmt-item">
+      <span style="width:140px">${esc(TRASH_LABELS[t.coll] || t.coll)}</span>
+      <span style="flex:1;font-family:var(--mono)">${esc(trashDescr(t))}</span>
+      <span class="empty-text" style="padding:0">${esc(String(t.deletedAt || '').slice(0, 10))}${t.deletedBy ? ' · ' + esc(actorName(t.deletedBy)) : ''}</span>
+      <button class="btn-ghost" onclick="restoreFromTrash('${t.id}')">↶ Ripristina</button>
+      <button class="mini-btn danger" title="Elimina definitivamente" onclick="purgeFromTrash('${t.id}')">🗑</button>
+    </div>`).join('');
+  return `<div class="cloud-section" style="margin-top:16px">
+    <div style="flex:1">
+      <strong>🗑 Cestino — ${voci.length} ${voci.length === 1 ? 'elemento' : 'elementi'}</strong>
+      <p>Eliminazioni degli ultimi <strong>${TRASH_DAYS} giorni</strong>, recuperabili. Passata quella finestra spariscono da sole al caricamento successivo: il cestino non deve diventare il posto dove il database cresce senza che nessuno guardi.</p>
+      <div style="display:flex;flex-direction:column;gap:6px;margin-top:8px">${righe}</div>
+      <div style="margin-top:10px"><button class="btn-outline" style="color:var(--red);border-color:var(--red)" onclick="emptyTrashConfirm()">Svuota il cestino</button></div>
+    </div></div>`;
+}
+function restoreFromTrash(trashId) {
+  if (!roleGuard('manage')) return;
+  const t = Store.restore(trashId);
+  renderManage();
+  showToast(t ? `${TRASH_LABELS[t.coll] || t.coll} "${trashDescr(t)}" ripristinato` : 'Voce non trovata', t ? 'success' : 'error');
+}
+function purgeFromTrash(trashId) {
+  if (!roleGuard('manage')) return;
+  askConfirm('Eliminare definitivamente questa voce? Da qui in poi non si recupera più.', () => {
+    Store.purge(trashId); renderManage(); showToast('Eliminato definitivamente');
+  });
+}
+function emptyTrashConfirm() {
+  if (!roleGuard('manage')) return;
+  const n = Store.trashList().length;
+  askConfirm(`Svuotare il cestino? ${n} ${n === 1 ? 'elemento' : 'elementi'} non saranno più recuperabili.`, () => {
+    Store.emptyTrash(); renderManage(); showToast('Cestino svuotato');
+  });
+}
+
+// ─── Controllo dati: codici articolo duplicati ───
+// Da questa versione l'app impedisce di crearne di nuovi, ma i duplicati già a
+// catalogo restano, e vanno sciolti a mano prima che il codice diventi un
+// vincolo del database condiviso. Qui si mostrano; a decidere quale tenere è
+// una persona — rinominarli in automatico cambierebbe un identificativo
+// aziendale di nascosto, e quel codice sta su disegni e ordini già emessi.
+function renderDuplicateCodes() {
+  const gruppi = duplicateCodeGroups();
+  const bordo = gruppi.length ? 'var(--red)' : 'var(--border, #2a2a2a)';
+  if (!gruppi.length) {
+    return `<div class="cloud-section" style="margin-top:16px">
+      <div style="flex:1">
+        <strong>🔍 Controllo dati</strong>
+        <p>Nessun codice articolo duplicato. È la condizione che l'import massivo dà per scontata: cercando un codice risolve sempre sul primo articolo trovato.</p>
+      </div></div>`;
+  }
+  const quanti = gruppi.reduce((n, g) => n + g.items.length, 0);
+  const righe = gruppi.map(g => `<div class="mgmt-item" style="display:block">
+      <div style="font-family:var(--mono);font-weight:700;color:var(--red)">${esc(g.code)} — ${g.items.length} articoli</div>
+      ${g.items.map(i => `<div style="display:flex;align-items:center;gap:8px;margin-top:4px">
+          <span class="picker-type">${typeLabel(i.type)}</span>
+          <span style="flex:1">${esc(i.name || '(senza nome)')}</span>
+          <button class="btn-ghost" onclick="editItemModal('${i.id}')">✏ Apri</button>
+        </div>`).join('')}
+    </div>`).join('');
+  return `<div class="cloud-section" style="border-color:${bordo};margin-top:16px">
+    <div style="flex:1">
+      <strong style="color:var(--red)">🔍 Controllo dati — ${gruppi.length} codici duplicati</strong>
+      <p><strong>${quanti} articoli condividono ${gruppi.length} codici.</strong> L'import massivo cerca gli articoli per codice e risolve sempre sul primo trovato: reimportando un foglio, le righe di questi codici finiscono tutte sullo stesso articolo e le altre restano indietro, senza segnalazione.</p>
+      <p>Vanno sciolti a mano: apri ciascun articolo e dagli un codice suo. L'app non li rinomina da sola — quel codice sta su disegni e ordini già emessi, e sceglierne uno al posto tuo sarebbe peggio del problema.</p>
+      <div style="margin-top:10px;display:flex;flex-direction:column;gap:10px">${righe}</div>
+    </div></div>`;
+}
+
 function exportBackup() {
   // Il backup contiene tutto, utenti e hash compresi: solo agli amministratori
   if (!roleGuard('manage')) return;
@@ -341,18 +462,29 @@ function importBackup(ev) {
   const file = ev.target.files[0]; if (!file) return;
   const reader = new FileReader();
   reader.onload = () => {
-    try {
-      const data = JSON.parse(reader.result);
-      if (!data || !Array.isArray(data.items)) throw new Error('formato non valido');
-      const n = data.items.length;
-      askConfirm(`Importare questo file? I dati attuali verranno sovrascritti da un backup di ${n} articoli.`, () => {
+    let data;
+    // Il JSON illeggibile e il JSON valido ma non nostro sono due problemi
+    // diversi, e chi sta importando ha bisogno di sapere quale dei due ha.
+    try { data = JSON.parse(reader.result); }
+    catch (e) { showToast('Il file non è un JSON leggibile: potrebbe essere troncato', 'error'); return; }
+    const err = validateSnapshot(data);
+    if (err) { showToast('Backup non valido: ' + err, 'error'); return; }
+    // Si dice cosa sta per entrare PRIMA di sovrascrivere: dai numeri si
+    // riconosce al volo un backup sbagliato o vecchio di mesi.
+    const n = snapshotCounts(data);
+    const cosa = [`${n.items} articoli`, `${n.suppliers} fornitori`, `${n.rfqs} richieste`,
+      `${n.orders} ordini`, `${n.plans} piani`, `${n.users} utenti`].join(', ');
+    const attuale = `${db.items.length} articoli, ${db.suppliers.length} fornitori, ${db.rfqs.length} richieste, ${db.orders.length} ordini`;
+    askConfirm(`Il backup contiene: ${cosa}.\n\nSostituirà i dati attuali (${attuale}), che andranno persi.`, () => {
+      try {
         Store.importSnapshot(data);
-        resetViewState();
-        if (!reconcileSession()) return;   // il backup può contenere altri utenti
-        setView('bom'); showToast('Backup importato');
-      }, { title: '📥 Importa backup', ok: 'Importa e sovrascrivi' });
-    } catch (e) { showToast('File non valido', 'error'); }
+      } catch (e) { showToast('Import non riuscito: ' + e.message, 'error'); return; }
+      resetViewState();
+      if (!reconcileSession()) return;   // il backup può contenere altri utenti
+      setView('bom'); showToast('Backup importato');
+    }, { title: '📥 Importa backup', ok: 'Importa e sovrascrivi' });
   };
+  reader.onerror = () => { console.error(reader.error); showToast('Impossibile leggere il file', 'error'); };
   reader.readAsText(file);
   ev.target.value = '';
 }
@@ -375,8 +507,7 @@ function reconcileSession() {
   if (!userList().length) {
     const u = JSON.parse(JSON.stringify(currentUser));
     u.role = 'admin'; u.active = true;
-    db.users.push(stampNew(u));
-    saveDB();
+    Store.insert('users', u);
     currentUser = u; renderUserPill(); return true;
   }
   showToast('Il database importato ha altri utenti: accedi di nuovo', 'error');

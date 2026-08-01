@@ -93,8 +93,8 @@ function addUser() {
   const u = { id: gid(), name, username: val('nu-username'), email, role: val('nu-role') || 'lettore',
     color: safeColor(val('nu-color')), active: true };
   setUserPassword(u, pwd);
-  db.users.push(stampNew(u));
-  saveDB(); renderManage(); showToast('Utente creato');
+  Store.insert('users', u);
+  renderManage(); showToast('Utente creato');
 }
 function editUserModal(id) {
   if (!roleGuard('manage')) return;
@@ -160,8 +160,7 @@ function delUser(id) {
   if (currentUser && id === currentUser.id) { showToast('Non puoi eliminare te stesso', 'error'); return; }
   if (u.role === 'admin' && !activeAdmins(id).length) { showToast('Deve restare almeno un amministratore attivo', 'error'); return; }
   askConfirm(`Eliminare l'utente "${u.name}"? I record che ha creato restano, con il riferimento all'autore.`, () => {
-    db.users = db.users.filter(x => x.id !== id);
-    saveDB(); renderManage(); showToast('Utente eliminato');
+    removeConUndo('users', id, `Utente "${u.name}" eliminato`, renderManage);
   });
 }
 
@@ -250,10 +249,10 @@ function renderSuppliers() {
 }
 function addSupplier() {
   const n = val('sup-name'); if (!n) { showToast('Nome richiesto', 'error'); return; }
-  db.suppliers.push(stampNew({ id: gid(), name: n, referente: val('sup-ref'), email: val('sup-email'),
+  Store.insert('suppliers', { id: gid(), name: n, referente: val('sup-ref'), email: val('sup-email'),
     phone: val('sup-phone'), vat: '', street: '', streetNumber: '', zip: '', city: '', province: '', country: '',
-    defaultTransport: '', defaultPayment: '', active: true }));
-  saveDB(); renderManage(); showToast('Fornitore aggiunto');
+    defaultTransport: '', defaultPayment: '', active: true });
+  renderManage(); showToast('Fornitore aggiunto');
 }
 function addressFieldsHtml(pfx, o) {
   o = o || {};
@@ -319,7 +318,7 @@ function delSupplier(id) {
   const usi = supplierUses(id);
   if (usi.length) { showToast('Fornitore usato in: ' + usi.join(', '), 'error'); return; }
   askConfirm('Eliminare il fornitore?', () => {
-    db.suppliers = db.suppliers.filter(x => x.id !== id); saveDB(); renderManage(); showToast('Eliminato');
+    removeConUndo('suppliers', id, 'Fornitore eliminato', renderManage);
   });
 }
 
@@ -361,8 +360,8 @@ function addFamily(kind) {
   kind = kind || 'acquistato';
   const n = val('fam-name-' + kind); if (!n) { showToast('Nome richiesto', 'error'); return; }
   const sg = val('fam-sigla-' + kind);
-  db.families.push(stampNew({ id: gid(), name: n, kind, sigla: sg ? sg.toUpperCase() : siglaFromName(n), subs: [] }));
-  saveDB(); renderManage(); showToast('Macrofamiglia aggiunta');
+  Store.insert('families', { id: gid(), name: n, kind, sigla: sg ? sg.toUpperCase() : siglaFromName(n), subs: [] });
+  renderManage(); showToast('Macrofamiglia aggiunta');
 }
 function editFamilyModal(id) {
   const f = getFamily(id); if (!f) return;
@@ -385,8 +384,7 @@ function delFamily(id) {
   const used = db.items.filter(i => i.familyId === id);
   if (used.length) { showToast('Famiglia usata da ' + used.length + ' articoli', 'error'); return; }
   askConfirm('Eliminare la macrofamiglia e le sue sottofamiglie?', () => {
-    db.families = db.families.filter(f => f.id !== id);
-    saveDB(); renderManage(); showToast('Eliminata');
+    removeConUndo('families', id, 'Macrofamiglia eliminata', renderManage);
   });
 }
 function addSubFamily(familyId) {
@@ -441,8 +439,8 @@ function renderWorkCenters() {
 function addWc() {
   const n = val('wc-name'); if (!n) { showToast('Nome richiesto', 'error'); return; }
   if (isNeg('wc-rate')) { showToast('La tariffa non può essere negativa', 'error'); return; }
-  db.workCenters.push(stampNew({ id: gid(), name: n, hourlyRate: numVal('wc-rate', 0), active: true }));
-  saveDB(); renderManage(); showToast('Centro di lavoro aggiunto');
+  Store.insert('workCenters', { id: gid(), name: n, hourlyRate: numVal('wc-rate', 0), active: true });
+  renderManage(); showToast('Centro di lavoro aggiunto');
 }
 function editWcModal(id) {
   const w = db.workCenters.find(x => x.id === id); if (!w) return;
@@ -463,7 +461,7 @@ function delWc(id) {
   const used = db.items.filter(i => (i.operations || []).some(o => o.workCenterId === id));
   if (used.length) { showToast('Usato in ' + used.length + ' distinte', 'error'); return; }
   askConfirm('Eliminare il centro di lavoro?', () => {
-    db.workCenters = db.workCenters.filter(x => x.id !== id); saveDB(); renderManage(); showToast('Eliminato');
+    removeConUndo('workCenters', id, 'Centro di lavoro eliminato', renderManage);
   });
 }
 
@@ -623,6 +621,12 @@ function renderSettings() {
     </div>
     <p class="empty-text" style="text-align:left;padding:4px 0 12px">Le cifre della parte incrementale determinano lo zero-padding del progressivo (es. 3 → <span style="font-family:var(--mono)">${esc(s.codePrefixMateriale || 'MAT')}-ACC-LAM-001</span>). Il prefisso codice è la sigla iniziale usata nei codici automatici per commerciali, materie prime e parti.<br>Macchine, gruppi, sottogruppi e le parti legate a una macchina usano invece la <strong>codifica gerarchica</strong> (es. <span style="font-family:var(--mono)">TRN-BAS-001</span>), il cui schema si configura sulla singola macchina.</p>
 
+    <h3 class="settings-group-title">🔒 Accesso</h3>
+    <div class="modal-grid">
+      <div class="modal-field"><label>Durata della sessione salvata (giorni)</label><input type="number" id="set-session" min="0" max="365" step="1" value="${sessionMaxDays()}"></div>
+    </div>
+    <p class="empty-text" style="text-align:left;padding:4px 0 12px">Passati questi giorni dall'ultimo accesso, "Ricordami su questo PC" smette di valere e va reinserita la password. <strong>0 = la sessione non scade mai</strong> (com'era fino alla 0.21.0): comodo su un PC personale, meno su una postazione condivisa in officina.</p>
+
     <button class="add-btn-sm" onclick="saveSettings()">Salva impostazioni</button></div>`;
 }
 function saveSettings() {
@@ -638,5 +642,6 @@ function saveSettings() {
   db.settings.codePrefixAcquistato = (val('set-pfx-acq') || 'CMM').toUpperCase();
   db.settings.codePrefixMateriale = (val('set-pfx-mat') || 'MAT').toUpperCase();
   db.settings.codePrefixParte = (val('set-pfx-prt') || 'PRT').toUpperCase();
+  db.settings.sessionDays = numVal('set-session', 0, 365);
   saveDB(); renderManage(); showToast('Impostazioni salvate');
 }

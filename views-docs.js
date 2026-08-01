@@ -227,11 +227,10 @@ function renderRfqList() {
 
 function newRfq() {
   if (!roleGuard('docs')) return;
-  const r = stampNew({ id: gid(), number: nextRfqNumber(), title: '', date: nowISO().slice(0, 10),
+  const r = Store.insert('rfqs', { id: gid(), number: nextRfqNumber(), title: '', date: nowISO().slice(0, 10),
     status: 'bozza', notes: '', notesInternal: '', supplierId: null, planId: null,
     transport: db.settings.transportDefault || '', payment: db.settings.paymentDefault || '',
     lines: [], active: true });
-  db.rfqs.push(r); saveDB();
   currentRfqId = r.id; rfqView = 'edit'; rfqDirty = false; renderRfq();
 }
 function openRfqEdit(id) { currentRfqId = id; rfqView = 'edit'; rfqDirty = false; rfqUnlockedId = null; renderRfq(); }
@@ -672,11 +671,9 @@ function delRfq(id) {
   const r = getRfq(id); if (!r) return;
   const warn = r.status === 'bozza' ? '' : `\nAttenzione: risulta ${(RFQ_STATUS[r.status] || r.status).toLowerCase()}.`;
   askConfirm(`Eliminare la richiesta ${r.number}?${warn}`, () => {
-    db.rfqs = db.rfqs.filter(x => x.id !== id);
     rfqCompareSel = rfqCompareSel.filter(x => x !== id);
-    saveDB();
     if (currentRfqId === id) { currentRfqId = null; rfqView = 'list'; }
-    renderRfq(); showToast('Richiesta eliminata');
+    removeConUndo('rfqs', id, `Richiesta ${r.number} eliminata`, renderRfq);
   });
 }
 
@@ -703,6 +700,40 @@ function ordUnlock(id) {
   }, { title: '🔓 Sblocca per modifica', ok: 'Sblocca', safe: true });
 }
 function fmtQty(n) { n = Number(n) || 0; return Number.isInteger(n) ? String(n) : String(+n.toFixed(3)); }
+// ─── Data richiesta contro data confermata ───
+// Il fornitore conferma quasi sempre una data diversa da quella chiesta, e
+// finora quella risposta non si scriveva da nessuna parte: restava in una mail.
+// Qui si registra accanto alla richiesta, e lo scarto si vede — perché è lo
+// scarto, non la data, a dire se la commessa va rifatta.
+// In UTC come addDays(): qui la differenza farebbe cadere gli offset, ma il
+// passaggio dell'ora legale fra le due date lascerebbe un'ora di scarto, e
+// arrotondare a giorni interi è più fragile che non averne bisogno.
+function giorniTra(a, b) {
+  if (!a || !b) return null;
+  const d1 = new Date(a + 'T00:00:00Z'), d2 = new Date(b + 'T00:00:00Z');
+  if (isNaN(d1) || isNaN(d2)) return null;
+  return Math.round((d2 - d1) / 86400000);
+}
+function ordLineDelay(l) {
+  const g = giorniTra(l && l.deliveryDate, l && l.confirmedDate);
+  return g == null ? null : g;
+}
+function ordLineDelayHtml(l) {
+  const g = ordLineDelay(l);
+  if (g == null || g === 0) return '';
+  return g > 0
+    ? `<div class="line-note" style="color:var(--red)">+${g} ${g === 1 ? 'giorno' : 'giorni'} sulla richiesta</div>`
+    : `<div class="line-note" style="color:var(--green)">${g} ${g === -1 ? 'giorno' : 'giorni'} — in anticipo</div>`;
+}
+// Il ritardo peggiore dell'ordine: è quello che decide se la commessa slitta.
+function orderWorstDelay(o) {
+  let peggiore = null;
+  (o.lines || []).forEach(l => {
+    const g = ordLineDelay(l);
+    if (g != null && g > 0 && (peggiore == null || g > peggiore)) peggiore = g;
+  });
+  return peggiore;
+}
 function orderTotal(o) { return (o.lines || []).reduce((s, l) => s + (Number(l.qty) || 0) * (Number(l.price) || 0), 0); }
 function orderReception(o) {
   let ordered = 0, received = 0;
@@ -763,10 +794,9 @@ function renderOrderList() {
 
 function newOrder() {
   if (!roleGuard('docs')) return;
-  const o = stampNew({ id: gid(), number: nextOrderNumber(), title: '', date: nowISO().slice(0, 10),
+  const o = Store.insert('orders', { id: gid(), number: nextOrderNumber(), title: '', date: nowISO().slice(0, 10),
     status: 'bozza', supplierId: null, transport: db.settings.transportDefault || '', payment: db.settings.paymentDefault || '',
     requestedDelivery: '', rfqId: null, planId: null, supplierConfirmation: '', notes: '', notesInternal: '', lines: [], active: true });
-  db.orders.push(o); saveDB();
   currentOrderId = o.id; orderView = 'edit'; orderDirty = false; renderOrders();
 }
 function orderFromRfq(rfqId) {
@@ -826,7 +856,9 @@ function ordSetSupplier(id, sid) {
 }
 function ordSetLine(id, lineId, field, value) {
   // I ricevimenti si registrano proprio a ordine inviato: restano sempre aperti
-  const kind = field === 'received' ? 'reception' : 'contract';
+  // La data confermata è la risposta del fornitore: arriva dopo l'invio, quando
+  // il contratto è già chiuso. Va nello stesso gruppo dei ricevimenti.
+  const kind = (field === 'received' || field === 'confirmedDate') ? 'reception' : 'contract';
   if (!ordGuard(id, kind)) { renderOrders(); return; }
   const o = getOrder(id); if (!o) return;
   const l = (o.lines || []).find(x => x.id === lineId); if (!l) return;
@@ -944,12 +976,18 @@ function renderOrderEdit(id) {
       <td><input type="number" class="rfq-price-input lock-contract" value="${price != null ? price : ''}" min="0" step="any" placeholder="—" onchange="ordSetLine('${id}','${l.id}','price',this.value)"></td>
       <td class="ord-amount">${amount != null ? fmtN(amount) : '—'}</td>
       <td><input type="date" class="rfq-date-input lock-contract" value="${esc(l.deliveryDate || '')}" onchange="ordSetLine('${id}','${l.id}','deliveryDate',this.value)"></td>
+      <td><input type="date" class="rfq-date-input lock-reception" value="${esc(l.confirmedDate || '')}" title="Data che il fornitore ha confermato" onchange="ordSetLine('${id}','${l.id}','confirmedDate',this.value)">
+        ${ordLineDelayHtml(l)}</td>
       <td><input type="number" class="rfq-qty-input lock-reception" value="${rec}" min="0" step="any" onchange="ordSetLine('${id}','${l.id}','received',this.value)"></td>
       <td class="ord-residual ${residual > 0 ? 'pos' : ''}">${fmtQty(residual)}</td>
       <td class="line-actions"><button class="mini-btn" onclick="ordEditLineModal('${id}','${l.id}')" title="Modifica riga / nota">✏</button>
         <button class="mini-btn danger lock-contract" onclick="ordDelLine('${id}','${l.id}')">🗑</button></td></tr>`;
-  }).join('') || `<tr><td colspan="11" class="empty-text">Nessuna riga. Aggiungi articoli dal catalogo o manualmente.</td></tr>`;
+  }).join('') || `<tr><td colspan="12" class="empty-text">Nessuna riga. Aggiungi articoli dal catalogo o manualmente.</td></tr>`;
   const total = orderTotal(o);
+  // Se il fornitore ha confermato più tardi di quanto chiesto, si dice subito e
+  // in testata: è l'informazione che fa decidere se la commessa slitta, e non
+  // deve stare nascosta in una colonna in fondo.
+  const ritardo = orderWorstDelay(o);
   const co = db.settings.company || {};
   const coWarn = co.name ? '' : `<div class="rfq-warn">⚠ Dati azienda non impostati: compilali in <strong>Gestione › Dati azienda</strong> per stamparli sul documento.</div>`;
   const rfqRef = docOriginRef(o);
@@ -988,6 +1026,7 @@ function renderOrderEdit(id) {
       <div class="modal-field"><label>Note</label><textarea rows="2" onchange="ordSetField('${id}','notes',this.value)">${esc(o.notes || '')}</textarea></div>
       <div class="modal-field"><label>🔒 Note interne (non stampate sui documenti)</label><textarea rows="2" class="notes-internal" onchange="ordSetField('${id}','notesInternal',this.value)">${esc(o.notesInternal || '')}</textarea></div>
     </div>
+    ${ritardo != null ? `<div class="rfq-warn">⏱ Il fornitore ha confermato con <strong>${ritardo} ${ritardo === 1 ? 'giorno' : 'giorni'}</strong> di ritardo sulla data richiesta. Se questo materiale è a commessa, la consegna al cliente va verificata.</div>` : ''}
     <h3 class="rfq-subhead">Righe ordine
       <span class="rfq-head-actions">
         <button class="add-btn-sm lock-contract" onclick="ordAddCatalogModal('${id}')">+ Da catalogo</button>
@@ -995,9 +1034,12 @@ function renderOrderEdit(id) {
         <button class="btn-outline lock-reception" onclick="ordMarkAllReceived('${id}')">✓ Segna tutto ricevuto</button>
       </span></h3>
     <div class="table-wrap"><table class="rfq-table">
-      <thead><tr><th>#</th><th>Codice</th><th>Descrizione</th><th>U.M.</th><th>Q.tà</th><th>Prezzo unit.</th><th>Importo</th><th>Consegna</th><th>Ricevuto</th><th>Residuo</th><th></th></tr></thead>
+      <thead><tr><th>#</th><th>Codice</th><th>Descrizione</th><th>U.M.</th><th>Q.tà</th><th>Prezzo unit.</th><th>Importo</th>
+        <th title="Data che abbiamo chiesto">Richiesta</th>
+        <th title="Data che il fornitore ha confermato">Confermata</th>
+        <th>Ricevuto</th><th>Residuo</th><th></th></tr></thead>
       <tbody>${lines}</tbody>
-      <tfoot><tr class="rfq-cmp-total"><td colspan="6" style="text-align:right">Totale imponibile</td><td>${fmtN(total)}</td><td colspan="4"></td></tr></tfoot>
+      <tfoot><tr class="rfq-cmp-total"><td colspan="6" style="text-align:right">Totale imponibile</td><td>${fmtN(total)}</td><td colspan="5"></td></tr></tfoot>
     </table></div>
     <div class="rfq-export-bar">
       <label>Documento d'ordine:</label>
@@ -1107,8 +1149,7 @@ function delOrder(id) {
   const warn = o.status === 'bozza' ? ''
     : `\nAttenzione: risulta ${(ORDER_STATUS[o.status] || o.status).toLowerCase()}${rec.received ? ` con ${fmtQty(rec.received)} già ricevuti` : ''}.`;
   askConfirm(`Eliminare l'ordine ${o.number}?${warn}`, () => {
-    db.orders = db.orders.filter(x => x.id !== id); saveDB();
     if (currentOrderId === id) { currentOrderId = null; orderView = 'list'; }
-    renderOrders(); showToast('Ordine eliminato');
+    removeConUndo('orders', id, `Ordine ${o.number} eliminato`, renderOrders);
   });
 }

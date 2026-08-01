@@ -85,8 +85,7 @@ function createFirstAdmin() {
   if (password.length < 4) return _loginError('La password deve avere almeno 4 caratteri');
   const u = { id: gid(), name, username: '', email, role: 'admin', color: '#3A7BE8', active: true };
   setUserPassword(u, password);
-  db.users.push(stampNew(u));
-  saveDB();
+  Store.insert('users', u);
   setVal('login-password', '');
   doLogin(u, true);
   showToast('Amministratore creato: benvenuto in Bomtrack');
@@ -102,15 +101,32 @@ function doLogin(user, persist) {
   document.getElementById('app-main').style.display = 'block';
   renderUserPill();
   startClock();
-  setView('bom');
+  // L'indirizzo comanda: chi apre un link a una vista precisa, o ricarica la
+  // pagina, ci ritrova. Altrimenti si atterra sul riepilogo.
+  setView(viewIniziale());
+}
+// Durata della sessione salvata. 0 = non scade (comportamento fino alla 0.21.0).
+function sessionMaxDays() {
+  const d = db.settings && db.settings.sessionDays;
+  return Number.isFinite(+d) && +d >= 0 ? +d : 30;
+}
+// Vero quando il `ts` scritto al login è più vecchio della durata configurata.
+// Una data illeggibile conta come scaduta: meglio richiedere la password che
+// tenere aperta una sessione di cui non si sa più l'età.
+function sessionExpired(s) {
+  const giorni = sessionMaxDays();
+  if (!giorni) return false;
+  const t = s && s.ts ? Date.parse(s.ts) : NaN;
+  if (!isFinite(t)) return true;
+  return (Date.now() - t) > giorni * 86400000;
 }
 // Sessione salvata: si riapre l'app senza credenziali, purché l'utente esista
-// ancora e non sia stato sospeso nel frattempo.
+// ancora, non sia stato sospeso nel frattempo e la sessione non sia scaduta.
 function restoreSession() {
   let s = null;
   try { s = JSON.parse(localStorage.getItem(SESSION_KEY) || 'null'); } catch (e) { s = null; }
   const u = s && s.userId ? getUser(s.userId) : null;
-  if (!u || u.active === false) { localStorage.removeItem(SESSION_KEY); return false; }
+  if (!u || u.active === false || sessionExpired(s)) { localStorage.removeItem(SESSION_KEY); return false; }
   doLogin(u, false);
   return true;
 }

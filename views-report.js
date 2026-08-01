@@ -93,10 +93,60 @@ function renderReport() {
       ${kpi('Costo totale', fmtN(c.total), '')}
       ${kpi('Prezzo vendita', fmtN(price), 'green')}
     </div>
-    <div class="breakdown-section" style="margin-bottom:20px"><h3 class="sub-title">Incidenza voci di costo</h3>${bars}</div>
+    <div class="breakdown-section" style="margin-bottom:20px"><h3 class="sub-title">Incidenza voci di costo
+      <button class="btn-outline" style="margin-left:10px" onclick="costWhyModal('${it.id}')">🔍 Da dove viene questo costo</button></h3>${bars}</div>
     <div class="breakdown-section"><h3 class="sub-title">Distinta base esplosa</h3>
       <div class="table-wrap"><table><thead><tr><th>Pos.</th><th>Codice</th><th>Articolo</th><th>Tipo</th><th>Q.tà</th><th>Costo un.</th><th>Costo riga</th></tr></thead>
       <tbody>${tableRows}</tbody></table></div></div>`;
+}
+
+// ─── «Da dove viene questo costo» ───
+// I riquadri dicono *quanto* costa e le barre *di che tipo* è la spesa, ma non
+// **chi** la fa. Su una distinta a cinque livelli la domanda vera è sempre la
+// stessa — «perché costa così tanto?» — e la risposta finora andava cercata a
+// mano nella tabella esplosa, riga per riga.
+//
+// Qui si sommano i costi riga per articolo (lo stesso componente in tre rami
+// conta una volta sola, con la somma) e si mostrano i primi in ordine di peso.
+// Nessun calcolo nuovo: è la stessa esplosione della tabella qui sotto, letta
+// per la domanda giusta.
+const COST_WHY_TOP = 10;
+function costContributors(itemId) {
+  const rows = [];
+  flattenBom(itemId, 1, 0, 0, rows, []);
+  const per = new Map();
+  // La radice è la riga 0: è il totale, non un contributo a se stesso.
+  rows.slice(1).forEach(r => {
+    // Solo le foglie: un assieme e i suoi componenti conterebbero due volte la
+    // stessa spesa, e i totali non tornerebbero più.
+    const it = r.code ? getItemByCode(r.code) : null;
+    const foglia = !it || !isAssembly(it.type);
+    if (!foglia) return;
+    const k = r.code || r.name;
+    const e = per.get(k) || { code: r.code, name: r.name, type: r.type, qty: 0, line: 0 };
+    e.qty += r.qty; e.line += r.line;
+    per.set(k, e);
+  });
+  return Array.from(per.values()).filter(x => x.line > 0).sort((a, b) => b.line - a.line);
+}
+function costWhyModal(itemId) {
+  const it = getItem(itemId); if (!it) return;
+  const totale = costOf(it.id).total;
+  const tutti = costContributors(it.id);
+  const top = tutti.slice(0, COST_WHY_TOP);
+  const coperto = top.reduce((s, x) => s + x.line, 0);
+  const quota = x => totale > 0 ? (x.line / totale * 100) : 0;
+  const righe = top.map((x, i) => `<div class="breakdown-row">
+      <div class="breakdown-name" title="${esc(x.name)}">${i + 1}. <span style="font-family:var(--mono)">${esc(x.code || '')}</span> ${esc(x.name)}</div>
+      <div class="breakdown-bar"><div class="breakdown-fill" style="width:${totale > 0 ? Math.min(100, x.line / (top[0].line || 1) * 100) : 0}%;background:var(--accent)"></div></div>
+      <div class="breakdown-stats"><span>${fmtN(x.line)}</span><span style="color:var(--text-dim)">${quota(x).toFixed(1)}%</span></div>
+    </div>`).join('');
+  openModal(`<h3>🔍 Da dove viene il costo di ${esc(it.code)}</h3>
+    <p>${esc(it.name)} — costo totale <strong>${fmtN(totale)}</strong>.</p>
+    ${tutti.length ? `<p class="empty-text" style="text-align:left;padding:0 0 10px">I ${top.length} articoli che pesano di più, sommati su tutta la distinta: ${totale > 0 ? (coperto / totale * 100).toFixed(0) : 0}% del costo${tutti.length > top.length ? `, su ${tutti.length} voci in tutto` : ''}. Le lavorazioni e le spese generali non compaiono qui: stanno nelle barre di incidenza.</p>
+      ${righe}`
+    : '<div class="empty-text">Nessun componente con un costo: la distinta è vuota, oppure tutto quello che contiene vale zero.</div>'}
+    <div class="modal-actions"><button class="btn-ghost" onclick="closeModal()">Chiudi</button></div>`, true, 'costo');
 }
 
 // ─── EXPORT ───

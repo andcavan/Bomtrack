@@ -75,6 +75,7 @@ function renderBom() {
     conta.textContent = n === tot ? `${tot} ${tot === 1 ? 'distinta' : 'distinte'}` : `${n} di ${tot}`;
   }
   const it = getItem(currentBomId);
+  renderBomRevBar();
   const summary = document.getElementById('bom-cost-summary');
   const tree = document.getElementById('bom-tree');
   if (!it) {
@@ -376,19 +377,32 @@ function delComponent(idx) {
     it.components.splice(idx, 1); touch(it); saveDB(); renderBom(); showToast('Componente eliminato');
   });
 }
-// Verifica se aggiungere childId dentro parentId creerebbe un ciclo
+// Verifica se aggiungere childId dentro parentId creerebbe un ciclo.
+//
+// La discesa segue entrambe le strade con cui un articolo ne contiene un altro:
+// i `components` degli assiemi e le righe di distinta nel `cycle` di una parte
+// (`kind !== 'op'`, la stessa regola di parentIndex() e del motore di costo).
+// Fino alla 0.22.0 guardava solo i componenti e usciva subito se il figlio non
+// era un assieme: la vista Cicli non aveva alcun controllo, e l'anello per
+// quella strada era impossibile solo perché CYCLE_CHILD_TYPES ammette le sole
+// foglie — una difesa che nessuno aveva scritto, e che sarebbe caduta il giorno
+// in cui si fosse allargato quell'elenco.
+//
+// Vale la pena ricordare perché è importante: un anello in distinta manda
+// costOf() in ricorsione, e il flag `cycle` che risale fino alla UI è
+// contenimento del danno, non una cura.
 function createsCycle(parentId, childId) {
   if (parentId === childId) return true;
-  const child = getItem(childId);
-  if (!child || !isAssembly(child.type)) return false;
   const visited = new Set();
   const dfs = (id) => {
     if (id === parentId) return true;
     if (visited.has(id)) return false;
     visited.add(id);
     const node = getItem(id);
-    if (!node || !isAssembly(node.type)) return false;
-    return (node.components || []).some(c => dfs(c.itemId));
+    if (!node) return false;
+    if (isAssembly(node.type)) return (node.components || []).some(c => dfs(c.itemId));
+    if (node.type === 'parte') return (node.cycle || []).some(r => r.kind !== 'op' && dfs(r.itemId));
+    return false;
   };
   return dfs(childId);
 }
@@ -505,12 +519,12 @@ function saveNewMachine() {
   if (d.sigla && !/^[A-Z0-9]+$/.test(d.sigla)) { showToast('La sigla macchina ammette solo A-Z e 0-9', 'error'); return; }
   if (d.sigla && machineItems().some(m => m.sigla === d.sigla)) { showToast(`Sigla macchina "${d.sigla}" già in uso`, 'error'); return; }
   const id = gid();
-  db.items.push(stampNew(Object.assign({
+  Store.insert('items', Object.assign({
     id, code: val('mac-code') || id, name, type: 'macchina', uom: val('mac-uom') || defaultUom(),
     notes: val('mac-notes'), active: true, components: [], operations: [],
-  }, d)));
+  }, d));
   currentBomId = id; bomExpanded = new Set();
-  saveDB(); closeModal(); renderBom(); showToast('Macchina creata');
+  closeModal(); renderBom(); showToast('Macchina creata');
 }
 function editCurrentItemModal() {
   if (!roleGuard('bom')) return;
@@ -547,8 +561,8 @@ function deleteCurrentMachine() {
   const used = usedBy(it.id);
   if (used.length) { showToast('Usato in: ' + used.map(u => u.code).join(', ') + '. Rimuovilo prima.', 'error'); return; }
   askConfirm(`Eliminare "${it.name}" e la sua distinta?`, () => {
-    db.items = db.items.filter(i => i.id !== it.id);
-    currentBomId = null; saveDB(); renderBom(); showToast('Eliminato');
+    currentBomId = null;
+    removeConUndo('items', it.id, `"${it.name}" eliminato`, renderBom);
   });
 }
 // Chi contiene questo articolo, dall'indice inverso: una lettura invece di una

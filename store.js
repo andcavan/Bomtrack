@@ -8,6 +8,7 @@
 
 const DB_KEY = 'bomtrack_v1';       // non rinominare: la versione vive dentro il blob
 const SCHEMA_VERSION = 2;           // v1 = id interi legacy (implicita), v2 = uuid + timestamp
+const TRASH_DAYS = 30;              // per quanto un'eliminazione resta recuperabile
 
 const defaultDB = {
   suppliers: [
@@ -175,9 +176,11 @@ function sha256Hex(str) {
     0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
     0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2];
   const H = [0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19];
-  // UTF-8 → byte
-  const bytes = [];
-  for (const ch of unescape(encodeURIComponent(String(str)))) bytes.push(ch.charCodeAt(0));
+  // UTF-8 → byte. Era `unescape(encodeURIComponent(...))`: stesso risultato, ma
+  // unescape è deprecato ed encodeURIComponent lancia sui surrogati spaiati.
+  // TextEncoder produce esattamente gli stessi byte, quindi gli hash già in
+  // archivio restano validi e nessuno deve rifare la password.
+  const bytes = Array.from(new TextEncoder().encode(String(str)));
   const bitLen = bytes.length * 8;
   bytes.push(0x80);
   while (bytes.length % 64 !== 56) bytes.push(0);
@@ -228,6 +231,7 @@ function nowISO() { return new Date().toISOString(); }
 // Autore delle modifiche: impostato al login (Store.setActor), finisce in
 // createdBy/updatedBy di ogni record → created_by/updated_by in cloud.
 let actorId = null;
+let lastTrashId = null;   // ultima voce di cestino creata (per l'annulla immediato)
 function stampNew(rec) {
   const t = nowISO();
   if (!rec.createdAt) rec.createdAt = t;
@@ -242,6 +246,69 @@ function touch(rec) {
   return rec;
 }
 
+// ── Registro dello schema ───────────────────────────────────
+// Le nove collezioni radice, i loro array annidati e come ciascuno va trattato
+// quando i dati saranno condivisi. Finora questi nomi erano cablati in sei
+// punti diversi (migrazioni, validazione, azzeramento, backup…) e ogni aggiunta
+// ne dimenticava qualcuno: qui stanno una volta sola e chi deve percorrere il
+// database li legge da qui.
+//
+// `merge` è la decisione che conta, e non può essere la stessa per tutti:
+//
+//   'row'     — righe con identità propria, dove l'aggiunta concorrente è lo
+//               scenario normale, non un conflitto. Due colleghi che
+//               registrano una quotazione sullo stesso articolo hanno due id
+//               diversi: sopravvivono entrambe, nessuno perde niente.
+//
+//   'replace' — l'array *è* la definizione dell'oggetto. Metà distinta di uno e
+//               metà dell'altro è una distinta che nessuno dei due ha
+//               progettato, e un ciclo di lavorazione mezzo e mezzo è un costo
+//               sbagliato che nessuno verifica. Qui l'ultimo che salva
+//               sostituisce l'insieme intero e l'altro viene avvisato.
+//               Queste righe, per giunta, non hanno un id proprio: l'identità
+//               per fare il merge riga per riga non esisterebbe nemmeno.
+//
+// `table` è il nome che la collezione avrà nel database condiviso
+// (docs/cloud-schema.md). Serve all'adapter, non serve all'app.
+const SCHEMA = {
+  items: {
+    table: 'items',
+    children: {
+      components: { table: 'item_components', rowId: null, merge: 'replace' },
+      operations: { table: 'item_operations', rowId: null, merge: 'replace' },
+      cycle: { table: 'item_cycle_rows', rowId: null, merge: 'replace' },
+      priceList: { table: 'item_prices', rowId: 'id', merge: 'row' },
+    },
+  },
+  // Le revisioni rilasciate sono fotografie congelate: `snapshot` resta un
+  // oggetto unico e non si esplode in tabelle figlie. Non è pigrizia — una
+  // revisione non va mai fusa con niente, e normalizzarla significherebbe darle
+  // la stessa forma dei dati vivi, cioè invitare qualcuno a modificarla.
+  revisions: { table: 'item_revisions' },
+  // Movimenti di magazzino: rettifiche e consumi. I **carichi da ordine non
+  // stanno qui** — quelli li racconta già `received` sulla riga d'ordine, e
+  // scriverli in due posti significherebbe tenerli d'accordo a mano.
+  movements: { table: 'stock_movements' },
+  suppliers: { table: 'suppliers' },
+  workCenters: { table: 'work_centers' },
+  families: { table: 'families', children: { subs: { table: 'sub_families', rowId: 'id', merge: 'row' } } },
+  rfqs: { table: 'rfqs', children: { lines: { table: 'rfq_lines', rowId: 'id', merge: 'row' } } },
+  orders: { table: 'orders', children: { lines: { table: 'order_lines', rowId: 'id', merge: 'row' } } },
+  plans: { table: 'production_plans', children: { lines: { table: 'production_plan_lines', rowId: 'id', merge: 'row' } } },
+  // Commesse: il cliente e la data a monte di tutto. Un piano ne cita una, e da
+  // lì la citazione scende su richieste e ordini — è la catena che risponde a
+  // «cosa abbiamo ordinato per la commessa 240?».
+  jobs: { table: 'jobs' },
+  // Il cestino non è dominio: è la rete sotto le eliminazioni. In cloud è una
+  // tabella come le altre, con il record conservato in jsonb.
+  trash: { table: 'trash' },
+  // Gli hash delle password non migrano: le password vere le possiede l'auth
+  // del backend. `secret` è l'elenco dei campi che l'adapter deve togliere.
+  users: { table: 'profiles', secret: ['passwordHash', 'passwordSalt'] },
+};
+const COLLECTIONS = Object.keys(SCHEMA);
+function childrenOf(coll) { return (SCHEMA[coll] && SCHEMA[coll].children) || {}; }
+
 function siglaFromName(name) {
   return String(name || '').replace(/[^a-zA-Z]/g, '').toUpperCase().slice(0, 3) || 'XXX';
 }
@@ -250,12 +317,13 @@ function isAssembly(t) { return t === 'macchina' || t === 'gruppo' || t === 'sot
 // ── Caricamento e migrazioni ────────────────────────────────
 function loadDB() {
   try {
-    const r = localStorage.getItem(DB_KEY);
-    if (r) { db = JSON.parse(r); migrateDB(); return; }
+    const r = adapter.read();
+    if (r) { db = JSON.parse(r); migrateDB(); markSynced(); return; }
   } catch (e) { console.error('Errore lettura locale:', e); }
   db = JSON.parse(JSON.stringify(defaultDB));
   migrateDB();
   saveDB();
+  markSynced();
 }
 function migrateDB() {
   // Normalizzazioni legacy (idempotenti, sempre eseguite)
@@ -277,6 +345,17 @@ function migrateDB() {
     if (u.passwordHash == null) { u.passwordHash = ''; u.passwordSalt = ''; }
   });
   if (!db.items) db.items = [];
+  if (!db.revisions) db.revisions = [];   // storico delle distinte rilasciate
+  if (!db.movements) db.movements = [];   // rettifiche e consumi di magazzino
+  if (!db.jobs) db.jobs = [];             // commesse cliente
+  // Cestino: le eliminazioni recenti, recuperabili. Si svuota da solo passata
+  // la finestra di ripristino, altrimenti crescerebbe finché lo spazio del
+  // browser non finisce — e a quel punto il rimedio sarebbe peggio del male.
+  if (!Array.isArray(db.trash)) db.trash = [];
+  else {
+    const limite = new Date(Date.now() - TRASH_DAYS * 86400000).toISOString();
+    db.trash = db.trash.filter(t => t && t.deletedAt && t.deletedAt >= limite);
+  }
   if (!db.settings) db.settings = { overheadPct: 0, marginPct: 0, currency: '€' };
   if (db.settings.codeDigits == null) db.settings.codeDigits = 3;
   if (!db.settings.codePrefixAcquistato) db.settings.codePrefixAcquistato = 'CMM';
@@ -289,6 +368,10 @@ function migrateDB() {
   if (db.settings.paymentDefault == null) db.settings.paymentDefault = '';
   // Approvvigionamento proposto alle nuove parti: 'make' | 'buy'
   if (!db.settings.partSourcingDefault) db.settings.partSourcingDefault = 'buy';
+  // Durata della sessione salvata, in giorni (0 = non scade mai). Il `ts` era
+  // già scritto al login e non lo leggeva nessuno: una postazione condivisa
+  // restava aperta sull'utente di chi l'aveva usata mesi prima.
+  if (db.settings.sessionDays == null) db.settings.sessionDays = 30;
   delete db.settings.partCostModeDefault;   // sostituito da partSourcingDefault
   // Unità di misura gestite: seed una-tantum con le predefinite + quelle già
   // presenti nei dati (finora l'U.M. era testo libero, non va persa).
@@ -508,6 +591,126 @@ function migrateV2() {
   delete db.nextId;
 }
 
+// ── Validazione di un backup prima di aprirlo ───────────────
+// `importSnapshot` guardava solo `Array.isArray(data.items)`: un file troncato a
+// metà — download interrotto, chiavetta estratta, JSON di tutt'altro programma —
+// passava la guardia, sostituiva l'intero database e mandava `migrateDB()` a
+// lavorare su strutture che nessuno aveva verificato. L'errore usciva molto
+// dopo, in una vista a caso, quando i dati veri erano già stati sovrascritti.
+//
+// Qui si controlla la forma, non il contenuto: le collezioni sono elenchi, le
+// impostazioni sono un oggetto, la versione dello schema è una che sappiamo
+// leggere. Il resto lo normalizza migrateDB(), che è fatto per dati vecchi ma
+// non per dati assurdi.
+function validateSnapshot(data) {
+  if (!data || typeof data !== 'object' || Array.isArray(data)) return 'il file non contiene un database Bomtrack';
+  // Gli articoli sono l'unica collezione obbligatoria: un backup senza `items`
+  // non è un database Bomtrack, mentre le altre possono mancare nei file vecchi
+  // (migrateDB le ricostruisce vuote).
+  if (!Array.isArray(data.items)) return 'manca l\'elenco degli articoli: il file non è un backup di Bomtrack, o è troncato';
+  for (const c of COLLECTIONS) {
+    if (data[c] != null && !Array.isArray(data[c])) return `"${c}" doveva essere un elenco: il file è danneggiato`;
+  }
+  if (data.settings != null && (typeof data.settings !== 'object' || Array.isArray(data.settings))) {
+    return 'le impostazioni sono danneggiate';
+  }
+  const v = data.schemaVersion;
+  if (v != null && (typeof v !== 'number' || !isFinite(v) || v < 1)) return 'versione dello schema non leggibile';
+  // Un file più recente dell'app va fermato: le migrazioni sanno salire, non
+  // scendere, e aprirlo lo degraderebbe in silenzio.
+  if (typeof v === 'number' && v > SCHEMA_VERSION) {
+    return `il file viene da una revisione più recente dell'app (schema v${v}, questa legge fino alla v${SCHEMA_VERSION}): aggiorna Bomtrack prima di importarlo`;
+  }
+  return null;
+}
+// Cosa c'è dentro, per dirlo prima di sovrascrivere.
+function snapshotCounts(data) {
+  const out = {};
+  COLLECTIONS.forEach(c => { out[c] = Array.isArray(data && data[c]) ? data[c].length : 0; });
+  return out;
+}
+
+// ── Cosa è cambiato dall'ultimo allineamento ────────────────
+// Oggi il salvataggio riscrive tutto il database e la domanda non si pone. Con
+// un backend condiviso si pone eccome: mandare l'intero database a ogni
+// modifica significa che l'ultimo che salva cancella il lavoro di tutti gli
+// altri, in silenzio.
+//
+// Il conto si fa confrontando lo stato attuale con una fotografia degli id e dei
+// loro `updatedAt`, presa all'ultimo allineamento. Costa una passata sui record,
+// contro la serializzazione dell'intero database che il salvataggio già fa: in
+// proporzione, nulla.
+//
+// Perché `updatedAt` e non un confronto del contenuto: è lo stesso criterio con
+// cui il backend deciderà chi vince (last-write-wins su `updated_at`). Un record
+// il cui `updatedAt` non è cambiato non è una modifica — per definizione del
+// protocollo, non per approssimazione.
+//
+// Ne discende un'invariante che vale la pena scrivere: **chi modifica un record
+// senza chiamare `touch()` è invisibile alla sincronizzazione.** Vale già oggi
+// per i campi di audit, quindi non è una regola nuova; da qui in poi, però, non
+// costa più solo una data sbagliata.
+//
+// Le impostazioni fanno eccezione: sono un oggetto solo, senza `updatedAt`, e le
+// viste ci scrivono dentro direttamente. Lì si confronta il contenuto, che è
+// piccolo.
+let _baseIds = null;        // Map collezione → Map(id → updatedAt)
+let _baseSettings = '';
+function safeStringify(v) { try { return JSON.stringify(v); } catch (e) { return ''; } }
+function markSynced() {
+  const m = new Map();
+  COLLECTIONS.forEach(c => {
+    const inner = new Map();
+    (db[c] || []).forEach(r => { if (r && r.id != null) inner.set(r.id, r.updatedAt || ''); });
+    m.set(c, inner);
+  });
+  _baseIds = m;
+  _baseSettings = safeStringify(db.settings);
+}
+// { items: { upsert: [id…], remove: [id…] }, …, settings: true }
+// Le collezioni senza modifiche non compaiono. `null` = nessuna fotografia
+// ancora presa (database mai caricato).
+function pendingChanges() {
+  if (!_baseIds) return null;
+  const out = {};
+  COLLECTIONS.forEach(c => {
+    const prima = _baseIds.get(c) || new Map();
+    const upsert = [], remove = [], visti = new Set();
+    (db[c] || []).forEach(r => {
+      if (!r || r.id == null) return;
+      visti.add(r.id);
+      const era = prima.get(r.id);
+      if (era === undefined || era !== (r.updatedAt || '')) upsert.push(r.id);
+    });
+    prima.forEach((_, id) => { if (!visti.has(id)) remove.push(id); });
+    if (upsert.length || remove.length) out[c] = { upsert, remove };
+  });
+  if (safeStringify(db.settings) !== _baseSettings) out.settings = true;
+  return out;
+}
+function hasPendingChanges() {
+  const p = pendingChanges();
+  return !!p && Object.keys(p).length > 0;
+}
+
+// ── Adapter di persistenza ──────────────────────────────────
+// Dove finiscono i byte. Oggi localStorage; domani un backend condiviso, che si
+// aggancia sostituendo questo oggetto invece di rincorrere i saveDB() sparsi
+// nelle viste. Il contratto è volutamente minimo — leggi una stringa, scrivine
+// una, dimmi quanto occupa — perché è tutto ciò che `Store` usa davvero.
+//
+// Gli errori NON si gestiscono qui: l'adapter lascia passare l'eccezione e
+// `Store.commit()` la classifica (quota, storage non disponibile, dati non
+// serializzabili). Così la classificazione resta in un punto solo, qualunque
+// sia la destinazione dei dati.
+const LocalAdapter = {
+  name: 'local',
+  read() { return localStorage.getItem(DB_KEY); },
+  write(payload) { localStorage.setItem(DB_KEY, payload); },
+  size() { try { return (localStorage.getItem(DB_KEY) || '').length; } catch (e) { return 0; } },
+};
+let adapter = LocalAdapter;
+
 // ── Esito dei salvataggi ────────────────────────────────────
 // Quando localStorage rifiuta la scrittura, l'app continua a funzionare
 // mostrando i dati aggiornati: la memoria diverge dal persistito e alla
@@ -543,7 +746,7 @@ const Store = {
     try { payload = JSON.stringify(db); }
     catch (e) { return commitFailed('serialize', e, 0); }
     try {
-      localStorage.setItem(DB_KEY, payload);
+      adapter.write(payload);
       if (dbUnsaved) {
         dbUnsaved = false;
         if (typeof onPersistRecovered === 'function') onPersistRecovered();
@@ -559,9 +762,20 @@ const Store = {
   // Dimensione del database persistito, per far vedere il limite arrivare.
   sizeInfo() {
     let bytes = 0;
-    try { bytes = (localStorage.getItem(DB_KEY) || '').length; } catch (e) { /* storage non leggibile */ }
+    try { bytes = adapter.size(); } catch (e) { /* storage non leggibile */ }
     return { bytes, mb: bytes / 1024 / 1024 };
   },
+  // ── Seam per il futuro adapter cloud ──
+  // Sostituire questo oggetto è l'unico punto da cui passa la destinazione dei
+  // dati: nessuna vista sa dove finiscono, e nessuna deve saperlo.
+  get adapter() { return adapter; },
+  set adapter(a) { adapter = a || LocalAdapter; },
+  // Cosa non è ancora stato mandato al backend, e riallineamento dopo un invio
+  // riuscito. In locale nessuno li chiama: il salvataggio riscrive tutto.
+  pendingChanges() { return pendingChanges(); },
+  hasPendingChanges() { return hasPendingChanges(); },
+  markSynced() { markSynced(); },
+  schema() { return SCHEMA; },
   reset() {
     db = JSON.parse(JSON.stringify(defaultDB));
     migrateDB();
@@ -577,7 +791,8 @@ const Store = {
   // keepUser: l'utente che sta azzerando, ricreato come admin — chi svuota il
   // database non deve restare chiuso fuori dalla propria app.
   clearAll(keepUser) {
-    db = { suppliers: [], rfqs: [], orders: [], plans: [], workCenters: [], families: [], items: [], users: [], settings: {}, schemaVersion: SCHEMA_VERSION };
+    db = { settings: {}, schemaVersion: SCHEMA_VERSION };
+    COLLECTIONS.forEach(c => { db[c] = []; });
     if (keepUser) {
       db.users.push(stampNew(Object.assign({}, keepUser, { role: 'admin', active: true })));
     }
@@ -592,9 +807,17 @@ const Store = {
   },
   getAll(coll) { return db[coll] || []; },
   getById(coll, id) { return (db[coll] || []).find(r => r.id === id); },
+  // insert/remove salvano subito, uno alla volta: sono il gesto singolo
+  // dell'utente ("crea fornitore", "elimina piano"). Chi inserisce in blocco —
+  // l'import massivo, la generazione dei documenti da un piano — continua a
+  // scrivere su `db` e a salvare una volta sola alla fine: passare di qui
+  // significherebbe un salvataggio per riga, e su cinquemila righe è un'altra
+  // cosa. Quelle mutazioni non restano scoperte: pendingChanges() le vede
+  // comunque, perché confronta lo stato, non le chiamate.
   insert(coll, rec) {
     if (rec.id == null) rec.id = newId();
     stampNew(rec);
+    if (!Array.isArray(db[coll])) db[coll] = [];
     db[coll].push(rec);
     this.commit();
     return rec;
@@ -607,18 +830,61 @@ const Store = {
     this.commit();
     return rec;
   },
+  // Eliminare non butta: sposta nel cestino. La riga esce dalla collezione — e
+  // quindi da indici, elenchi e conti, che restano ignari — ma il record intero
+  // resta da parte per TRASH_DAYS giorni.
+  //
+  // È volutamente un'altra collezione e non un flag `deleted` sul record: un
+  // flag obbligherebbe *ogni* lettura del database a ricordarsi di escluderlo, e
+  // chi se ne dimenticasse farebbe ricomparire un articolo cancellato in una
+  // distinta. Qui non c'è niente da ricordarsi.
   remove(coll, id) {
     const arr = db[coll] || [];
     const i = arr.findIndex(r => r.id === id);
-    if (i >= 0) { arr.splice(i, 1); this.commit(); return true; }
-    return false;
+    if (i < 0) return false;
+    const rec = arr[i];
+    arr.splice(i, 1);
+    if (!Array.isArray(db.trash)) db.trash = [];
+    lastTrashId = newId();
+    db.trash.push({ id: lastTrashId, coll, deletedAt: nowISO(), deletedBy: actorId || null, record: rec });
+    this.commit();
+    return true;
   },
+  // La voce di cestino appena creata, per l'«Annulla» del toast. Serve un
+  // riferimento esplicito: cercare «l'ultima per data» non basta, due
+  // eliminazioni nello stesso millisecondo hanno la stessa data.
+  lastRemoved() { return lastTrashId; },
+  // Rimette il record dov'era. Best effort: se nel frattempo qualcosa che
+  // citava è sparito, torna comunque — meglio un riferimento da sistemare che
+  // un dato perso.
+  restore(trashId) {
+    const i = (db.trash || []).findIndex(t => t.id === trashId);
+    if (i < 0) return null;
+    const t = db.trash[i];
+    if (!Array.isArray(db[t.coll])) db[t.coll] = [];
+    // Se un record con lo stesso id è tornato nel frattempo (import, ripristino
+    // doppio), non si duplica: vince quello vivo.
+    if (!db[t.coll].some(r => r.id === t.record.id)) db[t.coll].push(t.record);
+    db.trash.splice(i, 1);
+    this.commit();
+    return t;
+  },
+  purge(trashId) {
+    const i = (db.trash || []).findIndex(t => t.id === trashId);
+    if (i < 0) return false;
+    db.trash.splice(i, 1);
+    this.commit();
+    return true;
+  },
+  emptyTrash() { db.trash = []; this.commit(); },
+  trashList() { return (db.trash || []).slice().sort((a, b) => String(b.deletedAt).localeCompare(String(a.deletedAt))); },
   getSettings() { return db.settings; },
   setSettings(patch) { Object.assign(db.settings, patch); this.commit(); },
   exportSnapshot() { return JSON.stringify(db, null, 2); },
   importSnapshot(json) {
     const data = typeof json === 'string' ? JSON.parse(json) : json;
-    if (!data || !Array.isArray(data.items)) throw new Error('formato non valido');
+    const err = validateSnapshot(data);
+    if (err) throw new Error(err);
     db = data;
     migrateDB();
     this.commit();

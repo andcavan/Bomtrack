@@ -175,3 +175,146 @@ describe('permessi', () => {
     assert.equal(app.eval('db.rfqs.length + db.orders.length'), 0);
   });
 });
+
+// ─── Non si ordina due volte la stessa cosa dallo stesso fabbisogno ───
+// L'errore facile: si genera l'ordine per il primo fornitore, si torna indietro
+// per il secondo, e le righe di prima sono ancora lì spuntate. Il doppio ordine
+// si scopre alla consegna.
+describe('Righe già finite in un documento del piano', () => {
+  const usati = (app, kind) => JSON.parse(app.eval(`JSON.stringify((() => {
+    const m = planDocumentedItems('pl1'); const out = {};
+    m.forEach((v, k) => { const f = v.filter(x => x.kind === ${JSON.stringify(kind)}); if (f.length) out[k] = f.map(x => x.number); });
+    return out; })())`));
+
+  it('appena creato il piano non risulta usato niente', () => {
+    const app = conPiano();
+    assert.deepEqual(usati(app, 'order'), {});
+    assert.deepEqual(usati(app, 'rfq'), {});
+  });
+
+  it('generato un ordine, i suoi articoli risultano usati', () => {
+    const app = conPiano();
+    const o = genera(app, 'order', 's1');
+    const u = usati(app, 'order');
+    assert.deepEqual(Object.keys(u).sort(), ['flangia', 'vite']);
+    assert.deepEqual(u.vite, [o.number]);
+    assert.deepEqual(usati(app, 'rfq'), {}, 'un ordine non consuma anche la strada delle richieste');
+  });
+
+  // Il punto di merito: chiedere un'offerta e poi ordinare è il flusso normale.
+  it('una richiesta NON impedisce l\'ordine degli stessi articoli', () => {
+    const app = conPiano();
+    genera(app, 'rfq', 's1');
+    assert.deepEqual(usati(app, 'order'), {},
+      'bloccare qui renderebbe impossibile proprio il percorso che l\'app incoraggia');
+    assert.ok(usati(app, 'rfq').vite, 'ma una seconda richiesta per lo stesso articolo sì');
+  });
+
+  it('le righe degli altri fornitori restano libere', () => {
+    const app = conPiano();
+    genera(app, 'order', 's1');
+    const u = usati(app, 'order');
+    assert.ok(!u.tondo, 'il tondo è di Beta: il suo ordine si deve ancora fare');
+    assert.ok(!u.orfano);
+  });
+
+  it('un ordine annullato libera le sue righe: quell\'ordine non esiste più', () => {
+    const app = conPiano();
+    genera(app, 'order', 's1');
+    app.eval(`db.orders[0].status = 'annullato'; saveDB();`);
+    assert.deepEqual(usati(app, 'order'), {});
+  });
+
+  it('un ordine eliminato libera le sue righe, senza doverlo dire a nessuno', () => {
+    const app = conPiano();
+    genera(app, 'order', 's1');
+    app.eval(`Store.remove('orders', db.orders[0].id);`);
+    assert.deepEqual(usati(app, 'order'), {},
+      'il conto si legge dai documenti: non c\'è nessun contrassegno da ripulire');
+  });
+
+  it('i documenti di un ALTRO piano non contano', () => {
+    const app = conPiano();
+    genera(app, 'order', 's1');
+    app.eval(`db.orders[0].planId = 'pl-altro'; saveDB();`);
+    assert.deepEqual(usati(app, 'order'), {});
+  });
+
+  it('le righe manuali di un documento non bloccano niente', () => {
+    const app = conPiano();
+    genera(app, 'order', 's1');
+    app.eval(`db.orders[0].lines.push({ id: 'man', itemId: null, code: 'LIBERA', qty: 1 }); saveDB();`);
+    const u = usati(app, 'order');
+    assert.equal(Object.keys(u).length, 2, 'una riga senza articolo non viene dal fabbisogno');
+  });
+
+  it('la generazione rifiuta un articolo già ordinato, anche forzando la selezione', () => {
+    const app = conPiano();
+    genera(app, 'order', 's1');
+    const prima = app.eval('db.orders.length');
+    // Si simula la spunta che l'interfaccia disabilita: la guardia deve stare
+    // anche accanto alla scrittura, non solo nella modale.
+    app.eval(`window.__planDocsId = 'pl1'; window.__planDocsKind = 'order';
+      planDocsSelection = () => new Map([['s1', ['vite', 'flangia']]]);
+      planCreateDocs();`);
+    assert.equal(app.eval('db.orders.length'), prima, 'nessun ordine doppio');
+  });
+
+  it('ma le righe ancora libere passano, anche insieme a una bloccata', () => {
+    const app = conPiano();
+    genera(app, 'order', 's1');
+    app.eval(`window.__planDocsId = 'pl1'; window.__planDocsKind = 'order';
+      planDocsSelection = () => new Map([['s2', ['tondo']], ['s1', ['vite']]]);
+      planCreateDocs();`);
+    const ordini = app.snapshot().orders;
+    assert.equal(ordini.length, 2);
+    assert.deepEqual(ordini[1].lines.map(l => l.code), ['TONDO'],
+      'il fornitore libero riceve il suo ordine, quello già servito no');
+  });
+
+  it('i due pulsanti contano ciascuno il proprio lavoro rimasto', () => {
+    const app = conPiano();
+    const n = k => app.eval(`planDocsAvailable(getPlan('pl1'), ${JSON.stringify(k)})`);
+    assert.equal(n('order'), 4, 'quattro righe d\'acquisto nel piano');
+    assert.equal(n('rfq'), 4);
+    genera(app, 'order', 's1');
+    assert.equal(n('order'), 2, 'vite e flangia sono andate');
+    assert.equal(n('rfq'), 4, 'la strada delle richieste è intatta');
+  });
+
+  it('il pulsante si spegne quando non resta niente per quel tipo', () => {
+    const app = conPiano();
+    ['s1', 's2', ''].forEach(s => genera(app, 'order', s));
+    assert.equal(app.eval(`planDocsAvailable(getPlan('pl1'), 'order')`), 0);
+    app.eval('currentPlanId = "pl1"; mrpView = "edit"; renderMrp();');
+    const html = app.html('view-mrp');
+    assert.ok(/Genera ordini<\/button>|Genera ordini"/.test(html) || html.includes('disabled'), 'il pulsante ordini resta ma disabilitato');
+    assert.ok(html.includes('Genera richieste (4)'), 'quello delle richieste conta ancora quattro righe');
+  });
+
+  it('il tipo lo decide il pulsante, non un menu dentro la scheda', () => {
+    const app = conPiano();
+    app.eval(`planDocsModal('pl1', 'order');
+      planDocsSelection = () => new Map([['s2', ['tondo']]]);
+      planCreateDocs();`);
+    assert.equal(app.eval('db.orders.length'), 1);
+    assert.equal(app.eval('db.rfqs.length'), 0);
+  });
+
+  it('un tipo non valido non genera un documento a caso: vale la richiesta', () => {
+    const app = conPiano();
+    app.eval(`planDocsModal('pl1', 'inventato');
+      planDocsSelection = () => new Map([['s2', ['tondo']]]);
+      planCreateDocs();`);
+    assert.equal(app.eval('db.rfqs.length'), 1, 'la richiesta è il documento che non impegna a niente');
+    assert.equal(app.eval('db.orders.length'), 0);
+  });
+
+  it('nella lista del fabbisogno la riga dice dove è già finita', () => {
+    const app = conPiano();
+    const o = genera(app, 'order', 's1');
+    app.eval('currentPlanId = "pl1"; mrpView = "edit"; renderMrp();');
+    const html = app.html('view-mrp');
+    assert.ok(html.includes(o.number), 'la domanda «l\'ho già ordinato?» va risposta dove si guarda per primo');
+  });
+});

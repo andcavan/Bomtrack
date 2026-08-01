@@ -13,8 +13,8 @@ const path = require('node:path');
 const ROOT = path.join(__dirname, '..');
 // Stessa sequenza di index.html: i file si caricano nello stesso contesto e
 // condividono lo scope globale, esattamente come i <script> della pagina.
-const SRC = ['store.js', 'core.js', 'auth.js', 'costing.js', 'shell.js',
-  'views-bom.js', 'views-catalog.js', 'views-report.js', 'views-mrp.js',
+const SRC = ['store.js', 'cloud-map.js', 'core.js', 'auth.js', 'costing.js', 'shell.js',
+  'views-bom.js', 'views-rev.js', 'views-stock.js', 'views-catalog.js', 'views-report.js', 'views-jobs.js', 'views-home.js', 'views-mrp.js',
   'views-docs.js', 'views-manage.js', 'import-export.js'];
 
 // localStorage finto. `quotaBytes` opzionale: oltre soglia lancia lo stesso
@@ -71,6 +71,9 @@ function loadApp(opts) {
   const sandbox = {
     console: o.silent ? { log() {}, warn() {}, error() {} } : console,
     crypto: globalThis.crypto || require('node:crypto').webcrypto,
+    // Globale della piattaforma, presente in ogni browser ma non nei contesti
+    // vm: lo usa sha256Hex() per convertire la stringa in byte UTF-8.
+    TextEncoder,
     localStorage: storage,
     // Volutamente assenti: `document` e `window`. La guardia in fondo a import-export.js
     // (`if (typeof document !== 'undefined') init()`) impedisce l'avvio dell'app.
@@ -102,6 +105,7 @@ function loadApp(opts) {
   sandbox.innerWidth = 1280; sandbox.innerHeight = 800;   // i pannelli si posizionano rispetto alla finestra
   sandbox.confirm = () => true;   // le richieste di conferma si accettano: il test verifica l'effetto
   sandbox.setTimeout = (fn) => { void fn; return 0; };   // niente code differite nei test
+  sandbox.clearTimeout = () => {};                       // globale della piattaforma, assente nei contesti vm
 
   const ref = name => vm.runInContext(name, ctx);
 

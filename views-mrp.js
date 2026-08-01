@@ -15,66 +15,164 @@
 // se le due strade divergono su una distinta, una delle due sta mentendo.
 
 // ─── Motore (logica pura, nessun DOM) ───
-// → { buy: [{ item, qty }], make: [{ item, qty }], cycle: bool }
+// → { buy: [{ item, qty, due }], make: [{ item, qty, due }], cycle: bool }
+//
+// La data scende insieme alla quantità: se una macchina serve per il 30
+// settembre, i suoi componenti servono per il 30 settembre. Quando lo stesso
+// articolo arriva da più righe di piano con date diverse si tiene **la più
+// vicina**: è la scelta conservativa — ordinare per la data più stretta copre
+// anche le altre.
+//
+// Volutamente NON si fa il time-phasing: niente periodi, niente fabbisogni
+// separati per settimana. Sarebbe un altro strumento, e prometterlo a metà è
+// peggio che non averlo. Qui la data serve a due cose concrete: sapere entro
+// quando ordinare, e scriverla sul documento al fornitore.
 function mrpExplode(lines) {
   const buy = new Map(), make = new Map();
   const out = { cycle: false };
-  (lines || []).forEach(l => mrpDescend(l.itemId, Number(l.qty) || 0, new Set(), buy, make, out));
+  (lines || []).forEach(l => mrpDescend(l.itemId, Number(l.qty) || 0, new Set(), buy, make, out, l.dueDate || ''));
   const perCodice = m => Array.from(m.values()).sort((a, b) => String(a.item.code).localeCompare(String(b.item.code)));
   return { buy: perCodice(buy), make: perCodice(make), cycle: out.cycle };
 }
-function mrpAdd(map, it, qty) {
-  const e = map.get(it.id);
-  if (e) e.qty += qty;
-  else map.set(it.id, { item: it, qty });
+// Le date sono stringhe ISO `YYYY-MM-DD`: si confrontano bene così come sono, e
+// una vuota non deve mai vincere su una valorizzata.
+function primaData(a, b) {
+  if (!a) return b || '';
+  if (!b) return a;
+  return a < b ? a : b;
 }
-function mrpDescend(itemId, qty, ancestors, buy, make, out) {
+function mrpAdd(map, it, qty, due) {
+  const e = map.get(it.id);
+  if (e) { e.qty += qty; e.due = primaData(e.due, due); }
+  else map.set(it.id, { item: it, qty, due: due || '' });
+}
+function mrpDescend(itemId, qty, ancestors, buy, make, out, due) {
   const it = getItem(itemId);
   if (!it || !(qty > 0)) return;
   // Anello: si segnala e si smette di scendere, come fa flattenBom
   if (ancestors.has(itemId)) { out.cycle = true; return; }
-  if (it.type === 'materiale' || it.type === 'acquistato') { mrpAdd(buy, it, qty); return; }
+  if (it.type === 'materiale' || it.type === 'acquistato') { mrpAdd(buy, it, qty, due); return; }
   const next = new Set(ancestors); next.add(itemId);
   if (it.type === 'parte') {
     // Parte comprata già lavorata da terzi: è una foglia d'acquisto come un
     // commerciale. Il ciclo resta salvato, ma non si scende — quel materiale
     // e quelle lavorazioni li mette il fornitore, non noi.
-    if (partSourcing(it) === 'buy') { mrpAdd(buy, it, qty); return; }
-    mrpAdd(make, it, qty);
+    if (partSourcing(it) === 'buy') { mrpAdd(buy, it, qty, due); return; }
+    mrpAdd(make, it, qty, due);
     (it.cycle || []).forEach(r => {
       if (r.kind === 'op') return;   // le lavorazioni non si comprano a magazzino
-      mrpDescend(r.itemId, qty * (Number(r.qty) || 0), next, buy, make, out);
+      mrpDescend(r.itemId, qty * (Number(r.qty) || 0), next, buy, make, out, due);
     });
     return;
   }
   // assieme: la quantità di riga porta con sé lo scarto, come nel rollup
   (it.components || []).forEach(c => {
     const f = (Number(c.qty) || 0) * (1 + (Number(c.scrapPct) || 0) / 100);
-    mrpDescend(c.itemId, qty * f, next, buy, make, out);
+    mrpDescend(c.itemId, qty * f, next, buy, make, out, due);
   });
 }
+// ─── Date: da quando serve a entro quando ordinare ───
+// `leadDays` stava a listino da versioni e non entrava in nessun conto: c'era
+// scritto che il fornitore consegna in 21 giorni e nessuno se ne faceva niente.
+// Adesso è il ponte fra «serve per il 30 settembre» e «va ordinato entro il 9».
+const URGENCY_WARN_DAYS = 7;   // sotto una settimana di margine si avvisa
+// I conti si fanno in UTC, non nell'ora locale. Con `T00:00:00` la data nasce a
+// mezzanotte locale e `toISOString()` la riporta in UTC: a est di Greenwich
+// torna indietro di un giorno, e ogni data d'ordine risultava anticipata di
+// ventiquattr'ore — uno sbaglio che nessuno avrebbe notato guardando lo schermo.
+// Qui non esistono orari: sono date, e le date non hanno fuso.
+function addDays(iso, giorni) {
+  if (!iso) return '';
+  const d = new Date(iso + 'T00:00:00Z');
+  if (isNaN(d)) return '';
+  d.setUTCDate(d.getUTCDate() + (Number(giorni) || 0));
+  return d.toISOString().slice(0, 10);
+}
+// Oggi secondo il calendario dell'utente, non secondo Greenwich: alle 23 del 30
+// settembre in Italia è ancora il 30, e un semaforo che dicesse "1 ottobre"
+// segnalerebbe in ritardo qualcosa che non lo è.
+function oggiISO() {
+  const n = new Date();
+  return new Date(n.getTime() - n.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+}
+// Giorni di consegna della quotazione in uso. Senza quotazione, o senza il dato,
+// vale zero: nessun anticipo, non un anticipo inventato.
+function leadDaysOf(it) {
+  const attiva = activePriceRow(it);
+  const g = attiva ? Number(attiva.leadDays) : NaN;
+  return isFinite(g) && g > 0 ? g : 0;
+}
+// Urgenza di una riga d'acquisto: 'ritardo' | 'urgente' | 'ok' | '' (senza data).
+// Si guarda la data entro cui ordinare, non quella in cui serve: è l'unica su
+// cui si può ancora fare qualcosa.
+function urgenzaOrdine(orderBy) {
+  if (!orderBy) return '';
+  const oggi = oggiISO();
+  if (orderBy < oggi) return 'ritardo';
+  return orderBy <= addDays(oggi, URGENCY_WARN_DAYS) ? 'urgente' : 'ok';
+}
+const URGENZA_LABEL = {
+  ritardo: { txt: '⚠ in ritardo', cls: 'mrp-warn', desc: 'La data entro cui ordinare è già passata' },
+  urgente: { txt: '⏱ da ordinare', cls: 'mrp-warn', desc: 'Meno di ' + URGENCY_WARN_DAYS + ' giorni di margine' },
+  ok: { txt: '', cls: '', desc: '' },
+};
+
 // Riga d'acquisto completa: il prezzo è quello IN USO nella costificazione, la
 // quotazione migliore si segnala soltanto — nessun prezzo cambia da sé.
-function mrpBuyRow(entry) {
+// `netMode` è un parametro, non una lettura del toggle: la riga resta logica
+// pura e la vista decide quale delle due domande sta facendo.
+//   qty      = fabbisogno lordo, quanto serve. Non cambia mai: è la proprietà
+//              del prodotto, e serve per l'analisi di costo.
+//   net      = quanto manca comprare, tolto l'esistente e l'in arrivo.
+//   qtyOrder = quella con cui si fanno i conti e nascono i documenti.
+function mrpBuyRow(entry, netMode) {
   const it = entry.item;
   const attiva = activePriceRow(it);
   const price = Number(it[costField(it)]) || 0;
   const best = bestPriceRow(it);
-  const bestPrice = best ? (Number(best.price) || 0) : null;
+  // Il confronto è fra costi nell'unità di gestione, non fra prezzi grezzi:
+  // vedi bestPriceRow(). Un €/kg accanto a un €/m non è un confronto.
+  const bestPrice = best ? (rowUnitCost(it, best) || 0) : null;
   const minQty = attiva && attiva.minQty !== '' && attiva.minQty != null ? (Number(attiva.minQty) || 0) : 0;
+  const st = stockFor(it, entry.qty);
+  const qtyOrder = netMode ? st.net : entry.qty;
+  // Unità in cui si parla col fornitore, e quantità tradotta in quella unità:
+  // è ciò che finirà sul documento e ciò con cui va confrontato il suo minimo.
+  const docUom = docUomOf(it);
+  const qtyDoc = toAltUom(it, qtyOrder, docUom);
+  // Data in cui serve, giorni di consegna, e quindi data entro cui ordinare.
+  const due = entry.due || '';
+  const leadDays = leadDaysOf(it);
+  const orderBy = due ? addDays(due, -leadDays) : '';
   return {
     item: it, qty: entry.qty, uom: it.uom || '',
+    due, leadDays, orderBy, urgenza: urgenzaOrdine(orderBy),
+    docUom, qtyDoc, doppiaUom: docUom !== (it.uom || ''),
+    // Il prezzo da scrivere sul documento è quello **per unità del fornitore**:
+    // su una riga da 120 kg va il €/kg, non il €/m. L'importo non cambia —
+    // prezzo × quantità è lo stesso numero da entrambe le parti — ma un ordine
+    // che moltiplica chili per un prezzo al metro è un ordine sbagliato.
+    priceDoc: uomFactor(it, docUom) > 0 ? price / uomFactor(it, docUom) : price,
+    onHand: st.onHand, incoming: st.incoming, safety: st.safety, lotSize: st.lotSize,
+    net: st.net, coperto: !!netMode && st.coperto, qtyOrder,
     supplierId: (attiva && attiva.supplierId) || it.supplierId || '',
-    price, amount: price * entry.qty,
-    bestPrice, saving: (bestPrice != null && bestPrice < price) ? (price - bestPrice) * entry.qty : 0,
-    minQty, underMin: minQty > 0 && entry.qty < minQty,
+    price, amount: price * qtyOrder,
+    bestPrice, saving: (bestPrice != null && bestPrice < price) ? (price - bestPrice) * qtyOrder : 0,
+    // Il minimo del fornitore è espresso nella SUA unità: confrontarlo con i
+    // metri quando lui vende a chili darebbe l'allarme sbagliato in entrambi i
+    // versi.
+    minQty, underMin: minQty > 0 && qtyDoc > 0 && qtyDoc < minQty,
     // Righe che manderebbero un ordine a zero o senza intestatario: si segnalano
     // qui, prima di generare il documento, non dopo averlo mandato al fornitore.
     noSupplier: !((attiva && attiva.supplierId) || it.supplierId),
     noPrice: !(price > 0),
   };
 }
-function mrpBuyRows(plan) { return mrpExplode(plan.lines).buy.map(mrpBuyRow); }
+function mrpBuyRows(plan, netMode) { return mrpExplode(plan.lines).buy.map(e => mrpBuyRow(e, netMode)); }
+// `.map(mrpBuyRow)` passerebbe l'indice dell'array come secondo argomento, e
+// dalla seconda riga in poi il netto si accenderebbe da solo. Le viste passano
+// sempre da qui.
+function mrpRowsOf(entries) { return entries.map(e => mrpBuyRow(e, mrpNet)); }
 // Raggruppamento per fornitore; chi non ne ha finisce in coda, sotto "Da assegnare"
 function mrpGroupBySupplier(rows) {
   const map = new Map();
@@ -102,19 +200,16 @@ function nextPlanNumber() {
 }
 function newPlan() {
   if (!roleGuard('docs')) return;
-  const p = stampNew({ id: gid(), number: nextPlanNumber(), title: '', date: nowISO().slice(0, 10),
+  const p = Store.insert('plans', { id: gid(), number: nextPlanNumber(), title: '', date: nowISO().slice(0, 10),
     notes: '', lines: [], active: true });
-  if (!db.plans) db.plans = [];
-  db.plans.push(p); saveDB();
   currentPlanId = p.id; mrpView = 'edit'; renderMrp();
 }
 function duplicatePlan(id) {
   if (!roleGuard('docs')) return;
   const src = getPlan(id); if (!src) return;
-  const p = stampNew({ id: gid(), number: nextPlanNumber(), title: (src.title || src.number) + ' (copia)',
+  const p = Store.insert('plans', { id: gid(), number: nextPlanNumber(), title: (src.title || src.number) + ' (copia)',
     date: nowISO().slice(0, 10), notes: src.notes || '',
     lines: (src.lines || []).map(l => ({ id: gid(), itemId: l.itemId, qty: l.qty })), active: true });
-  db.plans.push(p); saveDB();
   currentPlanId = p.id; mrpView = 'edit'; renderMrp();
   showToast('Piano ' + p.number + ' creato dalla copia');
 }
@@ -122,9 +217,8 @@ function delPlan(id) {
   if (!roleGuard('docs')) return;
   const p = getPlan(id); if (!p) return;
   askConfirm(`Eliminare il piano ${p.number}?`, () => {
-    db.plans = db.plans.filter(x => x.id !== id);
     if (currentPlanId === id) { currentPlanId = null; mrpView = 'list'; }
-    saveDB(); renderMrp(); showToast('Piano eliminato');
+    removeConUndo('plans', id, `Piano ${p.number} eliminato`, renderMrp);
   });
 }
 function openPlanEdit(id) { currentPlanId = id; mrpView = 'edit'; renderMrp(); }
@@ -148,7 +242,10 @@ function planAddLines(id, ids) {
     // Stesso articolo due volte: si somma sulla riga esistente invece di duplicarla
     const gia = p.lines.find(l => l.itemId === itemId);
     if (gia) gia.qty = (Number(gia.qty) || 0) + 1;
-    else p.lines.push({ id: gid(), itemId, qty: 1 });
+    // La data di testata del piano fa da proposta: quasi sempre le righe di un
+    // piano servono per la stessa consegna, e riscriverla una per una è lavoro
+    // inutile. Resta modificabile riga per riga.
+    else p.lines.push({ id: gid(), itemId, qty: 1, dueDate: p.dueDate || '' });
   });
   touch(p); saveDB(); closeModal(); renderMrp();
   showToast(ids.length + (ids.length === 1 ? ' articolo aggiunto' : ' articoli aggiunti'));
@@ -160,6 +257,15 @@ function planSetLineQty(id, lineId, value) {
   l.qty = clampNum(parseFloat(value), 0);
   touch(p); saveDB(); renderMrp();
 }
+// Data in cui la riga deve essere pronta. Da qui scendono, lungo la distinta,
+// le date d'ordine di tutto ciò che ci va dentro.
+function planSetLineDue(id, lineId, value) {
+  if (!roleGuard('docs')) { renderMrp(); return; }
+  const p = getPlan(id); if (!p) return;
+  const l = p.lines.find(x => x.id === lineId); if (!l) return;
+  l.dueDate = value || '';
+  touch(p); saveDB(); renderMrp();
+}
 function planDelLine(id, lineId) {
   if (!roleGuard('docs')) return;
   const p = getPlan(id); if (!p) return;
@@ -167,6 +273,7 @@ function planDelLine(id, lineId) {
   touch(p); saveDB(); renderMrp();
 }
 function toggleMrpGroup() { mrpGrouped = !mrpGrouped; renderMrp(); }
+function toggleMrpNet() { mrpNet = !mrpNet; renderMrp(); }
 
 // ═══════════════════════════════════════════════════════════
 //  DAL FABBISOGNO AI DOCUMENTI (richieste di offerta e ordini)
@@ -178,67 +285,148 @@ function toggleMrpGroup() { mrpGrouped = !mrpGrouped; renderMrp(); }
 // prima di mandare qualcosa fuori.
 const PLAN_DOC_KINDS = { rfq: 'Richieste di offerta', order: 'Ordini a fornitore' };
 
+// ─── Cosa è già stato messo in un documento di questo piano ───
+// Generare due volte lo stesso ordine dallo stesso fabbisogno è l'errore facile:
+// si sceglie un fornitore, si genera, si torna indietro per il fornitore
+// successivo e le righe di prima sono ancora lì, spuntate, identiche. Il doppio
+// ordine si scopre alla consegna.
+//
+// Il conto si fa **leggendo i documenti**, non segnando gli articoli: nessun
+// campo nuovo, nessuna divergenza possibile. Se un documento viene eliminato o
+// annullato le sue righe tornano disponibili da sole, ed è giusto così —
+// quell'ordine non esiste più.
+//
+// Il blocco è **per tipo di documento**, e la distinzione non è un dettaglio:
+// chiedere un'offerta e poi ordinare è il flusso normale, quello che l'app
+// accompagna dalla 0.21.0. Bloccare l'ordine perché esiste già una richiesta
+// significherebbe rendere impossibile proprio il percorso che si vuole
+// incoraggiare. Si impedisce di rifare *lo stesso tipo* di documento; l'altro
+// resta consentito, e l'articolo mostra comunque dove è già finito.
+function planDocumentedItems(planId) {
+  const map = new Map();
+  const aggiungi = (d, kind) => (d.lines || []).forEach(l => {
+    if (!l.itemId) return;                       // riga manuale: non viene dal fabbisogno
+    const l2 = map.get(l.itemId) || [];
+    l2.push({ kind, number: d.number, id: d.id, qty: Number(l.qty) || 0, uom: l.uom || '' });
+    map.set(l.itemId, l2);
+  });
+  (db.rfqs || []).filter(r => r.planId === planId).forEach(d => aggiungi(d, 'rfq'));
+  // Un ordine annullato non è un ordine: le sue righe tornano da comprare.
+  (db.orders || []).filter(o => o.planId === planId && o.status !== 'annullato').forEach(d => aggiungi(d, 'order'));
+  return map;
+}
+function docRefLabel(ref) { return (ref.kind === 'rfq' ? 'richiesta ' : 'ordine ') + ref.number; }
+
 // Righe d'acquisto del piano indicizzate per id articolo: la modale lavora su
 // spunte, e alla conferma deve poter ritrovare la riga da un id.
 function planBuyIndex(plan) {
   const map = new Map();
-  mrpBuyRows(plan).forEach(r => map.set(r.item.id, r));
+  mrpRowsOf(mrpExplode(plan.lines).buy).forEach(r => map.set(r.item.id, r));
   return map;
 }
-function planDocsModal(id) {
+// Il tipo di documento si sceglie **prima**, dal pulsante che si preme: sono
+// due gesti diversi — «chiedo quanto costa» e «compro» — e metterli in un menu
+// dentro la scheda li faceva sembrare la stessa cosa scelta due volte. Con la
+// scelta già fatta, la scheda mostra da subito le righe giuste: quelle già
+// finite in un documento *di quel tipo* risultano bloccate all'apertura, senza
+// dover toccare un selettore per scoprirlo.
+function planDocsModal(id, kind) {
   if (!roleGuard('docs')) return;
   const p = getPlan(id); if (!p) return;
-  const gruppi = mrpGroupBySupplier(mrpBuyRows(p));
-  if (!gruppi.length) { showToast('Il piano non ha nulla da comprare', 'error'); return; }
+  const k = PLAN_DOC_KINDS[kind] ? kind : 'rfq';
+  // Le righe già coperte da magazzino e ordini non entrano nei documenti: sono
+  // proprio quelle che il netto serve a non ricomprare.
+  const gruppi = mrpGroupBySupplier(mrpBuyRows(p, mrpNet).filter(r => r.qtyOrder > 0));
+  if (!gruppi.length) {
+    showToast(mrpNet ? 'Niente da ordinare: esistente e in arrivo coprono tutto il piano' : 'Il piano non ha nulla da comprare', 'error');
+    return;
+  }
   window.__planDocsId = id;
-  openModal(`<h3>📄 Genera documenti — ${esc(p.number)}</h3>
-    <div class="modal-field"><label>Tipo di documento</label>
-      <select id="plandoc-kind" onchange="planDocsRefresh()">
-        ${Object.entries(PLAN_DOC_KINDS).map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}
-      </select></div>
-    <p class="empty-text" style="text-align:left;padding:4px 0 12px" id="plandoc-hint">${planDocsHint('rfq')}</p>
-    <div id="plandoc-body">${planDocsBody(gruppi)}</div>
+  window.__planDocsKind = k;
+  openModal(`<h3>${k === 'rfq' ? '📨 Genera richieste di offerta' : '🧾 Genera ordini a fornitore'} — ${esc(p.number)}</h3>
+    <p class="empty-text" style="text-align:left;padding:0 0 8px">Quantità <strong>${mrpNet ? 'nette' : 'lorde'}</strong>${mrpNet ? ' — tolti esistente e in arrivo' : ' — l\'intero fabbisogno del piano'}. Si cambia col pulsante <em>Fabbisogno netto</em> nell\'elenco.</p>
+    <p class="empty-text" style="text-align:left;padding:0 0 12px">${planDocsHint(k)}</p>
+    <div id="plandoc-body">${planDocsBody(gruppi, id, k)}</div>
     <div class="modal-actions">
       <button class="btn-ghost" onclick="closeModal()">Annulla</button>
-      <button class="add-btn-sm" onclick="planCreateDocs()">Genera</button>
+      <button class="add-btn-sm" onclick="planCreateDocs()">${k === 'rfq' ? 'Genera richieste' : 'Genera ordini'}</button>
     </div>`, true, 'plandocs');
+  planDocsCount();
+}
+// Un pulsante per tipo, col numero di righe ancora da documentare. Disabilitato
+// quando non ne restano: un pulsante che si può premere e non fa niente è
+// peggio di uno spento, perché costringe a scoprirlo aprendo.
+function planDocButton(p, kind, label) {
+  const n = planDocsAvailable(p, kind);
+  const titolo = n
+    ? `${n} ${n === 1 ? 'riga ancora da mettere' : 'righe ancora da mettere'} in ${kind === 'rfq' ? 'una richiesta' : 'un ordine'}`
+    : `Tutte le righe di questo fabbisogno sono già in ${kind === 'rfq' ? 'una richiesta' : 'un ordine'}`;
+  return `<button class="${kind === 'order' ? 'add-btn-sm' : 'btn-outline'}" onclick="planDocsModal('${p.id}','${kind}')"
+    ${n ? '' : 'disabled'} title="${esc(titolo)}">${label}${n ? ` (${n})` : ''}</button>`;
 }
 function planDocsHint(kind) {
   return kind === 'rfq'
     ? 'Le richieste nascono senza prezzo: è quello che si sta chiedendo. Quando l\'offerta arriva, i prezzi si registrano a listino dalla richiesta stessa.'
     : 'Gli ordini portano il prezzo in uso nella costificazione. Le righe senza prezzo varrebbero zero: correggile a listino prima, o dopo nell\'ordine.';
 }
-function planDocsRefresh() {
-  const h = document.getElementById('plandoc-hint');
-  if (h) h.textContent = planDocsHint(val('plandoc-kind'));
+// Quante righe restano da mettere in un documento di quel tipo. Sta sul
+// pulsante: quanto lavoro resta si deve vedere prima di aprire la scheda, non
+// dopo averla aperta e letta.
+function planDocsAvailable(plan, kind) {
+  const gia = planDocumentedItems(plan.id);
+  return mrpBuyRows(plan, mrpNet)
+    .filter(r => r.qtyOrder > 0 && !(gia.get(r.item.id) || []).some(x => x.kind === kind)).length;
 }
-function planDocsBody(gruppi) {
+function planDocsBody(gruppi, planId, kind) {
+  const gia = planDocumentedItems(planId);
+  // Già usato *per questo tipo* = non riselezionabile. Gli altri riferimenti si
+  // mostrano lo stesso: sapere che di quell'articolo esiste già una richiesta è
+  // utile anche mentre si prepara un ordine.
+  const usati = r => (gia.get(r.item.id) || []).filter(x => x.kind === kind);
+  const altri = r => (gia.get(r.item.id) || []).filter(x => x.kind !== kind);
+
   const corpo = gruppi.map(g => {
     const key = g.supplierId || '';
+    const disponibili = g.rows.filter(r => !usati(r).length);
     const righe = g.rows.map(r => {
+      const bloccata = usati(r);
       const seg = [];
-      if (r.underMin) seg.push(`<span class="mrp-warn" title="Quantità minima del fornitore: ${r.minQty}">⚠ sotto il minimo di ${fmtQty(r.minQty)}</span>`);
-      if (r.noPrice) seg.push('<span class="mrp-warn" title="Senza prezzo la riga vale zero">⚠ senza prezzo</span>');
-      return `<label class="plandoc-row">
-        <input type="checkbox" class="plandoc-line" data-sup="${esc(key)}" value="${r.item.id}" checked onchange="planDocsCount()">
+      if (bloccata.length) {
+        seg.push(`<span class="mrp-warn" title="Già inserito in ${esc(bloccata.map(docRefLabel).join(', '))}: per cambiarne la quantità si modifica quel documento">
+          🔒 già in ${esc(bloccata.map(x => x.number).join(', '))}</span>`);
+      } else {
+        const a = altri(r);
+        if (a.length) seg.push(`<span class="price-best" title="Esiste già ${esc(a.map(docRefLabel).join(', '))}, di tipo diverso: questa riga resta selezionabile">📄 ${esc(a.map(x => x.number).join(', '))}</span>`);
+        if (r.underMin) seg.push(`<span class="mrp-warn" title="Quantità minima del fornitore: ${r.minQty} ${esc(r.docUom)}">⚠ sotto il minimo di ${fmtQty(r.minQty)} ${esc(r.docUom)}</span>`);
+        if (r.noPrice) seg.push('<span class="mrp-warn" title="Senza prezzo la riga vale zero">⚠ senza prezzo</span>');
+      }
+      return `<label class="plandoc-row${bloccata.length ? ' plandoc-used' : ''}">
+        <input type="checkbox" class="plandoc-line" data-sup="${esc(key)}" value="${r.item.id}"
+          ${bloccata.length ? 'disabled' : 'checked'} onchange="planDocsCount()">
         <span style="font-family:var(--mono)">${esc(r.item.code)}</span> ${esc(r.item.name)}
-        <span class="plandoc-qty">${fmtQty(r.qty)} ${esc(r.uom)} · ${fmtN(r.amount)}</span> ${seg.join(' ')}</label>`;
+        <span class="plandoc-qty">${fmtQty(r.qtyDoc)} ${esc(r.docUom)}${r.doppiaUom ? ` <span style="opacity:.6">(= ${fmtQty(r.qtyOrder)} ${esc(r.uom)})</span>` : ''}${mrpNet && r.qtyOrder !== r.qty ? ` <span style="opacity:.6">(lordo ${fmtQty(r.qty)} ${esc(r.uom)})</span>` : ''} · ${fmtN(r.amount)}</span> ${seg.join(' ')}</label>`;
     }).join('');
+    const totDisp = disponibili.reduce((s, r) => s + r.amount, 0);
     return `<div class="plandoc-group">
       <label class="plandoc-head">
-        <input type="checkbox" class="plandoc-sup" data-sup="${esc(key)}" checked onchange="planDocsToggleGroup(this)">
+        <input type="checkbox" class="plandoc-sup" data-sup="${esc(key)}" ${disponibili.length ? 'checked' : 'disabled'} onchange="planDocsToggleGroup(this)">
         🏭 <strong>${esc(g.name)}</strong>
-        <span class="plandoc-qty">${g.rows.length} ${g.rows.length === 1 ? 'riga' : 'righe'} · ${fmtN(g.total)}</span>
+        <span class="plandoc-qty">${disponibili.length ? `${disponibili.length} ${disponibili.length === 1 ? 'riga' : 'righe'} · ${fmtN(totDisp)}` : 'tutto già documentato'}${disponibili.length < g.rows.length ? ` <span style="opacity:.6">(${g.rows.length - disponibili.length} già ${kind === 'rfq' ? 'in richiesta' : 'in ordine'})</span>` : ''}</span>
         ${g.supplierId ? '' : '<span class="mrp-warn" title="Nessun fornitore: il documento nasce da intestare">⚠ da assegnare</span>'}
       </label>
       ${righe}</div>`;
   }).join('');
-  return `${corpo}<p class="empty-text" style="text-align:left;padding:8px 0 0" id="plandoc-count"></p>`;
+  const nDisp = gruppi.reduce((s, g) => s + g.rows.filter(r => !usati(r).length).length, 0);
+  const avviso = nDisp ? '' : `<div class="rfq-warn">Tutte le righe di questo fabbisogno sono già finite in ${kind === 'rfq' ? 'una richiesta' : 'un ordine'}. Per cambiare quantità o fornitore si modifica il documento, oppure lo si elimina e si rigenera.</div>`;
+  return `${avviso}${corpo}<p class="empty-text" style="text-align:left;padding:8px 0 0" id="plandoc-count"></p>`;
 }
 // Spunta di gruppo: trascina le sue righe, ed è il modo rapido di escludere un
 // fornitore intero senza toccare riga per riga.
 function planDocsToggleGroup(cb) {
-  document.querySelectorAll(`.plandoc-line[data-sup="${cb.dataset.sup}"]`).forEach(x => { x.checked = cb.checked; });
+  // Le righe già documentate restano fuori: la spunta di gruppo è una comodità,
+  // non un modo per aggirare il blocco.
+  document.querySelectorAll(`.plandoc-line[data-sup="${cb.dataset.sup}"]`)
+    .forEach(x => { if (!x.disabled) x.checked = cb.checked; });
   planDocsCount();
 }
 function planDocsCount() {
@@ -263,17 +451,29 @@ function planDocsSelection() {
 function planCreateDocs() {
   if (!roleGuard('docs')) return;
   const p = getPlan(window.__planDocsId); if (!p) return;
-  const kind = PLAN_DOC_KINDS[val('plandoc-kind')] ? val('plandoc-kind') : 'rfq';
+  // Il tipo l'ha deciso il pulsante che ha aperto la scheda, non un menu qui
+  // dentro: qui si scelgono solo le righe.
+  const kind = PLAN_DOC_KINDS[window.__planDocsKind] ? window.__planDocsKind : 'rfq';
   const sel = planDocsSelection();
   if (!sel.size) { showToast('Nessuna riga selezionata', 'error'); return; }
   const index = planBuyIndex(p);
+  // Seconda guardia, oltre alle spunte disabilitate: la selezione arriva dal
+  // DOM, e ciò che decide se un articolo può finire in un documento deve
+  // stare accanto alla scrittura, non solo nell'interfaccia.
+  const gia = planDocumentedItems(p.id);
+  const bloccato = itemId => (gia.get(itemId) || []).some(x => x.kind === kind);
   const creati = [];
+  let scartate = 0;
   sel.forEach((itemIds, supplierId) => {
-    const righe = itemIds.map(id => index.get(id)).filter(Boolean);
+    const ammesse = itemIds.filter(id => { if (bloccato(id)) { scartate++; return false; } return true; });
+    const righe = ammesse.map(id => index.get(id)).filter(Boolean);
     if (!righe.length) return;
     creati.push(kind === 'rfq' ? planNewRfq(p, supplierId, righe) : planNewOrder(p, supplierId, righe));
   });
-  if (!creati.length) { showToast('Nessun documento generato', 'error'); return; }
+  if (!creati.length) {
+    showToast(scartate ? 'Quelle righe sono già in un documento di questo tipo' : 'Nessun documento generato', 'error');
+    return;
+  }
   saveDB(); closeModal();
   // Un documento solo: si apre. Più d'uno: si va all'elenco, non c'è una scelta
   // sensata su quale aprire per primo.
@@ -295,13 +495,26 @@ function planDocHead(p, supplierId) {
     date: nowISO().slice(0, 10), status: 'bozza', supplierId: supplierId || null,
     transport: (sup && sup.defaultTransport) || db.settings.transportDefault || '',
     payment: (sup && sup.defaultPayment) || db.settings.paymentDefault || '',
-    planId: p.id, notes: '', notesInternal: '', active: true,
+    // La commessa segue il piano fino al documento: è la catena che permette di
+    // chiedere «cosa abbiamo ordinato per la commessa 240?» e avere risposta.
+    planId: p.id, jobId: p.jobId || null, notes: '', notesInternal: '', active: true,
   };
 }
 function planDocLine(r, price) {
   const it = r.item;
+  // La quantità del documento è quella mostrata nell'elenco: netta se il
+  // fabbisogno netto è acceso, lorda altrimenti. Nascondere all'utente quale
+  // delle due sta ordinando sarebbe il modo più rapido di fargli mandare al
+  // fornitore un numero che non ha visto.
+  // Unità e quantità sono quelle del fornitore: se quota a chilo, l'ordine è in
+  // chili. Mandargli metri sarebbe un ordine da rifare al telefono.
+  // La data di consegna richiesta è quella in cui il materiale serve: era
+  // sempre vuota, e chi generava un ordine dal fabbisogno doveva riscriverla a
+  // mano su ogni riga — cioè non la scriveva.
   return { id: gid(), itemId: it.id, code: it.code || '', description: it.name || '',
-    uom: it.uom || defaultUom(), qty: Number(r.qty) || 0, price, deliveryDate: '', note: '' };
+    uom: r.docUom || it.uom || defaultUom(),
+    qty: Number(r.qtyDoc != null ? r.qtyDoc : (r.qtyOrder != null ? r.qtyOrder : r.qty)) || 0,
+    price, deliveryDate: r.due || '', note: '' };
 }
 function planNewRfq(p, supplierId, righe) {
   // Una richiesta d'offerta non porta il prezzo: è la domanda, non la risposta.
@@ -313,7 +526,7 @@ function planNewRfq(p, supplierId, righe) {
 function planNewOrder(p, supplierId, righe) {
   const o = stampNew(Object.assign({ id: gid(), number: nextOrderNumber() }, planDocHead(p, supplierId),
     { requestedDelivery: '', rfqId: null, supplierConfirmation: '',
-      lines: righe.map(x => Object.assign(planDocLine(x, x.price > 0 ? x.price : ''), { received: 0 })) }));
+      lines: righe.map(x => Object.assign(planDocLine(x, x.priceDoc > 0 ? x.priceDoc : ''), { received: 0 })) }));
   db.orders.push(o);
   return o;
 }
@@ -383,7 +596,11 @@ function renderPlanList() {
 function renderPlanEdit(id) {
   const p = getPlan(id);
   const exp = mrpExplode(p.lines);
-  const buy = exp.buy.map(mrpBuyRow);
+  const buy = mrpRowsOf(exp.buy);
+  // Dove ogni riga è già finita: si legge dai documenti del piano, una volta
+  // per disegno invece che una volta per riga.
+  const gia = planDocumentedItems(id);
+  buy.forEach(r => { r.docRefs = gia.get(r.item.id) || []; });
   const totale = buy.reduce((s, r) => s + r.amount, 0);
   const fornitori = new Set(buy.filter(r => r.supplierId).map(r => r.supplierId)).size;
   const risparmio = buy.reduce((s, r) => s + r.saving, 0);
@@ -398,14 +615,17 @@ function renderPlanEdit(id) {
       <td>${esc(it.uom || '')}</td>
       <td><input type="number" class="rfq-qty-input" min="0" step="any" value="${Number(l.qty) || 0}"
         onchange="planSetLineQty('${id}','${l.id}',this.value)"></td>
+      <td><input type="date" value="${esc(l.dueDate || '')}" title="Quando serve pronto: da qui nascono le date d'ordine di tutto ciò che ci va dentro"
+        onchange="planSetLineDue('${id}','${l.id}',this.value)"></td>
       <td class="line-actions"><button class="mini-btn danger" onclick="planDelLine('${id}','${l.id}')" title="Togli dal piano">🗑</button></td></tr>`;
-  }).join('') || `<tr><td colspan="5" class="empty-text">Nessun articolo a piano. Usa "+ Aggiungi al piano".</td></tr>`;
+  }).join('') || `<tr><td colspan="6" class="empty-text">Nessun articolo a piano. Usa "+ Aggiungi al piano".</td></tr>`;
 
   return `<div class="manage-wrap">
     <div class="bom-toolbar">
       <button class="btn-outline" onclick="planBackToList()">← Elenco</button>
       <h2 class="section-title" style="margin:0">📋 ${esc(p.number)}</h2>
-      <button class="add-btn-sm" onclick="planDocsModal('${id}')" ${buy.length ? '' : 'disabled title="Niente da comprare in questo piano"'}>📄 Genera documenti</button>
+      ${planDocButton(p, 'rfq', '📨 Genera richieste')}
+      ${planDocButton(p, 'order', '🧾 Genera ordini')}
       <button class="export-btn-xls" onclick="exportMrpExcel('${id}')">📗 Esporta Excel</button>
       <button class="export-btn-pdf" onclick="exportMrpPDF('${id}')">📄 Esporta PDF</button>
     </div>
@@ -414,6 +634,10 @@ function renderPlanEdit(id) {
         <input id="plan-title" value="${esc(p.title || '')}" placeholder="es. Lotto settembre" onchange="planSetField('${id}','title',this.value)"></div>
       <div class="modal-field"><label>Data</label>
         <input type="date" id="plan-date" value="${esc(p.date || '')}" onchange="planSetField('${id}','date',this.value)"></div>
+      <div class="modal-field"><label>Consegna richiesta</label>
+        <input type="date" id="plan-due" value="${esc(p.dueDate || '')}" title="Proposta alle righe nuove: si può cambiare riga per riga" onchange="planSetField('${id}','dueDate',this.value)"></div>
+      <div class="modal-field"><label>Commessa</label>
+        <select id="plan-job" onchange="planSetField('${id}','jobId',this.value)">${jobOptions(p.jobId || '')}</select></div>
       <div class="modal-field" style="grid-column:1/-1"><label>Note</label>
         <input id="plan-notes" value="${esc(p.notes || '')}" onchange="planSetField('${id}','notes',this.value)"></div>
     </div>
@@ -425,7 +649,8 @@ function renderPlanEdit(id) {
         <button class="add-btn-sm" onclick="planAddModal('${id}')">+ Aggiungi al piano</button>
       </div>
       <div class="table-wrap"><table>
-        <thead><tr><th>Codice</th><th>Articolo</th><th>U.M.</th><th style="width:120px">Q.tà</th><th></th></tr></thead>
+        <thead><tr><th>Codice</th><th>Articolo</th><th>U.M.</th><th style="width:120px">Q.tà</th>
+          <th style="width:150px" title="Data in cui questo deve essere pronto">Serve per</th><th></th></tr></thead>
         <tbody>${planRows}</tbody></table></div>
     </div>
 
@@ -441,8 +666,10 @@ function renderPlanEdit(id) {
     <div class="mrp-section">
       <div class="cycle-section-head">
         <h3>📦 Da acquistare</h3>
+        <button class="btn-outline${mrpNet ? ' active' : ''}" onclick="toggleMrpNet()" title="Toglie dal fabbisogno quello che è già a magazzino e quello già ordinato">${mrpNet ? '☑' : '☐'} Fabbisogno netto</button>
         <button class="btn-outline${mrpGrouped ? ' active' : ''}" onclick="toggleMrpGroup()">${mrpGrouped ? '☑' : '☐'} Raggruppa per fornitore</button>
       </div>
+      ${mrpNet ? `<p class="empty-text" style="text-align:left;padding:0 0 8px">Netto = <strong>lordo + scorta minima − esistente − in arrivo</strong>, arrotondato al lotto di riordino. L'esistente è calcolato da ricevimenti e movimenti; l'in arrivo è ciò che è stato ordinato e non è ancora entrato. Il lordo resta in colonna: serve a capire il prodotto, il netto a capire cosa comprare.</p>` : ''}
       ${mrpBuyTable(buy)}
     </div>
 
@@ -452,36 +679,72 @@ function renderPlanEdit(id) {
     </div>
     ${planDocsList(id)}</div>`;
 }
+// Il lordo non sparisce mai dalla riga: nel netto resta accanto, in chiaro.
+// Vedere "servono 40, ne hai 25, ne compri 15" è tutt'altra cosa che vedere 15
+// e doversi fidare.
 function mrpBuyLineHtml(r) {
   const seg = [];
   if (r.bestPrice != null && r.saving > 0) seg.push(`<span class="price-best" title="A listino c'è ${fmtN(r.bestPrice)}: risparmio ${fmtN(r.saving)}">↓ ${fmtN(r.saving)}</span>`);
   if (r.underMin) seg.push(`<span class="mrp-warn" title="Quantità minima del fornitore: ${r.minQty}">⚠ sotto il minimo</span>`);
   if (r.noPrice) seg.push(`<span class="mrp-warn" title="Nessun prezzo in uso: la riga varrebbe zero in un ordine">⚠ senza prezzo</span>`);
-  return `<tr>
+  if (mrpNet && r.lotSize > 0 && r.net > 0) seg.push(`<span class="mrp-warn" title="Arrotondato al lotto di riordino di ${fmtQty(r.lotSize)}">↑ lotto ${fmtQty(r.lotSize)}</span>`);
+  if (r.coperto) seg.push(`<span class="price-best" title="Esistente e in arrivo bastano">✓ coperto</span>`);
+  // Quando le due unità differiscono si mostrano entrambe: quella di gestione
+  // dice cosa serve, quella del fornitore cosa si ordina. Farne vedere una sola
+  // costringerebbe a fidarsi di una conversione fatta altrove.
+  if (r.doppiaUom) seg.push(`<span class="mrp-warn" title="Il fornitore quota in ${esc(r.docUom)}: l'ordine sarà in ${esc(r.docUom)}">⇄ si ordina in ${esc(r.docUom)}</span>`);
+  const urg = URGENZA_LABEL[r.urgenza];
+  if (urg && urg.txt) seg.push(`<span class="${urg.cls}" title="${esc(urg.desc)}: ordinare entro il ${fmtDateIt(r.orderBy)}">${urg.txt}</span>`);
+  // Dove è già finita questa riga. Si vede qui, senza aprire la generazione:
+  // è la domanda «l'ho già ordinato?», e va risposta dove si guarda per primo.
+  (r.docRefs || []).forEach(x => seg.push(
+    `<span class="price-best" title="Questo articolo è già in ${esc(docRefLabel(x))} (${fmtQty(x.qty)} ${esc(x.uom)}) generato da questo fabbisogno">📄 ${esc(x.number)}</span>`));
+  const celleStock = mrpNet ? `
+    <td style="font-family:var(--mono);text-align:right;color:var(--text-dim)">${fmtQty(r.qty)}</td>
+    <td style="font-family:var(--mono);text-align:right">${fmtQty(r.onHand)}${r.safety > 0 ? `<span class="empty-text" style="padding:0"> (min ${fmtQty(r.safety)})</span>` : ''}</td>
+    <td style="font-family:var(--mono);text-align:right">${fmtQty(r.incoming)}</td>` : '';
+  // Le due date stanno insieme: quella in cui serve non si può cambiare, quella
+  // entro cui ordinare è l'unica su cui si può ancora fare qualcosa.
+  const celleDate = `<td style="white-space:nowrap">${r.due ? esc(fmtDateIt(r.due)) : '<span class="empty-text" style="padding:0">—</span>'}</td>
+    <td style="white-space:nowrap${r.urgenza === 'ritardo' ? ';color:var(--red);font-weight:700' : (r.urgenza === 'urgente' ? ';color:var(--orange,#d90)' : '')}">
+      ${r.orderBy ? esc(fmtDateIt(r.orderBy)) : '<span class="empty-text" style="padding:0">—</span>'}
+      ${r.leadDays ? `<div class="empty-text" style="padding:0">${r.leadDays} gg</div>` : ''}</td>`;
+  return `<tr${r.coperto ? ' style="opacity:.55"' : ''}>
     <td style="font-family:var(--mono)">${esc(r.item.code)}</td>
     <td>${esc(r.item.name)} ${seg.join(' ')}</td>
     <td>${esc(supplierName(r.supplierId) || '—')}</td>
+    ${celleDate}
     <td>${esc(r.uom)}</td>
-    <td style="font-family:var(--mono);text-align:right">${fmtQty(r.qty)}</td>
+    ${celleStock}
+    <td style="font-family:var(--mono);text-align:right"><strong>${fmtQty(r.qtyOrder)}</strong>${r.doppiaUom ? `<div class="empty-text" style="padding:0">= ${fmtQty(r.qtyDoc)} ${esc(r.docUom)}</div>` : ''}</td>
     <td style="font-family:var(--mono);text-align:right">${fmtN(r.price)}</td>
     <td style="font-family:var(--mono);text-align:right">${fmtN(r.amount)}</td></tr>`;
 }
 function mrpBuyTable(rows) {
   if (!rows.length) return '<div class="empty-text">Niente da comprare: il piano è vuoto o i suoi articoli non hanno distinta.</div>';
-  const head = `<thead><tr><th>Codice</th><th>Articolo</th><th>Fornitore</th><th>U.M.</th>
-    <th style="text-align:right">Q.tà</th><th style="text-align:right">Prezzo</th><th style="text-align:right">Importo</th></tr></thead>`;
+  const colonneStock = mrpNet
+    ? `<th style="text-align:right" title="Quanto serve in tutto">Lordo</th>
+       <th style="text-align:right" title="Calcolato da ricevimenti e movimenti">Esistente</th>
+       <th style="text-align:right" title="Ordinato e non ancora ricevuto">In arrivo</th>` : '';
+  const nCol = (mrpNet ? 10 : 7) + 2;   // + le due colonne di data
+  const head = `<thead><tr><th>Codice</th><th>Articolo</th><th>Fornitore</th>
+    <th title="Data in cui il materiale serve">Serve per</th>
+    <th title="Data in cui serve meno i giorni di consegna del fornitore">Ordinare entro</th>
+    <th>U.M.</th>
+    ${colonneStock}<th style="text-align:right">${mrpNet ? 'Da comprare' : 'Q.tà'}</th>
+    <th style="text-align:right">Prezzo</th><th style="text-align:right">Importo</th></tr></thead>`;
   const totale = rows.reduce((s, r) => s + r.amount, 0);
   let body;
   if (mrpGrouped) {
     body = mrpGroupBySupplier(rows).map(g => `
-      <tr class="mrp-group"><td colspan="6">🏭 ${esc(g.name)} — ${g.rows.length} ${g.rows.length === 1 ? 'articolo' : 'articoli'}</td>
+      <tr class="mrp-group"><td colspan="${nCol - 1}">🏭 ${esc(g.name)} — ${g.rows.length} ${g.rows.length === 1 ? 'articolo' : 'articoli'}</td>
         <td style="font-family:var(--mono);text-align:right">${fmtN(g.total)}</td></tr>
       ${g.rows.map(mrpBuyLineHtml).join('')}`).join('');
   } else {
     body = rows.map(mrpBuyLineHtml).join('');
   }
   return `<div class="table-wrap"><table>${head}<tbody>${body}
-    <tr class="mrp-total"><td colspan="6">Totale acquisti</td>
+    <tr class="mrp-total"><td colspan="${nCol - 1}">Totale acquisti${mrpNet ? ' (netti)' : ''}</td>
       <td style="font-family:var(--mono);text-align:right">${fmtN(totale)}</td></tr></tbody></table></div>`;
 }
 function mrpMakeTable(make) {
@@ -511,12 +774,24 @@ function fmtQty(n) {
 function exportMrpExcel(id) {
   const p = getPlan(id); if (!p) return;
   const exp = mrpExplode(p.lines);
-  const buy = exp.buy.map(mrpBuyRow);
-  const acquisti = [['Codice', 'Articolo', 'Fornitore', 'U.M.', 'Quantità', 'Prezzo', 'Importo']];
-  (mrpGrouped ? mrpGroupBySupplier(buy).flatMap(g => g.rows) : buy).forEach(r =>
-    acquisti.push([r.item.code, r.item.name, supplierName(r.supplierId) || '', r.uom, +r.qty.toFixed(3), +r.price.toFixed(4), +r.amount.toFixed(2)]));
+  const buy = mrpRowsOf(exp.buy);
+  // Nel netto l'esportazione porta anche le colonne che spiegano il numero:
+  // un foglio con solo "15" non permette a nessuno di rifare il conto.
+  const acquisti = [mrpNet
+    ? ['Codice', 'Articolo', 'Fornitore', 'U.M.', 'Lordo', 'Esistente', 'In arrivo', 'Da comprare', 'Prezzo', 'Importo']
+    : ['Codice', 'Articolo', 'Fornitore', 'U.M.', 'Quantità', 'Prezzo', 'Importo']];
+  (mrpGrouped ? mrpGroupBySupplier(buy).flatMap(g => g.rows) : buy).forEach(r => {
+    const testa = [r.item.code, r.item.name, supplierName(r.supplierId) || '', r.uom];
+    const coda = [+r.price.toFixed(4), +r.amount.toFixed(2)];
+    acquisti.push(mrpNet
+      ? testa.concat([+r.qty.toFixed(3), +r.onHand.toFixed(3), +r.incoming.toFixed(3), +r.qtyOrder.toFixed(3)], coda)
+      : testa.concat([+r.qty.toFixed(3)], coda));
+  });
   acquisti.push([]);
-  acquisti.push(['', 'TOTALE', '', '', '', '', +buy.reduce((s, r) => s + r.amount, 0).toFixed(2)]);
+  const rigaTotale = new Array(acquisti[0].length).fill('');
+  rigaTotale[1] = 'TOTALE';
+  rigaTotale[rigaTotale.length - 1] = +buy.reduce((s, r) => s + r.amount, 0).toFixed(2);
+  acquisti.push(rigaTotale);
   const produzione = [['Codice', 'Parte', 'U.M.', 'Quantità', 'Costo unitario', 'Importo']];
   exp.make.forEach(e => {
     const c = costOf(e.item.id).total;
@@ -532,7 +807,7 @@ function exportMrpExcel(id) {
 function exportMrpPDF(id) {
   const p = getPlan(id); if (!p) return;
   const exp = mrpExplode(p.lines);
-  const buy = exp.buy.map(mrpBuyRow);
+  const buy = mrpRowsOf(exp.buy);
   const jsPDF = requirePdf(); if (!jsPDF) return;
   const doc = new jsPDF();
   doc.setFontSize(15); doc.text(`Fabbisogno materiali — ${p.number}`, 14, 16);
@@ -543,12 +818,16 @@ function exportMrpPDF(id) {
     body: (p.lines || []).map(l => { const it = getItem(l.itemId); return [it ? it.code : '?', it ? it.name : '⚠ mancante', fmtQty(l.qty), it ? (it.uom || '') : '']; }),
     styles: { fontSize: 8 }, headStyles: { fillColor: [58, 123, 232] },
   });
+  // Nel netto la quantità porta accanto il lordo fra parentesi: chi riceve il
+  // foglio deve poter rifare il conto senza tornare all'app.
   const righe = (mrpGrouped ? mrpGroupBySupplier(buy).flatMap(g => g.rows) : buy)
-    .map(r => [r.item.code, r.item.name, supplierName(r.supplierId) || '—', fmtQty(r.qty) + ' ' + r.uom, fmtN(r.price), fmtN(r.amount)]);
+    .map(r => [r.item.code, r.item.name, supplierName(r.supplierId) || '—',
+      fmtQty(r.qtyOrder) + ' ' + r.uom + (mrpNet && r.qtyOrder !== r.qty ? ` (lordo ${fmtQty(r.qty)})` : ''),
+      fmtN(r.price), fmtN(r.amount)]);
   righe.push(['', 'TOTALE', '', '', '', fmtN(buy.reduce((s, r) => s + r.amount, 0))]);
   doc.autoTable({
     startY: doc.lastAutoTable.finalY + 8,
-    head: [['Codice', 'Da acquistare', 'Fornitore', 'Q.tà', 'Prezzo', 'Importo']], body: righe,
+    head: [['Codice', mrpNet ? 'Da acquistare (netto)' : 'Da acquistare', 'Fornitore', 'Q.tà', 'Prezzo', 'Importo']], body: righe,
     styles: { fontSize: 8 }, headStyles: { fillColor: [58, 123, 232] },
   });
   if (exp.make.length) {

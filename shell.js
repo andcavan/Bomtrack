@@ -125,6 +125,8 @@ function printView() { printHeadFill(); window.print(); }
 // Icona ed etichetta restano separate: su schermi stretti l'etichetta del
 // gruppo sparisce e la barra resta su una riga sola (vedi .nav-label).
 const NAV = [
+  { id: 'home', icon: '🏠', label: 'Riepilogo', views: [
+    { id: 'home', label: 'Riepilogo' }] },
   { id: 'anag', icon: '📇', label: 'Anagrafica', views: [
     { id: 'buy', label: 'Acquisti' },
     { id: 'design', label: 'Progetto' }] },
@@ -134,6 +136,7 @@ const NAV = [
     { id: 'bom', label: 'Gestione DB' },
     { id: 'report', label: 'Visualizza DB' }] },
   { id: 'docs', icon: '📨', label: 'Documenti', views: [
+    { id: 'jobs', label: 'Commesse' },
     { id: 'mrp', label: 'Fabbisogno' },
     { id: 'rfq', label: 'Richieste offerta' },
     { id: 'orders', label: 'Ordini' }] },
@@ -167,9 +170,40 @@ function renderNav() {
   sub.innerHTML = voci.map(w =>
     `<button class="subnav-btn ${activeView === w.id ? 'active' : ''}" onclick="setView('${w.id}')">${esc(w.label)}</button>`).join('');
 }
+// ─── Navigazione e indirizzo ───
+// La vista aperta finisce nell'hash dell'indirizzo. Non è un vezzo: senza,
+// il tasto Indietro del browser usciva dall'app, un refresh riportava sempre
+// alla stessa schermata e non c'era modo di mandare a un collega il punto in
+// cui si sta guardando. Costa poche righe e riusa la navigazione che c'è già.
+//
+// Il giro infinito (scrivo l'hash → scatta l'ascoltatore → richiama setView →
+// riscrive l'hash) si evita **senza tenere stato**: entrambe le direzioni
+// controllano se c'è davvero qualcosa da cambiare, e se non c'è si fermano.
+// Un flag "questo cambio l'ho fatto io" sarebbe più intuitivo e più fragile:
+// basterebbe un evento che non arriva per lasciarlo alzato, e la navigazione
+// successiva dell'utente verrebbe ignorata senza che nulla lo segnali.
+function viewEsiste(v) { return NAV.some(g => g.views.some(x => x.id === v)); }
+function viewDaHash() {
+  const h = (typeof location !== 'undefined' && location.hash || '').replace(/^#\/?/, '');
+  return viewEsiste(h) ? h : '';
+}
+function scriviHash(v) {
+  if (typeof location === 'undefined') return;
+  if ((location.hash || '').replace(/^#\/?/, '') === v) return;   // già lì: non si tocca
+  location.hash = v;
+}
+function onHashChange() {
+  if (!currentUser) return;                 // fuori sessione l'indirizzo non comanda niente
+  const v = viewDaHash();
+  if (v && v !== activeView) setView(v);    // già lì: non si fa niente, e il giro si chiude
+}
+// Vista di partenza: quella nell'indirizzo se è valida, altrimenti il riepilogo.
+function viewIniziale() { return viewDaHash() || 'home'; }
+
 function setView(v) {
   // La Gestione è riservata agli amministratori: chi non lo è torna alle distinte
   if (v === 'manage' && !isAdmin()) { showToast('Sezione riservata agli amministratori', 'error'); v = 'bom'; }
+  scriviHash(v);
   activeView = v;
   const g = groupOfView(v);
   if (g) lastViewOfGroup[g.id] = v;
@@ -184,6 +218,8 @@ function setView(v) {
   else if (v === 'buy' || v === 'design') renderCatalog(v);
   else if (v === 'cycles') renderCycles();
   else if (v === 'report') renderReport();
+  else if (v === 'home') renderHome();
+  else if (v === 'jobs') renderJobs();
   else if (v === 'mrp') renderMrp();
   else if (v === 'rfq') renderRfq();
   else if (v === 'orders') renderOrders();

@@ -13,7 +13,7 @@
 // Revisione in esecuzione, mostrata accanto al logo. Va tenuta allineata alla
 // voce in cima al changelog del README (l'app si copia a mano tra PC: sapere
 // quale revisione sta girando su una postazione è l'unico modo per capirlo).
-const APP_VERSION = '0.21.0';
+const APP_VERSION = '0.31.0';
 
 let currentUser = null;      // utente della sessione (null = schermata di accesso)
 let currentBomId = null;     // articolo prodotto attualmente aperto nelle Distinte
@@ -30,6 +30,7 @@ let rfqDirty = false;        // modifiche non salvate nell'editor RFQ (il docume
 let mrpView = 'list';        // 'list' | 'edit' — vista Fabbisogno materiali
 let currentPlanId = null;    // piano di produzione aperto
 let mrpGrouped = false;      // lista d'acquisto raggruppata per fornitore
+let mrpNet = false;          // fabbisogno netto (tolti esistente e in arrivo) invece che lordo
 let orderView = 'list';      // 'list' | 'edit'
 let currentOrderId = null;   // ordine aperto in editor
 let orderDirty = false;      // modifiche non salvate nell'editor ordine
@@ -54,6 +55,58 @@ function itemIndex() {
   return _itemIdx;
 }
 function getItem(id) { return itemIndex().get(id); }
+// ─── Indice per codice articolo ───
+// L'import cerca gli articoli per codice, una `db.items.find` per riga: un
+// foglio da 5.000 righe su un catalogo da 5.000 articoli sono ~50 milioni di
+// confronti. Serve anche al controllo di unicità del codice, che senza indice
+// costerebbe una scansione a ogni salvataggio.
+//
+// La chiave normalizza come faceva il confronto che sostituisce: senza spazi ai
+// bordi e senza distinzione di maiuscole. "M1" e " m1 " sono lo stesso codice.
+function itemCodeKey(code) { return String(code == null ? '' : code).trim().toLowerCase(); }
+let _codeIdx = null, _codeIdxArr = null, _codeIdxLen = -1;
+function codeIndex() {
+  if (_codeIdx && db.items === _codeIdxArr && db.items.length === _codeIdxLen) return _codeIdx;
+  const idx = new Map();
+  (db.items || []).forEach(i => {
+    const k = itemCodeKey(i.code);
+    // Il primo vince, come faceva il `.find()` che questo indice sostituisce:
+    // finché i duplicati sono possibili, il comportamento non deve cambiare.
+    if (k && !idx.has(k)) idx.set(k, i);
+  });
+  _codeIdx = idx; _codeIdxArr = db.items; _codeIdxLen = db.items.length;
+  return idx;
+}
+function getItemByCode(code) { const k = itemCodeKey(code); return k ? codeIndex().get(k) : undefined; }
+// Registra un articolo appena creato senza ricostruire l'indice. Serve
+// all'import, che aggiunge migliaia di righe prima del salvataggio: senza
+// questo, ogni riga farebbe scattare la ricostruzione (il push cambia la
+// lunghezza) e si tornerebbe al costo quadratico di prima.
+// Chi dimentica di chiamarla non rompe niente: la ricostruzione successiva
+// rimette tutto a posto, semplicemente costa.
+function codeIndexAdd(it) {
+  if (!_codeIdx || db.items !== _codeIdxArr) return;
+  const k = itemCodeKey(it && it.code);
+  if (k && !_codeIdx.has(k)) _codeIdx.set(k, it);
+  _codeIdxLen = db.items.length;
+}
+// Codici usati da più di un articolo. Oggi nulla lo impedisce, e l'import ci
+// inciampa in silenzio: risolve sempre sul primo trovato. Il report in
+// Gestione › Backup li mostra perché qualcuno decida quale tenere — rinominarli
+// da soli significherebbe cambiare un identificativo aziendale di nascosto.
+function duplicateCodeGroups() {
+  const per = new Map();
+  (db.items || []).forEach(i => {
+    const k = itemCodeKey(i.code);
+    if (!k) return;
+    let l = per.get(k);
+    if (!l) { l = []; per.set(k, l); }
+    l.push(i);
+  });
+  const out = [];
+  per.forEach((items, k) => { if (items.length > 1) out.push({ code: items[0].code, key: k, items }); });
+  return out.sort((a, b) => a.key.localeCompare(b.key));
+}
 // ─── Indici per fornitori e centri di lavoro ───
 // Stesso motivo dell'indice articoli: `db.suppliers.find(...)` compariva dentro
 // il disegno di ogni riga di elenco e di ogni lavorazione del rollup.
@@ -99,7 +152,9 @@ let _costCache = new Map();
 function invalidateCaches() {
   _costCache.clear();
   _itemIdx = null; _itemIdxArr = null; _itemIdxLen = -1;
+  _codeIdx = null; _codeIdxArr = null; _codeIdxLen = -1;
   _supIdx = null; _wcIdx = null; _parentIdx = null;
+  if (typeof invalidateStock === 'function') invalidateStock();   // sta in views-stock.js, caricato dopo
 }
 // ─── Librerie esterne (PDF ed Excel) ───
 // Arrivano da CDN, ma l'app è fatta per aprirsi con un doppio click su file://
@@ -165,7 +220,7 @@ function roleGuard(area) {
   return false;
 }
 // Area di scrittura corrispondente a ciascuna vista (per il banner di sola lettura)
-const VIEW_AREA = { bom: 'bom', buy: 'catalog', design: 'catalog', cycles: 'catalog', report: null, mrp: 'docs', rfq: 'docs', orders: 'docs', manage: 'manage' };
+const VIEW_AREA = { home: null, bom: 'bom', buy: 'catalog', design: 'catalog', cycles: 'catalog', report: null, jobs: 'docs', mrp: 'docs', rfq: 'docs', orders: 'docs', manage: 'manage' };
 
 // Le due viste di anagrafica: ciò che si compra e ciò che si progetta.
 // Ogni vista ha i suoi filtri (prefisso degli id nella pagina) e la creazione
@@ -199,6 +254,55 @@ function uomOptions(selected) {
   if (!sel) list.unshift({ code: '', name: '—' });
   return list.map(u => `<option value="${esc(u.code)}" ${u.code === sel ? 'selected' : ''}>${esc(u.code)}${u.name ? ' — ' + esc(u.name) : ''}</option>`).join('');
 }
+// ─── Doppia unità di misura: si gestisce in metri, si compra a chilo ───
+// Una barra si gestisce in metri — la distinta dice «2 m», il magazzino conta
+// metri — ma il fornitore quota **a chilo**. Senza conversione il prezzo del
+// listino finisce tale e quale nel costo dell'articolo, che risulta in €/kg
+// mentre le quantità sono in metri: il totale della distinta è sbagliato di un
+// fattore, in silenzio, e nessuno se ne accorge finché non arriva la fattura.
+// È l'errore peggiore che questa app possa fare — il numero c'è, è plausibile,
+// ed è falso.
+//
+// La divisione dei dati segue la natura di ciò che descrivono:
+//   `altUom` + `altFactor` stanno sull'**articolo**, perché sono fisica e non
+//   commercio: una barra pesa quel che pesa, uguale per tutti i fornitori.
+//   Duplicare il fattore su ogni quotazione vorrebbe dire poterlo sbagliare in
+//   un posto solo su cinque.
+//   `priceUom` sta sulla **riga di listino**: quella sì è una scelta del
+//   fornitore, e due fornitori possono quotare lo stesso articolo diversamente.
+//
+// Articoli senza `altUom` e righe senza `priceUom` si comportano esattamente
+// come prima: fattore 1, nessuna conversione, nessuna migrazione.
+function altUomOf(it) { return (it && it.altUom) ? String(it.altUom) : ''; }
+function altFactorOf(it) {
+  const f = Number(it && it.altFactor);
+  return isFinite(f) && f > 0 ? f : 0;
+}
+// Un'unità alternativa serve solo se ha anche un fattore: senza, sarebbe
+// un'etichetta che non converte niente e produrrebbe conti a caso.
+function hasAltUom(it) { return !!altUomOf(it) && altFactorOf(it) > 0 && altUomOf(it) !== (it.uom || ''); }
+// Quante `uom` stanno in 1 unità di gestione dell'articolo.
+// Sconosciuta o uguale a quella di gestione → 1, cioè nessuna conversione.
+function uomFactor(it, uom) {
+  if (!uom || !hasAltUom(it) || uom === (it.uom || '')) return 1;
+  return uom === altUomOf(it) ? altFactorOf(it) : 1;
+}
+// Gestione → altra unità (15 m → 120 kg)
+function toAltUom(it, qty, uom) { return (Number(qty) || 0) * uomFactor(it, uom); }
+// Altra unità → gestione (120 kg → 15 m). È la direzione che riporta a casa i
+// ricevimenti: il fornitore consegna chili, il magazzino conta metri.
+function fromAltUom(it, qty, uom) {
+  const f = uomFactor(it, uom);
+  return f > 0 ? (Number(qty) || 0) / f : (Number(qty) || 0);
+}
+// Le due unità di un articolo, per i menu a tendina. Una sola se non c'è la seconda.
+function itemUomOptions(it, selected) {
+  const uoms = [it.uom || ''];
+  if (hasAltUom(it)) uoms.push(altUomOf(it));
+  const sel = uoms.includes(selected) ? selected : uoms[0];
+  return uoms.map(u => `<option value="${esc(u)}" ${u === sel ? 'selected' : ''}>${esc(u)}</option>`).join('');
+}
+
 // ── Concetti (parte "standardizzata" del nome di una Parte) ──
 function conceptList() { return (db.settings && db.settings.concepts) || []; }
 function conceptById(id) { return conceptList().find(c => c.id === id); }
@@ -382,12 +486,47 @@ function codingLabel(it) {
   return gs ? ms + ' › ' + gs : ms;
 }
 
-function showToast(m, t = 'success') {
+// `azione` opzionale: { label, fn }. È l'annulla subito dopo un'eliminazione —
+// l'unico momento in cui serve davvero, perché è l'unico in cui l'utente sa
+// ancora cosa ha appena fatto. Andare a cercarlo nel cestino cinque minuti dopo
+// è un'altra cosa, e infatti il cestino c'è lo stesso.
+let _toastAzione = null, _toastTimer = null;
+const TOAST_MS = 2500, TOAST_AZIONE_MS = 7000;   // con un pulsante serve il tempo di leggerlo e cliccarlo
+function showToast(m, t = 'success', azione) {
   const el = document.getElementById('toast');
-  el.textContent = m;
+  if (!el) return;
+  _toastAzione = (azione && typeof azione.fn === 'function') ? azione.fn : null;
+  el.innerHTML = esc(m) + (_toastAzione
+    ? ` <button class="toast-action" onclick="toastAzione()">${esc(azione.label || 'Annulla')}</button>` : '');
   el.style.background = t === 'error' ? 'var(--red)' : 'var(--green)';
   el.classList.add('show');
-  setTimeout(() => el.classList.remove('show'), 2500);
+  clearTimeout(_toastTimer);
+  _toastTimer = setTimeout(() => { el.classList.remove('show'); _toastAzione = null; }, _toastAzione ? TOAST_AZIONE_MS : TOAST_MS);
+}
+function toastAzione() {
+  const fn = _toastAzione; _toastAzione = null;
+  const el = document.getElementById('toast'); if (el) el.classList.remove('show');
+  if (fn) fn();
+}
+// Elimina e offre di rimettere a posto. Da usare al posto di showToast dopo
+// ogni Store.remove: il record è nel cestino comunque, questo è solo il modo
+// più rapido di riaverlo.
+function toastEliminato(msg, onUndo) {
+  showToast(msg, 'success', { label: '↶ Annulla', fn: onUndo });
+}
+// Elimina, ridisegna, avvisa e offre di rimettere a posto: il gesto completo in
+// una riga sola, così nessun punto di eliminazione se lo dimentica per strada.
+// `dopo` è il ridisegno della vista, e viene richiamato anche al ripristino.
+function removeConUndo(coll, id, msg, dopo) {
+  if (!Store.remove(coll, id)) return false;
+  const voce = Store.lastRemoved();
+  if (typeof dopo === 'function') dopo();
+  toastEliminato(msg, () => {
+    Store.restore(voce);
+    if (typeof dopo === 'function') dopo();
+    showToast('Ripristinato');
+  });
+  return true;
 }
 // ─── Esito del salvataggio locale ───
 // Hook chiamati da Store.commit(). Quando localStorage rifiuta la scrittura
@@ -433,6 +572,68 @@ function renderUnsavedBadge() {
   el.style.display = aperto ? '' : 'none';
   el.textContent = aperto ? '⚠ Modifiche non salvate' : '';
   el.title = aperto ? 'Le ultime modifiche sono rimaste solo in memoria: esporta un backup prima di chiudere la scheda' : '';
+}
+
+// ─── Errori non previsti ───
+// Fuori da store.js non c'era nessuna rete: un'eccezione dentro un render*
+// lasciava la vista a metà — mezza tabella, un pannello vuoto — senza dire
+// niente. L'utente vedeva l'app "ferma" e non aveva modo di sapere che era
+// successo qualcosa, né di raccontarlo a chi doveva ripararla.
+//
+// Qui non si tenta nessun recupero: un errore in un render lascia comunque uno
+// stato incerto, e fingere che sia tutto a posto è peggio che dirlo. Si fa
+// l'unica cosa utile — renderlo visibile e conservarlo.
+const ERROR_LOG_MAX = 20;    // gli ultimi errori: quanto basta a raccontare cos'è successo
+const _errorLog = [];
+function logAppError(kind, msg, err) {
+  const rec = {
+    ts: nowISO(),
+    kind,
+    msg: String(msg || ''),
+    stack: err && err.stack ? String(err.stack).split('\n').slice(0, 8).join('\n') : '',
+    view: typeof activeView !== 'undefined' ? activeView : '',
+    version: APP_VERSION,
+  };
+  _errorLog.push(rec);
+  if (_errorLog.length > ERROR_LOG_MAX) _errorLog.shift();
+  return rec;
+}
+function appErrorLog() { return _errorLog.slice(); }
+// Come per il salvataggio: la finestra esplicativa si mostra una volta sola,
+// poi restano il toast e il registro. Ripeterla a ogni errore di un render che
+// fallisce a ripetizione renderebbe l'app inutilizzabile.
+let appErrorShown = false;
+function onAppError(kind, msg, err) {
+  const rec = logAppError(kind, msg, err);
+  if (typeof console !== 'undefined') console.error('Errore non gestito (' + kind + '):', msg, err || '');
+  if (typeof document === 'undefined' || !document.getElementById('toast')) return rec;
+  showToast('Si è verificato un errore: la schermata potrebbe essere incompleta', 'error');
+  if (!appErrorShown) {
+    appErrorShown = true;
+    setTimeout(() => showAppErrorModal(rec), 0);
+  }
+  return rec;
+}
+function showAppErrorModal(rec) {
+  openModal(`<h3>⚠ Errore non previsto</h3>
+    <p>Qualcosa è andato storto mentre l'app disegnava la pagina: <strong>quello che vedi a schermo potrebbe essere incompleto</strong>. I dati salvati non sono stati toccati.</p>
+    <p>Ricarica la pagina per tornare a uno stato pulito. Se l'errore si ripete, scarica il registro e allegalo alla segnalazione.</p>
+    <p class="muted" style="font-family:var(--mono,monospace);font-size:12px">${esc(rec.msg)}</p>
+    <div class="modal-actions">
+      <button class="btn-ghost" onclick="closeModal()">Ho capito</button>
+      <button class="btn-ghost" onclick="downloadErrorLog()">⬇ Scarica registro errori</button>
+      <button class="add-btn-sm" onclick="location.reload()">↻ Ricarica la pagina</button>
+    </div>`, false, 'avviso');
+}
+function downloadErrorLog() {
+  if (!_errorLog.length) { showToast('Nessun errore registrato in questa sessione'); return; }
+  const testo = _errorLog.map(r =>
+    `[${r.ts}] ${r.kind} · vista: ${r.view} · Bomtrack ${r.version}\n${r.msg}\n${r.stack}`).join('\n\n───\n\n');
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([testo], { type: 'text/plain' }));
+  a.download = `bomtrack-errori-${new Date().toISOString().slice(0, 10)}.txt`;
+  a.click();
+  URL.revokeObjectURL(a.href);
 }
 
 // ─── Pannelli ───
@@ -600,6 +801,20 @@ if (typeof document !== 'undefined') {
   // Il Ctrl+P del browser deve trovare l'intestazione già compilata.
   // Riferimento differito: printHeadFill sta in uno script caricato dopo questo.
   window.addEventListener('beforeprint', () => printHeadFill());
+  // Rete per tutto ciò che non ha un try/catch proprio. `error` cattura anche il
+  // caricamento fallito degli script CDN, che però hanno già le loro guardie
+  // (requirePdf/requireXlsx) e non vanno segnalati due volte.
+  window.addEventListener('error', e => {
+    if (e.target && e.target !== window && e.target.tagName) return;   // risorsa non caricata, non un'eccezione
+    onAppError('errore', e.message || 'errore sconosciuto', e.error);
+  });
+  // Indietro/Avanti del browser e link con hash: la navigazione risponde
+  // all'indirizzo. Riferimento differito: onHashChange sta in shell.js.
+  window.addEventListener('hashchange', () => onHashChange());
+  window.addEventListener('unhandledrejection', e => {
+    const r = e.reason;
+    onAppError('promessa', r && r.message ? r.message : String(r), r instanceof Error ? r : null);
+  });
 }
 function val(id) { const e = document.getElementById(id); return e ? e.value.trim() : ''; }
 function setVal(id, v) { const e = document.getElementById(id); if (e) e.value = v; }

@@ -19,21 +19,50 @@
 function hasPriceList(it) { return !!it && (it.type === 'acquistato' || it.type === 'materiale' || it.type === 'parte'); }
 function priceRows(it) { return (it && it.priceList) || []; }
 function activePriceRow(it) { return priceRows(it).find(r => r.id === it.activePriceId) || null; }
+// ─── Quotazioni in un'unità diversa da quella di gestione ───
+// L'unità in cui è espressa QUESTA quotazione. Vale solo se è l'unità
+// alternativa dell'articolo: qualunque altra cosa vale come unità di gestione,
+// così un dato sporco non produce una conversione inventata.
+function priceUomOf(it, row) {
+  const u = row && row.priceUom;
+  return (u && hasAltUom(it) && u === altUomOf(it)) ? u : (it ? (it.uom || '') : '');
+}
+// Il costo di una quotazione **nell'unità di gestione**, che è l'unica in cui i
+// costi hanno senso: le quantità delle distinte sono in quella.
+// 2 €/kg su una barra da 8 kg/m fanno 16 €/m.
+function rowUnitCost(it, row) {
+  if (!row || row.price === '' || row.price == null) return null;
+  return (Number(row.price) || 0) * uomFactor(it, priceUomOf(it, row));
+}
 // La quotazione più bassa tra quelle valorizzate (a parità, la più recente).
+// Il confronto è sui costi **convertiti**, mai sui prezzi grezzi: «2 €/kg»
+// sembrerebbe più conveniente di «5 €/m» su una barra che pesa 8 kg/m, e la
+// segnalazione di risparmio consiglierebbe il fornitore più caro — un errore
+// silenzioso e per giunta a effetto opposto.
 function bestPriceRow(it) {
   const quotate = priceRows(it).filter(r => r.price !== '' && r.price != null);
   if (!quotate.length) return null;
   return quotate.reduce((best, r) => {
-    const d = (Number(r.price) || 0) - (Number(best.price) || 0);
+    const d = (rowUnitCost(it, r) || 0) - (rowUnitCost(it, best) || 0);
     if (d < 0) return r;
     if (d > 0) return best;
     return (r.date || '') > (best.date || '') ? r : best;
   });
 }
+// Unità in cui si parla col fornitore: quella della quotazione in uso. È la
+// lingua in cui vanno scritti richieste e ordini — «15 m» a chi vende a chilo
+// è un ordine da rifare.
+function docUomOf(it) {
+  const attiva = activePriceRow(it);
+  return (attiva && priceUomOf(it, attiva)) || (it ? (it.uom || '') : '');
+}
 // Porta una quotazione nei campi dell'articolo: da qui in poi è quella che costa.
+// È la porta unica in cui avviene la conversione, ed è il motivo per cui il
+// motore di costo non sa niente di unità di misura: riceve già tutto nell'unità
+// di gestione e continua a moltiplicare un costo per una quantità.
 function applyPriceRow(it, row) {
   const campo = costField(it);
-  if (campo) it[campo] = Number(row.price) || 0;
+  if (campo) it[campo] = rowUnitCost(it, row) || 0;
   // Il fornitore vale per ogni tipo con listino: senza, una materia prima o una
   // parte acquistata arriverebbero al fabbisogno e ai documenti senza intestatario.
   it.supplierId = row.supplierId || null;
@@ -61,6 +90,7 @@ function priceListBody(id) {
   const inUso = activePriceRow(it);
   const migliore = bestPriceRow(it);
   const scrivibile = canWrite('catalog');
+  const doppia = hasAltUom(it);   // la colonna dell'unità compare solo se serve
 
   // Le quotazioni più recenti in cima: è quello che si guarda per primo.
   const righe = priceRows(it).slice().sort((a, b) => (b.date || '').localeCompare(a.date || ''));
@@ -79,8 +109,10 @@ function priceListBody(id) {
           <span title="Da dove arriva la quotazione">${esc(priceRowOrigin(r))}</span>
         </div>
       </td>
-      <td><input type="number" class="num pl-price" min="0" step="0.0001" value="${r.price === '' || r.price == null ? '' : r.price}" ${ro} onchange="priceSetField('${r.id}','price',this.value)"></td>
-      <td><input type="number" class="num pl-small" min="0" step="any" value="${r.minQty === '' || r.minQty == null ? '' : r.minQty}" placeholder="—" ${ro} onchange="priceSetField('${r.id}','minQty',this.value)"></td>
+      <td><input type="number" class="num pl-price" min="0" step="0.0001" value="${r.price === '' || r.price == null ? '' : r.price}" ${ro} onchange="priceSetField('${r.id}','price',this.value)">
+        ${doppia ? `<div class="pl-sub"><select ${ro} title="Unità in cui il fornitore quota" onchange="priceSetField('${r.id}','priceUom',this.value)">${itemUomOptions(it, priceUomOf(it, r))}</select>
+          ${priceUomOf(it, r) !== (it.uom || '') ? `<span title="Costo convertito nell'unità di gestione">= ${fmtN(rowUnitCost(it, r) || 0)}/${esc(it.uom || '')}</span>` : ''}</div>` : ''}</td>
+      <td><input type="number" class="num pl-small" min="0" step="any" value="${r.minQty === '' || r.minQty == null ? '' : r.minQty}" placeholder="—" title="Quantità minima, nell'unità della quotazione" ${ro} onchange="priceSetField('${r.id}','minQty',this.value)"></td>
       <td><input type="number" class="num pl-small" min="0" max="9999" step="1" value="${r.leadDays === '' || r.leadDays == null ? '' : r.leadDays}" placeholder="—" title="Giorni di consegna" ${ro} onchange="priceSetField('${r.id}','leadDays',this.value)"></td>
       <td><input type="date" class="pl-date" value="${esc(r.date || '')}" ${ro} onchange="priceSetField('${r.id}','date',this.value)"></td>
       <td class="pl-act">
@@ -91,7 +123,7 @@ function priceListBody(id) {
 
   const vuoto = `<tr><td colspan="7" class="empty-text">Nessuna quotazione registrata. Aggiungine una, oppure registrale da una richiesta di offerta ricevuta.</td></tr>`;
   const attuale = campo
-    ? `<p style="margin-bottom:12px">Prezzo in uso nella costificazione: <strong style="font-family:var(--mono)">${fmtN(Number(it[campo]) || 0)}</strong>${inUso ? '' : ' <span style="color:var(--text-dim)">(inserito a mano, non da listino)</span>'}</p>`
+    ? `<p style="margin-bottom:12px">Prezzo in uso nella costificazione: <strong style="font-family:var(--mono)">${fmtN(Number(it[campo]) || 0)}</strong>${doppia ? ` <span style="color:var(--text-dim)">per ${esc(it.uom || '')} — l'unità con cui l'articolo si gestisce e si mette in distinta</span>` : ''}${inUso ? '' : ' <span style="color:var(--text-dim)">(inserito a mano, non da listino)</span>'}</p>`
     : `<p style="margin-bottom:12px;color:var(--text-dim)">Il costo di questa parte è derivato dalla distinta parte e dal ciclo di lavorazione. Con “✓ Usa” si può passare al prezzo del fornitore, cambiando il modo di calcolo.</p>`;
   return `${attuale}
     <div class="table-wrap"><table class="price-table">
@@ -114,6 +146,10 @@ function priceRowById(rowId) {
 function priceAddRow() {
   if (!roleGuard('catalog')) return;
   const it = getItem(window.__priceItemId); if (!it) return;
+  // Il listino lo semina migrateDB() su ogni articolo che ne ha diritto, quindi
+  // di norma c'è già; ma dipendere da una migrazione per non lanciare è una
+  // fragilità che costa una riga togliere.
+  if (!Array.isArray(it.priceList)) it.priceList = [];
   it.priceList.push(stampNew({
     id: gid(), supplierId: it.supplierId || null, price: '', minQty: '', leadDays: '',
     code: '', desc: '', date: new Date().toISOString().slice(0, 10), rfqId: null, note: '',
@@ -126,6 +162,11 @@ function priceSetField(rowId, field, value) {
   const { it, row } = found;
   if (field === 'price' || field === 'minQty') {
     row[field] = value === '' ? '' : clampNum(parseFloat(value), 0);
+  } else if (field === 'priceUom') {
+    // Vuoto o pari all'unità di gestione = nessuna conversione: si toglie il
+    // campo invece di scriverci dentro un valore che vuol dire "niente".
+    if (value && hasAltUom(it) && value === altUomOf(it)) row.priceUom = value;
+    else delete row.priceUom;
   } else if (field === 'leadDays') {
     // La colonna è larga quattro cifre: oltre 9999 giorni non è un termine di consegna.
     row.leadDays = value === '' ? '' : clampNum(parseFloat(value), 0, 9999);
@@ -136,8 +177,10 @@ function priceSetField(rowId, field, value) {
   }
   touch(row); touch(it);
   // Correggere il prezzo della quotazione in uso deve muovere anche il costo:
-  // altrimenti listino e costificazione direbbero due cose diverse.
-  if (field === 'price' && it.activePriceId === row.id) applyPriceRow(it, row);
+  // altrimenti listino e costificazione direbbero due cose diverse. Vale anche
+  // per l'unità: cambiarla senza ricalcolare lascerebbe un costo che è un
+  // numero giusto nell'unità sbagliata, cioè un numero sbagliato.
+  if ((field === 'price' || field === 'priceUom') && it.activePriceId === row.id) applyPriceRow(it, row);
   saveDB(); priceListRefresh(); renderCatalogs();
 }
 function priceUseRow(rowId) {
@@ -563,6 +606,21 @@ function itemModalBody(it, scope) {
       <div class="modal-field" id="fld-flag-obs"><label>Obsoleto</label>
         <label class="flag-check"><input type="checkbox" id="it-obsolete" ${it && it.obsolete ? 'checked' : ''}> ⛔ Articolo obsoleto (non più utilizzabile)</label></div>
     </div>
+    <div class="modal-grid" id="fld-altuom">
+      <div class="modal-field"><label>U.M. d'acquisto (se diversa)</label>
+        <select id="it-altuom">${uomOptions(it ? (it.altUom || '') : '')}</select></div>
+      <div class="modal-field"><label>Fattore di conversione</label>
+        <input type="number" id="it-altfactor" min="0" step="any" value="${it && it.altFactor != null ? it.altFactor : ''}" placeholder="es. 8"></div>
+      <div class="modal-field" style="grid-column:1/-1"><span class="empty-text" style="padding:0">Da usare quando il fornitore quota in un'unità diversa da quella con cui l'articolo si gestisce e si mette in distinta. Il fattore dice <strong>quante unità d'acquisto stanno in una di gestione</strong>: una barra gestita in <span style="font-family:var(--mono)">m</span> che pesa 8 kg al metro ha U.M. d'acquisto <span style="font-family:var(--mono)">kg</span> e fattore <span style="font-family:var(--mono)">8</span>.<br>Serve a non sbagliare il costo: senza, un prezzo a chilo finirebbe nella costificazione come se fosse al metro. Lasciare vuoto se le due unità coincidono.</span></div>
+    </div>
+    <div class="modal-grid" id="fld-stock">
+      <div class="modal-field"><label>Scorta minima</label>
+        <input type="number" id="it-safety" min="0" step="any" value="${it && it.safetyStock != null ? it.safetyStock : ''}" placeholder="0"></div>
+      <div class="modal-field"><label>Lotto di riordino</label>
+        <input type="number" id="it-lot" min="0" step="any" value="${it && it.lotSize != null ? it.lotSize : ''}" placeholder="nessuno"></div>
+      <div class="modal-field" style="grid-column:1/-1"><span class="empty-text" style="padding:0">La <strong>scorta minima</strong> è la quantità che il fabbisogno netto vuole lasciare a magazzino dopo aver coperto il piano. Il <strong>lotto di riordino</strong> arrotonda per eccesso quanto si compra: vuoto = nessun arrotondamento.</span></div>
+    </div>
+    ${it ? stockPanelHtml(it) : ''}
     <div class="modal-field"><label>Note</label><textarea id="it-notes" rows="2">${it ? esc(it.notes || '') : ''}</textarea></div>
     ${stampLine(it)}`;
 }
@@ -668,6 +726,14 @@ function toggleItemFields() {
   document.getElementById('fld-flag-fav').style.display = canFavorite(t) ? '' : 'none';
   document.getElementById('fld-flag-obs').style.display = showObs ? '' : 'none';
   document.getElementById('fld-flags').style.display = showObs ? '' : 'none';
+  // Magazzino: solo su ciò che si tiene a scorta. Un assieme si produce, e la
+  // sua giacenza sarebbe quella dei componenti contata due volte.
+  const stock = document.getElementById('fld-stock');
+  if (stock) stock.style.display = hasStock({ type: t }) ? '' : 'none';
+  // Doppia unità: solo dove esiste un listino, perché è il prezzo del fornitore
+  // che può essere espresso in un'altra unità.
+  const alt = document.getElementById('fld-altuom');
+  if (alt) alt.style.display = hasPriceList({ type: t }) ? '' : 'none';
   // Codifica gerarchica: schema per la macchina, appartenenza per gli altri tipi
   const isChild = t === 'gruppo' || t === 'sottogruppo' || t === 'parte';
   document.getElementById('fld-coding-mac').style.display = t === 'macchina' ? '' : 'none';
@@ -817,6 +883,7 @@ function renderCycles() {
 
   const body = document.getElementById('cyc-body');
   const it = currentCycleItem();
+  renderCyclesRevBar();   // anche senza parte aperta: si svuota invece di restare com'era
   if (!it) {
     document.getElementById('cyc-summary').innerHTML = '';
     body.innerHTML = `<div class="empty-text">${partItems().length
@@ -985,6 +1052,13 @@ function renderCyclePickerResults() {
 function pickCycleItem(id) {
   const it = currentCycleItem(); if (!it) return;
   if (!roleGuard('catalog')) return;
+  // Le stesse due guardie della distinta base. Il selettore propone già solo i
+  // tipi ammessi e oggi quei tipi sono foglie, quindi nessuna delle due può
+  // scattare: sono qui perché la regola stia scritta accanto alla scrittura che
+  // la deve rispettare, non nel filtro di un elenco.
+  const child = getItem(id);
+  if (!child || !CYCLE_CHILD_TYPES.includes(child.type)) { showToast('Nella distinta parte vanno solo commerciali e materie prime', 'error'); return; }
+  if (createsCycle(it.id, id)) { showToast('Operazione annullata: creerebbe un ciclo', 'error'); return; }
   if (!Array.isArray(it.cycle)) it.cycle = [];
   it.cycle.push({ kind: 'item', itemId: id, qty: 1, costOverride: null });
   closeCyclePicker();
@@ -1096,6 +1170,27 @@ function readItemForm(it) {
   }
   it.uom = val('it-uom') || defaultUom();
   it.notes = val('it-notes');
+  // Parametri di scorta: solo su ciò che si tiene a magazzino. Vuoto resta
+  // vuoto — zero e "non impostato" qui vogliono dire la stessa cosa, ma un
+  // campo lasciato in bianco non deve comparire come 0 alla riapertura.
+  if (hasStock(it)) {
+    const sa = val('it-safety'), lo = val('it-lot');
+    it.safetyStock = sa === '' ? null : clampNum(parseFloat(sa), 0);
+    it.lotSize = lo === '' ? null : clampNum(parseFloat(lo), 0);
+  }
+  // Doppia unità di misura. Le due voci vanno insieme: un'unità senza fattore
+  // non converte niente, un fattore senza unità non si applica a niente.
+  if (hasPriceList(it)) {
+    const au = val('it-altuom'), af = val('it-altfactor');
+    const fattore = af === '' ? 0 : clampNum(parseFloat(af), 0);
+    if (au && au !== it.uom && fattore > 0) { it.altUom = au; it.altFactor = fattore; }
+    else { delete it.altUom; delete it.altFactor; }
+    // Cambiare il fattore cambia il costo di ogni quotazione espressa
+    // nell'altra unità: quella in uso va ricalcolata subito, altrimenti la
+    // costificazione resterebbe ferma alla conversione di prima.
+    const attiva = activePriceRow(it);
+    if (attiva) applyPriceRow(it, attiva);
+  }
   // Flag: preferito (solo commerciali e materie prime), obsoleto (anche parti)
   if (canFavorite(it.type)) it.favorite = isChecked('it-favorite');
   if (it.type === 'acquistato' || it.type === 'materiale' || it.type === 'parte') it.obsolete = isChecked('it-obsolete');
@@ -1138,6 +1233,23 @@ function validateItemCoding(id) {
   }
   return null;
 }
+// Unicità del codice articolo. Fino alla 0.22.0 non la controllava nessuno, ma
+// tutto ciò che cerca un articolo per codice — l'import massivo, la ricerca — dà
+// per scontato che sia unico e risolve sul primo trovato, in silenzio. In cloud
+// diventerà un vincolo del database.
+//
+// `codiceAttuale` è la chiave della regola: si impedisce di *introdurre* un
+// duplicato, non si blocca chi sta correggendo altro su un articolo che era già
+// duplicato prima. Chi ripulisce i duplicati esistenti lo fa dal report in
+// Gestione › Backup, non venendo bloccato mentre rinomina un articolo.
+function validateItemCode(code, exceptId, codiceAttuale) {
+  const k = itemCodeKey(code);
+  if (!k) return null;                                   // vuoto: readItemForm ci mette l'id, unico per costruzione
+  if (codiceAttuale != null && k === itemCodeKey(codiceAttuale)) return null;
+  const altro = getItemByCode(k);
+  if (altro && altro.id !== exceptId) return `Codice "${code}" già usato da ${altro.name || altro.id}`;
+  return null;
+}
 // Controlli sul nome secondo il tipo: le parti richiedono concetto + descrizione, gli altri il nome libero.
 function validateItemName(type) {
   if (type === 'parte') {
@@ -1153,6 +1265,8 @@ function saveNewItem() {
   if (nameErr) { showToast(nameErr, 'error'); return; }
   const codErr = validateItemCoding(null);
   if (codErr) { showToast(codErr, 'error'); return; }
+  const dupErr = validateItemCode(val('it-code'), null, null);
+  if (dupErr) { showToast(dupErr, 'error'); return; }
   const it = { id: gid(), type: val('it-type') };
   if (isAssembly(it.type)) { it.components = []; it.operations = []; }
   if (it.type === 'parte') { it.cycle = []; it.sourcing = defaultPartSourcing(); }
@@ -1188,8 +1302,8 @@ function saveNewItem() {
       }
     }
   }
-  db.items.push(stampNew(it));
-  saveDB(); closeModal(); renderCatalogs(); showToast(src ? 'Copia creata' : 'Articolo creato');
+  Store.insert('items', it);
+  closeModal(); renderCatalogs(); showToast(src ? 'Copia creata' : 'Articolo creato');
   // Un articolo appena creato non ha modo di ricevere un prezzo: la scheda non
   // lo chiede più. Il listino si apre da solo, ma solo se non è già arrivato
   // dalla copia — lì il prezzo c'è già.
@@ -1213,6 +1327,8 @@ function saveItemEdit(id) {
   if (nameErr) { showToast(nameErr, 'error'); return; }
   const codErr = validateItemCoding(id);
   if (codErr) { showToast(codErr, 'error'); return; }
+  const dupErr = validateItemCode(val('it-code'), id, it.code);
+  if (dupErr) { showToast(dupErr, 'error'); return; }
   readItemForm(it);
   touch(it);
   saveDB(); closeModal(); renderCatalogs(); showToast('Articolo aggiornato');
@@ -1225,8 +1341,7 @@ function delItem(id) {
   const used = usedBy(id);
   if (used.length) { showToast('Usato in ' + used.length + ' articoli: rimuovilo prima.', 'error'); usageModal(id); return; }
   askConfirm(`Eliminare "${it.name}"?`, () => {
-    db.items = db.items.filter(x => x.id !== id);
     if (currentBomId === id) currentBomId = null;
-    saveDB(); renderCatalogs(); showToast('Eliminato');
+    removeConUndo('items', id, `"${it.name}" eliminato`, renderCatalogs);
   });
 }

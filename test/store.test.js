@@ -99,8 +99,58 @@ describe('Store — snapshot (backup JSON)', () => {
 
   it('import di un file non valido viene rifiutato', () => {
     const app = conDb(makeDb({ items: [mat('m', 10)] }));
-    assert.throws(() => app.ref('Store').importSnapshot('{"cosa":"altro"}'), /non valido/);
+    assert.throws(() => app.ref('Store').importSnapshot('{"cosa":"altro"}'), /articoli/);
     assert.equal(app.snapshot().items.length, 1, 'i dati esistenti restano');
+  });
+
+  // Il caso vero: un file troncato a metà (download interrotto, chiavetta
+  // estratta) o il JSON di tutt'altro programma. Prima passava la guardia,
+  // sostituiva il database e l'errore usciva molto dopo, in una vista a caso,
+  // quando i dati veri erano già stati sovrascritti.
+  it('un backup danneggiato non entra, e i dati esistenti restano', () => {
+    const rifiutati = [
+      ['null', null],
+      ['un array invece di un oggetto', []],
+      ['una stringa', 'ciao'],
+      ['senza articoli', { suppliers: [] }],
+      ['articoli non è un elenco', { items: {} }],
+      ['fornitori troncati a metà', { items: [], suppliers: 'no' }],
+      ['ordini troncati a metà', { items: [], orders: 3 }],
+      ['impostazioni danneggiate', { items: [], settings: [] }],
+      ['schema illeggibile', { items: [], schemaVersion: 'due' }],
+    ];
+    // L'eccezione nasce nel contesto vm: non è un'istanza dell'Error di Node,
+    // quindi si verifica il messaggio, non il costruttore.
+    rifiutati.forEach(([che, data]) => {
+      const app = conDb(makeDb({ items: [mat('m', 10)] }));
+      assert.throws(() => app.ref('Store').importSnapshot(data), /./, che);
+      assert.equal(app.snapshot().items.length, 1, che + ': i dati esistenti devono restare');
+    });
+  });
+
+  it('un file di una revisione più recente viene fermato, non degradato', () => {
+    const app = conDb(makeDb({ items: [mat('m', 10)] }));
+    const futuro = { items: [], schemaVersion: app.eval('SCHEMA_VERSION') + 1 };
+    assert.throws(() => app.ref('Store').importSnapshot(futuro), /più recente/,
+      'le migrazioni sanno salire, non scendere');
+    assert.equal(app.snapshot().items.length, 1);
+  });
+
+  it('un backup vecchio senza le collezioni introdotte dopo resta importabile', () => {
+    const app = conDb(makeDb({ items: [] }));
+    assert.doesNotThrow(() => app.ref('Store').importSnapshot({ items: [{ id: 'x', code: 'X', name: 'X', type: 'materiale' }] }),
+      'plans, users e orders mancano nei file vecchi: li ricostruisce migrateDB()');
+    const db = app.snapshot();
+    assert.ok(Array.isArray(db.plans) && Array.isArray(db.users) && Array.isArray(db.orders));
+  });
+
+  it('snapshotCounts dice cosa c\'è dentro prima di sovrascrivere', () => {
+    const app = conDb(makeDb({ items: [] }));
+    const n = app.eval(`snapshotCounts(${JSON.stringify({ items: [1, 2, 3], suppliers: [1], orders: 'rotto' })})`);
+    assert.equal(n.items, 3);
+    assert.equal(n.suppliers, 1);
+    assert.equal(n.orders, 0, 'ciò che non è un elenco vale zero, non lancia');
+    assert.equal(n.plans, 0);
   });
 
   it('import fa passare i dati dalle migrazioni', () => {
