@@ -10,25 +10,47 @@
 // ═══════════════════════════════════════════════════════════
 //  IMPORT MASSIVO DA EXCEL (Articoli e Distinte)
 // ═══════════════════════════════════════════════════════════
-function renderImport() {
-  const types = ALL_TYPES.map(t => typeLabel(t)).join(', ');
-  return `<div class="cloud-section" style="flex-direction:column;align-items:stretch;gap:18px">
-    <div>
-      <strong>📦 Import Articoli</strong>
-      <p>Carica un foglio Excel per creare o aggiornare articoli in blocco (materie prime, commerciali, parti, assiemi). Se il <b>Codice</b> esiste già l'articolo viene <b>aggiornato</b>; se è vuoto viene generato automaticamente per materie prime, commerciali e parti. Colonne: <span style="font-family:var(--mono)">Tipo, Codice, Nome, UM, CostoUnitario, PrezzoAcquisto, Fornitore, Macrofamiglia, Sottofamiglia, Note</span>. Tipi ammessi: ${esc(types)}.</p>
+function catalogImportBlock(scope) {
+  const buy = scope === 'buy';
+  const id = 'imp-cat-' + scope;
+  return `<div>
+      <strong>${buy ? '🛒 Articoli — Acquisti' : '🏗 Articoli — Progetto'}</strong>
+      <p>${buy
+    ? 'Commerciali e materie prime, <b>un foglio per tipo</b>: <span style="font-family:var(--mono)">Commerciali, Materie prime, Listino</span>. Fornitore e prezzo entrano come <b>quotazione nel listino</b> dell\'articolo e diventano il prezzo in uso.'
+    : 'Macchine, gruppi, sottogruppi e parti, <b>un foglio per tipo</b>. I fogli si applicano in ordine, così un gruppo può puntare a una macchina definita nello stesso file: si caricano sigle, appartenenze e schema di codifica. <b>La distinta base non è in questo file</b>: si carica qui sotto.'}</p>
+      <p>Il file esportato <b>è anche il template</b>. Contiene un foglio <b>Liste</b> con tutti i valori ammessi e un foglio <b>Istruzioni</b>. Il <b>Codice</b> è la chiave: se esiste l'articolo viene aggiornato, se è vuoto viene generato. L'import non elimina mai niente.</p>
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
-        <button class="btn-outline" onclick="downloadItemsTemplate()">⬇ Scarica template Articoli</button>
-        <button class="add-btn-sm" onclick="document.getElementById('imp-items-file').click()">⬆ Carica file Articoli</button>
-        <input type="file" id="imp-items-file" accept=".xlsx,.xls,.csv" style="display:none" onchange="onImportItems(event)">
+        <button class="btn-outline" onclick="exportCatalogXlsx('${scope}')">⬇ Esporta ${buy ? 'Acquisti' : 'Progetto'}</button>
+        <button class="btn-outline" onclick="document.getElementById('${id}-check').click()">🔍 Verifica un file</button>
+        <input type="file" id="${id}-check" accept=".xlsx,.xls" style="display:none" onchange="onCatalogFile(event,'${scope}',true)">
+        <button class="add-btn-sm" onclick="document.getElementById('${id}-file').click()">⬆ Carica ${buy ? 'Acquisti' : 'Progetto'}</button>
+        <input type="file" id="${id}-file" accept=".xlsx,.xls" style="display:none" onchange="onCatalogFile(event,'${scope}',false)">
       </div>
+    </div>`;
+}
+function renderImport() {
+  return `<div class="cloud-section" style="flex-direction:column;align-items:stretch;gap:18px">
+    ${catalogImportBlock('buy')}
+    <div style="border-top:1px solid var(--border, #2a2a2a);padding-top:16px">
+      ${catalogImportBlock('design')}
     </div>
     <div style="border-top:1px solid var(--border, #2a2a2a);padding-top:16px">
       <strong>🌳 Import Distinte</strong>
-      <p>Carica un foglio Excel con le relazioni <b>padre-figlio</b> per costruire le distinte. Gli articoli (padri e figli) devono già esistere in catalogo — importali prima con il foglio Articoli. Per ogni padre presente nel file i componenti vengono <b>sostituiti</b> (reimport idempotente); le lavorazioni non vengono toccate. Colonne: <span style="font-family:var(--mono)">CodicePadre, CodiceFiglio, Qta, Scarto%</span>.</p>
+      <p>Carica un foglio Excel con le relazioni <b>padre-figlio</b> per costruire le distinte. Gli articoli (padri e figli) devono già esistere in catalogo — importali prima con i due file qui sopra. Per ogni padre presente nel file i componenti vengono <b>sostituiti</b> (reimport idempotente); le lavorazioni non vengono toccate. Colonne: <span style="font-family:var(--mono)">CodicePadre, CodiceFiglio, Qta, Scarto%</span>.</p>
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
         <button class="btn-outline" onclick="downloadBomTemplate()">⬇ Scarica template Distinte</button>
         <button class="add-btn-sm" onclick="document.getElementById('imp-bom-file').click()">⬆ Carica file Distinte</button>
         <input type="file" id="imp-bom-file" accept=".xlsx,.xls,.csv" style="display:none" onchange="onImportBom(event)">
+      </div>
+    </div>
+    <div style="border-top:1px solid var(--border, #2a2a2a);padding-top:16px">
+      <strong>⚙ Impostazioni di Gestione</strong>
+      <p>Porta via e rimetti tutto ciò che si configura qui dentro, in <b>un foglio per scheda</b>: <span style="font-family:var(--mono)">Azienda, Utenti, Fornitori, Condizioni offerta, Famiglie commerciali, Famiglie materie prime, Famiglie parti, Concetti, Centri di lavoro, Unità di misura, Impostazioni</span>. Il file esportato <b>è anche il template</b>: si esporta, si modifica, si ricarica — comodo per allestire una postazione nuova senza rifare le anagrafiche a mano.</p>
+      <p>L'import è <b>additivo</b>: aggiorna ciò che riconosce, crea ciò che manca, <b>non cancella niente</b>. Un foglio assente viene saltato, quindi si può caricare anche una sola scheda. Le <b>password non sono nel file</b>: un utente creato dall'import nasce senza, e non accede finché non gliene imposti una.</p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
+        <button class="btn-outline" onclick="exportSettingsXlsx()">⬇ Esporta impostazioni</button>
+        <button class="add-btn-sm" onclick="document.getElementById('imp-settings-file').click()">⬆ Carica impostazioni</button>
+        <input type="file" id="imp-settings-file" accept=".xlsx,.xls" style="display:none" onchange="onImportSettings(event)">
       </div>
     </div></div>`;
 }
@@ -108,87 +130,11 @@ function findOrCreateFamily(famName, subName, type, report) {
   return result;
 }
 
-// ─── Import Articoli ───
-function onImportItems(ev) {
-  const file = ev.target.files[0]; ev.target.value = '';
-  if (!file) return;
-  readSheet(file, rows => { showImportReport(importItems(rows), 'items'); });
-}
-function importItems(rows) {
-  const report = { created: 0, updated: 0, skipped: 0, errors: [],
-    createdSuppliers: 0, createdFamilies: 0, createdSubFamilies: 0 };
-  rows.forEach((row, i) => {
-    const ln = i + 2; // riga foglio (1 = intestazioni)
-    const name = String(pick(row, 'Nome', 'Name', 'Descrizione')).trim();
-    const typeRaw = pick(row, 'Tipo', 'Type');
-    const type = resolveType(typeRaw);
-    if (!name && !type && !pick(row, 'Codice', 'Code')) { report.skipped++; return; } // riga vuota
-    if (!type) { report.errors.push(`Riga ${ln}: tipo non valido ("${esc(typeRaw)}")`); return; }
-    if (!name) { report.errors.push(`Riga ${ln}: nome mancante`); return; }
-    const code = String(pick(row, 'Codice', 'Code')).trim();
-
-    // Upsert per codice, risolto sull'indice: la scansione lineare qui dentro
-    // rendeva l'import quadratico sulla dimensione del catalogo.
-    let it = code ? getItemByCode(code) : null;
-    const isNew = !it;
-    if (isNew) {
-      it = { id: gid(), type };
-      if (isAssembly(type)) { it.components = []; it.operations = []; }
-      db.items.push(it);
-    } else {
-      it.type = type;
-      if (isAssembly(type)) { if (!it.components) it.components = []; if (!it.operations) it.operations = []; }
-    }
-    it.name = name;
-    // Un'U.M. non ancora in elenco viene registrata, così resta selezionabile
-    it.uom = ensureUom(pick(row, 'UM', 'U.M.', 'UnitaDiMisura', 'Unità') || it.uom || defaultUom());
-    it.active = true;
-    const notes = String(pick(row, 'Note', 'Notes')).trim();
-    if (notes) it.notes = notes; else if (isNew) it.notes = '';
-
-    // Doppia unità: vanno insieme o non valgono. Un'unità senza fattore non
-    // converte niente, un fattore senza unità non si applica a niente — e nel
-    // dubbio è meglio nessuna conversione che una conversione inventata.
-    if (hasPriceList({ type })) {
-      const au = String(pick(row, 'UMAcquisto', 'UMPrezzo', 'UnitaAcquisto')).trim();
-      const af = numOr(pick(row, 'Fattore', 'FattoreConversione', 'Conversione'), 0);
-      if (au && af > 0 && au !== it.uom) { it.altUom = ensureUom(au); it.altFactor = af; }
-      else if (isNew) { delete it.altUom; delete it.altFactor; }
-    }
-    if (type === 'materiale' || type === 'parte') it.unitCost = numOr(pick(row, 'CostoUnitario', 'Costo', 'UnitCost'), it.unitCost || 0);
-    if (type === 'acquistato') {
-      it.purchasePrice = numOr(pick(row, 'PrezzoAcquisto', 'Prezzo', 'PurchasePrice'), it.purchasePrice || 0);
-      const supName = pick(row, 'Fornitore', 'Supplier');
-      if (supName) it.supplierId = findOrCreateSupplier(supName, report);
-    }
-    if (usesFamily(type)) {
-      const fam = findOrCreateFamily(pick(row, 'Macrofamiglia', 'Famiglia', 'Family'), pick(row, 'Sottofamiglia', 'SubFamily'), type, report);
-      it.familyId = fam.familyId; it.subFamilyId = fam.subFamilyId;
-    }
-    // Codice: dato esplicito, oppure auto per mat/acq, oppure id come fallback
-    if (code) it.code = code;
-    else if (isNew) {
-      // Il codice generato può collidere con uno inserito a mano fuori schema:
-      // nextCodeForPrefix() guarda solo i codici che seguono il proprio
-      // pattern. Un duplicato qui farebbe risolvere l'import successivo
-      // sull'articolo sbagliato, quindi si ripiega sull'id (unico per
-      // costruzione) invece di crearlo.
-      const auto = genItemCode(it);
-      it.code = (auto && !getItemByCode(auto)) ? auto : it.id;
-      if (auto && it.code !== auto) report.errors.push(`Riga ${ln}: codice automatico "${esc(auto)}" già in uso, assegnato un codice provvisorio`);
-    }
-
-    if (isNew) { stampNew(it); codeIndexAdd(it); report.created++; } else { touch(it); report.updated++; }
-  });
-  saveDB();
-  return report;
-}
-
 // ─── Import Distinte (righe padre-figlio) ───
 function onImportBom(ev) {
   const file = ev.target.files[0]; ev.target.value = '';
   if (!file) return;
-  readSheet(file, rows => { showImportReport(importBom(rows), 'bom'); });
+  readSheet(file, rows => { showImportReport(importBom(rows)); });
 }
 function findByCode(code) { return getItemByCode(code) || null; }
 function importBom(rows) {
@@ -221,42 +167,6 @@ function importBom(rows) {
 }
 
 // ─── Template scaricabili ───
-function downloadItemsTemplate() {
-  const header = ['Tipo', 'Codice', 'Nome', 'UM', 'UMAcquisto', 'Fattore', 'CostoUnitario', 'PrezzoAcquisto', 'Fornitore', 'Macrofamiglia', 'Sottofamiglia', 'Note'];
-  const data = [header,
-    ['Materia prima', '', 'Lamiera acciaio S235', 'kg', '', '', 1.2, '', '', 'Acciaio', 'Lamiere', 'codice auto se vuoto'],
-    ['Materia prima', '', 'Barra tonda Ø30 S355', 'm', 'kg', 5.55, '', '', 'Rossi Acciai', 'Acciaio', 'Barre', 'gestita a metri, comprata a chilo'],
-    ['Componente commerciale', '', 'Cuscinetto SKF 6204', 'pz', '', '', '', 12.5, 'SKF', 'Meccanico', 'Cuscinetti', ''],
-    ['Parte', '', 'Fiancata lavorata', 'pz', '', '', 45, '', '', 'Carpenteria', 'Fiancate', 'codice auto se vuoto'],
-    ['Sottogruppo', 'SGR-100', 'Gruppo motore', 'pz', '', '', '', '', '', '', '', 'la distinta si carica con il foglio Distinte'],
-    ['Gruppo', 'GRP-100', 'Gruppo telaio', 'pz', '', '', '', '', '', '', '', ''],
-    ['Macchina', 'MAC-100', 'Nastro Trasportatore NT-200', 'pz', '', '', '', '', '', '', '', ''],
-  ];
-  const ws = XLSX.utils.aoa_to_sheet(data);
-  ws['!cols'] = header.map((h, i) => ({ wch: i === 2 ? 30 : 16 }));
-  const info = XLSX.utils.aoa_to_sheet([
-    ['ISTRUZIONI — Import Articoli'],
-    [],
-    ['Colonna', 'Descrizione'],
-    ['Tipo', 'Uno tra: ' + ALL_TYPES.map(t => typeLabel(t)).join(', ')],
-    ['Codice', 'Se esiste già viene aggiornato. Se vuoto: generato per materie prime/commerciali/parti, altrimenti interno.'],
-    ['Nome', 'Obbligatorio.'],
-    ['UM', 'Unità di misura di gestione: quella con cui l\'articolo va in distinta e a magazzino (default pz).'],
-    ['UMAcquisto', 'Solo se il fornitore quota in un\'altra unità (es. barra gestita a metri, comprata a chilo). Vuoto = come UM.'],
-    ['Fattore', 'Quante UMAcquisto stanno in una UM (es. 5,55 kg per ogni metro). Serve insieme a UMAcquisto: da soli non valgono.'],
-    ['CostoUnitario', 'Per Materia prima e Parte.'],
-    ['PrezzoAcquisto', 'Per Componente commerciale.'],
-    ['Fornitore', 'Per Commerciale. Creato se non esiste.'],
-    ['Macrofamiglia / Sottofamiglia', 'Per Materia prima, Commerciale e Parte. Create se non esistono.'],
-    ['Note', 'Opzionale.'],
-  ]);
-  info['!cols'] = [{ wch: 28 }, { wch: 70 }];
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, 'Articoli');
-  XLSX.utils.book_append_sheet(wb, info, 'Istruzioni');
-  XLSX.writeFile(wb, 'Template_Articoli.xlsx');
-  showToast('Template scaricato');
-}
 function downloadBomTemplate() {
   const data = [['CodicePadre', 'CodiceFiglio', 'Qta', 'Scarto%'],
     ['MAC-100', 'GRP-100', 1, 0],
@@ -287,31 +197,568 @@ function downloadBomTemplate() {
   showToast('Template scaricato');
 }
 
-// ─── Report di esito import ───
-function showImportReport(r, kind) {
-  let stats, extra = '';
-  if (kind === 'items') {
-    stats = [['Creati', r.created], ['Aggiornati', r.updated], ['Saltati (vuote)', r.skipped], ['Errori', r.errors.length]];
-    const auto = [];
-    if (r.createdSuppliers) auto.push(`${r.createdSuppliers} fornitori`);
-    if (r.createdFamilies) auto.push(`${r.createdFamilies} famiglie`);
-    if (r.createdSubFamilies) auto.push(`${r.createdSubFamilies} sottofamiglie`);
-    if (auto.length) extra = `<p class="empty-text" style="text-align:left;padding:6px 0">Creati automaticamente: ${auto.join(', ')}.</p>`;
-  } else {
-    stats = [['Componenti aggiunti', r.added], ['Distinte aggiornate', r.parents], ['Saltati (vuote)', r.skipped], ['Errori', r.errors.length]];
+// ═══════════════════════════════════════════════════════════
+//  IMPOSTAZIONI DI GESTIONE ⇄ EXCEL (un foglio per scheda)
+// ═══════════════════════════════════════════════════════════
+// Le anagrafiche di servizio (fornitori, famiglie, centri di lavoro, unità di
+// misura, concetti, condizioni, parametri, utenti) si rifanno a mano a ogni
+// installazione nuova: il backup JSON le porta tutte, ma è tutto o niente —
+// sovrascrive anche articoli, distinte e documenti. Qui si portano via le sole
+// impostazioni, in un file leggibile e modificabile a mano.
+//
+// L'import è **additivo**: aggiorna ciò che riconosce e crea ciò che manca, non
+// cancella mai niente. Un foglio assente viene semplicemente saltato, così si
+// può importare anche solo la scheda che interessa. Il motivo è che eliminare
+// da un foglio è indistinguibile da un foglio compilato a metà, e la differenza
+// la pagherebbero fornitori e famiglie ancora referenziati dagli articoli.
+
+const COMPANY_FIELDS = [
+  ['Ragione sociale', 'name'], ['Referente', 'referente'], ['Email', 'email'],
+  ['Telefono', 'phone'], ['P.IVA / C.F.', 'vat'], ['Via / indirizzo', 'street'],
+  ['Numero civico', 'streetNumber'], ['CAP', 'zip'], ['Città', 'city'],
+  ['Provincia', 'province'], ['Stato', 'country'],
+];
+// [etichetta, chiave in db.settings, tipo, min, max]
+const SETTINGS_PARAMS = [
+  ['Spese generali / overhead (%)', 'overheadPct', 'num', 0, 1000, 'Numero da 0 a 1000'],
+  ['Margine / markup (%)', 'marginPct', 'num', 0, 1000, 'Numero da 0 a 1000'],
+  ['Simbolo valuta', 'currency', 'text', 0, 0, 'Massimo 3 caratteri (es. €)'],
+  ['Approvvigionamento parte (default)', 'partSourcingDefault', 'sourcing', 0, 0, 'make = Produzione interna · buy = Acquisto da fornitore'],
+  ['Cifre parte incrementale codice', 'codeDigits', 'int', 1, 10, 'Numero intero da 1 a 10'],
+  ['Prefisso codice — Commerciali', 'codePrefixAcquistato', 'upper', 0, 0, 'Sigla, resa maiuscola (es. CMM)'],
+  ['Prefisso codice — Materie prime', 'codePrefixMateriale', 'upper', 0, 0, 'Sigla, resa maiuscola (es. MAT)'],
+  ['Prefisso codice — Parti', 'codePrefixParte', 'upper', 0, 0, 'Sigla, resa maiuscola (es. PRT)'],
+  ['Durata della sessione salvata (giorni)', 'sessionDays', 'num', 0, 365, '0 = la sessione non scade mai'],
+];
+const FAMILY_KIND_LABELS = { acquistato: 'Commerciali', materiale: 'Materie prime', parte: 'Parti' };
+// Le famiglie stanno in tre fogli, uno per ambito, come le tre schede di
+// Gestione. Il foglio unico "Famiglie" con la colonna Ambito è quello dei file
+// esportati dalla 0.34.0: si continua a leggerlo, non a scriverlo.
+const FAMILY_SHEETS = [
+  { key: 'fam-acquistato', kind: 'acquistato', name: 'Famiglie commerciali' },
+  { key: 'fam-materiale', kind: 'materiale', name: 'Famiglie materie prime' },
+  { key: 'fam-parte', kind: 'parte', name: 'Famiglie parti' },
+];
+const FAMILY_LEGACY_SHEET = 'Famiglie';
+const TERMS_KIND_LABELS = { transport: 'Trasporto', payment: 'Pagamento' };
+
+// ─── Lettura tollerante di una cella ───
+// `null` = colonna assente dal foglio (il campo non si tocca), '' = colonna
+// presente e vuota (il campo si svuota). Senza questa distinzione un foglio
+// ridotto alle sole colonne che interessano cancellerebbe tutto il resto.
+function hasCol(row, ...names) {
+  const w = names.map(normHeader);
+  return Object.keys(row).some(k => w.includes(normHeader(k)));
+}
+function cell(row, ...names) {
+  return hasCol(row, ...names) ? String(pick(row, ...names)).trim() : null;
+}
+function boolCell(row, ...names) {
+  const v = cell(row, ...names);
+  if (v === null || v === '') return null;
+  const n = normHeader(v);
+  if (['si', 'sì', 's', 'x', '1', 'true', 'vero', 'y', 'yes', 'attivo'].includes(n)) return true;
+  if (['no', 'n', '0', 'false', 'falso', 'sospeso'].includes(n)) return false;
+  return null;
+}
+function siNo(v) { return v === false ? 'No' : 'Sì'; }
+// Ambito famiglia e ruolo utente arrivano come etichetta a schermo o chiave interna
+function resolveFamilyKind(raw) {
+  const n = normHeader(raw);
+  if (!n) return '';
+  for (const k of Object.keys(FAMILY_KIND_LABELS)) {
+    if (normHeader(k) === n || normHeader(FAMILY_KIND_LABELS[k]) === n) return k;
   }
+  if (n === 'commerciale' || n === 'commerciali' || n === 'acquistati') return 'acquistato';
+  if (n === 'materiaprima' || n === 'materieprime' || n === 'materiali') return 'materiale';
+  if (n === 'parti') return 'parte';
+  return '';
+}
+function resolveTermsKind(raw) {
+  const n = normHeader(raw);
+  if (!n) return '';
+  for (const k of Object.keys(TERMS_KIND_LABELS)) {
+    if (normHeader(k) === n || normHeader(TERMS_KIND_LABELS[k]) === n) return k;
+  }
+  if (n === 'resa' || n === 'trasportoresa' || n === 'tipiditrasportoresa') return 'transport';
+  if (n === 'pagamenti' || n === 'tipidipagamento') return 'payment';
+  return '';
+}
+function resolveRole(raw) {
+  const n = normHeader(raw);
+  if (!n) return '';
+  for (const k of Object.keys(ROLES)) {
+    if (normHeader(k) === n || normHeader(ROLES[k]) === n) return k;
+  }
+  return '';
+}
+
+// ─── I fogli, in uscita ───
+// Il file esportato è anche il template dell'import: si esporta, si modifica, si
+// ricarica. Nessun foglio "vuoto per esempio": si porta via ciò che c'è davvero.
+function settingsSheets() {
+  const s = db.settings || {};
+  const co = s.company || {};
+  const out = [];
+  out.push({ key: 'company', name: 'Azienda', cols: [{ wch: 30 }, { wch: 46 }],
+    aoa: [['Campo', 'Valore']].concat(COMPANY_FIELDS.map(([l, f]) => [l, co[f] || ''])) });
+
+  out.push({ key: 'users', name: 'Utenti', cols: [{ wch: 26 }, { wch: 28 }, { wch: 16 }, { wch: 18 }, { wch: 10 }, { wch: 8 }],
+    aoa: [['Nome', 'Email', 'Username', 'Ruolo', 'Colore', 'Attivo']].concat(
+      userList().map(u => [u.name || '', u.email || '', u.username || '', roleLabel(u.role), safeColor(u.color), siNo(u.active)])) });
+
+  out.push({ key: 'suppliers', name: 'Fornitori',
+    cols: [{ wch: 28 }, { wch: 20 }, { wch: 26 }, { wch: 16 }, { wch: 16 }, { wch: 26 }, { wch: 8 }, { wch: 8 }, { wch: 18 }, { wch: 6 }, { wch: 12 }, { wch: 22 }, { wch: 22 }, { wch: 8 }],
+    aoa: [['Nome', 'Referente', 'Email', 'Telefono', 'P.IVA / C.F.', 'Via / indirizzo', 'Numero civico', 'CAP', 'Città', 'Provincia', 'Stato', 'Pagamento predefinito', 'Trasporto predefinito', 'Attivo']].concat(
+      (db.suppliers || []).map(f => [f.name || '', f.referente || '', f.email || '', f.phone || '', f.vat || '',
+        f.street || '', f.streetNumber || '', f.zip || '', f.city || '', f.province || '', f.country || '',
+        f.defaultPayment || '', f.defaultTransport || '', siNo(f.active)])) });
+
+  const terms = [];
+  Object.keys(TERMS_KIND_LABELS).forEach(k => {
+    (s[k + 'Options'] || []).forEach(o => terms.push([TERMS_KIND_LABELS[k], o, o === s[k + 'Default'] ? 'Sì' : '']));
+  });
+  out.push({ key: 'terms', name: 'Condizioni offerta', cols: [{ wch: 16 }, { wch: 34 }, { wch: 12 }],
+    aoa: [['Tipo', 'Voce', 'Predefinita']].concat(terms) });
+
+  // Un foglio per ambito, come le tre schede di Gestione: l'ambito è il foglio,
+  // e una colonna in meno è una colonna in meno da sbagliare.
+  FAMILY_SHEETS.forEach(fs => {
+    const fams = [];
+    (db.families || []).filter(f => (f.kind || 'acquistato') === fs.kind).forEach(f => {
+      const sig = f.sigla || siglaFromName(f.name);
+      if (!(f.subs || []).length) fams.push([f.name || '', sig, '', '']);
+      (f.subs || []).forEach(sub => fams.push([f.name || '', sig, sub.name || '', sub.sigla || siglaFromName(sub.name)]));
+    });
+    out.push({ key: fs.key, name: fs.name, cols: [{ wch: 28 }, { wch: 12 }, { wch: 28 }, { wch: 12 }],
+      aoa: [['Macrofamiglia', 'Sigla macro', 'Sottofamiglia', 'Sigla sotto']].concat(fams) });
+  });
+
+  out.push({ key: 'concepts', name: 'Concetti', cols: [{ wch: 30 }],
+    aoa: [['Concetto']].concat(conceptList().map(c => [c.name || ''])) });
+
+  out.push({ key: 'workcenters', name: 'Centri di lavoro', cols: [{ wch: 30 }, { wch: 16 }],
+    aoa: [['Nome', 'Tariffa oraria']].concat((db.workCenters || []).map(w => [w.name || '', Number(w.hourlyRate) || 0])) });
+
+  out.push({ key: 'uoms', name: 'Unità di misura', cols: [{ wch: 12 }, { wch: 30 }, { wch: 12 }],
+    aoa: [['Codice', 'Descrizione', 'Predefinita']].concat(
+      uomList().map(u => [u.code || '', u.name || '', u.code === s.uomDefault ? 'Sì' : ''])) });
+
+  out.push({ key: 'params', name: 'Impostazioni', cols: [{ wch: 38 }, { wch: 18 }, { wch: 52 }],
+    aoa: [['Parametro', 'Valore', 'Valori ammessi']].concat(
+      SETTINGS_PARAMS.map(([l, k, t, , , nota]) => [l, paramOut(k, t), nota])) });
+
+  return out;
+}
+function paramOut(key, type) {
+  const v = (db.settings || {})[key];
+  if (type === 'num' || type === 'int') return Number(v) || 0;
+  return v == null ? '' : String(v);
+}
+function settingsInfoAoa() {
+  return [
+    ['ISTRUZIONI — Impostazioni di Gestione'],
+    [],
+    ['Questo file è insieme l\'esportazione e il template: modificalo e ricaricalo da Gestione → Import.'],
+    ['L\'import è additivo: aggiorna ciò che riconosce, crea ciò che manca, non cancella mai niente.'],
+    ['Un foglio assente viene saltato: si può importare anche una sola scheda per volta.'],
+    ['Una colonna assente lascia il campo com\'è; una colonna presente ma vuota lo svuota.'],
+    [],
+    ['Foglio', 'Chiave di riconoscimento e note'],
+    ['Azienda', 'Coppie Campo/Valore. I nomi dei campi sono quelli della colonna: non rinominarli.'],
+    ['Utenti', 'Chiave: Email. Le password NON sono esportate né importate: un utente nuovo nasce senza password e non può accedere finché un amministratore non gliene imposta una (Gestione → Utenti → 🔑). Deve restare almeno un amministratore attivo, e non puoi cambiare ruolo o stato a te stesso.'],
+    ['Fornitori', 'Chiave: Nome (maiuscole/minuscole ignorate).'],
+    ['Condizioni offerta', 'Tipo = Trasporto o Pagamento. Predefinita = Sì sulla voce che precompila le nuove richieste.'],
+    ['Famiglie (tre fogli)', 'Un foglio per ambito — ' + FAMILY_SHEETS.map(f => f.name).join(', ') + ' — così l\'ambito è il foglio e non una colonna da sbagliare. Chiave: Macrofamiglia. Una riga per sottofamiglia; riga con Sottofamiglia vuota = solo macrofamiglia. Si legge ancora anche il vecchio foglio unico "Famiglie" con la colonna Ambito.'],
+    ['Concetti', 'Sempre in MAIUSCOLO. Chiave: il nome stesso.'],
+    ['Centri di lavoro', 'Chiave: Nome. La tariffa non può essere negativa.'],
+    ['Unità di misura', 'Chiave: Codice. Il codice non si rinomina da qui (si rinomina in Gestione, che propaga il nuovo codice ad articoli e documenti): un codice diverso crea una nuova unità.'],
+    ['Impostazioni', 'Coppie Parametro/Valore. La colonna "Valori ammessi" è solo un promemoria: non viene letta.'],
+  ];
+}
+
+// ─── Esporta ───
+function exportSettingsXlsx() {
+  // Il foglio Utenti elenca nomi, email e ruoli: come il backup, solo agli amministratori
+  if (!roleGuard('manage')) return;
+  if (!requireXlsx()) return;
+  const wb = XLSX.utils.book_new();
+  settingsSheets().forEach(sh => {
+    const ws = XLSX.utils.aoa_to_sheet(sh.aoa);
+    if (sh.cols) ws['!cols'] = sh.cols;
+    XLSX.utils.book_append_sheet(wb, ws, sh.name);
+  });
+  const info = XLSX.utils.aoa_to_sheet(settingsInfoAoa());
+  info['!cols'] = [{ wch: 22 }, { wch: 96 }];
+  XLSX.utils.book_append_sheet(wb, info, 'Istruzioni');
+  XLSX.writeFile(wb, `bomtrack_impostazioni_${new Date().toISOString().slice(0, 10)}.xlsx`);
+  showToast('Impostazioni esportate');
+}
+
+// ─── Importa ───
+function onImportSettings(ev) {
+  const file = ev.target.files[0]; ev.target.value = '';
+  if (!file) return;
+  if (!roleGuard('manage')) return;
+  readWorkbook(file, sheets => { showSettingsReport(importSettingsSheets(sheets)); });
+}
+// Come readSheet, ma consegna tutti i fogli: qui il nome del foglio è il dato
+function readWorkbook(file, cb) {
+  if (!requireXlsx()) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    try {
+      const wb = XLSX.read(new Uint8Array(reader.result), { type: 'array' });
+      const out = {};
+      wb.SheetNames.forEach(n => { out[n] = XLSX.utils.sheet_to_json(wb.Sheets[n], { defval: '' }); });
+      cb(out);
+    } catch (e) { console.error(e); showToast('File non valido', 'error'); }
+  };
+  reader.onerror = () => { console.error(reader.error); showToast('Impossibile leggere il file', 'error'); };
+  reader.readAsArrayBuffer(file);
+}
+const SETTINGS_SHEET_DEFS = [
+  { key: 'company', name: 'Azienda', apply: (r, rep) => applyCompanySheet(r, rep) },
+  { key: 'params', name: 'Impostazioni', apply: (r, rep) => applyParamsSheet(r, rep) },
+  { key: 'terms', name: 'Condizioni offerta', apply: (r, rep) => applyTermsSheet(r, rep) },
+  { key: 'uoms', name: 'Unità di misura', apply: (r, rep) => applyUomsSheet(r, rep) },
+  { key: 'concepts', name: 'Concetti', apply: (r) => applyConceptsSheet(r) },
+  { key: 'workcenters', name: 'Centri di lavoro', apply: (r, rep) => applyWorkCentersSheet(r, rep) },
+].concat(FAMILY_SHEETS.map(fs => ({
+  key: fs.key, name: fs.name, apply: (r, rep) => applyFamiliesSheet(r, rep, fs),
+}))).concat([
+  { key: 'suppliers', name: 'Fornitori', apply: (r, rep) => applySuppliersSheet(r, rep) },
+  { key: 'users', name: 'Utenti', apply: (r, rep) => applyUsersSheet(r, rep) },
+]);
+// `byName`: { 'Nome foglio': [righe già lette] }. I fogli si riconoscono dal
+// nome normalizzato — accenti e maiuscole non contano — e quelli sconosciuti
+// (Istruzioni compreso) si ignorano senza rumore.
+function importSettingsSheets(byName) {
+  const rep = { sheets: [], missing: [], errors: [] };
+  const norm = {};
+  Object.keys(byName || {}).forEach(n => { norm[normHeader(n)] = byName[n]; });
+  // Foglio unico "Famiglie" con la colonna Ambito: è il formato dei file
+  // esportati fino alla 0.34.0. Si legge ancora, e in quel caso i tre fogli per
+  // ambito non si dichiarano mancanti — mancherebbero per costruzione.
+  const legacyFam = norm[normHeader(FAMILY_LEGACY_SHEET)];
+  const saltaFam = Array.isArray(legacyFam);
+  SETTINGS_SHEET_DEFS.forEach(def => {
+    const rows = norm[normHeader(def.name)];
+    if (!Array.isArray(rows)) {
+      if (!(saltaFam && FAMILY_SHEETS.some(f => f.key === def.key))) rep.missing.push(def.name);
+      return;
+    }
+    const r = def.apply(rows, rep) || {};
+    rep.sheets.push({ name: def.name, created: r.created || 0, updated: r.updated || 0, skipped: r.skipped || 0 });
+  });
+  if (saltaFam) {
+    const r = applyFamiliesSheet(legacyFam, rep) || {};
+    rep.sheets.push({ name: FAMILY_LEGACY_SHEET + ' (formato precedente)',
+      created: r.created || 0, updated: r.updated || 0, skipped: r.skipped || 0 });
+  }
+  saveDB();
+  return rep;
+}
+function _stat() { return { created: 0, updated: 0, skipped: 0 }; }
+// Assegna solo se il valore è cambiato: i conteggi del report devono dire
+// quante righe hanno fatto qualcosa, non quante ne sono state lette.
+function _assign(obj, field, v) {
+  if (v === null || String(obj[field] == null ? '' : obj[field]) === v) return false;
+  obj[field] = v; return true;
+}
+
+function applyCompanySheet(rows, rep) {
+  const out = _stat();
+  const co = db.settings.company = db.settings.company || {};
+  rows.forEach((row, i) => {
+    const label = cell(row, 'Campo', 'Parametro', 'Field');
+    if (!label) { out.skipped++; return; }
+    const f = COMPANY_FIELDS.find(([l]) => normHeader(l) === normHeader(label));
+    if (!f) { rep.errors.push(`Azienda, riga ${i + 2}: campo sconosciuto "${esc(label)}"`); return; }
+    let v = cell(row, 'Valore', 'Value');
+    if (v === null) { out.skipped++; return; }
+    if (f[1] === 'province') v = v.toUpperCase();
+    if (_assign(co, f[1], v)) out.updated++; else out.skipped++;
+  });
+  return out;
+}
+function applyParamsSheet(rows, rep) {
+  const out = _stat();
+  rows.forEach((row, i) => {
+    const label = cell(row, 'Parametro', 'Campo', 'Impostazione');
+    if (!label) { out.skipped++; return; }
+    const p = SETTINGS_PARAMS.find(([l, k]) => normHeader(l) === normHeader(label) || normHeader(k) === normHeader(label));
+    if (!p) { rep.errors.push(`Impostazioni, riga ${i + 2}: parametro sconosciuto "${esc(label)}"`); return; }
+    const raw = cell(row, 'Valore', 'Value');
+    if (raw === null) { out.skipped++; return; }
+    const [, key, type, min, max] = p;
+    let v;
+    if (type === 'num' || type === 'int') {
+      const n = numOr(raw, NaN);
+      if (isNaN(n)) { rep.errors.push(`Impostazioni, riga ${i + 2}: "${esc(label)}" non è un numero ("${esc(raw)}")`); return; }
+      v = Math.min(Math.max(type === 'int' ? Math.round(n) : n, min), max);
+    } else if (type === 'sourcing') {
+      const k = normHeader(raw);
+      v = Object.keys(PART_SOURCING).find(x => normHeader(x) === k || normHeader(PART_SOURCING[x]) === k);
+      if (!v) { rep.errors.push(`Impostazioni, riga ${i + 2}: approvvigionamento sconosciuto "${esc(raw)}"`); return; }
+    } else if (type === 'upper') {
+      v = raw.toUpperCase();
+      if (!v) { rep.errors.push(`Impostazioni, riga ${i + 2}: "${esc(label)}" non può restare vuoto`); return; }
+    } else {
+      v = raw.slice(0, 3);
+      if (!v) { rep.errors.push(`Impostazioni, riga ${i + 2}: "${esc(label)}" non può restare vuoto`); return; }
+    }
+    if (String(db.settings[key]) !== String(v)) { db.settings[key] = v; out.updated++; } else out.skipped++;
+  });
+  return out;
+}
+function applyTermsSheet(rows, rep) {
+  const out = _stat();
+  rows.forEach((row, i) => {
+    const kindRaw = cell(row, 'Tipo', 'Categoria', 'Kind');
+    const voce = cell(row, 'Voce', 'Valore', 'Descrizione');
+    if (!kindRaw && !voce) { out.skipped++; return; }
+    const kind = resolveTermsKind(kindRaw);
+    if (!kind) { rep.errors.push(`Condizioni offerta, riga ${i + 2}: tipo non valido ("${esc(kindRaw || '')}")`); return; }
+    if (!voce) { rep.errors.push(`Condizioni offerta, riga ${i + 2}: voce mancante`); return; }
+    const key = kind + 'Options';
+    const arr = db.settings[key] = db.settings[key] || [];
+    if (!arr.includes(voce)) { arr.push(voce); out.created++; } else out.skipped++;
+    if (boolCell(row, 'Predefinita', 'Predefinito', 'Default') === true) db.settings[kind + 'Default'] = voce;
+  });
+  return out;
+}
+function applyUomsSheet(rows, rep) {
+  const out = _stat();
+  let def = null;
+  rows.forEach((row, i) => {
+    const code = cell(row, 'Codice', 'Code', 'UM');
+    const name = cell(row, 'Descrizione', 'Nome', 'Name');
+    if (!code) { if (name) rep.errors.push(`Unità di misura, riga ${i + 2}: codice mancante`); else out.skipped++; return; }
+    if (!Array.isArray(db.settings.uoms)) db.settings.uoms = [];
+    let u = db.settings.uoms.find(x => x.code === code);
+    if (!u) { u = { code, name: name || '' }; db.settings.uoms.push(u); out.created++; }
+    else if (_assign(u, 'name', name)) out.updated++;
+    else out.skipped++;
+    if (boolCell(row, 'Predefinita', 'Predefinito', 'Default') === true) def = code;
+  });
+  if (def !== null) db.settings.uomDefault = def;
+  return out;
+}
+// Un concetto in uso è congelato anche qui: la chiave è il nome stesso, quindi
+// dal foglio si possono solo aggiungere concetti nuovi — rinominarne uno
+// riscriverebbe il nome delle parti già composte con quel concetto.
+function applyConceptsSheet(rows) {
+  const out = _stat();
+  rows.forEach(row => {
+    const name = (cell(row, 'Concetto', 'Nome', 'Name') || '').toUpperCase();
+    if (!name) { out.skipped++; return; }
+    if (!Array.isArray(db.settings.concepts)) db.settings.concepts = [];
+    if (db.settings.concepts.some(c => c.name === name)) { out.skipped++; return; }
+    db.settings.concepts.push({ id: gid(), name });
+    out.created++;
+  });
+  return out;
+}
+function applyWorkCentersSheet(rows, rep) {
+  const out = _stat();
+  rows.forEach((row, i) => {
+    const name = cell(row, 'Nome', 'Centro di lavoro', 'Name');
+    if (!name) { out.skipped++; return; }
+    const rateRaw = cell(row, 'Tariffa oraria', 'Tariffa', 'HourlyRate');
+    let rate = null;
+    if (rateRaw !== null && rateRaw !== '') {
+      rate = numOr(rateRaw, NaN);
+      if (isNaN(rate) || rate < 0) { rep.errors.push(`Centri di lavoro, riga ${i + 2}: tariffa non valida ("${esc(rateRaw)}")`); return; }
+    }
+    if (!Array.isArray(db.workCenters)) db.workCenters = [];
+    const w = db.workCenters.find(x => (x.name || '').toLowerCase() === name.toLowerCase());
+    if (!w) {
+      db.workCenters.push(stampNew({ id: gid(), name, hourlyRate: rate == null ? 0 : rate, active: true }));
+      out.created++;
+    } else if (rate != null && Number(w.hourlyRate) !== rate) {
+      w.hourlyRate = rate; touch(w); out.updated++;
+    } else out.skipped++;
+  });
+  return out;
+}
+function applyFamiliesSheet(rows, rep, fs) {
+  const out = _stat();
+  // `fs` = il foglio dell'ambito (Famiglie commerciali/materie prime/parti).
+  // Senza, si sta leggendo il foglio unico dei file esportati fino alla 0.34.0,
+  // e l'ambito lo dice la colonna.
+  const foglio = fs ? fs.name : FAMILY_LEGACY_SHEET;
+  rows.forEach((row, i) => {
+    const kindRaw = fs ? '' : cell(row, 'Ambito', 'Tipo', 'Kind');
+    const famName = cell(row, 'Macrofamiglia', 'Famiglia', 'Family');
+    const subName = cell(row, 'Sottofamiglia', 'SubFamily');
+    if (!kindRaw && !famName && !subName) { out.skipped++; return; }
+    const kind = fs ? fs.kind : resolveFamilyKind(kindRaw);
+    if (!kind) { rep.errors.push(`${foglio}, riga ${i + 2}: ambito non valido ("${esc(kindRaw || '')}")`); return; }
+    if (!famName) { rep.errors.push(`${foglio}, riga ${i + 2}: macrofamiglia mancante`); return; }
+    if (!Array.isArray(db.families)) db.families = [];
+    let f = db.families.find(x => (x.kind || 'acquistato') === kind && (x.name || '').toLowerCase() === famName.toLowerCase());
+    const famSigla = cell(row, 'Sigla macro', 'SiglaMacro', 'Sigla');
+    if (!f) {
+      f = stampNew({ id: gid(), name: famName, kind, sigla: (famSigla || siglaFromName(famName)).toUpperCase(), subs: [] });
+      db.families.push(f);
+      out.created++;
+    } else {
+      if (!f.subs) f.subs = [];
+      if (famSigla && (f.sigla || '') !== famSigla.toUpperCase()) { f.sigla = famSigla.toUpperCase(); touch(f); out.updated++; }
+      else if (!subName) out.skipped++;
+    }
+    if (!subName) return;
+    const subSigla = cell(row, 'Sigla sotto', 'SiglaSotto', 'SiglaSottofamiglia');
+    const s = (f.subs || []).find(x => (x.name || '').toLowerCase() === subName.toLowerCase());
+    if (!s) {
+      (f.subs = f.subs || []).push(stampNew({ id: gid(), name: subName, sigla: (subSigla || siglaFromName(subName)).toUpperCase() }));
+      touch(f); out.created++;
+    } else if (subSigla && (s.sigla || '') !== subSigla.toUpperCase()) {
+      s.sigla = subSigla.toUpperCase(); touch(f); out.updated++;
+    } else out.skipped++;
+  });
+  return out;
+}
+const SUPPLIER_COLS = [
+  ['name', ['Nome', 'Fornitore', 'Name']], ['referente', ['Referente', 'Contatto']],
+  ['email', ['Email']], ['phone', ['Telefono', 'Phone']], ['vat', ['P.IVA / C.F.', 'PIVA', 'PartitaIVA', 'Vat']],
+  ['street', ['Via / indirizzo', 'Via', 'Indirizzo']], ['streetNumber', ['Numero civico', 'Civico']],
+  ['zip', ['CAP']], ['city', ['Città']], ['province', ['Provincia']], ['country', ['Stato', 'Paese']],
+  ['defaultPayment', ['Pagamento predefinito', 'Pagamento']], ['defaultTransport', ['Trasporto predefinito', 'Trasporto']],
+];
+function applySuppliersSheet(rows, rep) {
+  const out = _stat();
+  rows.forEach((row, i) => {
+    const name = cell(row, 'Nome', 'Fornitore', 'Name');
+    if (!name) {
+      if (Object.values(row).some(v => String(v).trim())) rep.errors.push(`Fornitori, riga ${i + 2}: nome mancante`);
+      else out.skipped++;
+      return;
+    }
+    if (!Array.isArray(db.suppliers)) db.suppliers = [];
+    let s = db.suppliers.find(x => (x.name || '').toLowerCase() === name.toLowerCase());
+    const isNew = !s;
+    if (isNew) {
+      s = stampNew({ id: gid(), name, referente: '', email: '', phone: '', vat: '', street: '', streetNumber: '',
+        zip: '', city: '', province: '', country: '', defaultTransport: '', defaultPayment: '', active: true });
+      db.suppliers.push(s);
+    }
+    let cambiato = false;
+    SUPPLIER_COLS.forEach(([field, names]) => {
+      if (field === 'name') return;   // è la chiave: si cambia in Gestione, non da qui
+      let v = cell(row, ...names);
+      if (v !== null && field === 'province') v = v.toUpperCase();
+      if (_assign(s, field, v)) cambiato = true;
+    });
+    const att = boolCell(row, 'Attivo', 'Active');
+    if (att !== null && s.active !== att) { s.active = att; cambiato = true; }
+    if (isNew) out.created++;
+    else if (cambiato) { touch(s); out.updated++; }
+    else out.skipped++;
+  });
+  return out;
+}
+// Le password non entrano e non escono: nel foglio non c'è nulla da cui
+// ricavarle, e un utente creato da qui nasce senza — non può accedere finché un
+// amministratore non gliene imposta una. Le due invarianti della scheda Utenti
+// (resta almeno un amministratore attivo, non ci si tocca da soli) valgono anche
+// qui, riga per riga: un foglio non è un buon posto da cui chiudersi fuori.
+function applyUsersSheet(rows, rep) {
+  const out = _stat();
+  rows.forEach((row, i) => {
+    const email = cell(row, 'Email');
+    const name = cell(row, 'Nome', 'Name');
+    if (!email && !name) { out.skipped++; return; }
+    if (!email) { rep.errors.push(`Utenti, riga ${i + 2}: email mancante`); return; }
+    const roleRaw = cell(row, 'Ruolo', 'Role');
+    const role = roleRaw ? resolveRole(roleRaw) : null;
+    if (roleRaw && !role) { rep.errors.push(`Utenti, riga ${i + 2}: ruolo sconosciuto ("${esc(roleRaw)}")`); return; }
+    const attivo = boolCell(row, 'Attivo', 'Active');
+    const u = findUserByEmail(email);
+    if (!u) {
+      if (!name) { rep.errors.push(`Utenti, riga ${i + 2}: nome richiesto per creare "${esc(email)}"`); return; }
+      Store.insert('users', { id: gid(), name, email, username: cell(row, 'Username') || '',
+        role: role || 'lettore', color: safeColor(cell(row, 'Colore', 'Color')), active: attivo !== false });
+      out.created++;
+      return;
+    }
+    const io = currentUser && u.id === currentUser.id;
+    const nuovoRuolo = role && role !== u.role ? role : null;
+    const nuovoStato = attivo !== null && attivo !== (u.active !== false) ? attivo : null;
+    if (io && (nuovoRuolo || nuovoStato !== null)) {
+      rep.errors.push(`Utenti, riga ${i + 2}: ruolo e stato del tuo account non si cambiano da un foglio`);
+      return;
+    }
+    // Chi sta per smettere di essere amministratore attivo lascia scoperta la Gestione?
+    const perdeAdmin = u.role === 'admin' && u.active !== false
+      && ((nuovoRuolo && nuovoRuolo !== 'admin') || nuovoStato === false);
+    if (perdeAdmin && !activeAdmins(u.id).length) {
+      rep.errors.push(`Utenti, riga ${i + 2}: deve restare almeno un amministratore attivo`);
+      return;
+    }
+    let cambiato = false;
+    if (_assign(u, 'name', name)) cambiato = true;
+    if (_assign(u, 'username', cell(row, 'Username'))) cambiato = true;
+    const col = cell(row, 'Colore', 'Color');
+    if (col !== null && safeColor(col) !== safeColor(u.color)) { u.color = safeColor(col); cambiato = true; }
+    if (nuovoRuolo) { u.role = nuovoRuolo; cambiato = true; }
+    if (nuovoStato !== null) { u.active = nuovoStato; cambiato = true; }
+    if (cambiato) { touch(u); out.updated++; } else out.skipped++;
+  });
+  return out;
+}
+
+// ─── Report di esito (impostazioni) ───
+function showSettingsReport(rep) {
+  const tot = rep.sheets.reduce((a, s) => ({ created: a.created + s.created, updated: a.updated + s.updated }), { created: 0, updated: 0 });
+  const cards = [['Voci create', tot.created], ['Voci aggiornate', tot.updated], ['Fogli letti', rep.sheets.length], ['Errori', rep.errors.length]]
+    .map(([l, v]) => `<div class="kpi-card ${l === 'Errori' && v ? 'orange' : ''}"><div class="kpi-value">${v}</div><div class="kpi-label">${l}</div></div>`).join('');
+  const righe = rep.sheets.map(s => `<div class="mgmt-item">
+      <span class="mgmt-item-name">${esc(s.name)}</span>
+      <span class="mgmt-item-meta">${s.created} creat${s.created === 1 ? 'a' : 'e'} · ${s.updated} aggiornat${s.updated === 1 ? 'a' : 'e'} · ${s.skipped} invariat${s.skipped === 1 ? 'a' : 'e'}</span>
+    </div>`).join('') || '<div class="empty-text">Nessun foglio riconosciuto: controlla i nomi dei fogli.</div>';
+  const mancanti = rep.missing.length
+    ? `<p class="empty-text" style="text-align:left;padding:6px 0">Fogli assenti dal file, saltati: ${esc(rep.missing.join(', '))}.</p>` : '';
+  const errBlock = rep.errors.length
+    ? `<div style="margin-top:12px"><strong style="color:var(--red)">Righe con problemi (${rep.errors.length}):</strong>
+        <div class="picker-results" style="max-height:240px;margin-top:6px">${rep.errors.map(e => `<div class="picker-row">${e}</div>`).join('')}</div></div>`
+    : `<p class="empty-text" style="padding:8px 0">Nessun errore. ✔</p>`;
+  openModal(`<h3>⚙ Esito import Impostazioni</h3>
+    <div class="cost-summary">${cards}</div>
+    <div class="mgmt-list" style="margin-top:12px">${righe}</div>${mancanti}${errBlock}
+    <div class="modal-actions"><button class="add-btn-sm" onclick="closeSettingsReport()">Chiudi</button></div>`);
+}
+function closeSettingsReport() {
+  closeModal();
+  // Il foglio Utenti può aver toccato anche chi lo sta importando (nome, colore)
+  if (currentUser) {
+    const mio = getUser(currentUser.id);
+    if (mio) { currentUser = mio; renderUserPill(); renderNav(); }
+  }
+  renderManage();
+  showToast('Impostazioni importate');
+}
+
+// ─── Report di esito import distinte ───
+// Gli articoli hanno il loro (showCatalogReport, in import-catalog.js): contano
+// per foglio, distinguono avvisi da errori e sanno dire cosa *non* è successo
+// dopo una verifica. Qui basta molto meno.
+function showImportReport(r) {
+  const stats = [['Componenti aggiunti', r.added], ['Distinte aggiornate', r.parents],
+    ['Saltati (vuote)', r.skipped], ['Errori', r.errors.length]];
   const cards = stats.map(([l, v]) => `<div class="kpi-card ${l === 'Errori' && v ? 'orange' : ''}"><div class="kpi-value">${v}</div><div class="kpi-label">${l}</div></div>`).join('');
   const errBlock = r.errors.length
     ? `<div style="margin-top:12px"><strong style="color:var(--red)">Righe con problemi (${r.errors.length}):</strong>
         <div class="picker-results" style="max-height:240px;margin-top:6px">${r.errors.map(e => `<div class="picker-row">${e}</div>`).join('')}</div></div>`
     : `<p class="empty-text" style="padding:8px 0">Nessun errore. ✔</p>`;
-  openModal(`<h3>📋 Esito import ${kind === 'items' ? 'Articoli' : 'Distinte'}</h3>
-    <div class="cost-summary">${cards}</div>${extra}${errBlock}
-    <div class="modal-actions"><button class="add-btn-sm" onclick="closeImportReport('${kind}')">Chiudi</button></div>`);
+  openModal(`<h3>📋 Esito import Distinte</h3>
+    <div class="cost-summary">${cards}</div>${errBlock}
+    <div class="modal-actions"><button class="add-btn-sm" onclick="closeImportReport()">Chiudi</button></div>`);
 }
-function closeImportReport(kind) {
+function closeImportReport() {
   closeModal();
-  if (kind === 'bom') { currentBomId = null; reportBomId = null; }
+  currentBomId = null; reportBomId = null;
   renderManage();
   showToast('Import completato');
 }

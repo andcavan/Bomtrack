@@ -315,26 +315,27 @@ describe('I ricevimenti tornano a casa convertiti', () => {
 });
 
 describe('Import Excel', () => {
+  // Righe del foglio "Materie prime" del file Acquisti (vedi catalog-xlsx.test.js)
   function importa(a, righe) {
-    return JSON.parse(a.eval(`JSON.stringify(importItems(${JSON.stringify(righe)}))`));
+    return JSON.parse(a.eval(`JSON.stringify(importCatalogSheets(${JSON.stringify({ 'Materie prime': righe })}, 'buy'))`));
   }
-  it('le colonne UMAcquisto e Fattore creano la doppia unità', () => {
+  it('le colonne UM acquisto e Fattore creano la doppia unità', () => {
     const a = app(makeDb({ items: [] }));
-    importa(a, [{ Tipo: 'Materia prima', Codice: 'B1', Nome: 'Barra', UM: 'm', UMAcquisto: 'kg', Fattore: 8 }]);
+    importa(a, [{ Codice: 'B1', Nome: 'Barra', UM: 'm', 'UM acquisto': 'kg', Fattore: 8 }]);
     const it = a.snapshot().items[0];
     assert.equal(it.altUom, 'kg');
     assert.equal(it.altFactor, 8);
   });
   it('l\'unità d\'acquisto importata entra in elenco, come le altre', () => {
     const a = app(makeDb({ items: [] }));
-    importa(a, [{ Tipo: 'Materia prima', Codice: 'B1', Nome: 'Barra', UM: 'm', UMAcquisto: 'kg', Fattore: 8 }]);
+    importa(a, [{ Codice: 'B1', Nome: 'Barra', UM: 'm', 'UM acquisto': 'kg', Fattore: 8 }]);
     assert.ok(a.snapshot().settings.uoms.some(u => u.code === 'kg'));
   });
   it('unità senza fattore, o fattore senza unità: nessuna conversione', () => {
     const a = app(makeDb({ items: [] }));
     importa(a, [
-      { Tipo: 'Materia prima', Codice: 'B1', Nome: 'Solo unità', UM: 'm', UMAcquisto: 'kg' },
-      { Tipo: 'Materia prima', Codice: 'B2', Nome: 'Solo fattore', UM: 'm', Fattore: 8 },
+      { Codice: 'B1', Nome: 'Solo unità', UM: 'm', 'UM acquisto': 'kg' },
+      { Codice: 'B2', Nome: 'Solo fattore', UM: 'm', Fattore: 8 },
     ]);
     a.snapshot().items.forEach(it => {
       assert.equal(it.altUom, undefined, it.name);
@@ -343,7 +344,7 @@ describe('Import Excel', () => {
   });
   it('la virgola decimale funziona anche sul fattore', () => {
     const a = app(makeDb({ items: [] }));
-    importa(a, [{ Tipo: 'Materia prima', Codice: 'B1', Nome: 'Barra', UM: 'm', UMAcquisto: 'kg', Fattore: '5,55' }]);
+    importa(a, [{ Codice: 'B1', Nome: 'Barra', UM: 'm', 'UM acquisto': 'kg', Fattore: '5,55' }]);
     approx(a.snapshot().items[0].altFactor, 5.55);
   });
 });

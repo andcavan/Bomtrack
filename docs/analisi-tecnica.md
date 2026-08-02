@@ -5,6 +5,14 @@ Controllo generale del codice fatto insieme al lavoro della 0.21.0. Diviso in
 stata rimandata. Ogni voce porta file e riga: se il codice si sposta, il
 riferimento va aggiornato o la voce va chiusa.
 
+> **Nota di lettura (0.35.0).** Le voci che nominano `importItems` descrivono
+> lavoro fatto quando l'import articoli era un foglio unico in
+> `import-export.js`. Quella funzione non esiste più: dalla 0.35.0 l'import e
+> l'export degli articoli stanno in `import-catalog.js`, divisi nei due file
+> Acquisti e Progetto. Le conclusioni restano valide e valgono per
+> `importCatalogSheets` — indice dei codici compreso, che è ancora
+> `codeIndex()`/`codeIndexAdd()`.
+
 ---
 
 ## Risolto nella 0.21.0

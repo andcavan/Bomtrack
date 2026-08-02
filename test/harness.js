@@ -15,7 +15,7 @@ const ROOT = path.join(__dirname, '..');
 // condividono lo scope globale, esattamente come i <script> della pagina.
 const SRC = ['store.js', 'cloud-map.js', 'core.js', 'auth.js', 'costing.js', 'shell.js',
   'views-bom.js', 'views-rev.js', 'views-stock.js', 'views-catalog.js', 'views-report.js', 'views-jobs.js', 'views-home.js', 'views-mrp.js', 'views-item.js',
-  'views-docs.js', 'views-manage.js', 'import-export.js'];
+  'views-docs.js', 'views-manage.js', 'import-catalog.js', 'import-export.js'];
 
 // localStorage finto. `quotaBytes` opzionale: oltre soglia lancia lo stesso
 // errore dei browser, per poter testare la gestione dello spazio esaurito.

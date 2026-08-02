@@ -117,11 +117,18 @@ Due schemi convivono, scelti in base al tipo di articolo:
 
 Il codice proposto resta modificabile a mano: appena lo si edita, l'app smette di rigenerarlo.
 
-### Import massivo da Excel (Gestione → ⬆ Import)
+### Import ed export Excel (Gestione → ⬆ Import)
 
-- **Articoli** — carica un foglio con colonne `Tipo, Codice, Nome, UM, CostoUnitario, PrezzoAcquisto, Fornitore, Macrofamiglia, Sottofamiglia, Note`. Se il codice esiste l'articolo viene **aggiornato**, altrimenti creato (codice auto per materie prime/commerciali). Fornitori e famiglie mancanti vengono creati al volo.
-- **Distinte** — carica un foglio padre-figlio (`CodicePadre, CodiceFiglio, Qta, Scarto%`). Gli articoli devono già esistere (importali prima). Per ogni padre i componenti vengono **sostituiti** (reimport idempotente); relazioni non ammesse o cicliche vengono segnalate e saltate.
-- Entrambe le sezioni offrono un **template Excel** scaricabile (con foglio "Istruzioni") e un **report di esito** (creati / aggiornati / saltati / errori).
+Quattro sezioni. In tutte l'**export è anche il template** — si esporta, si modifica, si ricarica — e ogni file porta con sé un foglio **Istruzioni**.
+
+- **🛒 Articoli — Acquisti**: fogli `Commerciali`, `Materie prime`, `Listino`.
+- **🏗 Articoli — Progetto**: fogli `Macchine`, `Gruppi`, `Sottogruppi`, `Parti`, `Listino`. **Il tipo è il foglio**: niente colonna `Tipo` da sbagliare, e ogni foglio ha solo le colonne che valgono per quel tipo. I fogli si applicano **in ordine**, così un gruppo può puntare a una macchina definita nello stesso file: si caricano sigle, appartenenze e schema di codifica gerarchica. **La distinta base non è in questi file.**
+- Il **Codice** è la chiave: se esiste l'articolo viene **aggiornato**, se è vuoto viene **generato**. Fornitori e famiglie mancanti si creano al volo; i **concetti no** (finiscono dentro il nome della parte, e un refuso resterebbe per sempre). Fornitore e prezzo creano una **quotazione nel listino** dell'articolo e diventano il prezzo in uso: anche da Excel, un prezzo nasce dove nascono tutti gli altri.
+- **🔍 Verifica** fa l'import per intero, mostra il report e poi **annulla tutto**: gli errori si leggono prima di scrivere, e dal report si procede con «Importa davvero».
+- Ogni file ha un foglio **Liste** con tutti i valori ammessi (unità, fornitori, coppie famiglia/sottofamiglia, macchine e gruppi con i loro codici, concetti). Non sono menu a tendina — la libreria Excel dell'app non sa scriverli — ma sono elenchi pronti per `Dati → Convalida → Elenco`, e sono il posto a cui rimandano i messaggi d'errore.
+- **🌳 Distinte** — carica un foglio padre-figlio (`CodicePadre, CodiceFiglio, Qta, Scarto%`). Gli articoli devono già esistere (importali prima). Per ogni padre i componenti vengono **sostituiti** (reimport idempotente); relazioni non ammesse o cicliche vengono segnalate e saltate.
+- **⚙ Impostazioni di Gestione** — tutto ciò che si configura in Gestione, un foglio per scheda: `Azienda, Utenti, Fornitori, Condizioni offerta, Famiglie commerciali, Famiglie materie prime, Famiglie parti, Concetti, Centri di lavoro, Unità di misura, Impostazioni`. Le **password non sono nel file**.
+- L'import è sempre **additivo**: aggiorna ciò che riconosce, crea ciò che manca, **non cancella niente**. Un foglio assente viene saltato, una colonna assente lascia il campo com'è, una colonna presente ma vuota lo svuota. Il **report di esito** conta creati / aggiornati / invariati **per foglio**, e separa gli avvisi dagli errori, ciascuno con foglio e numero di riga.
 
 ## Modello di costo
 
@@ -183,7 +190,8 @@ Il motivo è lo storico: finché lo stesso dato si poteva scrivere in due posti,
 | `views-docs.js` | richieste di offerta e ordini |
 | `views-manage.js` | gestione (utenti, anagrafiche di servizio, impostazioni) |
 | `cloud-map.js` | traduzione fra la forma annidata locale e quella normalizzata del futuro database condiviso. Funzioni pure, **nessun codice di rete**: l'app resta locale |
-| `import-export.js` | import da Excel, backup JSON e avvio dell'app |
+| `import-catalog.js` | articoli ⇄ Excel nei due file Acquisti e Progetto: colonne per tipo, foglio Liste, verifica senza importare |
+| `import-export.js` | import distinte da Excel, impostazioni di Gestione ⇄ Excel, backup JSON, cestino e avvio dell'app |
 - `style.css` — tema dark.
 - `docs/cloud-schema.md` — contratto per il futuro backend condiviso (mappatura tabelle, adapter).
 - `docs/analisi-tecnica.md` — controllo generale del codice: cosa è stato risolto, cosa resta aperto e perché.
@@ -202,6 +210,51 @@ Richiede solo **Node 18 o superiore** — nessun `npm install`, nessuna dipenden
 ## Changelog
 
 Le revisioni seguono il versionamento semantico `0.MINOR.PATCH`: **MINOR** per nuove funzionalità, **PATCH** per correzioni. La versione in cima è quella in `APP_VERSION` (`core.js`) e mostrata nell'header dell'app.
+
+### 0.35.0 — 2026-08-02
+
+**Gli articoli si esportano e si importano in due file, uno per mestiere: Acquisti e Progetto.** Il foglio era uno solo per tutti e sei i tipi, con una colonna `Tipo` da indovinare e una trentina di colonne di cui la maggior parte non riguardava la tua riga. Chi compilava doveva sapere quali celle valessero per cosa; chi caricava scopriva gli errori a database già scritto. E dell'export non esisteva niente: il catalogo non si portava via, quindi non c'era nemmeno un file da cui partire.
+
+**Cambiato**
+- **Due file, la stessa divisione dell'Anagrafica.** `Acquisti` (fogli `Commerciali`, `Materie prime`) e `Progetto` (fogli `Macchine`, `Gruppi`, `Sottogruppi`, `Parti`). Sono due mestieri diversi — l'ufficio acquisti compila fornitori e prezzi, la progettazione compila sigle e appartenenze — e due file si mandano a due persone senza spiegare quali fogli non toccare.
+- **Il tipo è il foglio.** Niente colonna `Tipo`, e ogni foglio ha **solo le colonne del suo tipo**: una macchina non ha più accanto le celle del listino, un commerciale non ha più quelle della codifica gerarchica.
+- **Dal foglio si costruisce una macchina.** Sigla, schema di codifica, macchina e gruppo di appartenenza sono finalmente colonne: prima nessuna delle due cose era importabile, e una parte caricata da Excel restava fuori da ogni macchina e da ogni numerazione. I fogli si applicano **in ordine** — Macchine → Gruppi → Sottogruppi → Parti — così un gruppo può puntare a una macchina definita nello stesso file, e il codice si genera dallo schema di quella macchina appena creata.
+- **🔍 Verifica senza importare.** Fa l'import per intero, mostra il report — creati, aggiornati, avvisi, errori con foglio e riga, e l'elenco dei codici che nascerebbero — e poi **annulla tutto**. Dal report si procede con «Importa davvero», senza rifar scegliere il file.
+- **L'export è il template.** Si esporta il catalogo vero, si modifica in Excel, si ricarica. Ogni file porta un foglio **Liste** con tutti i valori ammessi (unità, fornitori, coppie famiglia/sottofamiglia, macchine e gruppi coi loro codici, concetti, approvvigionamento) e un foglio **Istruzioni**.
+- **Anche da Excel un prezzo nasce nel listino.** Fornitore e prezzo creano o aggiornano una **quotazione** e la rendono quella in uso, invece di scrivere il prezzo sull'articolo come faceva l'import fino a ieri. Un articolo con più quotazioni le porta nel foglio `Listino`, e la riga articolo le lascia vuote: il giro export → import → export non perde e non duplica niente.
+- **Nel file delle impostazioni le famiglie si dividono in tre fogli** — `Famiglie commerciali`, `Famiglie materie prime`, `Famiglie parti` — per la stessa ragione: l'ambito è il foglio, non una colonna da sbagliare.
+
+**Come funziona, e perché così**
+- **Menu a tendina veri non ce ne sono**, e non è una dimenticanza: la libreria Excel dell'app (edizione community) non sa scrivere le convalide dati. Il foglio `Liste` tiene gli elenchi contigui, pronti per `Dati → Convalida → Elenco → =Liste!$B$2:$B$40`, ed è il posto a cui rimandano i messaggi d'errore: «concetto "PIASTRA " non in elenco — vedi foglio Liste, colonna Concetti». Un errore che dice dove sta la risposta vale più di una tendina.
+- **L'import non cancella mai niente**: né articoli né quotazioni. Una riga tolta dal foglio e un foglio compilato a metà sono indistinguibili, e la differenza la pagherebbero articoli e listini ancora referenziati. Si elimina dall'app, che sa dire se una voce è ancora in uso.
+- **Colonna assente ≠ colonna vuota**: la prima lascia il campo com'era, la seconda lo svuota. Così un foglio ridotto alle due colonne che interessano non azzera indirizzi, scorte e note di tutto il catalogo. E una scorta svuotata torna «non impostata», non zero.
+- **I concetti non si creano dall'import.** Fornitori, famiglie e unità di misura sì (le U.M. nuove finiscono elencate nel report: è quasi sempre un refuso), ma il concetto finisce *dentro* il nome della parte e da lì in poi è congelato — un refuso resterebbe per sempre.
+- Le **regole della scheda articolo valgono anche da un foglio**: sigla macchina unica, sigla gruppo conforme allo schema della sua macchina e unica su quella macchina, codice univoco. Un gruppo senza sigla e senza codice **non nasce** con un codice inventato: si segnala.
+- La **🔍 Verifica** annulla ripristinando il database e azzerando gli indici, con l'adapter di persistenza staccato: nemmeno un salvataggio dimenticato può toccare il disco. E non dichiara sincronizzato niente, che sarebbe un errore invisibile e permanente.
+- I file nel **formato precedente** (foglio unico con colonna `Tipo`) si leggono ancora, e passano dallo stesso lettore: ereditano gratis la regola nuova sui prezzi. Le righe dell'altro mestiere si saltano con **un avviso**, non con cinquecento righe rosse.
+
+**Verifica**
+- 68 nuovi controlli (suite da 761 a 829), fra cui: che l'export contenga solo le colonne del tipo di ogni foglio, che il file esportato reimportato su un database vuoto ricostruisca lo stesso catalogo — listino, doppia unità e costo convertito compresi — che **reimportarlo due volte non duplichi niente**, che un gruppo trovi la macchina definita nello stesso file, che la 🔍 Verifica lasci il database **identico byte per byte** e non scriva su localStorage, e che dopo l'annullamento nessun indice punti più agli oggetti del giro annullato.
+
+### 0.34.0 — 2026-08-02
+
+**Le impostazioni di Gestione si portano via in un foglio Excel, una scheda per foglio.** Fornitori, famiglie, centri di lavoro, unità di misura, concetti, condizioni d'offerta, dati azienda, parametri e utenti si rifacevano a mano a ogni installazione nuova. Il backup JSON li portava tutti, ma è tutto o niente: sovrascrive anche articoli, distinte, richieste e ordini — inutilizzabile per allestire una seconda postazione senza cancellarne i dati.
+
+**Cambiato**
+- **⬇ Esporta impostazioni** in *Gestione → ⬆ Import* produce un file con **nove fogli**: `Azienda`, `Utenti`, `Fornitori`, `Condizioni offerta`, `Famiglie`, `Concetti`, `Centri di lavoro`, `Unità di misura`, `Impostazioni`, più `Istruzioni`. Contiene ciò che c'è davvero, non un esempio.
+- **⬆ Carica impostazioni** rilegge lo stesso file: l'export **è** il template. Si esporta, si modifica in Excel — anche solo per aggiungere trenta fornitori in blocco — e si ricarica.
+- **Report di esito** come per articoli e distinte: creati, aggiornati, invariati **per foglio**, fogli assenti dichiarati, e l'elenco delle righe rifiutate con il motivo.
+
+**Come funziona, e perché così**
+- **L'import è additivo: non cancella mai niente.** Una voce assente dal foglio non viene eliminata, perché «riga tolta apposta» e «foglio compilato a metà» sono indistinguibili — e la differenza la pagherebbero fornitori e famiglie ancora referenziati dagli articoli. Chi vuole eliminare lo fa dalla scheda di Gestione, dove l'app sa dire se la voce è ancora in uso.
+- **Un foglio assente viene saltato**, non trattato come vuoto: si può caricare anche una sola scheda. Allo stesso modo, una **colonna assente** lascia il campo com'è, mentre una colonna **presente ma vuota** lo svuota — così un foglio ridotto alle due colonne che interessano non azzera indirizzi e condizioni di tutti i fornitori.
+- **Le password non entrano e non escono.** Nel foglio non c'è nulla da cui ricavarle: un utente creato dall'import nasce **senza**, e non accede finché un amministratore non gliene imposta una (*Utenti → 🔑*). Le due invarianti della scheda Utenti valgono riga per riga anche qui: **deve restare almeno un amministratore attivo**, e **ruolo e stato del proprio account non si cambiano da un foglio** — un file Excel non è un buon posto da cui chiudersi fuori dall'app.
+- Le **chiavi di riconoscimento** sono quelle naturali, non gli id interni: email per gli utenti, nome per fornitori e centri di lavoro, ambito + nome per le famiglie, codice per le unità di misura, il nome stesso per i concetti. Un file scritto a mano funziona quanto uno esportato.
+- Il **codice di un'unità di misura non si rinomina da qui**: un codice diverso crea un'unità nuova. La rinomina resta in Gestione, che propaga il nuovo codice ad articoli e documenti — cosa che un foglio non può fare.
+- I nomi dei fogli e delle colonne si riconoscono **ignorando accenti, maiuscole e punteggiatura**, con i sinonimi più probabili; i fogli sconosciuti (`Istruzioni` compreso) si ignorano in silenzio.
+
+**Verifica**
+- 37 nuovi controlli (suite da 747 a 784), fra cui: che l'export contenga tutte le schede e **nessuna traccia di hash o salt**, che il file esportato reimportato su un database vuoto ricostruisca lo stesso stato, che **reimportarlo due volte non duplichi niente**, che una colonna assente non cancelli un campo, che l'ultimo amministratore attivo non si declassi da un foglio e che i messaggi d'errore siano escapati (nel foglio ci può stare qualunque cosa).
 
 ### 0.33.0 — 2026-08-02
 
