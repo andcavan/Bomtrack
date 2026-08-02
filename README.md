@@ -27,12 +27,13 @@ La barra dei comandi ha **cinque gruppi**; le voci del gruppo aperto compaiono s
 - **📇 Anagrafica → Progetto** — anagrafica di ciò che si costruisce: **macchina**, **gruppo**, **sottogruppo** (assiemi, con propria distinta e lavorazioni) e **parte** (foglia con distinta parte e ciclo di lavorazione, con flag **obsoleto ⛔**). Ogni parte dichiara il proprio **approvvigionamento**: prodotta in casa oppure acquistata da un fornitore.
 - **🔧 Cicli di lavorazione** — vista dedicata alle parti: in alto la scelta della parte con i filtri per famiglia, sottofamiglia e testo; sotto la **distinta parte** (materie prime e commerciali necessari) e il **ciclo di lavorazione** (fasi 10, 20, 30… riordinabili con ↑ ↓). In testa una riga dice da dove viene il costo di quella parte, secondo il suo approvvigionamento. Ogni modifica si salva subito.
 - **🌳 Distinta base → Visualizza DB** — costificazione: incidenza delle voci di costo e distinta esplosa; **export PDF ed Excel**.
-- **📨 Documenti → Fabbisogno materiali** — piani di produzione salvati (3 × macchina A, 2 × macchina B): le distinte si esplodono e si sommano in una **lista d'acquisto consolidata**, raggruppabile per fornitore, più l'elenco delle **parti da fabbricare**. Da qui si **generano richieste di offerta e ordini**, un documento per fornitore, scegliendo quali righe includere. Export Excel e PDF.
+- **📨 Documenti → Fabbisogno materiali** — piani di produzione salvati (3 × macchina A, 2 × macchina B): le distinte si esplodono e si sommano in una **lista d'acquisto consolidata**, raggruppabile per fornitore, più l'elenco delle **parti da fabbricare**. Da qui si **generano richieste di offerta e ordini**, un documento per fornitore, scegliendo quali righe includere. Il **fabbisogno netto** toglie quello che è già a magazzino, quello già ordinato e quello **impegnato dagli altri piani aperti**, così due piani non si dichiarano coperti con la stessa merce; un piano che non serve più si **chiude** (🔓) e la sua quota torna libera. Export Excel e PDF.
 - **💶 Listino fornitori** — l'unico posto dove nasce un prezzo d'acquisto. Più quotazioni per articolo (fornitore, codice e descrizione presso il fornitore, prezzo, q.tà minima, giorni di consegna, data), alimentate anche dai prezzi tornati con le richieste di offerta. Vale per commerciali, materie prime **e parti**. Il prezzo che entra nella costificazione si sceglie esplicitamente dal listino.
 - **🔗 Dove è usato** — da ogni articolo si risale a chi lo contiene e alle macchine impattate, con **simulazione del costo**: si prova un prezzo diverso e si vede subito l'effetto sul costo delle macchine, senza salvare nulla.
 - **📨 Richieste di offerta (RFQ)** — una richiesta per fornitore, righe da catalogo o manuali, documento bilingue IT/EN in PDF ed Excel, compilazione dei prezzi al ritorno dell'offerta e **confronto offerte** tra più richieste.
 - **🧾 Ordini a fornitore (ODA)** — generabili da una richiesta, da un piano di fabbisogno o da zero, con prezzi, importi, consegne e **registrazione dei ricevimenti** (ricevuto/residuo per riga).
 - Gli elenchi di richieste e ordini si filtrano per **stato**, **fornitore** e **testo** (numero, oggetto, fornitore, note e righe del documento).
+- **🔎 Scheda articolo di sola lettura** — un click su un **codice**, in qualunque tabella, apre la scheda completa: anagrafica, listino, costo, magazzino (esistente, impegnato, libero), composizione, dove è usato, documenti e piani in cui compare, revisioni. Non modifica niente, e per questo si può aprire in mezzo a qualunque lavoro; dentro la scheda i codici sono a loro volta cliccabili, con il tasto ← Indietro.
 - **🔎 Ricerca globale (Ctrl+K)** — un campo solo per articoli, richieste, ordini e piani: si scrive un codice o un numero e si salta dove serve, senza passare dalla vista giusta e dai suoi filtri.
 - **🖨 Stampa della vista aperta (Ctrl+P)** — distinta, costificazione, fabbisogno, richiesta o ordine escono su carta ripuliti di navigazione, filtri e pulsanti, con intestazione, data e autore.
 - **Autore delle modifiche** — in fondo a schede articolo, richieste, ordini e piani si legge chi ha creato il record e chi l'ha aggiornato per ultimo, con data e ora.
@@ -172,12 +173,13 @@ Il motivo è lo storico: finché lo stesso dato si poteva scrivere in due posti,
 | `shell.js` | ricerca globale, stampa, navigazione tra le viste |
 | `views-bom.js` | distinte base e *Dove è usato* |
 | `views-rev.js` | revisioni della distinta: rilascio, storico e confronto |
-| `views-stock.js` | giacenze, movimenti di magazzino e calcolo del fabbisogno netto |
+| `views-stock.js` | giacenze, movimenti di magazzino, impegni dei piani aperti e calcolo del fabbisogno netto |
 | `views-jobs.js` | commesse cliente e tracciabilità commessa → fabbisogno → richiesta → ordine |
 | `views-home.js` | riepilogo: cosa richiede attenzione, con il collegamento a dove si risolve |
 | `views-catalog.js` | anagrafiche, listino fornitori, scheda articolo, cicli di lavorazione |
 | `views-report.js` | costificazione e report |
 | `views-mrp.js` | fabbisogno materiali |
+| `views-item.js` | scheda articolo di sola lettura e codice cliccabile |
 | `views-docs.js` | richieste di offerta e ordini |
 | `views-manage.js` | gestione (utenti, anagrafiche di servizio, impostazioni) |
 | `cloud-map.js` | traduzione fra la forma annidata locale e quella normalizzata del futuro database condiviso. Funzioni pure, **nessun codice di rete**: l'app resta locale |
@@ -200,6 +202,45 @@ Richiede solo **Node 18 o superiore** — nessun `npm install`, nessuna dipenden
 ## Changelog
 
 Le revisioni seguono il versionamento semantico `0.MINOR.PATCH`: **MINOR** per nuove funzionalità, **PATCH** per correzioni. La versione in cima è quella in `APP_VERSION` (`core.js`) e mostrata nell'header dell'app.
+
+### 0.33.0 — 2026-08-02
+
+**Ogni codice è cliccabile, e apre la scheda completa dell'articolo.** Le informazioni c'erano tutte, ma sparse in sei posti e raggiungibili solo passando dalla vista giusta: il costo in costificazione, il prezzo nel listino, la giacenza nell'anagrafica, gli impieghi in *Dove è usato*, la composizione nell'albero, i documenti negli elenchi. Chi leggeva un codice in una lista d'acquisto o in un ordine e si chiedeva «ma questo cos'è?» doveva ricordarsi dove andare, uscire da dove stava lavorando e poi tornarci.
+
+**Cambiato**
+- **Un click su un codice — in qualunque tabella — apre la scheda 🔎.** Vale nella distinta base, nella costificazione, nel fabbisogno (righe di piano, da acquistare, da fabbricare), nelle anagrafiche, nelle righe di richieste e ordini, nel confronto offerte, in *Dove è usato*, in *Da dove viene il costo* e nella scheda di generazione documenti. Il codice si riconosce dalla sottolineatura punteggiata, e si raggiunge anche da tastiera.
+- **La scheda dice tutto in una finestra**: anagrafica e codifica · acquisto, fornitore e **listino completo** (con la quotazione in uso evidenziata e la più bassa segnalata) · ripartizione del **costo** e prezzo di vendita · **magazzino** con esistente, in arrivo, impegnato e libero · **composizione** (componenti di un assieme, oppure distinta parte e ciclo) · **dove è usato**, fino alle macchine impattate · **documenti e piani** in cui l'articolo compare · **revisioni** rilasciate col costo congelato · e chi l'ha creato e aggiornato.
+- **Non modifica niente**, e non è una limitazione da togliere più avanti: è la ragione per cui la si può aprire senza pensarci, in mezzo a qualunque lavoro, anche mentre un form è aperto dietro. Una scheda che non scrive non ha uno stato da salvare, non chiede conferme all'uscita e non può rovinare niente per un click di troppo. Le modifiche restano dove stanno — anagrafica, listino, distinta — dove chi le fa ci è arrivato apposta.
+- **Si naviga come in un browser**: cliccare un codice *dentro* la scheda la sostituisce invece di impilare finestre, e **← Indietro** riporta da dove si veniva. Chiudendo, la strada percorsa si dimentica.
+
+**Come funziona, e perché così**
+- I codici nascono tutti da una funzione sola (`codeLink`): cambiare cosa fa un click su un codice è una modifica sola, e nessuna tabella ripete lo stile o il gesto.
+- Il click **non fa scattare anche il gesto della riga** che lo contiene — nella distinta la riga si espande, nella scheda documenti la riga si spunta — perché altrimenti un click ne farebbe due, di cui uno indesiderato.
+- Un codice **senza articolo a catalogo resta testo**: le righe manuali dei documenti hanno un codice che non punta a niente, e un link che non porta da nessuna parte è peggio di nessun link. Vale anche per gli articoli cancellati.
+- La ricerca globale (Ctrl+K) resta com'era: lì il codice **naviga** alla vista, ed è un gesto diverso da «fammi vedere cos'è».
+
+**Verifica**
+- 26 nuovi controlli (suite da 721 a 747), fra cui: che la scheda non contenga nessun campo di inserimento su nessun tipo di articolo, che le uniche azioni siano chiudere/indietro/aprire un altro codice, che aprirla e navigarci dentro **non tocchi il database**, che navigare non impili finestre, che un codice senza articolo resti testo e che quel testo sia escapato (i codici arrivano anche dai fogli importati).
+
+### 0.32.0 — 2026-08-02
+
+**La giacenza che vedi non è tutta tua.** Il fabbisogno netto sottraeva esistente e in arrivo, ma non sapeva nulla degli altri piani: con 100 pezzi a magazzino e due piani aperti che ne chiedevano 80 ciascuno, **entrambi si dichiaravano coperti** — con la stessa merce. Nessuno dei due sbagliava un conto; semplicemente nessuno dei due sapeva dell'altro, e l'errore si scopriva quando il secondo andava in produzione e il materiale non c'era.
+
+**Cambiato**
+- **Colonna «Impegnato»** nella lista d'acquisto in modalità netta, fra *Esistente* e *In arrivo*, con sotto il **libero** (`esistente + in arrivo − impegnato`). Il conto diventa **lordo + scorta minima + impegnato − esistente − in arrivo**, sempre arrotondato al lotto di riordino.
+- **Badge 🔒 su ogni riga contesa**, anche col netto spento: il tooltip elenca **quali piani** se la sono presa e per quanto. Un numero che toglie merce senza dire chi se l'è presa non si può contestare, e quindi neanche credere. Col netto spento l'impegno non si applica — ma si vede, perché è un fatto vero sull'articolo a prescindere da come si sta guardando la lista.
+- **Il piano non fa concorrenza a sé stesso**: si conta solo ciò che hanno promesso gli *altri* piani. Sottrargli il proprio fabbisogno gli farebbe comprare tutto due volte.
+- **I piani si aprono e si chiudono** (🔓/🔒, dall'elenco o dalla testata). È l'unico stato che un piano ha, ed esiste per una ragione sola: **un piano aperto impegna materiale, uno chiuso no.** Senza l'interruttore ogni piano mai creato continuerebbe a promettere merce per sempre, e dopo qualche mese nessun articolo risulterebbe più disponibile. Chiudere non cancella e non blocca niente — il piano resta leggibile ed esportabile — e i piani chiusi spariscono anche dai segnali della home, dove erano allarmi che nessuno poteva più spegnere.
+- **Nella scheda articolo** compaiono i riquadri *Impegnato* e *Libero*, con l'elenco dei piani che lo impegnano; il libero **può andare sotto zero** e in quel caso è scritto in rosso: i piani aperti hanno promesso più merce di quanta ne esista, e nasconderlo non la fa comparire.
+- **L'export Excel porta la colonna Impegnato** in modalità netta: il conto è cambiato, e un foglio che non lo mostra non permette più di rifarlo.
+
+**Come funziona, e perché così**
+- L'impegno è **calcolato**, come l'esistente e per la stessa ragione: si esplodono le distinte dei piani aperti e si somma. Nessun campo `impegnato` da tenere allineato a mano, nessuna prenotazione da ricordarsi di sciogliere — un piano che si chiude libera la sua merce da sé, e uno che si elimina pure.
+- Nel conto l'impegnato sta **dalla parte del fabbisogno**, accanto alla scorta minima, non dalla parte del magazzino. Il numero sarebbe lo stesso; la domanda no — «quanto me ne serve» invece di «quanto ne ho».
+- I piani già salvati si aprono **aperti**: sono i piani in corso di chi aggiorna, e dichiararli chiusi lascerebbe promettere due volte la stessa merce proprio nel momento del passaggio di versione.
+
+**Verifica**
+- 20 nuovi controlli (suite da 701 a 721): che due piani non si dichiarino coperti entrambi, che il secondo compri davvero quando la merce non basta per due, che un piano non impegni sé stesso, che chiudere e riaprire liberi e riprenda la quota, che l'indice si aggiorni quando cambia *l'altro* piano (altrimenti sarebbe un campo scrivibile travestito da calcolo), che il libero possa andare negativo, che il documento generato porti la quantità giusta, e che un piano salvato prima di questa versione risulti aperto.
 
 ### 0.31.0 — 2026-08-01
 

@@ -450,8 +450,12 @@ function migrateDB() {
       if (l.note == null) l.note = '';
     });
   });
-  // Piani di produzione: foglio di lavoro interno, nessuno stato da normalizzare
+  // Piani di produzione. L'unico stato è aperto/chiuso, e decide se il piano
+  // impegna materiale a magazzino. I piani salvati prima che l'impegno
+  // esistesse nascono **aperti**: sono i piani in corso di chi aggiorna, e
+  // dichiararli chiusi lascerebbe promettere due volte la stessa merce.
   (db.plans || []).forEach(p => {
+    if (p.active == null) p.active = true;
     if (p.title == null) p.title = '';
     if (p.notes == null) p.notes = '';
     if (!Array.isArray(p.lines)) p.lines = [];

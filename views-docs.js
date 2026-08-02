@@ -442,7 +442,7 @@ function renderRfqEdit(id) {
     const noteSub = l.note ? `<div class="line-note">📝 ${esc(l.note)}</div>` : '';
     return `<tr>
     <td>${i + 1}</td>
-    <td style="font-family:var(--mono)">${esc(l.code || '')}</td>
+    <td style="font-family:var(--mono)">${codeLink(l.itemId, l.code || '')}</td>
     <td>${esc(l.description)}${l.itemId ? '' : ' <span class="rfq-manual-tag">manuale</span>'}${siSub}${noteSub}</td>
     <td>${esc(l.uom || '')}</td>
     <td><input type="number" class="rfq-qty-input lock-contract" value="${l.qty}" min="0" step="any" onchange="rfqSetLine('${id}','${l.id}','qty',this.value)"></td>
@@ -631,7 +631,7 @@ function renderRfqCompare() {
     const keys = [], meta = {};
     sel.forEach(r => (r.lines || []).forEach(l => {
       const k = rfqLineKey(l);
-      if (!(k in meta)) { keys.push(k); meta[k] = { code: l.code, description: l.description }; }
+      if (!(k in meta)) { keys.push(k); meta[k] = { itemId: l.itemId, code: l.code, description: l.description }; }
     }));
     const totals = sel.map(() => 0);
     const bodyRows = keys.map(k => {
@@ -648,7 +648,7 @@ function renderRfqCompare() {
         return `<td class="rfq-cmp-cell ${isMin ? 'rfq-min' : ''}">${fmtN(p.price)}<span class="rfq-line-tot">${p.qty} pz${p.del ? ' · ' + fmtDateIt(p.del) : ''}</span></td>`;
       }).join('');
       const m = meta[k];
-      return `<tr><td>${esc(m.description || '')}<div class="rfq-cmp-sub">${esc(m.code || '')}</div></td>${cells}</tr>`;
+      return `<tr><td>${esc(m.description || '')}<div class="rfq-cmp-sub">${codeLink(m.itemId, m.code || '')}</div></td>${cells}</tr>`;
     }).join('');
     const posTotals = totals.filter(t => t > 0);
     const minTot = posTotals.length ? Math.min(...posTotals) : null;
@@ -969,7 +969,7 @@ function renderOrderEdit(id) {
     const rec = Number(l.received) || 0, residual = qty - rec;
     return `<tr>
       <td>${i + 1}</td>
-      <td style="font-family:var(--mono)">${esc(l.code || '')}</td>
+      <td style="font-family:var(--mono)">${codeLink(l.itemId, l.code || '')}</td>
       <td>${esc(l.description)}${l.itemId ? '' : ' <span class="rfq-manual-tag">manuale</span>'}${siSub}${l.note ? `<div class="line-note">📝 ${esc(l.note)}</div>` : ''}</td>
       <td>${esc(l.uom || '')}</td>
       <td><input type="number" class="rfq-qty-input lock-contract" value="${l.qty}" min="0" step="any" onchange="ordSetLine('${id}','${l.id}','qty',this.value)"></td>

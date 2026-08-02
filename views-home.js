@@ -29,7 +29,10 @@ function homeSegnali() {
   // Fabbisogno: righe da ordinare subito o già oltre
   let ritardo = 0, urgente = 0;
   (db.plans || []).forEach(p => {
-    if (!(p.lines || []).length) return;
+    // Un piano chiuso non è più lavoro da fare: le sue righe in ritardo sono
+    // storia, e tenerle nei segnali riempirebbe la home di allarmi che nessuno
+    // può più spegnere.
+    if (p.active === false || !(p.lines || []).length) return;
     mrpBuyRows(p, mrpNet).forEach(r => {
       if (r.qtyOrder <= 0) return;
       if (r.urgenza === 'ritardo') ritardo++;

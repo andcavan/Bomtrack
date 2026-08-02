@@ -123,9 +123,15 @@ const URGENZA_LABEL = {
 // pura e la vista decide quale delle due domande sta facendo.
 //   qty      = fabbisogno lordo, quanto serve. Non cambia mai: è la proprietà
 //              del prodotto, e serve per l'analisi di costo.
-//   net      = quanto manca comprare, tolto l'esistente e l'in arrivo.
+//   net      = quanto manca comprare, tolto l'esistente e l'in arrivo, e tolto
+//              quello che gli altri piani aperti hanno già promesso.
 //   qtyOrder = quella con cui si fanno i conti e nascono i documenti.
-function mrpBuyRow(entry, netMode) {
+//
+// `planId` dice **da quale piano si sta guardando**: serve a non contare come
+// concorrenza il fabbisogno del piano stesso. Passarlo è obbligatorio nei fatti
+// — ometterlo fa risultare ogni riga impegnata contro sé stessa e raddoppia gli
+// acquisti — e infatti nessuna vista chiama questa funzione direttamente.
+function mrpBuyRow(entry, netMode, planId) {
   const it = entry.item;
   const attiva = activePriceRow(it);
   const price = Number(it[costField(it)]) || 0;
@@ -134,7 +140,8 @@ function mrpBuyRow(entry, netMode) {
   // vedi bestPriceRow(). Un €/kg accanto a un €/m non è un confronto.
   const bestPrice = best ? (rowUnitCost(it, best) || 0) : null;
   const minQty = attiva && attiva.minQty !== '' && attiva.minQty != null ? (Number(attiva.minQty) || 0) : 0;
-  const st = stockFor(it, entry.qty);
+  const impegni = commitsOn(it.id, planId || null);
+  const st = stockFor(it, entry.qty, impegni.reduce((s, c) => s + c.qty, 0));
   const qtyOrder = netMode ? st.net : entry.qty;
   // Unità in cui si parla col fornitore, e quantità tradotta in quella unità:
   // è ciò che finirà sul documento e ciò con cui va confrontato il suo minimo.
@@ -154,6 +161,10 @@ function mrpBuyRow(entry, netMode) {
     // che moltiplica chili per un prezzo al metro è un ordine sbagliato.
     priceDoc: uomFactor(it, docUom) > 0 ? price / uomFactor(it, docUom) : price,
     onHand: st.onHand, incoming: st.incoming, safety: st.safety, lotSize: st.lotSize,
+    // Impegnato dagli **altri** piani aperti, e il dettaglio di chi lo impegna:
+    // un numero che toglie merce senza dire chi se l'è presa è un numero che non
+    // si può contestare, e quindi neanche credere.
+    committed: st.committed, impegni, libero: st.libero,
     net: st.net, coperto: !!netMode && st.coperto, qtyOrder,
     supplierId: (attiva && attiva.supplierId) || it.supplierId || '',
     price, amount: price * qtyOrder,
@@ -168,11 +179,11 @@ function mrpBuyRow(entry, netMode) {
     noPrice: !(price > 0),
   };
 }
-function mrpBuyRows(plan, netMode) { return mrpExplode(plan.lines).buy.map(e => mrpBuyRow(e, netMode)); }
+function mrpBuyRows(plan, netMode) { return mrpExplode(plan.lines).buy.map(e => mrpBuyRow(e, netMode, plan.id)); }
 // `.map(mrpBuyRow)` passerebbe l'indice dell'array come secondo argomento, e
 // dalla seconda riga in poi il netto si accenderebbe da solo. Le viste passano
 // sempre da qui.
-function mrpRowsOf(entries) { return entries.map(e => mrpBuyRow(e, mrpNet)); }
+function mrpRowsOf(entries, planId) { return entries.map(e => mrpBuyRow(e, mrpNet, planId)); }
 // Raggruppamento per fornitore; chi non ne ha finisce in coda, sotto "Da assegnare"
 function mrpGroupBySupplier(rows) {
   const map = new Map();
@@ -222,6 +233,19 @@ function delPlan(id) {
   });
 }
 function openPlanEdit(id) { currentPlanId = id; mrpView = 'edit'; renderMrp(); }
+// Aperto / chiuso. È l'unico stato che un piano ha, ed esiste per una ragione
+// sola: un piano aperto **impegna** materiale a magazzino, uno chiuso no.
+// Senza questo interruttore ogni piano mai creato continuerebbe a promettere
+// merce per sempre, e dopo qualche mese nessun articolo risulterebbe più
+// disponibile. Chiudere non cancella e non blocca niente: il piano resta
+// leggibile, esportabile, e si riapre con lo stesso pulsante.
+function planToggleActive(id) {
+  if (!roleGuard('docs')) return;
+  const p = getPlan(id); if (!p) return;
+  p.active = p.active === false;
+  touch(p); saveDB(); renderMrp();
+  showToast(`Piano ${p.number} ${p.active ? 'riaperto: torna a impegnare materiale' : 'chiuso: il materiale che impegnava torna libero'}`);
+}
 function planBackToList() { mrpView = 'list'; currentPlanId = null; renderMrp(); }
 function planSearchInput() { debounced('mrp', renderMrp); }
 function planSetField(id, field, value) {
@@ -321,7 +345,7 @@ function docRefLabel(ref) { return (ref.kind === 'rfq' ? 'richiesta ' : 'ordine 
 // spunte, e alla conferma deve poter ritrovare la riga da un id.
 function planBuyIndex(plan) {
   const map = new Map();
-  mrpRowsOf(mrpExplode(plan.lines).buy).forEach(r => map.set(r.item.id, r));
+  mrpRowsOf(mrpExplode(plan.lines).buy, plan.id).forEach(r => map.set(r.item.id, r));
   return map;
 }
 // Il tipo di documento si sceglie **prima**, dal pulsante che si preme: sono
@@ -344,7 +368,7 @@ function planDocsModal(id, kind) {
   window.__planDocsId = id;
   window.__planDocsKind = k;
   openModal(`<h3>${k === 'rfq' ? '📨 Genera richieste di offerta' : '🧾 Genera ordini a fornitore'} — ${esc(p.number)}</h3>
-    <p class="empty-text" style="text-align:left;padding:0 0 8px">Quantità <strong>${mrpNet ? 'nette' : 'lorde'}</strong>${mrpNet ? ' — tolti esistente e in arrivo' : ' — l\'intero fabbisogno del piano'}. Si cambia col pulsante <em>Fabbisogno netto</em> nell\'elenco.</p>
+    <p class="empty-text" style="text-align:left;padding:0 0 8px">Quantità <strong>${mrpNet ? 'nette' : 'lorde'}</strong>${mrpNet ? ' — tolti esistente e in arrivo, e tolto quello che gli altri piani aperti hanno già impegnato' : ' — l\'intero fabbisogno del piano'}. Si cambia col pulsante <em>Fabbisogno netto</em> nell\'elenco.</p>
     <p class="empty-text" style="text-align:left;padding:0 0 12px">${planDocsHint(k)}</p>
     <div id="plandoc-body">${planDocsBody(gruppi, id, k)}</div>
     <div class="modal-actions">
@@ -403,7 +427,7 @@ function planDocsBody(gruppi, planId, kind) {
       return `<label class="plandoc-row${bloccata.length ? ' plandoc-used' : ''}">
         <input type="checkbox" class="plandoc-line" data-sup="${esc(key)}" value="${r.item.id}"
           ${bloccata.length ? 'disabled' : 'checked'} onchange="planDocsCount()">
-        <span style="font-family:var(--mono)">${esc(r.item.code)}</span> ${esc(r.item.name)}
+        <span style="font-family:var(--mono)">${codeLink(r.item.id, r.item.code)}</span> ${esc(r.item.name)}
         <span class="plandoc-qty">${fmtQty(r.qtyDoc)} ${esc(r.docUom)}${r.doppiaUom ? ` <span style="opacity:.6">(= ${fmtQty(r.qtyOrder)} ${esc(r.uom)})</span>` : ''}${mrpNet && r.qtyOrder !== r.qty ? ` <span style="opacity:.6">(lordo ${fmtQty(r.qty)} ${esc(r.uom)})</span>` : ''} · ${fmtN(r.amount)}</span> ${seg.join(' ')}</label>`;
     }).join('');
     const totDisp = disponibili.reduce((s, r) => s + r.amount, 0);
@@ -572,11 +596,14 @@ function renderPlanList() {
   const list = q ? tutti.filter(p => (p.number + ' ' + (p.title || '')).toLowerCase().includes(q)) : tutti;
   const rows = list.map(p => {
     const n = (p.lines || []).length;
-    return `<div class="mgmt-item">
-      <span class="mgmt-item-name"><span style="font-family:var(--mono)">${esc(p.number)}</span> — ${esc(p.title || '(senza titolo)')}</span>
+    const chiuso = p.active === false;
+    return `<div class="mgmt-item"${chiuso ? ' style="opacity:.6"' : ''}>
+      <span class="mgmt-item-name"><span style="font-family:var(--mono)">${esc(p.number)}</span> — ${esc(p.title || '(senza titolo)')}
+        ${chiuso ? '<span class="mrp-warn" title="Chiuso: non impegna più materiale a magazzino">🔓 chiuso</span>' : ''}</span>
       <span class="mgmt-item-meta">${n} ${n === 1 ? 'articolo a piano' : 'articoli a piano'}${p.date ? ' · ' + fmtDateIt(p.date) : ''}</span>
       <div class="mgmt-item-actions">
         <button class="mini-btn" onclick="openPlanEdit('${p.id}')" title="Apri">✏</button>
+        <button class="mini-btn" onclick="planToggleActive('${p.id}')" title="${chiuso ? 'Riapri: tornerà a impegnare il materiale che gli serve' : 'Chiudi: il materiale che impegna torna disponibile agli altri piani'}">${chiuso ? '🔒' : '🔓'}</button>
         <button class="mini-btn" onclick="duplicatePlan('${p.id}')" title="Duplica">📋</button>
         <button class="mini-btn danger" onclick="delPlan('${p.id}')" title="Elimina">🗑</button>
       </div></div>`;
@@ -591,12 +618,13 @@ function renderPlanList() {
     <div class="catalog-filters">
       <input type="text" class="search" id="plan-search" value="${esc(val('plan-search'))}" placeholder="🔍 Numero o titolo..." oninput="planSearchInput()">
     </div>
-    <div class="mgmt-list">${rows}</div></div>`;
+    <div class="mgmt-list">${rows}</div>
+    <p class="empty-text" style="text-align:left">Un piano <strong>aperto</strong> impegna il materiale che gli serve: gli altri piani lo vedono come non disponibile e non se lo contano. 🔓 lo <strong>chiude</strong> quando non serve più — niente si cancella, ma la sua quota di magazzino torna libera.</p></div>`;
 }
 function renderPlanEdit(id) {
   const p = getPlan(id);
   const exp = mrpExplode(p.lines);
-  const buy = mrpRowsOf(exp.buy);
+  const buy = mrpRowsOf(exp.buy, id);
   // Dove ogni riga è già finita: si legge dai documenti del piano, una volta
   // per disegno invece che una volta per riga.
   const gia = planDocumentedItems(id);
@@ -604,13 +632,14 @@ function renderPlanEdit(id) {
   const totale = buy.reduce((s, r) => s + r.amount, 0);
   const fornitori = new Set(buy.filter(r => r.supplierId).map(r => r.supplierId)).size;
   const risparmio = buy.reduce((s, r) => s + r.saving, 0);
+  const nImpegnate = buy.filter(r => r.committed > 0).length;
 
   const planRows = (p.lines || []).map(l => {
     const it = getItem(l.itemId);
     if (!it) return `<tr><td colspan="4" class="empty-text">⚠ articolo mancante</td>
       <td class="line-actions"><button class="mini-btn danger" onclick="planDelLine('${id}','${l.id}')">🗑</button></td></tr>`;
     return `<tr>
-      <td style="font-family:var(--mono)">${esc(it.code)}</td>
+      <td style="font-family:var(--mono)">${codeLink(it.id, it.code)}</td>
       <td>${esc(it.name)}<span class="bom-type-tag tt-${it.type}" style="margin-left:6px">${typeShort(it.type)}</span></td>
       <td>${esc(it.uom || '')}</td>
       <td><input type="number" class="rfq-qty-input" min="0" step="any" value="${Number(l.qty) || 0}"
@@ -624,6 +653,9 @@ function renderPlanEdit(id) {
     <div class="bom-toolbar">
       <button class="btn-outline" onclick="planBackToList()">← Elenco</button>
       <h2 class="section-title" style="margin:0">📋 ${esc(p.number)}</h2>
+      <button class="btn-outline" onclick="planToggleActive('${id}')" title="${p.active === false
+        ? 'Chiuso: non impegna materiale. Riaprendolo tornerà a riservarsi quello che gli serve.'
+        : 'Aperto: impegna a magazzino il materiale che gli serve, e gli altri piani non se lo contano. Chiudendolo quella quota torna libera.'}">${p.active === false ? '🔓 Chiuso — riapri' : '🔒 Aperto — chiudi'}</button>
       ${planDocButton(p, 'rfq', '📨 Genera richieste')}
       ${planDocButton(p, 'order', '🧾 Genera ordini')}
       <button class="export-btn-xls" onclick="exportMrpExcel('${id}')">📗 Esporta Excel</button>
@@ -666,10 +698,11 @@ function renderPlanEdit(id) {
     <div class="mrp-section">
       <div class="cycle-section-head">
         <h3>📦 Da acquistare</h3>
-        <button class="btn-outline${mrpNet ? ' active' : ''}" onclick="toggleMrpNet()" title="Toglie dal fabbisogno quello che è già a magazzino e quello già ordinato">${mrpNet ? '☑' : '☐'} Fabbisogno netto</button>
+        <button class="btn-outline${mrpNet ? ' active' : ''}" onclick="toggleMrpNet()" title="Toglie dal fabbisogno quello che è già a magazzino, quello già ordinato e quello già impegnato da altri piani aperti">${mrpNet ? '☑' : '☐'} Fabbisogno netto</button>
         <button class="btn-outline${mrpGrouped ? ' active' : ''}" onclick="toggleMrpGroup()">${mrpGrouped ? '☑' : '☐'} Raggruppa per fornitore</button>
       </div>
-      ${mrpNet ? `<p class="empty-text" style="text-align:left;padding:0 0 8px">Netto = <strong>lordo + scorta minima − esistente − in arrivo</strong>, arrotondato al lotto di riordino. L'esistente è calcolato da ricevimenti e movimenti; l'in arrivo è ciò che è stato ordinato e non è ancora entrato. Il lordo resta in colonna: serve a capire il prodotto, il netto a capire cosa comprare.</p>` : ''}
+      ${mrpNet ? `<p class="empty-text" style="text-align:left;padding:0 0 8px">Netto = <strong>lordo + scorta minima + impegnato − esistente − in arrivo</strong>, arrotondato al lotto di riordino. L'esistente è calcolato da ricevimenti e movimenti; l'in arrivo è ciò che è stato ordinato e non è ancora entrato; l'<strong>impegnato</strong> è quanto gli <em>altri piani aperti</em> hanno già promesso — senza toglierlo, due piani sugli stessi articoli si direbbero coperti entrambi con la stessa merce. Il lordo resta in colonna: serve a capire il prodotto, il netto a capire cosa comprare.</p>
+      ${nImpegnate ? `<p class="empty-text" style="text-align:left;padding:0 0 8px">🔒 ${nImpegnate} ${nImpegnate === 1 ? 'riga contende' : 'righe contendono'} materiale con altri piani aperti. Un piano che non serve più si chiude dall'elenco: la sua quota torna libera.</p>` : ''}` : ''}
       ${mrpBuyTable(buy)}
     </div>
 
@@ -688,7 +721,15 @@ function mrpBuyLineHtml(r) {
   if (r.underMin) seg.push(`<span class="mrp-warn" title="Quantità minima del fornitore: ${r.minQty}">⚠ sotto il minimo</span>`);
   if (r.noPrice) seg.push(`<span class="mrp-warn" title="Nessun prezzo in uso: la riga varrebbe zero in un ordine">⚠ senza prezzo</span>`);
   if (mrpNet && r.lotSize > 0 && r.net > 0) seg.push(`<span class="mrp-warn" title="Arrotondato al lotto di riordino di ${fmtQty(r.lotSize)}">↑ lotto ${fmtQty(r.lotSize)}</span>`);
-  if (r.coperto) seg.push(`<span class="price-best" title="Esistente e in arrivo bastano">✓ coperto</span>`);
+  if (r.coperto) seg.push(`<span class="price-best" title="Esistente e in arrivo bastano, al netto di quanto è già impegnato">✓ coperto</span>`);
+  // L'impegno si segnala **sempre**, anche col netto spento: è la risposta alla
+  // domanda «la giacenza che vedo è davvero mia?», e nasconderla dietro un
+  // toggle significherebbe lasciar promettere due volte la stessa merce a chi
+  // quel toggle non l'ha acceso.
+  if (r.committed > 0) {
+    const chi = r.impegni.map(c => `${c.number}${c.title ? ' — ' + c.title : ''}: ${fmtQty(c.qty)}`).join('\n');
+    seg.push(`<span class="mrp-warn" title="Già promesso ad altri piani aperti:\n${esc(chi)}\n\nLibero = esistente + in arrivo − impegnato = ${fmtQty(r.libero)} ${esc(r.uom)}">🔒 impegnato ${fmtQty(r.committed)}</span>`);
+  }
   // Quando le due unità differiscono si mostrano entrambe: quella di gestione
   // dice cosa serve, quella del fornitore cosa si ordina. Farne vedere una sola
   // costringerebbe a fidarsi di una conversione fatta altrove.
@@ -702,6 +743,8 @@ function mrpBuyLineHtml(r) {
   const celleStock = mrpNet ? `
     <td style="font-family:var(--mono);text-align:right;color:var(--text-dim)">${fmtQty(r.qty)}</td>
     <td style="font-family:var(--mono);text-align:right">${fmtQty(r.onHand)}${r.safety > 0 ? `<span class="empty-text" style="padding:0"> (min ${fmtQty(r.safety)})</span>` : ''}</td>
+    <td style="font-family:var(--mono);text-align:right${r.committed > 0 ? ';color:var(--orange,#d90)' : ''}">${r.committed > 0 ? '−' + fmtQty(r.committed) : '—'}
+      ${r.committed > 0 ? `<div class="empty-text" style="padding:0${r.libero < 0 ? ';color:var(--red)' : ''}">libero ${fmtQty(r.libero)}</div>` : ''}</td>
     <td style="font-family:var(--mono);text-align:right">${fmtQty(r.incoming)}</td>` : '';
   // Le due date stanno insieme: quella in cui serve non si può cambiare, quella
   // entro cui ordinare è l'unica su cui si può ancora fare qualcosa.
@@ -710,7 +753,7 @@ function mrpBuyLineHtml(r) {
       ${r.orderBy ? esc(fmtDateIt(r.orderBy)) : '<span class="empty-text" style="padding:0">—</span>'}
       ${r.leadDays ? `<div class="empty-text" style="padding:0">${r.leadDays} gg</div>` : ''}</td>`;
   return `<tr${r.coperto ? ' style="opacity:.55"' : ''}>
-    <td style="font-family:var(--mono)">${esc(r.item.code)}</td>
+    <td style="font-family:var(--mono)">${codeLink(r.item.id, r.item.code)}</td>
     <td>${esc(r.item.name)} ${seg.join(' ')}</td>
     <td>${esc(supplierName(r.supplierId) || '—')}</td>
     ${celleDate}
@@ -725,8 +768,9 @@ function mrpBuyTable(rows) {
   const colonneStock = mrpNet
     ? `<th style="text-align:right" title="Quanto serve in tutto">Lordo</th>
        <th style="text-align:right" title="Calcolato da ricevimenti e movimenti">Esistente</th>
+       <th style="text-align:right" title="Già promesso agli altri piani di fabbisogno aperti: esistente meno questo è quello di cui si può disporre">Impegnato</th>
        <th style="text-align:right" title="Ordinato e non ancora ricevuto">In arrivo</th>` : '';
-  const nCol = (mrpNet ? 10 : 7) + 2;   // + le due colonne di data
+  const nCol = (mrpNet ? 11 : 7) + 2;   // + le due colonne di data
   const head = `<thead><tr><th>Codice</th><th>Articolo</th><th>Fornitore</th>
     <th title="Data in cui il materiale serve">Serve per</th>
     <th title="Data in cui serve meno i giorni di consegna del fornitore">Ordinare entro</th>
@@ -752,7 +796,7 @@ function mrpMakeTable(make) {
   const rows = make.map(e => {
     const c = costOf(e.item.id).total;
     return `<tr>
-      <td style="font-family:var(--mono)">${esc(e.item.code)}</td>
+      <td style="font-family:var(--mono)">${codeLink(e.item.id, e.item.code)}</td>
       <td>${esc(e.item.name)}</td>
       <td>${esc(e.item.uom || '')}</td>
       <td style="font-family:var(--mono);text-align:right">${fmtQty(e.qty)}</td>
@@ -774,17 +818,17 @@ function fmtQty(n) {
 function exportMrpExcel(id) {
   const p = getPlan(id); if (!p) return;
   const exp = mrpExplode(p.lines);
-  const buy = mrpRowsOf(exp.buy);
+  const buy = mrpRowsOf(exp.buy, id);
   // Nel netto l'esportazione porta anche le colonne che spiegano il numero:
   // un foglio con solo "15" non permette a nessuno di rifare il conto.
   const acquisti = [mrpNet
-    ? ['Codice', 'Articolo', 'Fornitore', 'U.M.', 'Lordo', 'Esistente', 'In arrivo', 'Da comprare', 'Prezzo', 'Importo']
+    ? ['Codice', 'Articolo', 'Fornitore', 'U.M.', 'Lordo', 'Esistente', 'Impegnato', 'In arrivo', 'Da comprare', 'Prezzo', 'Importo']
     : ['Codice', 'Articolo', 'Fornitore', 'U.M.', 'Quantità', 'Prezzo', 'Importo']];
   (mrpGrouped ? mrpGroupBySupplier(buy).flatMap(g => g.rows) : buy).forEach(r => {
     const testa = [r.item.code, r.item.name, supplierName(r.supplierId) || '', r.uom];
     const coda = [+r.price.toFixed(4), +r.amount.toFixed(2)];
     acquisti.push(mrpNet
-      ? testa.concat([+r.qty.toFixed(3), +r.onHand.toFixed(3), +r.incoming.toFixed(3), +r.qtyOrder.toFixed(3)], coda)
+      ? testa.concat([+r.qty.toFixed(3), +r.onHand.toFixed(3), +r.committed.toFixed(3), +r.incoming.toFixed(3), +r.qtyOrder.toFixed(3)], coda)
       : testa.concat([+r.qty.toFixed(3)], coda));
   });
   acquisti.push([]);
@@ -807,7 +851,7 @@ function exportMrpExcel(id) {
 function exportMrpPDF(id) {
   const p = getPlan(id); if (!p) return;
   const exp = mrpExplode(p.lines);
-  const buy = mrpRowsOf(exp.buy);
+  const buy = mrpRowsOf(exp.buy, id);
   const jsPDF = requirePdf(); if (!jsPDF) return;
   const doc = new jsPDF();
   doc.setFontSize(15); doc.text(`Fabbisogno materiali — ${p.number}`, 14, 16);

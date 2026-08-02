@@ -16,7 +16,7 @@ function flattenBom(itemId, qty, scrap, level, rows, ancestors, pos) {
   const unit = cyc ? 0 : costOf(itemId).total;
   const factor = (Number(qty) || 0) * (1 + (Number(scrap) || 0) / 100);
   pos = pos || '';
-  rows.push({ level, pos, code: it.code, name: it.name + (cyc ? ' (ciclo!)' : ''), type: typeLabel(it.type),
+  rows.push({ level, pos, itemId, code: it.code, name: it.name + (cyc ? ' (ciclo!)' : ''), type: typeLabel(it.type),
     qty: Number(qty) || 0, uom: it.uom || '', unit, line: unit * factor });
   if (isAssembly(it.type) && !cyc) {
     (it.components || []).forEach((c, i) => flattenBom(c.itemId, c.qty, c.scrapPct, level + 1, rows, ancestors.concat(itemId), bomPos(pos, i)));
@@ -38,7 +38,7 @@ function flattenBom(itemId, qty, scrap, level, rows, ancestors, pos) {
       } else {
         const rowPos = bomPos(pos, n++);
         const ci = getItem(row.itemId); if (!ci) return;
-        rows.push({ level: level + 1, pos: rowPos, code: ci.code, name: ci.name, type: typeLabel(ci.type),
+        rows.push({ level: level + 1, pos: rowPos, itemId: ci.id, code: ci.code, name: ci.name, type: typeLabel(ci.type),
           qty: Number(row.qty) || 0, uom: ci.uom || '', unit: costOf(row.itemId).total, line: rowCost * factor });
       }
     });
@@ -76,7 +76,7 @@ function renderReport() {
   flattenBom(it.id, 1, 0, 0, rows, []);
   const tableRows = rows.map(r => `<tr>
     <td style="font-family:var(--mono);color:var(--text-dim)">${esc(r.pos)}</td>
-    <td style="font-family:var(--mono);padding-left:${12 + r.level * 18}px">${r.level ? '└ ' : ''}${esc(r.code)}</td>
+    <td style="font-family:var(--mono);padding-left:${12 + r.level * 18}px">${r.level ? '└ ' : ''}${codeLink(r.itemId, r.code)}</td>
     <td>${esc(r.name)}</td>
     <td style="color:var(--text-dim)">${esc(r.type)}</td>
     <td style="font-family:var(--mono)">${r.qty} ${esc(r.uom)}</td>
@@ -123,7 +123,7 @@ function costContributors(itemId) {
     const foglia = !it || !isAssembly(it.type);
     if (!foglia) return;
     const k = r.code || r.name;
-    const e = per.get(k) || { code: r.code, name: r.name, type: r.type, qty: 0, line: 0 };
+    const e = per.get(k) || { id: r.itemId, code: r.code, name: r.name, type: r.type, qty: 0, line: 0 };
     e.qty += r.qty; e.line += r.line;
     per.set(k, e);
   });
@@ -137,7 +137,7 @@ function costWhyModal(itemId) {
   const coperto = top.reduce((s, x) => s + x.line, 0);
   const quota = x => totale > 0 ? (x.line / totale * 100) : 0;
   const righe = top.map((x, i) => `<div class="breakdown-row">
-      <div class="breakdown-name" title="${esc(x.name)}">${i + 1}. <span style="font-family:var(--mono)">${esc(x.code || '')}</span> ${esc(x.name)}</div>
+      <div class="breakdown-name" title="${esc(x.name)}">${i + 1}. <span style="font-family:var(--mono)">${codeLink(x.id, x.code || '')}</span> ${esc(x.name)}</div>
       <div class="breakdown-bar"><div class="breakdown-fill" style="width:${totale > 0 ? Math.min(100, x.line / (top[0].line || 1) * 100) : 0}%;background:var(--accent)"></div></div>
       <div class="breakdown-stats"><span>${fmtN(x.line)}</span><span style="color:var(--text-dim)">${quota(x).toFixed(1)}%</span></div>
     </div>`).join('');

@@ -308,7 +308,7 @@ function usageBody(id) {
   const tabDiretti = `<div class="cat-group-title">Impieghi diretti (${diretti.length})</div>
     <table><thead><tr><th>Codice</th><th>Articolo</th><th>Tipo</th><th style="text-align:right">Q.tà</th><th></th></tr></thead>
     <tbody>${diretti.map(r => `<tr>
-      <td style="font-family:var(--mono)">${esc(r.item.code)}</td>
+      <td style="font-family:var(--mono)">${codeLink(r.item.id, r.item.code)}</td>
       <td>${esc(r.item.name)}</td>
       <td><span class="bom-type-tag tt-${r.item.type}">${typeShort(r.item.type)}</span> ${typeLabel(r.item.type)}</td>
       <td style="text-align:right;font-family:var(--mono)">${fmtQty(r.qty)}</td>
@@ -332,7 +332,7 @@ function usageBody(id) {
         <td style="text-align:right;font-family:var(--mono);color:${colore}">${segno}${fmtN(delta)}</td>`;
     }
     return `<tr>
-      <td style="font-family:var(--mono)">${esc(c.item.code)}</td>
+      <td style="font-family:var(--mono)">${codeLink(c.item.id, c.item.code)}</td>
       <td>${esc(c.item.name)}</td>
       <td style="text-align:right;font-family:var(--mono)">${fmtQty(c.qty)}</td>
       <td style="text-align:right;font-family:var(--mono)">${fmtN(costoOra)}</td>
@@ -435,7 +435,7 @@ function catalogRow(i) {
     + (i.type === 'parte' && partSourcing(i) === 'buy' ? '<span class="buy-mark" title="Parte acquistata da fornitore">🛒</span>' : '');
   return `<tr class="${i.obsolete ? 'row-obsolete' : ''}">
     <td style="width:1%;white-space:nowrap">${flags}</td>
-    <td style="font-family:var(--mono)">${esc(i.code)}</td>
+    <td style="font-family:var(--mono)">${codeLink(i.id, i.code)}</td>
     <td>${esc(i.name)}</td>
     <td><span class="bom-type-tag tt-${i.type}">${typeShort(i.type)}</span> ${typeLabel(i.type)}</td>
     <td style="color:var(--text-dim)">${esc(codingLabel(i) || familyLabel(i))}</td>
@@ -803,7 +803,7 @@ function cycleRowLabel(row) {
   const it = getItem(row.itemId);
   if (!it) return '⚠ articolo mancante';
   return `<span class="bom-type-tag tt-${it.type}">${typeShort(it.type)}</span>
-    <span class="cycle-code">${esc(it.code)}</span> ${esc(it.name)}${itemBadges(it)}`;
+    <span class="cycle-code">${codeLink(it.id, it.code)}</span> ${esc(it.name)}${itemBadges(it)}`;
 }
 // ─── Selezione della parte (filtri in cima alla vista) ───
 function partItems() { return (db.items || []).filter(i => i.type === 'parte'); }

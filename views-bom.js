@@ -141,7 +141,7 @@ function renderBomNode(comp, level, parentId, editable, idx, pathPrefix, ancesto
 
   let h = `<div class="bom-node" style="padding-left:${18 + indent}px">
     <span class="bom-name"><span class="bom-pos">${esc(pos || '')}</span>${toggle}
-      <span class="bom-code">${esc(child.code)}</span>
+      <span class="bom-code">${codeLink(child.id, child.code)}</span>
       <span class="bom-type-tag tt-${child.type}">${typeShort(child.type)}</span>
       <span class="nm" title="${esc(child.name)}">${esc(child.name)}${cyc ? ' ⚠' : ''}</span>
     </span>
@@ -184,7 +184,7 @@ function renderCycleBomNode(row, level, pos) {
   } else {
     const ci = getItem(row.itemId);
     if (!ci) return `<div class="bom-node" style="padding-left:${18 + indent}px"><span class="bom-name"><span class="bom-pos">${esc(pos || '')}</span>⚠ articolo mancante</span></div>`;
-    name = `<span class="bom-code">${esc(ci.code)}</span>
+    name = `<span class="bom-code">${codeLink(ci.id, ci.code)}</span>
       <span class="bom-type-tag tt-${ci.type}">${typeShort(ci.type)}</span>
       <span class="nm" title="${esc(ci.name)}">${esc(ci.name)}</span>`;
     qtyCell = Number(row.qty) || 0; uom = ci.uom || ''; unit = costOf(row.itemId).total;
@@ -208,7 +208,7 @@ function renderBomRootNode(it) {
     <span class="bom-name">
       <span class="bom-pos"></span>
       <span class="bom-toggle leaf">•</span>
-      <span class="bom-code">${esc(it.code)}</span>
+      <span class="bom-code">${codeLink(it.id, it.code)}</span>
       <span class="bom-type-tag tt-${it.type}">${typeShort(it.type)}</span>
       <span class="nm" title="${esc(it.name)}">${esc(it.name)}</span>
     </span>

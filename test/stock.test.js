@@ -70,6 +70,20 @@ describe('netRequirement — il conto, senza dati intorno', () => {
   it('valori sporchi non producono NaN', () => {
     assert.equal(n(app())('x', null, undefined, NaN, 'y'), 0);
   });
+  it('l\'impegnato si somma al fabbisogno: è merce che c\'è ma non è mia', () => {
+    assert.equal(n(app())(40, 100, 0, 0, 0, 80), 20,
+      'ce ne sono 100 ma 80 sono promessi: liberi ne restano 20, quindi ne mancano 20');
+  });
+  it('un impegno che non arriva a togliere tutto lascia il netto a zero', () => {
+    assert.equal(n(app())(40, 100, 0, 0, 0, 30), 0);
+  });
+  it('l\'impegnato arrotonda al lotto come tutto il resto', () => {
+    assert.equal(n(app())(40, 100, 0, 0, 10, 85), 30, '25 mancanti → 3 lotti da 10');
+  });
+  it('senza impegnato il conto è identico a prima', () => {
+    assert.equal(n(app())(40, 25, 0, 0, 0, undefined), 15, 'il parametro nuovo non deve cambiare i vecchi risultati');
+    assert.equal(n(app())(40, 25, 0, 0, 0, 'sporco'), 15);
+  });
 });
 
 describe('L\'esistente è calcolato, non scritto', () => {
@@ -286,6 +300,156 @@ describe('Fabbisogno netto nella lista d\'acquisto', () => {
       .find(x => x.code === 'C1');
     assert.equal(r.qtyOrder, 8);        // 20 lordi − 12
     assert.equal(r.underMin, true, 'sotto il minimo si è per quello che si ordina, non per quello che serve');
+  });
+});
+
+// Il difetto che questo blocco tiene chiuso: due piani aperti sugli stessi
+// articoli si dichiaravano **coperti entrambi** dalla stessa merce. Nessuno dei
+// due sbagliava un conto — semplicemente nessuno dei due sapeva dell'altro, e
+// l'errore si scopriva quando il secondo andava in produzione.
+describe('Impegnato: la giacenza vista da un piano è quella che resta libera', () => {
+  function piano(a, id, qtaMacchine, extra) {
+    a.eval(`Store.insert('plans', ${JSON.stringify(Object.assign({
+      id, number: 'FAB-' + id, title: '', active: true,
+      lines: [{ id: 'l-' + id, itemId: 'mac', qty: qtaMacchine }],
+    }, extra || {}))});`);
+    return a;
+  }
+  // 1 macchina = 4 × M1 e 2 × C1.
+  function rigaAcq(a, planId, code) {
+    return JSON.parse(a.eval(`JSON.stringify(mrpBuyRows(getPlan(${JSON.stringify(planId)}), true)
+      .map(r => ({ code: r.item.code, qty: r.qty, onHand: r.onHand, committed: r.committed, libero: r.libero,
+                   qtyOrder: r.qtyOrder, coperto: r.coperto, impegni: r.impegni }))
+      .find(x => x.code === ${JSON.stringify(code)}))`));
+  }
+
+  it('un piano solo non impegna niente contro sé stesso', () => {
+    const a = piano(app(), 'pl1', 10);
+    a.eval('addMovement("m1", "carico", 25, "")');
+    const r = rigaAcq(a, 'pl1', 'M1');
+    assert.equal(r.committed, 0, 'sottrargli il proprio fabbisogno gli farebbe comprare tutto due volte');
+    assert.equal(r.qtyOrder, 15);
+  });
+
+  it('due piani non si dichiarano coperti entrambi con la stessa merce', () => {
+    const a = piano(piano(app(), 'pl1', 10), 'pl2', 10);
+    a.eval('addMovement("m1", "carico", 100, "")');   // 100 in casa, 40 + 40 richiesti
+    const r1 = rigaAcq(a, 'pl1', 'M1');
+    assert.equal(r1.onHand, 100);
+    assert.equal(r1.committed, 40, 'quaranta sono già promessi all\'altro piano');
+    assert.equal(r1.libero, 60);
+    assert.equal(r1.qtyOrder, 0, 'sessanta liberi bastano per quaranta: questo piano è coperto davvero');
+  });
+
+  it('quando la merce non basta per due, il secondo piano compra invece di credersi coperto', () => {
+    const a = piano(piano(app(), 'pl1', 10), 'pl2', 10);
+    a.eval('addMovement("m1", "carico", 50, "")');    // 50 in casa, 40 + 40 richiesti
+    const r = rigaAcq(a, 'pl2', 'M1');
+    assert.equal(r.committed, 40);
+    assert.equal(r.libero, 10);
+    assert.equal(r.coperto, false, 'prima della correzione qui si leggeva "coperto" e la merce era di un altro');
+    assert.equal(r.qtyOrder, 30, '40 servono, 10 liberi: se ne comprano 30');
+  });
+
+  it('il lordo non cambia mai, nemmeno con l\'impegnato', () => {
+    const a = piano(piano(app(), 'pl1', 10), 'pl2', 10);
+    a.eval('addMovement("m1", "carico", 50, "")');
+    assert.equal(rigaAcq(a, 'pl2', 'M1').qty, 40, 'il lordo è una proprietà del prodotto, non dello stato del magazzino');
+  });
+
+  it('chiudere un piano libera il materiale che impegnava', () => {
+    const a = piano(piano(app(), 'pl1', 10), 'pl2', 10);
+    a.eval('addMovement("m1", "carico", 50, "")');
+    assert.equal(rigaAcq(a, 'pl2', 'M1').qtyOrder, 30);
+    a.eval('planToggleActive("pl1")');
+    const r = rigaAcq(a, 'pl2', 'M1');
+    assert.equal(r.committed, 0);
+    assert.equal(r.qtyOrder, 0, 'i 50 sono di nuovo tutti disponibili');
+    assert.equal(a.eval('getPlan("pl1").active'), false);
+  });
+
+  it('riaprire un piano rimette l\'impegno', () => {
+    const a = piano(piano(app(), 'pl1', 10, { active: false }), 'pl2', 10);
+    assert.equal(rigaAcq(a, 'pl2', 'M1').committed, 0);
+    a.eval('planToggleActive("pl1")');
+    assert.equal(rigaAcq(a, 'pl2', 'M1').committed, 40);
+  });
+
+  it('un piano nato prima dell\'impegno si apre aperto, non chiuso', () => {
+    const a = loadApp({ silent: true });
+    a.seedStorage(Object.assign(base(), {
+      plans: [{ id: 'vecchio', number: 'FAB-0', lines: [{ id: 'l', itemId: 'mac', qty: 1 }] }],
+    }));
+    a.ref('Store').load();
+    assert.equal(a.snapshot().plans[0].active, true,
+      'dichiararlo chiuso lascerebbe promettere due volte la merce dei piani in corso');
+  });
+
+  it('l\'impegno dice chi se l\'è preso, non solo quanto', () => {
+    const a = piano(piano(app(), 'pl1', 10, { title: 'Lotto settembre' }), 'pl2', 10);
+    const r = rigaAcq(a, 'pl2', 'M1');
+    assert.equal(r.impegni.length, 1);
+    assert.equal(r.impegni[0].number, 'FAB-pl1');
+    assert.equal(r.impegni[0].title, 'Lotto settembre');
+    assert.equal(r.impegni[0].qty, 40, 'un numero che toglie merce senza dire chi se l\'è presa non si può contestare');
+  });
+
+  it('più piani si sommano fra loro', () => {
+    const a = piano(piano(piano(app(), 'pl1', 1), 'pl2', 2), 'pl3', 3);
+    assert.equal(rigaAcq(a, 'pl1', 'M1').committed, 20, '(2 + 3) macchine × 4');
+    assert.equal(rigaAcq(a, 'pl3', 'M1').committed, 12, '(1 + 2) macchine × 4');
+  });
+
+  it('l\'impegno è calcolato: cambiare l\'altro piano cambia subito il numero', () => {
+    const a = piano(piano(app(), 'pl1', 10), 'pl2', 10);
+    assert.equal(rigaAcq(a, 'pl2', 'M1').committed, 40);   // costruisce l'indice
+    a.eval('planSetLineQty("pl1", "l-pl1", 5)');
+    assert.equal(rigaAcq(a, 'pl2', 'M1').committed, 20,
+      'senza invalidazione l\'indice resterebbe fermo, e sarebbe un campo scrivibile travestito da calcolo');
+  });
+
+  it('un piano vuoto non impegna niente', () => {
+    const a = piano(piano(app(), 'pl1', 10), 'pl2', 10);
+    a.eval('db.plans.find(p => p.id === "pl1").lines = []; saveDB();');
+    assert.equal(rigaAcq(a, 'pl2', 'M1').committed, 0);
+  });
+
+  it('il libero può andare sotto zero, e lo si vede', () => {
+    const a = piano(piano(app(), 'pl1', 10), 'pl2', 10);
+    a.eval('addMovement("m1", "carico", 10, "")');
+    assert.equal(rigaAcq(a, 'pl2', 'M1').libero, -30,
+      'i piani aperti hanno promesso più merce di quanta ne esista: nasconderlo non la fa comparire');
+    assert.equal(a.eval('freeStockOf("m1", null)'), -70, 'senza escludere nessun piano: 10 − 80');
+  });
+
+  it('anche l\'in arrivo entra nel libero', () => {
+    const a = piano(piano(app(), 'pl1', 10), 'pl2', 10);
+    ordine(a, { status: 'inviato', lines: [riga('m1', 60, 0)] });
+    const r = rigaAcq(a, 'pl2', 'M1');
+    assert.equal(r.libero, 20, '0 esistenti + 60 in arrivo − 40 impegnati');
+    assert.equal(r.qtyOrder, 20);
+  });
+
+  it('col netto spento si compra il lordo, l\'impegnato resta solo un\'informazione', () => {
+    const a = piano(piano(app(), 'pl1', 10), 'pl2', 10);
+    a.eval('addMovement("m1", "carico", 100, "")');
+    const r = JSON.parse(a.eval(`JSON.stringify(mrpBuyRows(getPlan("pl2"), false).map(x => ({ code: x.item.code, committed: x.committed, qtyOrder: x.qtyOrder })).find(x => x.code === "M1"))`));
+    assert.equal(r.qtyOrder, 40);
+    assert.equal(r.committed, 40, 'il numero si calcola comunque: serve a mostrarlo, non ad applicarlo');
+  });
+
+  it('i documenti generati portano la quantità che tiene conto dell\'impegno', () => {
+    const a = piano(piano(app(), 'pl1', 10), 'pl2', 10);
+    a.eval('addMovement("m1", "carico", 50, ""); mrpNet = true;');
+    const linea = JSON.parse(a.eval(`JSON.stringify(planDocLine(mrpBuyRows(getPlan("pl2"), true).find(r => r.item.code === "M1"), 10))`));
+    assert.equal(linea.qty, 30, 'ordinare 0 perché "c\'è già" quando la merce è di un altro piano è il difetto da chiudere');
+  });
+
+  it('il ruolo lettore non apre né chiude i piani', () => {
+    const a = piano(app(), 'pl1', 10);
+    a.asRole('lettore');
+    a.eval('planToggleActive("pl1")');
+    assert.equal(a.eval('getPlan("pl1").active'), true);
   });
 });
 

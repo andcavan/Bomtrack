@@ -80,10 +80,62 @@ function stockIndex() {
   _stockIdx = idx;
   return idx;
 }
-function invalidateStock() { _stockIdx = null; }
+function invalidateStock() { _stockIdx = null; _commitIdx = null; }
 function stockOf(itemId) { return stockIndex().get(itemId) || { onHand: 0, incoming: 0 }; }
 function onHandOf(itemId) { return stockOf(itemId).onHand; }
 function incomingOf(itemId) { return stockOf(itemId).incoming; }
+
+// ─── Indice degli impegni ───
+// L'esistente da solo risponde alla domanda sbagliata. «Ce ne sono 100» non
+// significa «ne posso usare 100»: se un altro piano aperto ne chiede già 80,
+// liberi ce ne sono 20. Finché questo conto non c'era, due piani sugli stessi
+// articoli si dichiaravano **coperti entrambi** e la stessa merce veniva
+// promessa due volte — un errore che si scopre solo quando il secondo piano va
+// in produzione e il materiale non c'è.
+//
+// L'impegno è **calcolato**, come l'esistente, e per la stessa ragione: nessun
+// campo `impegnato` da tenere allineato, nessuna prenotazione da ricordarsi di
+// sciogliere. Un piano che si chiude libera la sua merce da sé.
+//
+// Cosa impegna: i piani **aperti** (`active !== false`). Chiudere un piano è il
+// gesto con cui si dice «questo non serve più»; senza di esso ogni piano mai
+// creato continuerebbe a bloccare materiale per sempre, e dopo un anno d'uso
+// nessun articolo risulterebbe più disponibile.
+let _commitIdx = null;
+function commitIndex() {
+  if (_commitIdx) return _commitIdx;
+  const idx = new Map();
+  // `mrpExplode` sta in views-mrp.js, caricato dopo questo file: a runtime c'è
+  // sempre, ma la guardia evita di legare l'ordine dei tag <script>.
+  if (typeof mrpExplode === 'function') {
+    (db.plans || []).forEach(p => {
+      if (p.active === false || !(p.lines || []).length) return;
+      mrpExplode(p.lines).buy.forEach(e => {
+        let l = idx.get(e.item.id);
+        if (!l) { l = []; idx.set(e.item.id, l); }
+        l.push({ planId: p.id, number: p.number || '', title: p.title || '', qty: e.qty, due: e.due || '' });
+      });
+    });
+  }
+  _commitIdx = idx;
+  return idx;
+}
+// Chi impegna questo articolo, **escluso** il piano da cui si sta guardando:
+// un piano non fa concorrenza a sé stesso, e sottrargli il proprio fabbisogno
+// gli farebbe comprare tutto due volte.
+function commitsOn(itemId, exceptPlanId) {
+  return (commitIndex().get(itemId) || []).filter(c => c.planId !== exceptPlanId);
+}
+function committedOf(itemId, exceptPlanId) {
+  return commitsOn(itemId, exceptPlanId).reduce((s, c) => s + c.qty, 0);
+}
+// Quanto se ne può ancora promettere. Può essere negativo, e in quel caso lo si
+// mostra così com'è: significa che i piani aperti hanno già promesso più merce
+// di quanta ne esista, ed è esattamente il numero che serve vedere.
+function freeStockOf(itemId, exceptPlanId) {
+  const s = stockOf(itemId);
+  return s.onHand + s.incoming - committedOf(itemId, exceptPlanId);
+}
 
 function safetyStockOf(it) { return Math.max(0, Number(it && it.safetyStock) || 0); }
 function lotSizeOf(it) { return Math.max(0, Number(it && it.lotSize) || 0); }
@@ -91,9 +143,15 @@ function lotSizeOf(it) { return Math.max(0, Number(it && it.lotSize) || 0); }
 // ─── Il conto ───
 // netto = quanto manca davvero, arrotondato al lotto del fornitore.
 // Logica pura, senza DOM: è la parte che la suite verifica.
-function netRequirement(lordo, onHand, incoming, safety, lotSize) {
+//
+// `committed` sta dalla parte del fabbisogno, insieme alla scorta minima, non
+// dalla parte del magazzino: sono entrambi merce che c'è ma non si può usare.
+// Scriverlo come sottrazione dall'esistente darebbe lo stesso numero e la
+// domanda sbagliata — «quanto ne ho» invece di «quanto me ne serve».
+function netRequirement(lordo, onHand, incoming, safety, lotSize, committed) {
   const l = Number(lordo) || 0;
-  const mancante = l + (Number(safety) || 0) - (Number(onHand) || 0) - (Number(incoming) || 0);
+  const mancante = l + (Number(safety) || 0) + (Number(committed) || 0)
+    - (Number(onHand) || 0) - (Number(incoming) || 0);
   if (!(mancante > 0)) return 0;
   const lot = Number(lotSize) || 0;
   if (!(lot > 0)) return mancante;
@@ -102,11 +160,15 @@ function netRequirement(lordo, onHand, incoming, safety, lotSize) {
   return Math.ceil(mancante / lot - 1e-9) * lot;
 }
 // I dati di giacenza di una riga di fabbisogno, pronti da mostrare.
-function stockFor(it, lordo) {
+// `committed` è quanto gli **altri** piani aperti hanno già promesso: lo passa
+// il chiamante, perché solo lui sa da quale piano si sta guardando.
+function stockFor(it, lordo, committed) {
   const s = stockOf(it.id);
   const safety = safetyStockOf(it);
-  const net = netRequirement(lordo, s.onHand, s.incoming, safety, lotSizeOf(it));
-  return { onHand: s.onHand, incoming: s.incoming, safety, lotSize: lotSizeOf(it), net,
+  const imp = Math.max(0, Number(committed) || 0);
+  const net = netRequirement(lordo, s.onHand, s.incoming, safety, lotSizeOf(it), imp);
+  return { onHand: s.onHand, incoming: s.incoming, safety, lotSize: lotSizeOf(it),
+    committed: imp, libero: s.onHand + s.incoming - imp, net,
     coperto: net === 0 && lordo > 0 };
 }
 
@@ -139,16 +201,26 @@ function stockPanelHtml(it) {
   if (!hasStock(it)) return '';
   const s = stockOf(it.id);
   const sotto = safetyStockOf(it) > 0 && s.onHand < safetyStockOf(it);
+  // Impegnato e libero: la scheda articolo è il posto dove si guarda prima di
+  // promettere qualcosa, e «ce ne sono 100» da solo è una risposta che inganna.
+  const imp = commitsOn(it.id, null);
+  const impQty = imp.reduce((a, c) => a + c.qty, 0);
+  const libero = s.onHand + s.incoming - impQty;
+  const elencoImp = imp.map(c => `${c.number}${c.title ? ' (' + c.title + ')' : ''}: ${fmtQty(c.qty)}`).join(' · ');
   return `<div class="cloud-section" style="margin-top:12px${sotto ? ';border-color:var(--red)' : ''}">
     <div style="flex:1">
       <strong>📦 Magazzino</strong>
       <div class="cost-summary" style="margin:8px 0">
         ${kpi('Esistente', fmtQty(s.onHand) + ' ' + esc(it.uom || ''), sotto ? 'orange' : '')}
         ${kpi('In arrivo', fmtQty(s.incoming) + ' ' + esc(it.uom || ''), 'accent')}
+        ${kpi('Impegnato', fmtQty(impQty) + ' ' + esc(it.uom || ''), impQty > 0 ? 'orange' : '')}
+        ${kpi('Libero', fmtQty(libero) + ' ' + esc(it.uom || ''), libero < 0 ? 'red' : '')}
         ${kpi('Scorta minima', fmtQty(safetyStockOf(it)), '')}
       </div>
       ${sotto ? '<p style="color:var(--red);margin:0 0 8px">⚠ Sotto la scorta minima.</p>' : ''}
+      ${libero < 0 ? '<p style="color:var(--red);margin:0 0 8px">⚠ I piani aperti ne hanno promesso più di quanto ne esista o ne sia in arrivo.</p>' : ''}
       <p class="empty-text" style="text-align:left;padding:0 0 8px">L'esistente è calcolato: <strong>ricevuto sugli ordini + movimenti</strong>. Non si scrive a mano — si registra una rettifica, così resta scritto anche perché è cambiato.</p>
+      ${impQty > 0 ? `<p class="empty-text" style="text-align:left;padding:0 0 8px">Impegnato dai piani di fabbisogno <strong>aperti</strong>: ${esc(elencoImp)}. <em>Libero = esistente + in arrivo − impegnato</em>: è quanto se ne può ancora promettere. Chiudere un piano libera la sua quota.</p>` : ''}
       <div style="display:flex;gap:8px;flex-wrap:wrap">
         <button class="btn-outline" onclick="stockAdjustModal('${it.id}')">✏ Rettifica giacenza</button>
         <button class="btn-outline" onclick="stockMovementsModal('${it.id}')">🕘 Movimenti (${movementsOf(it.id).length})</button>
