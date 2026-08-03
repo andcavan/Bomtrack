@@ -15,6 +15,12 @@ Impronte SHA-256 dei file, per poterli riverificare:
 xlsx.full.min.js                cc015130aa8521e7f088f88898eba949ccdcbfb38df0bd129b44b7273c3a6f41
 ```
 
+Su Windows quell'impronta corrisponde **solo** perché `.gitattributes` esclude
+questa cartella dalla normalizzazione delle fini riga (`vendor/** -text`).
+Senza, un clone riscriverebbe i file con CRLF: funzionerebbero lo stesso, ma non
+sarebbero più riverificabili — e un file di cui ci si deve fidare sulla parola
+è il contrario del motivo per cui sta qui.
+
 I due file jsPDF sono **bit per bit** quelli che l'app caricava da cdnjs fino alla
 0.42.0: le loro impronte SHA-512 coincidono con gli attributi `integrity` che
 stavano in `index.html`, e questo è il modo in cui è stato verificato il

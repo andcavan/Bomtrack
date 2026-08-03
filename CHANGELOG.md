@@ -2,6 +2,11 @@
 
 Le revisioni seguono il versionamento semantico `0.MINOR.PATCH`: **MINOR** per nuove funzionalità, **PATCH** per correzioni. La versione in cima è quella in `APP_VERSION` (`core.js`) e mostrata nell'header dell'app.
 
+### 0.43.1 — 2026-08-03
+
+**Corretto**
+- **Le librerie in `vendor/` restano identiche a quelle pubblicate.** Su Windows un clone le avrebbe riscritte con le fini riga native: avrebbero funzionato lo stesso, ma le impronte scritte in `vendor/LEGGIMI.md` non sarebbero più corrisposte, e una libreria di terze parti che non si può riverificare è il contrario del motivo per cui la si tiene nel repo. Un `.gitattributes` esclude quella cartella dalla normalizzazione.
+
 ### 0.43.0 — 2026-08-03
 
 **Le librerie di export stanno nella cartella dell'app, e SheetJS è aggiornata.** Erano su un CDN: la versione in uso aveva due vulnerabilità corrette a monte, e i pulsanti di export non funzionavano su un PC senza rete — cioè proprio dove l'app dichiara di funzionare.

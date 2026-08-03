@@ -1,0 +1,10 @@
+# Le librerie di terze parti si prendono e si rimettono **identiche**: nessuna
+# normalizzazione delle fini riga. Senza questa riga, su Windows un clone le
+# riscriverebbe con CRLF — funzionerebbero lo stesso, ma le impronte in
+# vendor/LEGGIMI.md non corrisponderebbero più, e un file che non si può
+# riverificare è un file di cui bisogna fidarsi sulla parola.
+vendor/** -text
+
+# Tutto il resto è nostro e normalizzato: LF nel repository, fini riga native
+# nella copia di lavoro.
+* text=auto
