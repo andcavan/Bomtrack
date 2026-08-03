@@ -1,10 +1,12 @@
-# Le librerie di terze parti si prendono e si rimettono **identiche**: nessuna
-# normalizzazione delle fini riga. Senza questa riga, su Windows un clone le
-# riscriverebbe con CRLF — funzionerebbero lo stesso, ma le impronte in
-# vendor/LEGGIMI.md non corrisponderebbero più, e un file che non si può
-# riverificare è un file di cui bisogna fidarsi sulla parola.
-vendor/** -text
-
-# Tutto il resto è nostro e normalizzato: LF nel repository, fini riga native
-# nella copia di lavoro.
+# Tutto ciò che è nostro: LF nel repository, fini riga native nella copia di
+# lavoro. Sta in cima perché in git **vince l'ultima regola che corrisponde**,
+# e le eccezioni vanno quindi scritte sotto — non sopra, dove verrebbero
+# sovrascritte da questa senza che niente lo segnali.
 * text=auto
+
+# Le librerie di terze parti si prendono e si rimettono **identiche**: nessuna
+# normalizzazione. Senza questa riga, su Windows un clone le riscriverebbe con
+# CRLF — funzionerebbero lo stesso, ma le impronte in vendor/LEGGIMI.md non
+# corrisponderebbero più, e una libreria che non si può riverificare è il
+# contrario del motivo per cui la si tiene nel repo.
+vendor/** -text

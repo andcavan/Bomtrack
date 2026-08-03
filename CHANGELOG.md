@@ -2,10 +2,15 @@
 
 Le revisioni seguono il versionamento semantico `0.MINOR.PATCH`: **MINOR** per nuove funzionalità, **PATCH** per correzioni. La versione in cima è quella in `APP_VERSION` (`core.js`) e mostrata nell'header dell'app.
 
+### 0.43.2 — 2026-08-03
+
+**Corretto**
+- **La protezione aggiunta nella 0.43.1 non funzionava.** In `.gitattributes` vince **l'ultima** regola che corrisponde al file, e la riga generica (`* text=auto`) era scritta sotto quella specifica su `vendor/`: la sovrascriveva senza che niente lo segnalasse, e i file di terze parti sarebbero stati normalizzati lo stesso. Trovato con `git check-attr`, che è il modo di verificarlo invece di crederci. Ordine invertito, con il perché scritto accanto alla riga.
+
 ### 0.43.1 — 2026-08-03
 
 **Corretto**
-- **Le librerie in `vendor/` restano identiche a quelle pubblicate.** Su Windows un clone le avrebbe riscritte con le fini riga native: avrebbero funzionato lo stesso, ma le impronte scritte in `vendor/LEGGIMI.md` non sarebbero più corrisposte, e una libreria di terze parti che non si può riverificare è il contrario del motivo per cui la si tiene nel repo. Un `.gitattributes` esclude quella cartella dalla normalizzazione.
+- **Le librerie in `vendor/` restano identiche a quelle pubblicate.** Su Windows un clone le avrebbe riscritte con le fini riga native: avrebbero funzionato lo stesso, ma le impronte scritte in `vendor/LEGGIMI.md` non sarebbero più corrisposte, e una libreria di terze parti che non si può riverificare è il contrario del motivo per cui la si tiene nel repo. Un `.gitattributes` esclude quella cartella dalla normalizzazione. *(La regola era scritta nell'ordine sbagliato e non aveva effetto: vedi 0.43.2.)*
 
 ### 0.43.0 — 2026-08-03
 
