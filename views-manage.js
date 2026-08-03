@@ -41,6 +41,7 @@ function renderManage() {
   else if (mgmtTab === 'settings') c.innerHTML = renderSettings();
   else if (mgmtTab === 'import') c.innerHTML = renderImport();
   else if (mgmtTab === 'backup') c.innerHTML = renderBackup();
+  a11yFields(c);
 }
 function setMgmtTab(t) { mgmtTab = t; renderManage(); }
 

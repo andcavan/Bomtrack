@@ -605,7 +605,7 @@ function planDocs(planId) {
 function planDocsList(planId) {
   const d = planDocs(planId);
   if (!d.rfqs.length && !d.orders.length) return '';
-  const riga = (x, apri, icona) => `<span class="plandoc-link" onclick="${apri}"><span style="font-family:var(--mono)">${icona} ${esc(x.number)}</span> · ${esc(supplierName(x.supplierId) || 'da assegnare')}</span>`;
+  const riga = (x, apri, icona) => `<span class="plandoc-link" ${clickAttrs(apri, 'Apri ' + x.number)}><span style="font-family:var(--mono)">${icona} ${esc(x.number)}</span> · ${esc(supplierName(x.supplierId) || 'da assegnare')}</span>`;
   return `<div class="mrp-section">
     <div class="cycle-section-head"><h3>📄 Documenti generati</h3></div>
     <div class="plandoc-links">
@@ -630,6 +630,7 @@ function renderMrp() {
   const host = document.getElementById('view-mrp');
   if (mrpView === 'edit' && getPlan(currentPlanId)) host.innerHTML = renderPlanEdit(currentPlanId);
   else { mrpView = 'list'; host.innerHTML = renderPlanList(); }
+  a11yFields(host);
 }
 function renderPlanList() {
   const q = (val('plan-search') || '').toLowerCase();

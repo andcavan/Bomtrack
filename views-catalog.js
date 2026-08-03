@@ -569,7 +569,9 @@ function renderCatalog(scope) {
       <button class="btn-outline" onclick="catalogShowMore('${scope}')">Mostra altri ${Math.min(CATALOG_PAGE, mancanti)}</button>
       <button class="btn-outline" onclick="catalogShowAll('${scope}')">Mostra tutti</button>
     </div>` : '';
-  document.getElementById(pfx + '-table').innerHTML = rows.length ? html + piu : '<div class="empty-text">Nessun articolo trovato.</div>';
+  const tabella = document.getElementById(pfx + '-table');
+  tabella.innerHTML = rows.length ? html + piu : '<div class="empty-text">Nessun articolo trovato.</div>';
+  a11yFields(tabella);
 }
 // Etichette del menu "Tipo" (l'elenco è ristretto ai tipi della vista di provenienza)
 const TYPE_OPTION_LABELS = {
@@ -985,6 +987,7 @@ function renderCycles() {
       <div class="cycle-box">${cycleOpsTable(opRows)}</div>
       <div id="picker-op"></div>
     </div>`;
+  a11yFields(body);
 }
 // Riepilogo in cima: le due metà del costo separate, come le due sezioni sotto.
 function renderCycleSummary(it) {
@@ -1118,7 +1121,7 @@ function renderCyclePickerResults() {
   const total = rows.length;
   rows = rows.slice(0, 50);
   let html = rows.map(i =>
-    `<div class="picker-row" onclick="pickCycleItem('${i.id}')">
+    `<div class="picker-row" ${clickAttrs(`pickCycleItem('${i.id}')`, `Scegli ${i.code}`)}>
        <span class="picker-type">${typeLabel(i.type)}</span><b>${esc(i.code)}</b> — ${esc(i.name)}${itemBadges(i)}
      </div>`).join('');
   if (!html) html = `<div class="picker-empty">Nessun articolo trovato</div>`;
@@ -1191,7 +1194,7 @@ function renderSourceResults() {
   const rows = db.items.filter(i => types.includes(i.type) && (i.code + ' ' + i.name).toLowerCase().includes(q))
     .sort((a, b) => String(a.code).localeCompare(String(b.code))).slice(0, 50);
   box.innerHTML = rows.map(i =>
-    `<div class="picker-row" onclick="applyItemSource('${i.id}')">
+    `<div class="picker-row" ${clickAttrs(`applyItemSource('${i.id}')`, `Copia i dati di ${i.code}`)}>
        <span class="picker-type">${typeLabel(i.type)}</span><b>${esc(i.code)}</b> — ${esc(i.name)}${itemBadges(i)}
      </div>`).join('') || `<div class="picker-empty">Nessun articolo trovato</div>`;
 }

@@ -497,6 +497,7 @@ function renderRfq() {
   }
   else if (rfqView === 'compare') host.innerHTML = renderRfqCompare();
   else { rfqView = 'list'; host.innerHTML = renderRfqList(); }
+  a11yFields(host);
 }
 
 // Progressivo per anno: RFQ-<anno>-NNN
@@ -994,6 +995,7 @@ function renderOrders() {
     applyDocLock(ordMode(getOrder(currentOrderId)), host);
   }
   else { orderView = 'list'; host.innerHTML = renderOrderList(); }
+  a11yFields(host);
 }
 
 function orderListRows() {

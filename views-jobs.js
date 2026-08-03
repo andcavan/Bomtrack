@@ -77,6 +77,7 @@ function renderJobs() {
   invalidateCaches();
   if (jobView === 'edit' && !getJob(currentJobId)) { jobView = 'list'; currentJobId = null; }
   host.innerHTML = jobView === 'edit' ? renderJobEdit(currentJobId) : renderJobList();
+  a11yFields(host);
 }
 function jobSearchInput() { debounced('jobs', renderJobs); }
 function renderJobList() {
@@ -86,7 +87,7 @@ function renderJobList() {
   const corpo = righe.map(j => {
     const t = jobTotals(j.id);
     const piani = jobPlans(j.id).length;
-    return `<div class="mgmt-item" onclick="openJobEdit('${j.id}')" style="cursor:pointer">
+    return `<div class="mgmt-item" ${clickAttrs(`openJobEdit('${j.id}')`, `Apri la commessa ${j.number}`)} style="cursor:pointer">
       <span style="font-family:var(--mono);font-weight:700;width:130px">${esc(j.number)}</span>
       <span class="doc-badge">${esc(JOB_STATUS[j.status] || j.status || '—')}</span>
       <span style="flex:1">${esc(j.customer || '')}${j.title ? ' · ' + esc(j.title) : ''}</span>

@@ -2,6 +2,19 @@
 
 Le revisioni seguono il versionamento semantico `0.MINOR.PATCH`: **MINOR** per nuove funzionalità, **PATCH** per correzioni. La versione in cima è quella in `APP_VERSION` (`core.js`) e mostrata nell'header dell'app.
 
+### 0.42.0 — 2026-08-03
+
+**L'app si usa anche senza mouse, e i campi hanno un nome.** Erano centocinquanta etichette che il browser non sapeva collegare al proprio campo, duecento pulsanti-icona senza nome e una decina di righe cliccabili invisibili alla tastiera. Niente di tutto questo si vedeva usando l'app col mouse — ed è esattamente il motivo per cui era rimasto lì.
+
+**Cambiato**
+- **Le etichette sono collegate ai campi.** Cliccare «Fornitore» mette a fuoco il menu, e un lettore di schermo annuncia il campo col suo nome invece di dire «casella di testo». Il collegamento si fa **sulla struttura**, in un punto solo (`a11yFields`): centocinquanta modifiche a mano sarebbero state centocinquanta occasioni di sbagliare un id, e i form che verranno sarebbero ripartiti da zero.
+- **I pulsanti a sola icona** (✏ 🗑 🔗 🔧 ★) prendono il nome dal `title` che avevano già: quello che si legge passando il mouse è lo stesso che sente chi il mouse non lo usa.
+- **Le schede sono dialoghi dichiarati**: `role="dialog"`, il titolo come nome, il **focus che entra** sul primo campo da compilare — o, nelle conferme, sul pulsante che *non* fa danni — e che **torna da dov'era** alla chiusura. Chi apre una scheda dal ✏ di una riga si ritrova su quel ✏, non a inizio pagina.
+- **Le righe cliccabili sono raggiungibili col tabulatore** e rispondono a Invio e alla barra spaziatrice: i segnali del riepilogo, le commesse in elenco, i documenti generati dal fabbisogno, i risultati dei selettori articolo e le lavorazioni in distinta. È lo stesso patto che i codici articolo rispettavano già. Il triangolino che apre un ramo di distinta dice anche se il ramo è aperto o chiuso.
+
+**Verifica**
+- 9 nuovi controlli (suite da 919 a 928): il patto degli elementi cliccabili (pulsante, tabulatore, Invio e spazio con la stessa azione, etichetta escapata), le righe reali di riepilogo, commesse e albero distinta, e la garanzia che il collegamento delle etichette non possa mai far fallire un disegno.
+
 ### 0.41.0 — 2026-08-03
 
 **Richieste d'offerta e ordini erano due copie quasi identiche: ora ogni regola è scritta una volta sola.** Sono lo stesso oggetto — una testata con un fornitore, delle righe, uno stato e un blocco che dipende dallo stato — e per molte versioni sono stati due elenchi paralleli di funzioni gemelle. Correggere qualcosa significava ricordarsi di correggerlo due volte, e le differenze vere fra i due documenti erano sparse nel codice invece di essere dichiarate.

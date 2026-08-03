@@ -13,7 +13,7 @@
 // Revisione in esecuzione, mostrata accanto al logo. Va tenuta allineata alla
 // voce in cima a CHANGELOG.md (l'app si copia a mano tra PC: sapere
 // quale revisione sta girando su una postazione è l'unico modo per capirlo).
-const APP_VERSION = '0.41.0';
+const APP_VERSION = '0.42.0';
 
 let currentUser = null;      // utente della sessione (null = schermata di accesso)
 let currentBomId = null;     // articolo prodotto attualmente aperto nelle Distinte
@@ -226,6 +226,7 @@ function renderInto(id, htmlFn) {
   } : null;
   const scrollTop = host.scrollTop, scrollLeft = host.scrollLeft;
   host.innerHTML = htmlFn();
+  a11yFields(host);
   host.scrollTop = scrollTop; host.scrollLeft = scrollLeft;
   if (stato) {
     const el = document.getElementById(stato.id);
@@ -733,13 +734,82 @@ function openModal(h, wide, key) {
   if (nuovo) {
     p = document.createElement('div');
     p.dataset.panelKey = k;
+    // Una scheda è un dialogo: chi naviga con un lettore di schermo deve
+    // sentirsi dire che ne è stata aperta una, non trovarsi del testo nuovo
+    // in mezzo alla pagina senza sapere da dove arriva.
+    p.setAttribute('role', 'dialog');
+    p.setAttribute('aria-modal', 'true');
+    // Dove tornare quando si chiude: senza, il focus finisce a inizio pagina e
+    // chi usa la tastiera deve rifare tutta la strada per riprendere il lavoro.
+    p._focusPrima = document.activeElement || null;
     root.appendChild(p);
   }
   p.className = 'panel' + (wide ? ' panel-wide' : '');
-  p.innerHTML = `<button class="panel-x" title="Chiudi (Esc)" onclick="closePanel(this.parentNode)">✕</button>${h}`;
+  p.innerHTML = `<button class="panel-x" title="Chiudi (Esc)" aria-label="Chiudi (Esc)" onclick="closePanel(this.parentNode)">✕</button>${h}`;
   if (nuovo) panelPlace(p);
   panelRaise(p);
+  a11yFields(p);
+  panelFocus(p);
   return p;
+}
+// ─── Etichette, pulsanti-icona e titolo della scheda ───
+// I template scrivono `<div class="modal-field"><label>Nome</label><input id="…">`:
+// l'associazione fra i due c'è per posizione ma non per il browser, quindi
+// cliccare l'etichetta non mette a fuoco il campo e un lettore di schermo
+// annuncia «casella di testo» senza dire di cosa. Collegarli a mano avrebbe
+// voluto dire centocinquanta modifiche e centocinquanta occasioni di sbagliare
+// un id; qui si fa una volta, sulla struttura, e vale anche per i form che
+// verranno.
+//
+// Stessa logica per i pulsanti a sola icona (✏ 🗑 🔗 ★): il `title` che hanno
+// già dice cosa fanno a chi passa il mouse, e diventa l'etichetta accessibile
+// per chi non lo usa.
+let _a11ySeq = 0;
+function a11yFields(host) {
+  if (!host || !host.querySelectorAll) return;
+  host.querySelectorAll('.modal-field').forEach(f => {
+    const lab = f.querySelector('label');
+    if (!lab || lab.getAttribute('for')) return;
+    const campo = f.querySelector('input, select, textarea');
+    if (!campo) return;
+    if (!campo.id) campo.id = 'a11y-' + (++_a11ySeq);
+    lab.setAttribute('for', campo.id);
+  });
+  host.querySelectorAll('button[title]').forEach(b => {
+    if (b.getAttribute('aria-label')) return;
+    // Solo i pulsanti che non hanno un testo leggibile: dove c'è già una
+    // parola, ripeterla nell'etichetta la farebbe annunciare due volte.
+    const txt = (b.textContent || '').replace(/[^\p{L}\p{N}]/gu, '').trim();
+    if (!txt) b.setAttribute('aria-label', b.getAttribute('title'));
+  });
+  // Il titolo della scheda le dà un nome: senza, un dialogo si annuncia senza
+  // dire quale.
+  if (host.getAttribute && host.getAttribute('role') === 'dialog' && !host.getAttribute('aria-label')) {
+    const h3 = host.querySelector('h3');
+    if (h3 && h3.textContent) host.setAttribute('aria-label', h3.textContent.trim());
+  }
+}
+// ─── Righe e simboli cliccabili, raggiungibili anche da tastiera ───
+// Un `<div onclick>` è invisibile alla tastiera: non si può raggiungere col
+// tabulatore e Invio non lo attiva. Chi non usa il mouse — per abitudine o
+// perché non può — resta fuori da quella funzione senza che nulla glielo dica.
+// Questi attributi sono lo stesso patto che `codeLink` rispetta da sempre:
+// dichiararsi pulsante, entrare nel giro del tabulatore, rispondere a Invio e
+// alla barra spaziatrice. `azione` è la stessa chiamata che sta nell'onclick.
+function clickAttrs(azione, etichetta) {
+  const a = String(azione);
+  return `role="button" tabindex="0" onclick="${a}"`
+    + ` onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();${a}}"`
+    + (etichetta ? ` aria-label="${esc(etichetta)}"` : '');
+}
+// Il focus entra nella scheda appena aperta: sul primo campo da compilare, o —
+// se non ce ne sono — sul primo pulsante, che nelle conferme è sempre quello
+// che **non** fa danni.
+function panelFocus(p) {
+  if (!p || !p.querySelector) return;
+  const primo = p.querySelector('input:not([type="hidden"]):not([disabled]), select:not([disabled]), textarea:not([disabled])')
+    || p.querySelector('.modal-actions button');
+  if (primo && primo.focus) setTimeout(() => primo.focus(), 0);
 }
 // Il primo pannello al centro, i successivi a scalare: due schede aperte non
 // devono coprirsi esattamente, altrimenti sembra che sia una sola.
@@ -773,8 +843,12 @@ function panelTop() {
     (best, el) => (!best || (+el.style.zIndex || 0) >= (+best.style.zIndex || 0)) ? el : best, null);
 }
 function closePanel(p) {
+  const torna = p && p._focusPrima;
   if (p && p.parentNode) p.parentNode.removeChild(p);
   if (!panelRoot() || !panelRoot().children.length) _panelZ = PANEL_Z;   // gli z-index non crescono all'infinito
+  // Il focus torna da dove era partito: chi ha aperto la scheda dal pulsante ✏
+  // di una riga si ritrova su quel pulsante, non a inizio pagina.
+  if (torna && torna.focus && torna.parentNode) torna.focus();
 }
 // Chiude la scheda in primo piano: le decine di "Annulla" e i salvataggi che
 // chiamano closeModal() intendono sempre quella con cui si sta lavorando.

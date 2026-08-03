@@ -93,7 +93,7 @@ function renderHome() {
   const nome = (currentUser && currentUser.name || '').split(' ')[0];
 
   const GRAVITA = { alta: 'var(--red)', media: 'var(--orange, #d90)', info: 'var(--text-dim)' };
-  const righe = segnali.map(s => `<div class="mgmt-item" onclick="setView('${s.vista}')" style="cursor:pointer">
+  const righe = segnali.map(s => `<div class="mgmt-item" ${clickAttrs(`setView('${s.vista}')`, `${s.n} ${s.testo} — vai a ${viewLabel(s.vista)}`)} style="cursor:pointer">
       <span style="font-family:var(--mono);font-weight:700;width:60px;text-align:right;color:${GRAVITA[s.gravita]}">${s.n}</span>
       <span style="flex:1">${esc(s.testo)}</span>
       <span class="empty-text" style="padding:0">${esc(viewLabel(s.vista))} →</span>

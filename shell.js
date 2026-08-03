@@ -225,6 +225,7 @@ function setView(v) {
   else if (v === 'orders') renderOrders();
   else if (v === 'manage') renderManage();
   showReadOnlyBanner(panel, area);
+  a11yFields(panel);   // etichette ai campi e nomi ai pulsanti-icona della vista appena disegnata
 }
 // Il banner va messo dopo il render: le viste documenti si riscrivono per intero
 function showReadOnlyBanner(panel, area) {

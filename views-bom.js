@@ -135,7 +135,8 @@ function renderBomNode(comp, level, parentId, editable, idx, pathPrefix, ancesto
   const lineCost = unit * factor;
   const indent = (level - 1) * 18;
   const toggle = expandable
-    ? `<span class="bom-toggle" onclick="toggleBom('${nodeKey}')">${expanded ? '▼' : '▶'}</span>`
+    ? `<span class="bom-toggle" ${clickAttrs(`toggleBom('${nodeKey}')`, (expanded ? 'Richiudi ' : 'Espandi ') + child.code)}
+        aria-expanded="${expanded}">${expanded ? '▼' : '▶'}</span>`
     : `<span class="bom-toggle leaf">•</span>`;
   const actions = `<button class="mini-btn" title="Dove è usato e impatto costi" onclick="usageModal('${comp.itemId}')">🔗</button>`
     + (child.type === 'parte' ? `<button class="mini-btn" title="Distinta parte e ciclo di lavorazione" onclick="openCycleFor('${comp.itemId}')">🔧</button>` : '')
@@ -232,8 +233,9 @@ function renderOpsBlock(item, editable, padLeft) {
   const tags = ops.map((o, i) => {
     const wc = getWorkCenter(o.workCenterId);
     const cost = (Number(o.hours) || 0) * (wc ? (Number(wc.hourlyRate) || 0) : 0);
-    const del = editable ? ` <span style="cursor:pointer;color:var(--red)" title="Elimina" onclick="delOperation(${i})">✕</span>` : '';
-    const ed = editable ? `<span style="cursor:pointer" onclick="editOperationModal(${i})">` : '<span>';
+    const nome = wc ? wc.name : 'lavorazione';
+    const del = editable ? ` <span style="cursor:pointer;color:var(--red)" title="Elimina" ${clickAttrs(`delOperation(${i})`, 'Elimina ' + nome)}>✕</span>` : '';
+    const ed = editable ? `<span style="cursor:pointer" ${clickAttrs(`editOperationModal(${i})`, 'Modifica ' + nome)}>` : '<span>';
     return `<span class="bom-op-tag">${ed}🔧 ${esc(wc ? wc.name : '?')} · ${(Number(o.hours) || 0)}h · ${fmtN(cost)}</span>${del}</span>`;
   }).join('');
   if (!ops.length && !editable) return '';
@@ -296,7 +298,7 @@ function renderPickerResults() {
   rows = rows.slice(0, 50);
   const sel = val('cmp-item');
   let html = rows.map(i =>
-    `<div class="picker-row ${i.id === sel ? 'is-sel' : ''}" onclick="selectPickerItem('${i.id}')">
+    `<div class="picker-row ${i.id === sel ? 'is-sel' : ''}" ${clickAttrs(`selectPickerItem('${i.id}')`, `Scegli ${i.code}`)}>
        <span class="picker-type">${typeLabel(i.type)}</span><b>${esc(i.code)}</b> — ${esc(i.name)}${itemBadges(i)}
      </div>`).join('');
   if (!html) html = `<div class="picker-empty">Nessun articolo trovato</div>`;
