@@ -29,11 +29,13 @@ function bomFilteredProducts() {
 // (stesso patto di updateCycleFamilyFilters).
 function updateBomMachineFilter() {
   const sel = document.getElementById('bom-machine'); if (!sel) return;
-  const macs = (db.items || []).filter(i => i.type === 'macchina')
-    .sort((a, b) => String(a.code).localeCompare(String(b.code)));
-  const keep = macs.some(m => m.id === sel.value) ? sel.value : '';
-  sel.innerHTML = `<option value="">Tutte le macchine</option>` +
-    macs.map(m => `<option value="${m.id}" ${m.id === keep ? 'selected' : ''}>${esc(m.code)} — ${esc(m.name)}</option>`).join('');
+  renderInto(sel, () => {
+    const macs = (db.items || []).filter(i => i.type === 'macchina')
+      .sort((a, b) => String(a.code).localeCompare(String(b.code)));
+    const keep = macs.some(m => m.id === sel.value) ? sel.value : '';
+    return `<option value="">Tutte le macchine</option>` +
+      macs.map(m => `<option value="${m.id}" ${m.id === keep ? 'selected' : ''}>${esc(m.code)} — ${esc(m.name)}</option>`).join('');
+  });
 }
 function bomSearchInput() { debounced('bom', renderBom); }
 function onBomFilterChange() { renderBom(); }

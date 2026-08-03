@@ -181,10 +181,9 @@ function docFilterChange(kind) {
   f.status = val(kind + 'f-status');
   f.supplierId = val(kind + 'f-sup');
   // Solo la lista: la barra filtri resta com'è, altrimenti il campo perde il focus
-  const list = document.getElementById(kind + '-list');
   const count = document.getElementById(kind + 'f-count');
   const all = kind === 'rfq' ? db.rfqs : db.orders;
-  if (list) list.innerHTML = kind === 'rfq' ? rfqListRows() : orderListRows();
+  renderInto(kind + '-list', () => kind === 'rfq' ? rfqListRows() : orderListRows());
   if (count) count.textContent = docFilterCountText(docFilterApply(kind, all).length, all.length);
 }
 function docFilterReset(kind) {

@@ -13,7 +13,7 @@
 // Revisione in esecuzione, mostrata accanto al logo. Va tenuta allineata alla
 // voce in cima a CHANGELOG.md (l'app si copia a mano tra PC: sapere
 // quale revisione sta girando su una postazione è l'unico modo per capirlo).
-const APP_VERSION = '0.38.0';
+const APP_VERSION = '0.39.0';
 
 let currentUser = null;      // utente della sessione (null = schermata di accesso)
 let currentBomId = null;     // articolo prodotto attualmente aperto nelle Distinte
@@ -198,6 +198,46 @@ function requireXlsx() {
   if (typeof XLSX !== 'undefined' && XLSX) return XLSX;
   showToast('Libreria Excel non disponibile: serve la connessione a internet al primo caricamento', 'error');
   return null;
+}
+// ─── Ridisegno che non fa perdere il posto ───
+// Riscrive l'innerHTML di un contenitore preservando ciò che un ridisegno
+// integrale butta via: lo scroll, il focus (ritrovato per id) e il punto di
+// digitazione. È la regola generale dietro le toppe che le viste si erano
+// scritte da sole — «ridisegna solo la lista», «salta il select se ha il
+// focus», «conserva il valore del campo».
+//
+// Due comportamenti da conoscere:
+// - se il focus è su un <select> dentro il contenitore, NON si ridisegna e si
+//   ritorna false: un menu a tendina aperto che si richiude sotto il mouse non
+//   si può "ripristinare", si può solo non rompere. Il chiamante ridisegnerà
+//   al giro successivo.
+// - il focus si ritrova per id: un campo attivo senza id non può essere
+//   ripristinato, e il ridisegno glielo toglie. I campi su cui si digita
+//   dentro un contenitore ridisegnabile devono avere un id.
+function renderInto(id, htmlFn) {
+  const host = typeof id === 'string' ? document.getElementById(id) : id;
+  if (!host) return false;
+  const att = document.activeElement;
+  const dentro = att && (att === host || (host.contains && host.contains(att)));
+  if (dentro && att.tagName === 'SELECT') return false;
+  const stato = dentro && att.id ? {
+    id: att.id, value: att.value,
+    selStart: att.selectionStart, selEnd: att.selectionEnd,
+  } : null;
+  const scrollTop = host.scrollTop, scrollLeft = host.scrollLeft;
+  host.innerHTML = htmlFn();
+  host.scrollTop = scrollTop; host.scrollLeft = scrollLeft;
+  if (stato) {
+    const el = document.getElementById(stato.id);
+    if (el) {
+      if (el.value !== undefined && stato.value !== undefined) el.value = stato.value;
+      if (el.focus) el.focus();
+      if (stato.selStart != null && el.setSelectionRange) {
+        try { el.setSelectionRange(stato.selStart, stato.selEnd); } catch { /* tipi senza selezione (number, date…) */ }
+      }
+    }
+  }
+  return true;
 }
 // Indirizzo strutturato → righe di testo (per documenti) o riga singola (per liste)
 function addressLines(o) {

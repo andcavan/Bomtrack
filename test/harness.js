@@ -58,9 +58,17 @@ function elementoFinto() {
     classList: { add() {}, remove() {}, toggle() {}, contains() { return false; } },
     insertBefore(c) { this.children.unshift(c); c.parentNode = this; return c; },
     firstChild: null,
-    remove() {}, focus() {}, click() {}, closest() { return null; },
+    remove() {}, click() {}, closest() { return null; },
     querySelectorAll() { return []; }, querySelector() { return null; },
     insertAdjacentHTML() {}, setAttribute() {}, removeAttribute() {},
+    // Il minimo che serve a renderInto(): chi ha il focus, chi contiene chi, e
+    // il punto di digitazione. Il focus è finto ma coerente — `focus()` lo
+    // sposta davvero, così un test può verificare che il ridisegno lo restituisca.
+    tagName: 'DIV', id: '', selectionStart: null, selectionEnd: null,
+    scrollTop: 0, scrollLeft: 0,
+    focus() { if (this.ownerDocument) this.ownerDocument.activeElement = this; },
+    contains(x) { return x === this || this.children.includes(x); },
+    setSelectionRange(a, b) { this.selectionStart = a; this.selectionEnd = b; },
   };
 }
 
@@ -94,12 +102,20 @@ function loadApp(opts) {
   const elementi = new Map();
   sandbox.document = {
     getElementById(id) {
-      if (!elementi.has(id)) elementi.set(id, elementoFinto());
+      if (!elementi.has(id)) {
+        const e = elementoFinto();
+        e.id = id; e.ownerDocument = sandbox.document;
+        elementi.set(id, e);
+      }
       return elementi.get(id);
     },
     querySelectorAll() { return []; },
     createElement() { return elementoFinto(); },
     body: elementoFinto(),
+    // Chi ha il focus. `null` come nel DOM vero prima di ogni interazione:
+    // le funzioni che lo confrontano si comportano come su una pagina appena
+    // caricata, dove nessun campo è a fuoco.
+    activeElement: null,
   };
   sandbox.window = sandbox;
   sandbox.innerWidth = 1280; sandbox.innerHeight = 800;   // i pannelli si posizionano rispetto alla finestra
@@ -115,10 +131,9 @@ function loadApp(opts) {
     ref,
     // Elemento finto per id (persistente): permette di leggere ciò che una
     // funzione di render ha scritto e di preimpostare il valore di un campo.
-    el(id) {
-      if (!elementi.has(id)) elementi.set(id, elementoFinto());
-      return elementi.get(id);
-    },
+    // Passa dalla stessa porta dell'app: un elemento creato qui e uno creato da
+    // getElementById devono essere lo stesso oggetto, con id e documento.
+    el(id) { return sandbox.document.getElementById(id); },
     html(id) { return this.el(id).innerHTML; },
     // Sessione finta: i mutatori passano da roleGuard() e senza utente sono
     // tutti bloccati. Il ruolo si sceglie, così si può verificare anche chi

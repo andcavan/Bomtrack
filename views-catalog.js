@@ -328,8 +328,7 @@ function usageWhatIfField(it) {
 // Ridisegna solo il corpo: la barra della simulazione resta com'è, altrimenti
 // il campo perderebbe il focus a ogni cifra digitata.
 function usageRecalc() {
-  const host = document.getElementById('usage-body');
-  if (host && window.__usageItemId) host.innerHTML = usageBody(window.__usageItemId);
+  if (window.__usageItemId) renderInto('usage-body', () => usageBody(window.__usageItemId));
 }
 function usageBody(id) {
   const it = getItem(id); if (!it) return '';

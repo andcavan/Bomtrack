@@ -2,6 +2,21 @@
 
 Le revisioni seguono il versionamento semantico `0.MINOR.PATCH`: **MINOR** per nuove funzionalità, **PATCH** per correzioni. La versione in cima è quella in `APP_VERSION` (`core.js`) e mostrata nell'header dell'app.
 
+### 0.39.0 — 2026-08-03
+
+**Ridisegnare senza far perdere il posto, con una regola sola.** Ogni gesto nell'app riscrive per intero l'HTML della vista, e un ridisegno integrale butta via tre cose che l'utente sta usando: la posizione dello scroll, il campo a fuoco e il punto in cui stava scrivendo. Quattro viste si erano scritte da sole la stessa toppa, ognuna diversa; ora la regola sta in un punto e le quattro la usano.
+
+**Cambiato**
+- **Nuovo `renderInto(contenitore, htmlFn)`** in `core.js`: ridisegna preservando scroll, campo a fuoco (ritrovato per id), valore digitato e punto di inserimento. Se a fuoco c'è un **menu a tendina**, non ridisegna affatto e lo dice al chiamante — un elenco che si rimescola mentre lo si sta aprendo non si può "ripristinare", si può solo non rompere.
+- **I quattro punti che lo facevano a mano ora passano da lì**: la lista dei documenti sotto i filtri, il corpo della finestra «Dove è usato» durante la simulazione di costo, il menu prodotti della costificazione e il filtro macchine della distinta. Comportamento uguale o migliore, un terzo del codice.
+
+**Come funziona, e perché così**
+- Il campo a fuoco si ritrova **per id**: un input senza id non è ripristinabile e il ridisegno glielo toglie, come prima. È il patto da conoscere per usare l'helper in una vista nuova.
+- Il DOM finto della suite ha ora un focus coerente (`document.activeElement`, `contains`, selezione): serviva a poter verificare queste cose senza jsdom e senza dipendenze, com'è per tutto il resto.
+
+**Verifica**
+- 7 nuovi controlli (suite da 876 a 883): il ridisegno normale, il menu a fuoco che resta intatto, il campo di testo che conserva valore-focus-cursore, lo scroll che non torna in cima, il focus fuori dal contenitore che non viene toccato, più i due casi reali — la costificazione che non rimescola il menu mentre lo si usa e il filtro documenti che ridisegna la lista senza toccare la barra.
+
 ### 0.38.0 — 2026-08-03
 
 **Prestazioni sui percorsi caldi: stessi numeri, molto meno lavoro.** Quattro punti riesplodevano distinte o rifacevano cloni dentro cicli; ora il lavoro pesante si fa una volta e si riusa. Nessun valore mostrato cambia — è la proprietà verificata dai test.

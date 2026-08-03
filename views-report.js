@@ -49,8 +49,9 @@ function renderReport() {
   // sincronizza i due selettori
   if (!reportBomId) reportBomId = currentBomId;
   ensureCurrentBom(); if (!reportBomId) reportBomId = currentBomId;
-  const sel = document.getElementById('report-select');
-  if (document.activeElement !== sel) sel.innerHTML = productOptions(reportBomId);
+  // renderInto salta il ridisegno se il menu è a fuoco: un elenco che si
+  // rimescola sotto il mouse mentre lo si sta usando non si può ripristinare.
+  renderInto('report-select', () => productOptions(reportBomId));
   reportBomId = val('report-select') || reportBomId;
   const it = getItem(reportBomId);
   const wrap = document.getElementById('report-content');
