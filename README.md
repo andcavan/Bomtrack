@@ -8,6 +8,8 @@ Costruita con lo stesso stile di TimeTrack: vanilla JavaScript + HTML + CSS, nes
 
 Aprire `index.html` in un browser (doppio click, oppure usare l'estensione "Live Server" di VS Code). Al primo avvio l'app chiede di creare l'**amministratore** (nome, email, password) e carica dei dati di esempio (macchina "Nastro Trasportatore NT-100"). Agli avvii successivi si entra con email e password; "Ricordami" conserva l'email e la sessione resta aperta fino a **Esci**.
 
+**Non serve la rete**, mai: le librerie di export stanno in `vendor/` dentro la cartella dell'app. Copiando la cartella su un altro PC funziona tutto, PDF ed Excel compresi.
+
 La revisione in esecuzione è mostrata accanto al logo, in alto a sinistra (es. `v0.6.0`), e corrisponde alla voce in cima al [changelog](#changelog).
 
 ## Funzionalità
@@ -168,7 +170,8 @@ Il motivo è lo storico: finché lo stesso dato si poteva scrivere in due posti,
 
 ## File
 
-- `index.html` — struttura, navigazione, barre filtri delle due anagrafiche, CDN (jsPDF, SheetJS).
+- `index.html` — struttura, navigazione, barre filtri delle due anagrafiche, caricamento degli script.
+- `vendor/` — le librerie di export (SheetJS per Excel, jsPDF per i PDF), tenute nel repo invece che su un CDN. Versioni, origine e come si aggiornano: `vendor/LEGGIMI.md`.
 - `store.js` — layer dati: schema, migrazioni versionate, `Store` (API repository) su localStorage, hashing delle password e autore delle modifiche.
 - Il codice dell'app, diviso in **classic script caricati in sequenza** da `index.html` (nessun modulo, nessun build: la pagina si apre anche con un doppio click). Lo scope globale è condiviso, quindi restano un solo insieme di funzioni e un solo stato:
 

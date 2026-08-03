@@ -211,7 +211,7 @@ vede, e nessun controllo JS può accorgersene. Vedi A8 sotto.
 
 ---
 
-## Risolto fra la 0.37.0 e la 0.41.0
+## Risolto fra la 0.37.0 e la 0.43.0
 
 Controllo generale ripetuto sull'intero codice (agosto 2026). Le voci qui sotto
 non erano tutte in questo documento: metà sono difetti trovati in quel giro.
@@ -276,6 +276,32 @@ in `core.js`, e il caso del menu a tendina a fuoco ha una risposta esplicita:
 **non si ridisegna affatto**, perché un elenco che si rimescola mentre lo si sta
 aprendo non è ripristinabile.
 
+### 23. A1 — SheetJS aggiornato, e le librerie portate dentro il repo *(0.43.0)*
+*(L'altra metà — l'SRI sui CDN — era chiusa nella 0.22.0, §9.)*
+
+`xlsx@0.18.5` aveva due vulnerabilità corrette a monte (prototype pollution,
+0.19.3; ReDoS, 0.20.2) su quello che è **input non fidato**: un file Excel
+arriva da un fornitore o da una mail. La voce era rimandata perché SheetJS dopo
+la 0.18 non pubblica più su cdnjs, quindi non era un cambio di numero e basta.
+
+Risolto vendorizzando: `vendor/xlsx.full.min.js` alla **0.20.3**, presa dal CDN
+ufficiale e committata. Nello stesso giro sono entrati anche i due file jsPDF —
+stessa versione di prima, verificata **bit per bit** confrontandone l'impronta
+SHA-512 con l'attributo `integrity` che stava in `index.html`.
+
+Il secondo motivo, che vale quanto il primo: l'app dichiara di aprirsi con un
+doppio click e di funzionare offline, e con le librerie su un CDN era vero solo
+dopo il primo caricamento con la rete. Su una postazione d'officina scollegata i
+pulsanti di export erano muti. Ora non c'è più un terzo dominio da cui dipendere.
+
+Aggiunto `test/vendor-xlsx.test.js`, che copre il buco che *tutti* gli altri
+test sull'import lasciavano aperto per scelta: il **binario**. Il giro completo
+— esporta, scrive un `.xlsx` vero, lo rilegge con le stesse due chiamate di
+`readWorkbook()`, reimporta — gira dentro la suite, quindi il prossimo
+aggiornamento della libreria si fa sapendo subito se qualcosa si è mosso.
+Restano da provare a mano i file prodotti da Excel stesso: quelli nessun test
+può fabbricarli.
+
 ### 22. C1 — la duplicazione RFQ/ODA, per la parte che conta *(0.41.0)*
 *(Prerequisito chiuso nella 0.40.0: `test/docs-state.test.js`, 29 controlli su
 stati, ricevimenti, blocchi e numerazione — vedi C3.)*
@@ -306,15 +332,6 @@ test sull'export prima del refactor — non dopo.
 ## Aperto
 
 ### A. Sicurezza
-
-**A1 — `xlsx@0.18.5` con CVE note.** *(SRI risolto nella 0.22.0, vedi §9.)* La
-versione di SheetJS in uso ha due vulnerabilità corrette a monte (prototype
-pollution, corretta in 0.19.3; ReDoS, corretta in 0.20.2), e il file Excel
-importato è input non fidato. *Rimandato:* SheetJS ha cambiato canale di
-distribuzione dopo la 0.18 — non è un cambio di numero di versione e basta, e
-l'aggiornamento va verificato su file d'importazione reali. Da fare ora c'è però
-una cosa che prima mancava: `test/import.test.js` copre la logica a valle del
-parsing, quindi si può cambiare libreria sapendo se qualcosa si rompe.
 
 **A2 — `hashPassword` è uno SHA-256 a singolo giro** (`store.js`), senza KDF
 né iterazioni, e il backup JSON esporta gli hash. Il limite è documentato

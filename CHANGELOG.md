@@ -2,6 +2,20 @@
 
 Le revisioni seguono il versionamento semantico `0.MINOR.PATCH`: **MINOR** per nuove funzionalità, **PATCH** per correzioni. La versione in cima è quella in `APP_VERSION` (`core.js`) e mostrata nell'header dell'app.
 
+### 0.43.0 — 2026-08-03
+
+**Le librerie di export stanno nella cartella dell'app, e SheetJS è aggiornata.** Erano su un CDN: la versione in uso aveva due vulnerabilità corrette a monte, e i pulsanti di export non funzionavano su un PC senza rete — cioè proprio dove l'app dichiara di funzionare.
+
+**Cambiato**
+- **SheetJS dalla 0.18.5 alla 0.20.3.** Le due falle (prototype pollution, corretta nella 0.19.3; ReDoS, nella 0.20.2) stavano su quello che è **input non fidato**: un file Excel arriva da un fornitore, da un cliente, da una mail. L'aggiornamento era rimandato perché SheetJS dopo la 0.18 non pubblica più su cdnjs — non era un cambio di numero e basta.
+- **Anche jsPDF entra nel repo**, alla stessa versione di prima: verificata **bit per bit** confrontandone l'impronta con la firma `integrity` che stava nella pagina. Non è «dovrebbe essere la stessa»: è la stessa.
+- **Niente più rete.** Copiando la cartella su un altro PC funziona tutto subito, export compresi. Prima serviva un primo caricamento con la connessione, e su una postazione d'officina scollegata i pulsanti erano muti. Non c'è più un terzo dominio da cui l'app dipenda.
+- `vendor/LEGGIMI.md` dice versioni, provenienza, impronte e come si aggiornano.
+
+**Verifica**
+- 5 nuovi controlli (suite da 928 a 933) su un **file .xlsx vero**: è il buco che tutti gli altri test sull'import lasciavano aperto per scelta — lavorano su righe già lette, perché il binario non è nostro. Ora il giro completo gira nella suite: si esporta come fa l'app, si scrive il file, lo si rilegge con le stesse due chiamate di `readWorkbook()` e lo si reimporta. Accenti, virgolette e trattini lunghi tornano identici, i numeri restano numeri (se tornassero testo, un foglio con la virgola decimale entrerebbe a zero), le celle vuote restano vuote e reimportare lo stesso file non duplica niente.
+- Resta da provare a mano un file prodotto **da Excel stesso**: quello nessun test può fabbricarlo.
+
 ### 0.42.0 — 2026-08-03
 
 **L'app si usa anche senza mouse, e i campi hanno un nome.** Erano centocinquanta etichette che il browser non sapeva collegare al proprio campo, duecento pulsanti-icona senza nome e una decina di righe cliccabili invisibili alla tastiera. Niente di tutto questo si vedeva usando l'app col mouse — ed è esattamente il motivo per cui era rimasto lì.

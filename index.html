@@ -7,20 +7,19 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="style.css">
-<!-- Librerie di export, da CDN. `integrity` (SRI): il browser verifica l'impronta
-     del file scaricato e lo rifiuta se non corrisponde — un CDN compromesso non
-     può iniettare codice in un'app che maneggia listini e ordini. Cambiando
-     versione va rigenerato anche l'hash, altrimenti la libreria non si carica
-     (requirePdf/requireXlsx in core.js lo dicono all'utente invece di tacere). -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"
-        integrity="sha512-qZvrmS2ekKPF2mSznTQsxqPgnpkI4DNTlrdUmTzrDgektczlKNRRhy5X5AAOnx5S09ydFYWWNSfcEqDTTHgtNA=="
-        crossorigin="anonymous" referrerpolicy="no-referrer"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"
-        integrity="sha512-2/YdOMV+YNpanLCF5MdQwaoFRVbTmrJ4u4EpqS/USXAQNUDgI5uwYi6J98WVtJKcfe1AbgerygzDFToxAlOGEQ=="
-        crossorigin="anonymous" referrerpolicy="no-referrer"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"
-        integrity="sha512-r22gChDnGvBylk90+2e/ycr3RVrDi8DIOkIGNhJlKfuyQM4tIRAI062MaV8sfjQKYVGjOBaZBOA87z+IhZE9DA=="
-        crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+<!-- Librerie di export, dentro il repo (vedi vendor/LEGGIMI.md). Erano su CDN con
+     SRI: la firma proteggeva dal CDN compromesso, ma restavano due cose. La
+     prima è che SheetJS non pubblica più su cdnjs dalla 0.18, e quella versione
+     ha due vulnerabilità corrette a monte, su file Excel che sono input non
+     fidato. La seconda è che l'app dichiara di aprirsi con un doppio click e di
+     girare offline, e con le librerie altrove questo era vero solo dopo il primo
+     caricamento con la rete. Un file nel repo risolve entrambe: niente terzo
+     dominio da fidarsi, e l'export funziona anche su un PC in officina senza
+     rete. (requirePdf/requireXlsx in core.js restano: se un file manca lo
+     dicono, invece di lasciare il pulsante muto.) -->
+<script src="vendor/jspdf.umd.min.js"></script>
+<script src="vendor/jspdf.plugin.autotable.min.js"></script>
+<script src="vendor/xlsx.full.min.js"></script>
 </head>
 <body>
 
