@@ -19,11 +19,19 @@ function conPiano(over) {
       { id: 's1', name: 'Alfa', defaultTransport: 'EXW', defaultPayment: 'Bonifico 30gg', active: true },
       { id: 's2', name: 'Beta', active: true },
     ],
+    // Il listino è esplicito, come in un database vero: migrateDB() semina una
+    // quotazione su ogni articolo che ha un fornitore o un prezzo, quindi la
+    // forma «fornitore sull'articolo ma listino vuoto» non esiste sul campo. E
+    // il listino è ciò da cui i documenti prendono il prezzo: un fixture senza
+    // proverebbe una strada che nessun utente percorre.
     items: [
-      Object.assign(acq('vite', 2), { supplierId: 's1', uom: 'pz' }),
-      Object.assign(mat('tondo', 5), { supplierId: 's2', uom: 'kg' }),
+      Object.assign(acq('vite', 2), { supplierId: 's1', uom: 'pz',
+        priceList: [{ id: 'q-vite', supplierId: 's1', price: 2, date: '2026-01-01' }], activePriceId: 'q-vite' }),
+      Object.assign(mat('tondo', 5), { supplierId: 's2', uom: 'kg',
+        priceList: [{ id: 'q-tondo', supplierId: 's2', price: 5, date: '2026-01-01' }], activePriceId: 'q-tondo' }),
       Object.assign(acq('orfano', 0), { uom: 'pz' }),
-      parte('flangia', { sourcing: 'buy', unitCost: 30, supplierId: 's1' }),
+      parte('flangia', { sourcing: 'buy', unitCost: 30, supplierId: 's1',
+        priceList: [{ id: 'q-fla', supplierId: 's1', price: 30, date: '2026-01-01' }], activePriceId: 'q-fla' }),
       asm('mac', 'macchina', { components: [comp('vite', 4), comp('tondo', 2), comp('orfano', 1), comp('flangia', 1)] }),
     ],
     plans: [{ id: 'pl1', number: 'FAB-2026-001', title: 'Lotto luglio', date: '2026-07-01', notes: '', lines: [{ id: 'l1', itemId: 'mac', qty: 2 }], active: true }],
@@ -107,10 +115,32 @@ describe('planNewRfq — la richiesta chiede il prezzo', () => {
 });
 
 describe('planNewOrder — l\'ordine porta il prezzo', () => {
-  it('le righe portano il prezzo in uso nella costificazione', () => {
+  it('le righe portano il listino del fornitore a cui l\'ordine è intestato', () => {
     const o = genera(conPiano(), 'order', 's1');
     approx(o.lines.find(l => l.code === 'VITE').price, 2);
     approx(o.lines.find(l => l.code === 'FLANGIA').price, 30, 'anche una parte acquistata');
+  });
+  // La forma «prezzo e fornitore sui campi dell'articolo, listino vuoto» è quella
+  // dei database precedenti al listino. migrateDB() la converte in una quotazione,
+  // ed è da lì che il documento prende il prezzo: senza questo passaggio un
+  // database vecchio genererebbe ordini a prezzo vuoto.
+  it('anche partendo da un database vecchio, migrato all\'avvio', () => {
+    const app = loadApp({ silent: true });
+    app.seedStorage(makeDb({
+      suppliers: [{ id: 's1', name: 'Alfa', active: true }],
+      items: [Object.assign(acq('vite', 2), { supplierId: 's1' }),
+        asm('mac', 'macchina', { components: [comp('vite', 4)] })],
+      plans: [{ id: 'pl1', number: 'FAB-1', lines: [{ id: 'l1', itemId: 'mac', qty: 2 }], active: true }],
+    }));
+    app.eval('Store.load(); invalidateCaches();');
+    app.asRole('admin');
+    const o = JSON.parse(app.eval(`(() => {
+      const p = getPlan('pl1');
+      const g = mrpGroupBySupplier(mrpBuyRows(p)).find(x => x.supplierId === 's1');
+      return JSON.stringify(planNewOrder(p, 's1', g.rows));
+    })()`));
+    approx(o.lines[0].price, 2);
+    approx(o.lines[0].qty, 8);
   });
 
   it('una riga senza prezzo resta vuota invece di valere zero', () => {

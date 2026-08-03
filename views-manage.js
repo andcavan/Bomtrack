@@ -433,7 +433,7 @@ function renderWorkCenters() {
   return `<div class="mgmt-panel"><div class="mgmt-list">${list}</div>
     <div class="mgmt-form">
       <input id="wc-name" placeholder="Nome (es. Tornitura)">
-      <input id="wc-rate" type="number" min="0" step="0.5" placeholder="Tariffa €/h">
+      <input id="wc-rate" type="number" min="0" step="0.5" placeholder="Tariffa ${esc(cur())}/h" title="Tariffa oraria del centro di lavoro, in ${esc(cur())} per ora">
       <button class="add-btn-sm" onclick="addWc()">+ Aggiungi</button></div></div>`;
 }
 function addWc() {

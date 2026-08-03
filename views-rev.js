@@ -110,14 +110,16 @@ function revRowsOf(snapshot) {
     r.qty += Number(qty) || 0;
     m.set(chiave, r);
   };
+  // Ogni riga porta con sé la propria unità: nel confronto «2 → 3» va detto di
+  // che cosa, e le lavorazioni si misurano in ore mentre i componenti no.
   (snapshot.components || []).forEach(c => {
     const ci = getItem(c.itemId);
     somma('i:' + c.itemId, ci ? ci.code + ' — ' + ci.name : '(articolo eliminato)',
-      c.qty, { tipo: 'Componente', scrapPct: Number(c.scrapPct) || 0 });
+      c.qty, { tipo: 'Componente', uom: itemUom(ci), scrapPct: Number(c.scrapPct) || 0 });
   });
   (snapshot.operations || []).forEach(o => {
     const w = getWorkCenter(o.workCenterId);
-    somma('o:' + o.workCenterId, '🔧 ' + (w ? w.name : '(centro eliminato)'), o.hours, { tipo: 'Lavorazione' });
+    somma('o:' + o.workCenterId, '🔧 ' + (w ? w.name : '(centro eliminato)'), o.hours, { tipo: 'Lavorazione', uom: 'h' });
   });
   (snapshot.cycle || []).forEach(r => {
     if (r.kind === 'op') {
@@ -126,7 +128,7 @@ function revRowsOf(snapshot) {
         1, { tipo: 'Fase ciclo', cost: Number(r.cost) || 0 });
     } else {
       const ci = getItem(r.itemId);
-      somma('c:' + r.itemId, ci ? ci.code + ' — ' + ci.name : '(articolo eliminato)', r.qty, { tipo: 'Distinta parte' });
+      somma('c:' + r.itemId, ci ? ci.code + ' — ' + ci.name : '(articolo eliminato)', r.qty, { tipo: 'Distinta parte', uom: itemUom(ci) });
     }
   });
   return m;
@@ -216,7 +218,7 @@ function revHistoryModal(itemId) {
         <strong style="font-family:var(--mono)">Rev. ${esc(r.rev)}</strong>
         <span class="empty-text" style="padding:0">${esc(String(r.date || '').slice(0, 10))} · ${esc(r.createdBy ? actorName(r.createdBy) : '—')}</span>
         <span style="flex:1"></span>
-        <span class="empty-text" style="padding:0">${fmtN(r.snapshot.cost ? r.snapshot.cost.total : 0)}</span>
+        <span class="empty-text" style="padding:0">${fmtPer(r.snapshot.cost ? r.snapshot.cost.total : 0, itemUom(it))}</span>
         <button class="btn-ghost" onclick="revCompareModal('${r.id}')">${quante ? '⇄ Confronta (' + quante + ')' : '⇄ Confronta'}</button>
       </div>
       ${r.motivo ? `<div style="margin-top:4px">${esc(r.motivo)}</div>` : '<div class="empty-text" style="text-align:left;padding:2px 0 0">nessun motivo indicato</div>'}
@@ -244,17 +246,18 @@ function revCompareModal(revId) {
   const costoPrima = r.snapshot.cost ? r.snapshot.cost.total : 0;
   const costoOra = costOf(it.id).total;
   const delta = costoOra - costoPrima;
+  const u = itemUom(it);
   openModal(`<h3>⇄ Rev. ${esc(r.rev)} → attuale (${esc(itemRev(it))})</h3>
     <p>${esc(it.code)} — ${esc(it.name)}${r.motivo ? ` · <em>${esc(r.motivo)}</em>` : ''}</p>
     <div class="cost-summary">
-      ${kpi('Costo alla Rev. ' + esc(r.rev), fmtN(costoPrima), '')}
-      ${kpi('Costo attuale', fmtN(costoOra), '')}
-      ${kpi('Differenza', (delta >= 0 ? '+' : '') + fmtN(delta), delta > 0 ? 'orange' : (delta < 0 ? 'green' : ''))}
+      ${kpi('Costo alla Rev. ' + esc(r.rev), fmtPer(costoPrima, u), '')}
+      ${kpi('Costo attuale', fmtPer(costoOra, u), '')}
+      ${kpi('Differenza', (delta >= 0 ? '+' : '') + fmtPer(delta, u), delta > 0 ? 'orange' : (delta < 0 ? 'green' : ''))}
     </div>
     ${revDiffVuoto(d) ? '<div class="empty-text">Nessuna differenza nella distinta. Se il costo è cambiato, è cambiato un prezzo, non la distinta.</div>' : ''}
-    ${sezione('Aggiunte', d.aggiunte.map(x => riga(x, '+', 'var(--green)', fmtQty(x.qty))))}
-    ${sezione('Rimosse', d.rimosse.map(x => riga(x, '−', 'var(--red)', fmtQty(x.qty))))}
+    ${sezione('Aggiunte', d.aggiunte.map(x => riga(x, '+', 'var(--green)', fmtUom(x.qty, x.uom))))}
+    ${sezione('Rimosse', d.rimosse.map(x => riga(x, '−', 'var(--red)', fmtUom(x.qty, x.uom))))}
     ${sezione('Quantità cambiate', d.cambiate.map(x => riga(x, '≠', 'var(--orange, #d90)',
-      `${fmtQty(x.qtyPrima)} → ${fmtQty(x.qty)}`)))}
+      `${fmtQty(x.qtyPrima)} → ${fmtUom(x.qty, x.uom)}`)))}
     <div class="modal-actions"><button class="btn-ghost" onclick="closeModal()">Chiudi</button></div>`, true, 'confronto');
 }

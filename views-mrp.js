@@ -95,11 +95,10 @@ function oggiISO() {
   const n = new Date();
   return new Date(n.getTime() - n.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
 }
-// Giorni di consegna della quotazione in uso. Senza quotazione, o senza il dato,
-// vale zero: nessun anticipo, non un anticipo inventato.
-function leadDaysOf(it) {
-  const attiva = activePriceRow(it);
-  const g = attiva ? Number(attiva.leadDays) : NaN;
+// Giorni di consegna dichiarati da una quotazione. Senza quotazione, o senza il
+// dato, vale zero: nessun anticipo, non un anticipo inventato.
+function leadDaysOfRow(row) {
+  const g = row ? Number(row.leadDays) : NaN;
   return isFinite(g) && g > 0 ? g : 0;
 }
 // Urgenza di una riga d'acquisto: 'ritardo' | 'urgente' | 'ok' | '' (senza data).
@@ -139,34 +138,50 @@ function mrpBuyRow(entry, netMode, planId) {
   // Il confronto è fra costi nell'unità di gestione, non fra prezzi grezzi:
   // vedi bestPriceRow(). Un €/kg accanto a un €/m non è un confronto.
   const bestPrice = best ? (rowUnitCost(it, best) || 0) : null;
-  const minQty = attiva && attiva.minQty !== '' && attiva.minQty != null ? (Number(attiva.minQty) || 0) : 0;
   const impegni = commitsOn(it.id, planId || null);
   const st = stockFor(it, entry.qty, impegni.reduce((s, c) => s + c.qty, 0));
   const qtyOrder = netMode ? st.net : entry.qty;
-  // Unità in cui si parla col fornitore, e quantità tradotta in quella unità:
-  // è ciò che finirà sul documento e ciò con cui va confrontato il suo minimo.
-  const docUom = docUomOf(it);
+
+  // ─── Da chi si compra, e a quale listino ───
+  // Il fornitore lo decide la quotazione **in uso**: è la scelta che qualcuno ha
+  // fatto, ed è la stessa da cui viene il costo. Il listino che finirà sul
+  // documento è invece la quotazione **più recente di quel fornitore** — quello
+  // che ci fa oggi, non quello che gli abbiamo scelto mesi fa. Nel caso normale
+  // sono la stessa riga; quando divergono, il documento deve dire il vero e la
+  // divergenza va mostrata (`listinoDiverso`), non appianata di nascosto.
+  const supplierId = (attiva && attiva.supplierId) || it.supplierId || '';
+  const doc = supplierPriceRow(it, supplierId) || attiva;
+  const quotato = doc && doc.price !== '' && doc.price != null;
+
+  // Unità in cui si parla con lui, e quantità tradotta in quella unità: è ciò che
+  // finirà sul documento e ciò con cui va confrontato il suo minimo.
+  const docUom = (doc && priceUomOf(it, doc)) || itemUom(it);
   const qtyDoc = toAltUom(it, qtyOrder, docUom);
-  // Data in cui serve, giorni di consegna, e quindi data entro cui ordinare.
+  // Il prezzo del documento è il suo, grezzo: è già espresso in quell'unità.
+  // Su una riga da 120 kg va il €/kg, non il €/m — un ordine che moltiplica
+  // chili per un prezzo al metro è un ordine sbagliato.
+  const priceDoc = quotato ? Number(doc.price) : 0;
+  // Lo stesso prezzo riportato nell'unità di gestione, per poterlo confrontare
+  // col costo: è l'unico modo onesto di dire «il documento non dirà questo».
+  const docInGestione = quotato ? (rowUnitCost(it, doc) || 0) : null;
+  const minQty = doc && doc.minQty !== '' && doc.minQty != null ? (Number(doc.minQty) || 0) : 0;
+
+  // Data in cui serve, giorni di consegna di quel listino, data entro cui ordinare.
   const due = entry.due || '';
-  const leadDays = leadDaysOf(it);
+  const leadDays = leadDaysOfRow(doc);
   const orderBy = due ? addDays(due, -leadDays) : '';
   return {
-    item: it, qty: entry.qty, uom: it.uom || '',
+    item: it, qty: entry.qty, uom: itemUom(it),
     due, leadDays, orderBy, urgenza: urgenzaOrdine(orderBy),
-    docUom, qtyDoc, doppiaUom: docUom !== (it.uom || ''),
-    // Il prezzo da scrivere sul documento è quello **per unità del fornitore**:
-    // su una riga da 120 kg va il €/kg, non il €/m. L'importo non cambia —
-    // prezzo × quantità è lo stesso numero da entrambe le parti — ma un ordine
-    // che moltiplica chili per un prezzo al metro è un ordine sbagliato.
-    priceDoc: uomFactor(it, docUom) > 0 ? price / uomFactor(it, docUom) : price,
+    docUom, qtyDoc, doppiaUom: docUom !== itemUom(it),
+    priceDoc, amountDoc: priceDoc * qtyDoc,
     onHand: st.onHand, incoming: st.incoming, safety: st.safety, lotSize: st.lotSize,
     // Impegnato dagli **altri** piani aperti, e il dettaglio di chi lo impegna:
     // un numero che toglie merce senza dire chi se l'è presa è un numero che non
     // si può contestare, e quindi neanche credere.
     committed: st.committed, impegni, libero: st.libero,
     net: st.net, coperto: !!netMode && st.coperto, qtyOrder,
-    supplierId: (attiva && attiva.supplierId) || it.supplierId || '',
+    supplierId,
     price, amount: price * qtyOrder,
     bestPrice, saving: (bestPrice != null && bestPrice < price) ? (price - bestPrice) * qtyOrder : 0,
     // Il minimo del fornitore è espresso nella SUA unità: confrontarlo con i
@@ -175,8 +190,15 @@ function mrpBuyRow(entry, netMode, planId) {
     minQty, underMin: minQty > 0 && qtyDoc > 0 && qtyDoc < minQty,
     // Righe che manderebbero un ordine a zero o senza intestatario: si segnalano
     // qui, prima di generare il documento, non dopo averlo mandato al fornitore.
-    noSupplier: !((attiva && attiva.supplierId) || it.supplierId),
+    noSupplier: !supplierId,
     noPrice: !(price > 0),
+    // Il documento partirebbe senza prezzo perché **quel fornitore** non ha
+    // quotato questo articolo, pur essendocene uno in costificazione.
+    noDocPrice: !quotato,
+    // Il listino applicabile dice un prezzo diverso da quello con cui è stato
+    // costificato: il documento seguirà il listino.
+    listinoDiverso: docInGestione != null && Math.abs(docInGestione - price) > 0.00005,
+    docInGestione,
   };
 }
 function mrpBuyRows(plan, netMode) { return mrpExplode(plan.lines).buy.map(e => mrpBuyRow(e, netMode, plan.id)); }
@@ -408,6 +430,10 @@ function planDocsBody(gruppi, planId, kind) {
   // utile anche mentre si prepara un ordine.
   const usati = r => (gia.get(r.item.id) || []).filter(x => x.kind === kind);
   const altri = r => (gia.get(r.item.id) || []).filter(x => x.kind !== kind);
+  // Quanto varrà davvero la riga sul documento. Senza listino applicabile la
+  // riga nascerà vuota: qui resta la stima da costificazione, che è l'unica
+  // cifra disponibile per decidere se conviene generare.
+  const importoDoc = r => (r.noDocPrice ? r.amount : r.amountDoc);
 
   const corpo = gruppi.map(g => {
     const key = g.supplierId || '';
@@ -421,16 +447,26 @@ function planDocsBody(gruppi, planId, kind) {
       } else {
         const a = altri(r);
         if (a.length) seg.push(`<span class="price-best" title="Esiste già ${esc(a.map(docRefLabel).join(', '))}, di tipo diverso: questa riga resta selezionabile">📄 ${esc(a.map(x => x.number).join(', '))}</span>`);
-        if (r.underMin) seg.push(`<span class="mrp-warn" title="Quantità minima del fornitore: ${r.minQty} ${esc(r.docUom)}">⚠ sotto il minimo di ${fmtQty(r.minQty)} ${esc(r.docUom)}</span>`);
-        if (r.noPrice) seg.push('<span class="mrp-warn" title="Senza prezzo la riga vale zero">⚠ senza prezzo</span>');
+        if (r.underMin) seg.push(`<span class="mrp-warn" title="Quantità minima del fornitore: ${r.minQty} ${esc(r.docUom)}">⚠ sotto il minimo di ${fmtUom(r.minQty, r.docUom)}</span>`);
+        // Due assenze diverse, e la seconda è quella che manda fuori un ordine
+        // sbagliato: l'articolo un prezzo ce l'ha, ma non da questo fornitore.
+        if (r.noDocPrice) seg.push(`<span class="mrp-warn" title="${esc(supplierName(r.supplierId) || 'Questo fornitore')} non ha questo articolo a listino: la riga nascerà senza prezzo, da compilare a mano. Il prezzo di un altro fornitore non si applica.">⚠ non a listino</span>`);
+        else if (r.noPrice) seg.push('<span class="mrp-warn" title="Senza prezzo la riga vale zero">⚠ senza prezzo</span>');
+        // Il listino applicabile non è quello con cui è stato costificato: il
+        // documento seguirà il listino, e il totale qui sopra viene dal costo.
+        else if (r.listinoDiverso) seg.push(`<span class="mrp-warn" title="Costificato a ${fmtPer(r.price, r.uom)}, ma ${esc(supplierName(r.supplierId) || 'il fornitore')} oggi quota ${fmtPer(r.docInGestione, r.uom)}. Sul documento va il listino.">⇄ a listino ${fmtPer(r.priceDoc, r.docUom)}</span>`);
       }
+      // Questo pannello è l'anteprima del documento: l'importo è quello che il
+      // documento porterà, cioè il listino applicabile. Senza una quotazione di
+      // quel fornitore resta la stima da costificazione — e accanto c'è il
+      // badge che dice che sul documento quella cifra non ci sarà.
       return `<label class="plandoc-row${bloccata.length ? ' plandoc-used' : ''}">
         <input type="checkbox" class="plandoc-line" data-sup="${esc(key)}" value="${r.item.id}"
           ${bloccata.length ? 'disabled' : 'checked'} onchange="planDocsCount()">
         <span style="font-family:var(--mono)">${codeLink(r.item.id, r.item.code)}</span> ${esc(r.item.name)}
-        <span class="plandoc-qty">${fmtQty(r.qtyDoc)} ${esc(r.docUom)}${r.doppiaUom ? ` <span style="opacity:.6">(= ${fmtQty(r.qtyOrder)} ${esc(r.uom)})</span>` : ''}${mrpNet && r.qtyOrder !== r.qty ? ` <span style="opacity:.6">(lordo ${fmtQty(r.qty)} ${esc(r.uom)})</span>` : ''} · ${fmtN(r.amount)}</span> ${seg.join(' ')}</label>`;
+        <span class="plandoc-qty">${fmtUom(r.qtyDoc, r.docUom)}${r.doppiaUom ? ` <span style="opacity:.6">(= ${fmtUom(r.qtyOrder, r.uom)})</span>` : ''}${mrpNet && r.qtyOrder !== r.qty ? ` <span style="opacity:.6">(lordo ${fmtUom(r.qty, r.uom)})</span>` : ''} · ${fmtN(importoDoc(r))}</span> ${seg.join(' ')}</label>`;
     }).join('');
-    const totDisp = disponibili.reduce((s, r) => s + r.amount, 0);
+    const totDisp = disponibili.reduce((s, r) => s + importoDoc(r), 0);
     return `<div class="plandoc-group">
       <label class="plandoc-head">
         <input type="checkbox" class="plandoc-sup" data-sup="${esc(key)}" ${disponibili.length ? 'checked' : 'disabled'} onchange="planDocsToggleGroup(this)">
@@ -524,33 +560,38 @@ function planDocHead(p, supplierId) {
     planId: p.id, jobId: p.jobId || null, notes: '', notesInternal: '', active: true,
   };
 }
-function planDocLine(r, price) {
+function planDocLine(r, conPrezzo) {
   const it = r.item;
   // La quantità del documento è quella mostrata nell'elenco: netta se il
   // fabbisogno netto è acceso, lorda altrimenti. Nascondere all'utente quale
   // delle due sta ordinando sarebbe il modo più rapido di fargli mandare al
   // fornitore un numero che non ha visto.
-  // Unità e quantità sono quelle del fornitore: se quota a chilo, l'ordine è in
-  // chili. Mandargli metri sarebbe un ordine da rifare al telefono.
+  // Unità, quantità e prezzo sono quelli del **listino applicabile** — la
+  // quotazione più recente del fornitore a cui il documento è intestato (vedi
+  // mrpBuyRow): se quota a chilo, l'ordine è in chili al suo €/kg. Mandargli
+  // metri, o il prezzo di un altro, è un ordine da rifare al telefono.
+  // Se quel fornitore non ha quotato l'articolo la riga parte **senza prezzo**:
+  // una casella vuota si vede, il prezzo di un altro no.
   // La data di consegna richiesta è quella in cui il materiale serve: era
   // sempre vuota, e chi generava un ordine dal fabbisogno doveva riscriverla a
   // mano su ogni riga — cioè non la scriveva.
   return { id: gid(), itemId: it.id, code: it.code || '', description: it.name || '',
-    uom: r.docUom || it.uom || defaultUom(),
+    uom: r.docUom || itemUom(it) || defaultUom(),
     qty: Number(r.qtyDoc != null ? r.qtyDoc : (r.qtyOrder != null ? r.qtyOrder : r.qty)) || 0,
-    price, deliveryDate: r.due || '', note: '' };
+    price: conPrezzo && !r.noDocPrice && r.priceDoc > 0 ? r.priceDoc : '',
+    deliveryDate: r.due || '', note: '' };
 }
 function planNewRfq(p, supplierId, righe) {
   // Una richiesta d'offerta non porta il prezzo: è la domanda, non la risposta.
   const r = stampNew(Object.assign({ id: gid(), number: nextRfqNumber() }, planDocHead(p, supplierId),
-    { lines: righe.map(x => planDocLine(x, '')) }));
+    { lines: righe.map(x => planDocLine(x, false)) }));
   db.rfqs.push(r);
   return r;
 }
 function planNewOrder(p, supplierId, righe) {
   const o = stampNew(Object.assign({ id: gid(), number: nextOrderNumber() }, planDocHead(p, supplierId),
     { requestedDelivery: '', rfqId: null, supplierConfirmation: '',
-      lines: righe.map(x => Object.assign(planDocLine(x, x.priceDoc > 0 ? x.priceDoc : ''), { received: 0 })) }));
+      lines: righe.map(x => Object.assign(planDocLine(x, true), { received: 0 })) }));
   db.orders.push(o);
   return o;
 }
@@ -717,18 +758,18 @@ function renderPlanEdit(id) {
 // e doversi fidare.
 function mrpBuyLineHtml(r) {
   const seg = [];
-  if (r.bestPrice != null && r.saving > 0) seg.push(`<span class="price-best" title="A listino c'è ${fmtN(r.bestPrice)}: risparmio ${fmtN(r.saving)}">↓ ${fmtN(r.saving)}</span>`);
-  if (r.underMin) seg.push(`<span class="mrp-warn" title="Quantità minima del fornitore: ${r.minQty}">⚠ sotto il minimo</span>`);
+  if (r.bestPrice != null && r.saving > 0) seg.push(`<span class="price-best" title="A listino c'è ${fmtPer(r.bestPrice, r.uom)}: risparmio ${fmtPer(r.saving, r.uom)}">↓ ${fmtN(r.saving)}</span>`);
+  if (r.underMin) seg.push(`<span class="mrp-warn" title="Quantità minima del fornitore: ${fmtUom(r.minQty, r.docUom)}">⚠ sotto il minimo</span>`);
   if (r.noPrice) seg.push(`<span class="mrp-warn" title="Nessun prezzo in uso: la riga varrebbe zero in un ordine">⚠ senza prezzo</span>`);
-  if (mrpNet && r.lotSize > 0 && r.net > 0) seg.push(`<span class="mrp-warn" title="Arrotondato al lotto di riordino di ${fmtQty(r.lotSize)}">↑ lotto ${fmtQty(r.lotSize)}</span>`);
+  if (mrpNet && r.lotSize > 0 && r.net > 0) seg.push(`<span class="mrp-warn" title="Arrotondato al lotto di riordino di ${fmtUom(r.lotSize, r.uom)}">↑ lotto ${fmtUom(r.lotSize, r.uom)}</span>`);
   if (r.coperto) seg.push(`<span class="price-best" title="Esistente e in arrivo bastano, al netto di quanto è già impegnato">✓ coperto</span>`);
   // L'impegno si segnala **sempre**, anche col netto spento: è la risposta alla
   // domanda «la giacenza che vedo è davvero mia?», e nasconderla dietro un
   // toggle significherebbe lasciar promettere due volte la stessa merce a chi
   // quel toggle non l'ha acceso.
   if (r.committed > 0) {
-    const chi = r.impegni.map(c => `${c.number}${c.title ? ' — ' + c.title : ''}: ${fmtQty(c.qty)}`).join('\n');
-    seg.push(`<span class="mrp-warn" title="Già promesso ad altri piani aperti:\n${esc(chi)}\n\nLibero = esistente + in arrivo − impegnato = ${fmtQty(r.libero)} ${esc(r.uom)}">🔒 impegnato ${fmtQty(r.committed)}</span>`);
+    const chi = r.impegni.map(c => `${c.number}${c.title ? ' — ' + c.title : ''}: ${fmtQty(c.qty)} ${r.uom}`.trim()).join('\n');
+    seg.push(`<span class="mrp-warn" title="Già promesso ad altri piani aperti:\n${esc(chi)}\n\nLibero = esistente + in arrivo − impegnato = ${fmtUom(r.libero, r.uom)}">🔒 impegnato ${fmtUom(r.committed, r.uom)}</span>`);
   }
   // Quando le due unità differiscono si mostrano entrambe: quella di gestione
   // dice cosa serve, quella del fornitore cosa si ordina. Farne vedere una sola
@@ -776,7 +817,8 @@ function mrpBuyTable(rows) {
     <th title="Data in cui serve meno i giorni di consegna del fornitore">Ordinare entro</th>
     <th>U.M.</th>
     ${colonneStock}<th style="text-align:right">${mrpNet ? 'Da comprare' : 'Q.tà'}</th>
-    <th style="text-align:right">Prezzo</th><th style="text-align:right">Importo</th></tr></thead>`;
+    <th style="text-align:right" title="Prezzo di una unità, nella U.M. della colonna U.M.">Prezzo (${esc(cur())}/U.M.)</th>
+    <th style="text-align:right">Importo (${esc(cur())})</th></tr></thead>`;
   const totale = rows.reduce((s, r) => s + r.amount, 0);
   let body;
   if (mrpGrouped) {
@@ -805,14 +847,13 @@ function mrpMakeTable(make) {
   }).join('');
   return `<div class="table-wrap"><table>
     <thead><tr><th>Codice</th><th>Parte</th><th>U.M.</th>
-      <th style="text-align:right">Q.tà</th><th style="text-align:right">Costo un.</th><th style="text-align:right">Importo</th></tr></thead>
+      <th style="text-align:right">Q.tà</th><th style="text-align:right">Costo un. (${esc(cur())}/U.M.)</th>
+      <th style="text-align:right">Importo (${esc(cur())})</th></tr></thead>
     <tbody>${rows}</tbody></table></div>`;
 }
-// Le quantità esplose sono float (scarti e frazioni): si mostrano senza zeri inutili
-function fmtQty(n) {
-  const v = Number(n) || 0;
-  return Number.isInteger(v) ? String(v) : v.toFixed(3).replace(/0+$/, '').replace(/\.$/, '');
-}
+// Le quantità esplose sono float (scarti e frazioni): si mostrano senza zeri
+// inutili. La formattazione — e l'unità che le va accanto — stanno in core.js:
+// fmtQty / fmtUom / fmtPer.
 
 // ─── Export ───
 function exportMrpExcel(id) {
@@ -821,9 +862,12 @@ function exportMrpExcel(id) {
   const buy = mrpRowsOf(exp.buy, id);
   // Nel netto l'esportazione porta anche le colonne che spiegano il numero:
   // un foglio con solo "15" non permette a nessuno di rifare il conto.
+  // Le quantità restano numeri, sommabili: l'unità è nella colonna U.M. e la
+  // valuta nell'intestazione delle colonne di denaro.
+  const colPrezzo = `Prezzo (${cur()}/U.M.)`, colImporto = `Importo (${cur()})`;
   const acquisti = [mrpNet
-    ? ['Codice', 'Articolo', 'Fornitore', 'U.M.', 'Lordo', 'Esistente', 'Impegnato', 'In arrivo', 'Da comprare', 'Prezzo', 'Importo']
-    : ['Codice', 'Articolo', 'Fornitore', 'U.M.', 'Quantità', 'Prezzo', 'Importo']];
+    ? ['Codice', 'Articolo', 'Fornitore', 'U.M.', 'Lordo', 'Esistente', 'Impegnato', 'In arrivo', 'Da comprare', colPrezzo, colImporto]
+    : ['Codice', 'Articolo', 'Fornitore', 'U.M.', 'Quantità', colPrezzo, colImporto]];
   (mrpGrouped ? mrpGroupBySupplier(buy).flatMap(g => g.rows) : buy).forEach(r => {
     const testa = [r.item.code, r.item.name, supplierName(r.supplierId) || '', r.uom];
     const coda = [+r.price.toFixed(4), +r.amount.toFixed(2)];
@@ -836,7 +880,7 @@ function exportMrpExcel(id) {
   rigaTotale[1] = 'TOTALE';
   rigaTotale[rigaTotale.length - 1] = +buy.reduce((s, r) => s + r.amount, 0).toFixed(2);
   acquisti.push(rigaTotale);
-  const produzione = [['Codice', 'Parte', 'U.M.', 'Quantità', 'Costo unitario', 'Importo']];
+  const produzione = [['Codice', 'Parte', 'U.M.', 'Quantità', `Costo unitario (${cur()}/U.M.)`, `Importo (${cur()})`]];
   exp.make.forEach(e => {
     const c = costOf(e.item.id).total;
     produzione.push([e.item.code, e.item.name, e.item.uom || '', +e.qty.toFixed(3), +c.toFixed(4), +(c * e.qty).toFixed(2)]);
@@ -866,8 +910,8 @@ function exportMrpPDF(id) {
   // foglio deve poter rifare il conto senza tornare all'app.
   const righe = (mrpGrouped ? mrpGroupBySupplier(buy).flatMap(g => g.rows) : buy)
     .map(r => [r.item.code, r.item.name, supplierName(r.supplierId) || '—',
-      fmtQty(r.qtyOrder) + ' ' + r.uom + (mrpNet && r.qtyOrder !== r.qty ? ` (lordo ${fmtQty(r.qty)})` : ''),
-      fmtN(r.price), fmtN(r.amount)]);
+      (fmtQty(r.qtyOrder) + ' ' + r.uom).trim() + (mrpNet && r.qtyOrder !== r.qty ? ` (lordo ${fmtQty(r.qty)} ${r.uom})`.trimEnd() : ''),
+      fmtN(r.price) + (r.uom ? '/' + r.uom : ''), fmtN(r.amount)]);
   righe.push(['', 'TOTALE', '', '', '', fmtN(buy.reduce((s, r) => s + r.amount, 0))]);
   doc.autoTable({
     startY: doc.lastAutoTable.finalY + 8,
@@ -878,7 +922,10 @@ function exportMrpPDF(id) {
     doc.autoTable({
       startY: doc.lastAutoTable.finalY + 8,
       head: [['Codice', 'Da fabbricare', 'Q.tà', 'U.M.', 'Costo un.', 'Importo']],
-      body: exp.make.map(e => { const c = costOf(e.item.id).total; return [e.item.code, e.item.name, fmtQty(e.qty), e.item.uom || '', fmtN(c), fmtN(c * e.qty)]; }),
+      body: exp.make.map(e => {
+        const c = costOf(e.item.id).total, u = e.item.uom || '';
+        return [e.item.code, e.item.name, fmtQty(e.qty), u, fmtN(c) + (u ? '/' + u : ''), fmtN(c * e.qty)];
+      }),
       styles: { fontSize: 8 }, headStyles: { fillColor: [155, 109, 255] },
     });
   }

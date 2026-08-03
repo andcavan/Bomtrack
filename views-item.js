@@ -144,31 +144,39 @@ function itemInfoAcquisto(it) {
   const bestCosto = best ? rowUnitCost(it, best) : null;
   const righe = priceRows(it);
 
+  // Codice e descrizione si leggono dalla quotazione in uso, non dalla copia sui
+  // campi dell'articolo: è la stessa cosa, ma da un posto solo. Sono di **quel**
+  // fornitore, quindi l'etichetta lo nomina — gli altri stanno in tabella, ognuno
+  // col suo.
+  const nomeForn = supplierName(it.supplierId);
+  const presso = nomeForn ? ` presso ${esc(nomeForn)}` : ' presso il fornitore';
   const testa = itemInfoRows([
-    ['Fornitore', esc(supplierName(it.supplierId) || '— nessuno')],
-    it.supplierCode ? ['Codice presso il fornitore', _mono(it.supplierCode)] : null,
-    it.supplierDesc ? ['Descrizione del fornitore', esc(it.supplierDesc)] : null,
-    inUso != null ? ['Costo in uso', `<strong>${fmtN(inUso)}</strong> / ${esc(it.uom || '')}${inUso > 0 ? '' : ' <span style="color:var(--red)">⚠ nessun prezzo</span>'}`] : null,
-    attiva ? ['Quotazione in uso', `${fmtN(attiva.price)} / ${esc(priceUomOf(it, attiva))}${attiva.date ? ' · ' + esc(fmtDateIt(attiva.date)) : ''}`] : null,
+    ['Fornitore', esc(nomeForn || '— nessuno')],
+    attiva && attiva.code ? ['Codice' + presso, _mono(attiva.code)] : null,
+    attiva && attiva.desc ? ['Descrizione' + presso, esc(attiva.desc)] : null,
+    inUso != null ? ['Costo in uso', `<strong>${fmtPer(inUso, itemUom(it))}</strong>${inUso > 0 ? '' : ' <span style="color:var(--red)">⚠ nessun prezzo</span>'}`] : null,
+    attiva ? ['Quotazione in uso', `${fmtPer(attiva.price, priceUomOf(it, attiva))}${attiva.date ? ' · ' + esc(fmtDateIt(attiva.date)) : ''}`] : null,
     attiva && attiva.leadDays ? ['Giorni di consegna', esc(String(attiva.leadDays)) + ' gg'] : null,
-    attiva && attiva.minQty ? ['Quantità minima', fmtQty(attiva.minQty) + ' ' + esc(priceUomOf(it, attiva))] : null,
-    hasAltUom(it) ? ['U.M. d\'acquisto', `${_mono(altUomOf(it))} · ${fmtQty(altFactorOf(it))} ${esc(altUomOf(it))} in 1 ${esc(it.uom || '')}`] : null,
+    attiva && attiva.minQty ? ['Quantità minima', fmtUom(attiva.minQty, priceUomOf(it, attiva))] : null,
+    hasAltUom(it) ? ['U.M. d\'acquisto', `${_mono(altUomOf(it))} · ${fmtUom(altFactorOf(it), altUomOf(it))} in 1 ${esc(itemUom(it))}`] : null,
     best && bestCosto != null && inUso != null && bestCosto < inUso - 0.00005
-      ? ['Miglior quotazione', `<span class="price-best">${fmtN(bestCosto)} / ${esc(it.uom || '')} da ${esc(supplierName(best.supplierId) || '—')}</span> — più bassa di quella in uso, ma il prezzo non cambia da sé: si sceglie dal listino`]
+      ? ['Miglior quotazione', `<span class="price-best">${fmtPer(bestCosto, itemUom(it))} da ${esc(supplierName(best.supplierId) || '—')}</span> — più bassa di quella in uso, ma il prezzo non cambia da sé: si sceglie dal listino`]
       : null,
   ]);
 
   const tabella = righe.length ? `<div class="table-wrap"><table>
-    <thead><tr><th>Fornitore</th><th>Codice</th><th style="text-align:right">Prezzo</th><th>U.M.</th>
-      <th style="text-align:right">Q.tà min.</th><th style="text-align:right">Consegna</th><th>Data</th><th></th></tr></thead>
+    <thead><tr><th>Fornitore</th><th title="Come questo fornitore chiama l'articolo: è quello che finisce sui suoi documenti">Codice e descrizione presso il fornitore</th>
+      <th style="text-align:right" title="Prezzo di una unità, nella U.M. della colonna accanto">Prezzo (${esc(cur())}/U.M.)</th><th>U.M.</th>
+      <th style="text-align:right">Q.tà min.</th><th style="text-align:right" title="Giorni di consegna dichiarati dal fornitore">Consegna (gg)</th>
+      <th>Data</th><th></th></tr></thead>
     <tbody>${righe.map(r => {
       const u = priceUomOf(it, r);
       return `<tr${r.id === it.activePriceId ? ' style="font-weight:700"' : ''}>
         <td>${esc(supplierName(r.supplierId) || '—')}</td>
-        <td style="font-family:var(--mono)">${esc(r.code || '')}</td>
+        <td style="font-family:var(--mono)">${esc(r.code || '—')}${r.desc ? `<div class="empty-text" style="padding:0;font-family:inherit">${esc(r.desc)}</div>` : ''}</td>
         <td style="font-family:var(--mono);text-align:right">${r.price === '' || r.price == null ? '<span class="empty-text" style="padding:0">in attesa</span>' : fmtN(r.price)}</td>
         <td>${esc(u)}</td>
-        <td style="font-family:var(--mono);text-align:right">${r.minQty ? fmtQty(r.minQty) : '—'}</td>
+        <td style="font-family:var(--mono);text-align:right">${r.minQty ? fmtUom(r.minQty, u) : '—'}</td>
         <td style="font-family:var(--mono);text-align:right">${r.leadDays ? esc(String(r.leadDays)) + ' gg' : '—'}</td>
         <td>${r.date ? esc(fmtDateIt(r.date)) : '—'}</td>
         <td>${r.id === it.activePriceId ? '<span class="price-best">✓ in uso</span>' : ''}</td></tr>`;
@@ -181,13 +189,16 @@ function itemInfoAcquisto(it) {
 // anche a zero: è il numero che si è venuti a cercare.
 function itemInfoCosto(it) {
   const c = costOf(it.id);
+  const u = itemUom(it);
   const voci = [
     ['Materiale', c.material], ['Commerciali', c.purchased], ['Lavorazioni', c.labor],
     ['Parti', c.parts], ['Spese generali', c.overhead],
   ].filter(v => Math.abs(v[1]) > 0.00005);
-  const corpo = itemInfoRows(voci.map(([k, v]) => [k, `<span style="font-family:var(--mono)">${fmtN(v)}</span>`]).concat([
-    ['Costo industriale', `<strong style="font-family:var(--mono)">${fmtN(c.total)}</strong> / ${esc(it.uom || '')}`],
-    ['Prezzo di vendita', `<span style="font-family:var(--mono)">${fmtN(sellingPrice(it.id))}</span>`],
+  // Ogni voce è la sua quota **per unità**, non la spesa di un lotto: senza il
+  // denominatore la ripartizione si legge come un totale e non torna con niente.
+  const corpo = itemInfoRows(voci.map(([k, v]) => [k, `<span style="font-family:var(--mono)">${fmtPer(v, u)}</span>`]).concat([
+    ['Costo industriale', `<strong style="font-family:var(--mono)">${fmtPer(c.total, u)}</strong>`],
+    ['Prezzo di vendita', `<span style="font-family:var(--mono)">${fmtPer(sellingPrice(it.id), u)}</span>`],
     c.cycle ? ['⚠ Attenzione', '<span style="color:var(--red)">Riferimento ciclico nella distinta: il costo è troncato su quel ramo.</span>'] : null,
   ]));
   return itemInfoSection('💰 Costo unitario', corpo);
@@ -201,17 +212,17 @@ function itemInfoMagazzino(it) {
   const imp = commitsOn(it.id, null);
   const impQty = imp.reduce((a, x) => a + x.qty, 0);
   const libero = s.onHand + s.incoming - impQty;
-  const u = ' ' + esc(it.uom || '');
+  const u = itemUom(it);
   const dettaglio = imp.length
-    ? `<div class="empty-text" style="text-align:left;padding:0 0 8px">Impegnato dai piani aperti: ${imp.map(x => `${esc(x.number)}${x.title ? ' (' + esc(x.title) + ')' : ''} ${fmtQty(x.qty)}`).join(' · ')}.</div>`
+    ? `<div class="empty-text" style="text-align:left;padding:0 0 8px">Impegnato dai piani aperti: ${imp.map(x => `${esc(x.number)}${x.title ? ' (' + esc(x.title) + ')' : ''} ${fmtUom(x.qty, u)}`).join(' · ')}.</div>`
     : '';
   return itemInfoSection('📦 Magazzino', itemInfoRows([
-    ['Esistente', `<span style="font-family:var(--mono)">${fmtQty(s.onHand)}${u}</span>`],
-    ['In arrivo', `<span style="font-family:var(--mono)">${fmtQty(s.incoming)}${u}</span>`],
-    ['Impegnato', `<span style="font-family:var(--mono)">${fmtQty(impQty)}${u}</span>`],
-    ['Libero', `<strong style="font-family:var(--mono)${libero < 0 ? ';color:var(--red)' : ''}">${fmtQty(libero)}${u}</strong>`],
-    safetyStockOf(it) ? ['Scorta minima', `<span style="font-family:var(--mono)">${fmtQty(safetyStockOf(it))}${u}</span>`] : null,
-    lotSizeOf(it) ? ['Lotto di riordino', `<span style="font-family:var(--mono)">${fmtQty(lotSizeOf(it))}${u}</span>`] : null,
+    ['Esistente', `<span style="font-family:var(--mono)">${fmtUom(s.onHand, u)}</span>`],
+    ['In arrivo', `<span style="font-family:var(--mono)">${fmtUom(s.incoming, u)}</span>`],
+    ['Impegnato', `<span style="font-family:var(--mono)">${fmtUom(impQty, u)}</span>`],
+    ['Libero', `<strong style="font-family:var(--mono)${libero < 0 ? ';color:var(--red)' : ''}">${fmtUom(libero, u)}</strong>`],
+    safetyStockOf(it) ? ['Scorta minima', `<span style="font-family:var(--mono)">${fmtUom(safetyStockOf(it), u)}</span>`] : null,
+    lotSizeOf(it) ? ['Lotto di riordino', `<span style="font-family:var(--mono)">${fmtUom(lotSizeOf(it), u)}</span>`] : null,
     ['Movimenti registrati', String(movementsOf(it.id).length)],
   ]) + dettaglio);
 }
@@ -230,14 +241,14 @@ function itemInfoComposizione(it) {
       return `<tr>
         <td>${codeLink(ci.id, ci.code)}</td>
         <td><span class="bom-type-tag tt-${ci.type}">${typeShort(ci.type)}</span> ${esc(ci.name)}${itemBadges(ci)}</td>
-        <td style="font-family:var(--mono);text-align:right">${fmtQty(c.qty)} ${esc(ci.uom || '')}</td>
+        <td style="font-family:var(--mono);text-align:right">${fmtUom(c.qty, itemUom(ci))}</td>
         <td style="font-family:var(--mono);text-align:right">${c.scrapPct ? fmtQty(c.scrapPct) + '%' : '—'}</td>
         <td style="font-family:var(--mono);text-align:right">${fmtN(costOf(ci.id).total * (Number(c.qty) || 0) * (1 + (Number(c.scrapPct) || 0) / 100))}</td></tr>`;
     }).join('');
     const righeOp = ops.map(o => {
       const wc = getWorkCenter(o.workCenterId);
       return `<tr><td>🔧</td><td>${esc(wc ? wc.name : '?')}</td>
-        <td style="font-family:var(--mono);text-align:right">${fmtQty(o.hours)} h</td><td>—</td>
+        <td style="font-family:var(--mono);text-align:right">${fmtUom(o.hours, 'h')}</td><td>—</td>
         <td style="font-family:var(--mono);text-align:right">${fmtN((Number(o.hours) || 0) * (wc ? (Number(wc.hourlyRate) || 0) : 0))}</td></tr>`;
     }).join('');
     return itemInfoSection(`🌳 Composizione (${comps.length} ${comps.length === 1 ? 'componente' : 'componenti'}${ops.length ? ' · ' + ops.length + (ops.length === 1 ? ' lavorazione' : ' lavorazioni') : ''})`,
@@ -264,7 +275,7 @@ function itemInfoComposizione(it) {
     if (!ci) return `<tr><td colspan="4" class="empty-text">⚠ articolo mancante</td></tr>`;
     return `<tr><td>${codeLink(ci.id, ci.code)}</td>
       <td><span class="bom-type-tag tt-${ci.type}">${typeShort(ci.type)}</span> ${esc(ci.name)}${itemBadges(ci)}</td>
-      <td style="font-family:var(--mono);text-align:right">${fmtQty(r.qty)} ${esc(ci.uom || '')}</td>
+      <td style="font-family:var(--mono);text-align:right">${fmtUom(r.qty, itemUom(ci))}</td>
       <td style="font-family:var(--mono);text-align:right">${fmtN(cycleRowCost(r))}${r.costOverride != null && r.costOverride !== '' ? '<div class="empty-text" style="padding:0">forzato</div>' : ''}</td></tr>`;
   }).join('');
   // Una parte comprata da terzi ha ciclo e distinta salvati, ma non è da lì che
@@ -286,9 +297,12 @@ function itemInfoImpieghi(it) {
   const diretti = directUses(it.id);
   if (!diretti.length) return itemInfoSection('🔗 Dove è usato', '<div class="empty-text">Non è usato da nessuna parte.</div>');
   const cime = impactedTops(it.id);
+  // La quantità in colonna è quella di **questo** articolo dentro il padre, non
+  // del padre: l'unità che le va accanto è la sua, e va detta una volta in testa.
+  const u = itemUom(it);
   const tab = (titolo, righe) => `<div class="cat-group-title">${titolo}</div>
     <div class="table-wrap"><table>
-      <thead><tr><th>Codice</th><th>Articolo</th><th style="text-align:right">Q.tà</th></tr></thead>
+      <thead><tr><th>Codice</th><th>Articolo</th><th style="text-align:right">${labelUom('Q.tà', u)}</th></tr></thead>
       <tbody>${righe.map(r => `<tr>
         <td>${codeLink(r.item.id, r.item.code)}</td>
         <td><span class="bom-type-tag tt-${r.item.type}">${typeShort(r.item.type)}</span> ${esc(r.item.name)}</td>
@@ -313,9 +327,10 @@ function itemInfoDocumenti(it) {
   const voce = (icona, d, extra) => `<div class="mgmt-item">
     <span class="mgmt-item-name">${icona} <span style="font-family:var(--mono)">${esc(d.number)}</span>${d.title ? ' — ' + esc(d.title) : ''}</span>
     <span class="mgmt-item-meta">${extra}</span></div>`;
+  const u = itemUom(it);
   const corpo = [
-    ...rfqs.map(d => voce('📨', d, `${esc(d.status || '')} · ${fmtQty(qtaIn(d))} ${esc(it.uom || '')}`)),
-    ...ordini.map(d => voce('🧾', d, `${esc(d.status || '')} · ${fmtQty(qtaIn(d))} ${esc(it.uom || '')} · ricevuto ${fmtQty((d.lines || []).filter(l => l.itemId === it.id).reduce((s, l) => s + (Number(l.received) || 0), 0))}`)),
+    ...rfqs.map(d => voce('📨', d, `${esc(d.status || '')} · ${fmtUom(qtaIn(d), u)}`)),
+    ...ordini.map(d => voce('🧾', d, `${esc(d.status || '')} · ${fmtUom(qtaIn(d), u)} · ricevuto ${fmtUom((d.lines || []).filter(l => l.itemId === it.id).reduce((s, l) => s + (Number(l.received) || 0), 0), u)}`)),
     ...piani.map(p => voce('📋', p, p.active === false ? 'piano chiuso' : 'piano aperto')),
   ].join('');
   return itemInfoSection('📄 Documenti e piani in cui compare', `<div class="mgmt-list">${corpo}</div>`);
@@ -329,7 +344,7 @@ function itemInfoRevisioni(it) {
       const tot = r.snapshot && r.snapshot.cost ? r.snapshot.cost.total : null;
       return `<div class="mgmt-item">
         <span class="mgmt-item-name"><strong>${esc(r.rev || '')}</strong>${r.motivo ? ' — ' + esc(r.motivo) : ''}</span>
-        <span class="mgmt-item-meta">${esc(fmtStamp(r.date))}${tot != null ? ' · costo congelato ' + fmtN(tot) : ''}</span>
+        <span class="mgmt-item-meta">${esc(fmtStamp(r.date))}${tot != null ? ' · costo congelato ' + fmtPer(tot, itemUom(it)) : ''}</span>
       </div>`;
     }).join('')}</div>
     <p class="empty-text" style="text-align:left;padding:6px 0 0">In lavorazione: <strong>${esc(itemRev(it))}</strong>. Le revisioni rilasciate sono fotografie e non cambiano più.</p>`);

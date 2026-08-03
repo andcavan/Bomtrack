@@ -86,16 +86,49 @@ function rfqAutoStatus(r) {
 }
 function getRfq(id) { return db.rfqs.find(r => r.id === id); }
 function fmtDateIt(d) { return d ? new Date(d).toLocaleDateString('it-IT') : ''; }
-// Codice/descrizione del fornitore per una riga, ma solo se l'articolo è legato
-// allo stesso fornitore del documento (RFQ o ordine); altrimenti non è pertinente.
+// ─── Codice e descrizione «presso il fornitore», sulla riga di un documento ───
+// Escono **solo se il fornitore coincide**: sono il modo in cui quel fornitore
+// chiama l'articolo, e stamparli su un documento intestato a un altro non è
+// un'imprecisione — è un codice d'ordine sbagliato, che il fornitore prende per
+// buono e su cui spedisce il pezzo di qualcun altro.
+//
+// La coincidenza si verifica dentro il listino, non sui campi dell'articolo:
+// `it.supplierCode`/`it.supplierDesc` sono la copia della sola quotazione **in
+// uso**, e su un ordine al secondo fornitore lasciavano la casella vuota pur
+// avendo il dato a listino. La quotazione giusta la trova supplierPriceRow().
 function lineSupInfo(supplierId, l) {
   if (!l.itemId || !supplierId) return null;
-  const it = getItem(l.itemId);
-  if (!it || it.supplierId !== supplierId) return null;
-  if (!it.supplierCode && !it.supplierDesc) return null;
-  return { code: it.supplierCode || '', desc: it.supplierDesc || '' };
+  const row = supplierPriceRow(getItem(l.itemId), supplierId);
+  if (!row || (!row.code && !row.desc)) return null;
+  return { code: row.code || '', desc: row.desc || '' };
 }
 function rfqLineSupInfo(r, l) { return lineSupInfo(r.supplierId, l); }
+
+// ─── Una riga di documento nata da un articolo di catalogo ───
+// Il listino che si applica è quello del **fornitore a cui il documento è
+// intestato**, nella sua quotazione più recente: prezzo, unità, codice e
+// descrizione vengono tutti da quella riga sola.
+//
+// Se quel fornitore non ha quotazioni **non si applica niente**: la riga nasce
+// senza prezzo, nell'unità di gestione. È l'unica risposta onesta — il prezzo di
+// un altro fornitore su un ordine a questo è un numero sbagliato che ha tutta
+// l'aria di essere giusto, e si scopre alla fattura. Una casella vuota si vede
+// subito, e il fabbisogno la segnala già come «⚠ senza prezzo».
+//
+// Il documento senza intestatario (capita: si compilano le righe e il fornitore
+// si sceglie dopo) ricade nello stesso caso: nessun listino da applicare.
+function docLineFromItem(it, supplierId) {
+  const row = supplierPriceRow(it, supplierId);
+  const quotato = row && row.price !== '' && row.price != null;
+  return {
+    id: gid(), itemId: it.id, code: it.code || '', description: it.name || '',
+    // L'unità è quella in cui quel fornitore quota: se vende a chilo, l'ordine è
+    // in chili. Il prezzo è il suo, grezzo — è già espresso in quell'unità, e
+    // convertirlo lo porterebbe in una lingua che lui non parla.
+    uom: (row ? priceUomOf(it, row) : itemUom(it)) || defaultUom(),
+    qty: 1, price: quotato ? Number(row.price) : '', deliveryDate: '', note: '',
+  };
+}
 // Nei documenti la nota di riga si stampa sotto la descrizione, nella stessa cella.
 function lineDescDoc(l) { return l.note ? (l.description || '') + '\n' + l.note : (l.description || ''); }
 // Da dove arriva un documento: da una richiesta di offerta o da un piano di
@@ -296,8 +329,8 @@ function rfqAddManualLineModal(id) {
     <div class="modal-field"><label>Descrizione</label><input id="rl-desc"></div>
     <div class="modal-field"><label>Codice (opzionale)</label><input id="rl-code"></div>
     <div class="modal-grid">
-      <div class="modal-field"><label>U.M.</label><select id="rl-uom">${uomOptions(defaultUom())}</select></div>
-      <div class="modal-field"><label>Quantità</label><input id="rl-qty" type="number" value="1" min="0" step="any"></div>
+      <div class="modal-field"><label>U.M.</label><select id="rl-uom" onchange="docLineUomLabels('rl')">${uomOptions(defaultUom())}</select></div>
+      <div class="modal-field"><label id="rl-qty-label">${docQtyLabel(defaultUom())}</label><input id="rl-qty" type="number" value="1" min="0" step="any"></div>
     </div>
     <div class="modal-field"><label>Nota (stampata sul documento)</label><textarea id="rl-note" rows="2" placeholder="Es. materiale certificato, disegno allegato…"></textarea></div>
     <div class="modal-actions"><button class="btn-ghost" onclick="closeModal()">Annulla</button>
@@ -323,7 +356,7 @@ function rfqEditLineModal(id, lineId) {
   const ro = !modeAllows(rfqMode(r), 'contract');
   openModal(`<h3>✏ Modifica riga</h3>
     ${lineIdentityFields('rl', l, ro)}
-    <div class="modal-field"><label>Quantità</label><input id="rl-qty" type="number" value="${l.qty}" min="0" step="any" ${ro ? 'disabled' : ''}></div>
+    <div class="modal-field"><label id="rl-qty-label">${docQtyLabel(l.uom || '')}</label><input id="rl-qty" type="number" value="${l.qty}" min="0" step="any" ${ro ? 'disabled' : ''}></div>
     <div class="modal-field"><label>Nota (stampata sul documento)</label><textarea id="rl-note" rows="2">${esc(l.note || '')}</textarea></div>
     <div class="modal-actions"><button class="btn-ghost" onclick="closeModal()">Annulla</button>
       <button class="add-btn-sm" onclick="rfqSaveLineEdit('${id}','${lineId}')">Salva</button></div>`);
@@ -357,8 +390,22 @@ function lineIdentityFields(pfx, l, locked) {
   }
   return `<div class="modal-field"><label>Descrizione</label><input id="${pfx}-desc" value="${esc(l.description || '')}"></div>
     <div class="modal-field"><label>Codice (opzionale)</label><input id="${pfx}-code" value="${esc(l.code || '')}"></div>
-    <div class="modal-field"><label>U.M.</label><select id="${pfx}-uom">${uomOptions(l.uom)}</select></div>`;
+    <div class="modal-field"><label>U.M.</label><select id="${pfx}-uom" onchange="docLineUomLabels('${pfx}')">${uomOptions(l.uom)}</select></div>`;
 }
+// ─── Quantità e prezzo, nell'unità della riga ───
+// Su un documento che esce di qui — un ordine che il fornitore leggerà — «100»
+// e «3,20» senza unità sono l'errore più caro che si possa fare: cento pezzi
+// invece di cento metri arrivano davvero, e si pagano. L'unità della riga si
+// sceglie nello stesso form (o è già scritta sulla riga), quindi le etichette
+// la portano con sé: «Quantità (m)», «Prezzo unitario (€/m)».
+function docLineUomLabels(pfx) {
+  const u = val(pfx + '-uom') || '';
+  const set = (id, testo) => { const el = document.getElementById(id); if (el) el.textContent = testo; };
+  set(pfx + '-qty-label', 'Quantità' + (u ? ' (' + u + ')' : ''));
+  set(pfx + '-price-label', 'Prezzo unitario (' + cur() + (u ? '/' + u : '') + ')');
+}
+function docQtyLabel(u) { return labelUom('Quantità', u); }
+function docPriceLabel(u) { return `Prezzo unitario (${esc(cur())}${u ? '/' + esc(u) : ''})`; }
 // Scrive i campi identità sulla riga; ritorna false se la validazione fallisce.
 function readLineIdentity(pfx, l) {
   if (l.itemId) return true;
@@ -428,7 +475,9 @@ function rfqAddCatalogLines(id, ids) {
   const r = getRfq(id); if (!r) return;
   ids.forEach(itemId => {
     const it = getItem(itemId); if (!it) return;
-    r.lines.push({ id: gid(), itemId, code: it.code || '', description: it.name || '', uom: it.uom || defaultUom(), qty: 1, price: '', deliveryDate: '', note: '' });
+    // La richiesta non porta il prezzo — è la domanda, non la risposta — ma
+    // l'unità sì: si chiede un'offerta nell'unità in cui quel fornitore quota.
+    r.lines.push(Object.assign(docLineFromItem(it, r.supplierId), { price: '' }));
   });
   rfqAutoStatus(r); touch(r); rfqMarkDirty(); closeModal(); renderRfq();
   showToast(ids.length + ' righe aggiunte');
@@ -492,7 +541,8 @@ function renderRfqEdit(id) {
       </span></h3>
     <p class="empty-text" style="text-align:left;padding:0 0 8px">Prezzo unitario e data consegna si lasciano vuoti nel documento inviato e si compilano al ritorno dell'offerta.</p>
     <div class="table-wrap"><table class="rfq-table">
-      <thead><tr><th>#</th><th>Codice</th><th>Descrizione</th><th>U.M.</th><th>Q.tà</th><th>Prezzo unit.</th><th>Data consegna</th><th></th></tr></thead>
+      <thead><tr><th>#</th><th>Codice</th><th>Descrizione</th><th>U.M.</th><th>Q.tà</th>
+        <th title="Prezzo di una unità, nella U.M. della riga">Prezzo unit. (${esc(cur())}/U.M.)</th><th>Data consegna</th><th></th></tr></thead>
       <tbody>${lines}</tbody></table></div>
     <div class="rfq-export-bar">
       <label>Documento di richiesta:</label>
@@ -552,8 +602,10 @@ function exportRfqPDF(id) {
     : ['#', 'Codice\nCode', 'Descrizione\nDescription', 'Q.tà\nQty', 'Prezzo unit.\nUnit price', 'Data consegna\nDelivery date'];
   const body = (r.lines || []).map((l, i) => {
     const si = rfqLineSupInfo(r, l);
-    const price = l.price === '' || l.price == null ? '' : fmtN(l.price);
-    const tail = [(l.qty || 0) + ' ' + (l.uom || ''), price, fmtDateIt(l.deliveryDate)];
+    // Il prezzo esce con il suo denominatore: su un documento che parte verso il
+    // fornitore «3,20» e «3,20/m» sono due offerte diverse.
+    const price = l.price === '' || l.price == null ? '' : fmtN(l.price) + (l.uom ? '/' + l.uom : '');
+    const tail = [((l.qty || 0) + ' ' + (l.uom || '')).trim(), price, fmtDateIt(l.deliveryDate)];
     return hasSup ? [i + 1, l.code || '', lineDescDoc(l), si ? si.code : '', si ? si.desc : '', ...tail]
       : [i + 1, l.code || '', lineDescDoc(l), ...tail];
   });
@@ -585,9 +637,11 @@ function exportRfqExcel(id) {
   for (let i = 0; i < Math.max(coLines.length, supLines.length); i++) data.push([coLines[i] || '', '', supLines[i] || '']);
   data.push([]);
   const hasSup = (r.lines || []).some(l => rfqLineSupInfo(r, l));
+  // Come nell'ordine: valuta in intestazione, unità nella colonna U.M.
+  const hPrezzo = `Prezzo unitario (${cur()}/U.M.)`;
   data.push(hasSup
-    ? ['#', 'Codice', 'Descrizione', 'Codice fornitore', 'Descrizione fornitore', 'Q.tà', 'U.M.', 'Prezzo unitario', 'Data consegna', 'Nota']
-    : ['#', 'Codice', 'Descrizione', 'Q.tà', 'U.M.', 'Prezzo unitario', 'Data consegna', 'Nota']);
+    ? ['#', 'Codice', 'Descrizione', 'Codice fornitore', 'Descrizione fornitore', 'Q.tà', 'U.M.', hPrezzo, 'Data consegna', 'Nota']
+    : ['#', 'Codice', 'Descrizione', 'Q.tà', 'U.M.', hPrezzo, 'Data consegna', 'Nota']);
   (r.lines || []).forEach((l, i) => {
     const si = rfqLineSupInfo(r, l);
     const price = l.price === '' || l.price == null ? '' : l.price;
@@ -637,7 +691,7 @@ function renderRfqCompare() {
     const bodyRows = keys.map(k => {
       const cellsData = sel.map(r => {
         const l = (r.lines || []).find(x => rfqLineKey(x) === k);
-        return (l && l.price !== '' && l.price != null) ? { price: Number(l.price), qty: Number(l.qty) || 0, del: l.deliveryDate } : null;
+        return (l && l.price !== '' && l.price != null) ? { price: Number(l.price), qty: Number(l.qty) || 0, uom: l.uom || '', del: l.deliveryDate } : null;
       });
       const valid = cellsData.filter(p => p && p.price > 0).map(p => p.price);
       const min = valid.length ? Math.min(...valid) : null;
@@ -645,7 +699,10 @@ function renderRfqCompare() {
         if (!p) return `<td class="rfq-cmp-cell">—</td>`;
         totals[ci] += p.price * p.qty;
         const isMin = min != null && p.price === min;
-        return `<td class="rfq-cmp-cell ${isMin ? 'rfq-min' : ''}">${fmtN(p.price)}<span class="rfq-line-tot">${p.qty} pz${p.del ? ' · ' + fmtDateIt(p.del) : ''}</span></td>`;
+        // L'unità è quella della riga d'offerta, non "pz": ogni fornitore quota
+        // nella sua, e confrontare €/kg con €/m senza dirlo è peggio che non
+        // confrontare affatto.
+        return `<td class="rfq-cmp-cell ${isMin ? 'rfq-min' : ''}">${fmtPer(p.price, p.uom)}<span class="rfq-line-tot">${fmtUom(p.qty, p.uom)}${p.del ? ' · ' + fmtDateIt(p.del) : ''}</span></td>`;
       }).join('');
       const m = meta[k];
       return `<tr><td>${esc(m.description || '')}<div class="rfq-cmp-sub">${codeLink(m.itemId, m.code || '')}</div></td>${cells}</tr>`;
@@ -699,7 +756,6 @@ function ordUnlock(id) {
     orderUnlockedId = id; renderOrders(); showToast('Ordine sbloccato');
   }, { title: '🔓 Sblocca per modifica', ok: 'Sblocca', safe: true });
 }
-function fmtQty(n) { n = Number(n) || 0; return Number.isInteger(n) ? String(n) : String(+n.toFixed(3)); }
 // ─── Data richiesta contro data confermata ───
 // Il fornitore conferma quasi sempre una data diversa da quella chiesta, e
 // finora quella risposta non si scriveva da nessuna parte: restava in una mail.
@@ -896,9 +952,9 @@ function ordAddManualLineModal(id) {
     <div class="modal-field"><label>Descrizione</label><input id="ol-desc"></div>
     <div class="modal-field"><label>Codice (opzionale)</label><input id="ol-code"></div>
     <div class="modal-grid">
-      <div class="modal-field"><label>U.M.</label><select id="ol-uom">${uomOptions(defaultUom())}</select></div>
-      <div class="modal-field"><label>Quantità</label><input id="ol-qty" type="number" value="1" min="0" step="any"></div>
-      <div class="modal-field"><label>Prezzo unitario</label><input id="ol-price" type="number" min="0" step="any"></div>
+      <div class="modal-field"><label>U.M.</label><select id="ol-uom" onchange="docLineUomLabels('ol')">${uomOptions(defaultUom())}</select></div>
+      <div class="modal-field"><label id="ol-qty-label">${docQtyLabel(defaultUom())}</label><input id="ol-qty" type="number" value="1" min="0" step="any"></div>
+      <div class="modal-field"><label id="ol-price-label">${docPriceLabel(defaultUom())}</label><input id="ol-price" type="number" min="0" step="any"></div>
     </div>
     <div class="modal-field"><label>Nota (stampata sul documento)</label><textarea id="ol-note" rows="2" placeholder="Es. consegna parziale ammessa, rif. disegno…"></textarea></div>
     <div class="modal-actions"><button class="btn-ghost" onclick="closeModal()">Annulla</button>
@@ -921,8 +977,8 @@ function ordEditLineModal(id, lineId) {
   openModal(`<h3>✏ Modifica riga</h3>
     ${lineIdentityFields('ol', l, ro)}
     <div class="modal-grid">
-      <div class="modal-field"><label>Quantità</label><input id="ol-qty" type="number" value="${l.qty}" min="0" step="any" ${ro ? 'disabled' : ''}></div>
-      <div class="modal-field"><label>Prezzo unitario</label><input id="ol-price" type="number" min="0" step="any" value="${l.price === '' || l.price == null ? '' : l.price}" ${ro ? 'disabled' : ''}></div>
+      <div class="modal-field"><label id="ol-qty-label">${docQtyLabel(l.uom || '')}</label><input id="ol-qty" type="number" value="${l.qty}" min="0" step="any" ${ro ? 'disabled' : ''}></div>
+      <div class="modal-field"><label id="ol-price-label">${docPriceLabel(l.uom || '')}</label><input id="ol-price" type="number" min="0" step="any" value="${l.price === '' || l.price == null ? '' : l.price}" ${ro ? 'disabled' : ''}></div>
     </div>
     <div class="modal-field"><label>Nota (stampata sul documento)</label><textarea id="ol-note" rows="2">${esc(l.note || '')}</textarea></div>
     <div class="modal-actions"><button class="btn-ghost" onclick="closeModal()">Annulla</button>
@@ -947,16 +1003,45 @@ function ordAddCatalogModal(id) { if (!ordGuard(id, 'contract')) return; catalog
 function ordAddCatalogLines(id, ids) {
   if (!ordGuard(id, 'contract')) return;
   const o = getOrder(id); if (!o) return;
+  let senzaPrezzo = 0;
   ids.forEach(itemId => {
     const it = getItem(itemId); if (!it) return;
-    // Il prezzo in uso nella costificazione, qualunque sia il tipo: dalla
-    // versione con le parti acquistate anche una parte può finire in ordine.
-    const campo = costField(it);
-    const price = (campo && it[campo] != null) ? Number(it[campo]) : '';
-    o.lines.push({ id: gid(), itemId, code: it.code || '', description: it.name || '', uom: it.uom || defaultUom(), qty: 1, price, deliveryDate: '', received: 0, note: '' });
+    const riga = docLineFromItem(it, o.supplierId);
+    if (riga.price === '') senzaPrezzo++;
+    o.lines.push(Object.assign(riga, { received: 0 }));
   });
   ordAutoStatus(o); touch(o); orderMarkDirty(); closeModal(); renderOrders();
-  showToast(ids.length + ' righe aggiunte');
+  // Le righe senza prezzo si dicono subito. Restano vuote apposta — questo
+  // fornitore non le ha mai quotate — ma un ordine che parte con delle righe a
+  // zero è un ordine da rifare, e chi lo sta compilando deve saperlo adesso.
+  // (showToast passa già da esc(): il nome del fornitore va concatenato crudo.)
+  showToast(senzaPrezzo
+    ? `${ids.length} righe aggiunte · ${senzaPrezzo} senza prezzo: ${supplierName(o.supplierId) || 'questo fornitore'} non le ha a listino`
+    : ids.length + ' righe aggiunte');
+}
+
+// ─── La riga porta ancora il listino di un altro? ───
+// Le righe si compilano e *poi* si sceglie il fornitore, o lo si cambia a
+// documento avviato. I prezzi non si riscrivono da soli — in quest'app nessun
+// prezzo cambia da sé, è la regola su cui poggia tutto il resto — ma una riga
+// che porta la quotazione di Rossi su un ordine passato a Bianchi va detta,
+// altrimenti resta un numero sbagliato dall'aria giusta fino alla fattura.
+//
+// Si confronta con la quotazione più recente del fornitore attuale. Niente
+// avviso su una riga manuale (non viene da un listino), né su una riga senza
+// prezzo (l'assenza si vede già da sé).
+function ordLineListinoWarn(o, l) {
+  if (!l.itemId || !o.supplierId) return '';
+  const prezzo = (l.price === '' || l.price == null) ? null : Number(l.price);
+  if (prezzo == null) return '';
+  const row = supplierPriceRow(getItem(l.itemId), o.supplierId);
+  const sup = supplierName(o.supplierId) || 'questo fornitore';
+  if (!row || row.price === '' || row.price == null) {
+    return `<span class="mrp-warn" title="${esc(sup)} non ha questo articolo a listino: il prezzo in riga viene da un'altra parte. Verificalo prima di mandare l'ordine.">⚠ non a listino</span>`;
+  }
+  const uom = priceUomOf(getItem(l.itemId), row);
+  if (Math.abs(Number(row.price) - prezzo) < 0.00005 && uom === (l.uom || '')) return '';
+  return `<span class="mrp-warn" title="A listino ${esc(sup)} quota ${fmtPer(row.price, uom)}. La riga dice altro: può essere un prezzo concordato, o il listino di un fornitore diverso rimasto da prima.">⚠ ${fmtPer(row.price, uom)} a listino</span>`;
 }
 
 function renderOrderEdit(id) {
@@ -964,13 +1049,14 @@ function renderOrderEdit(id) {
   const lines = (o.lines || []).map((l, i) => {
     const si = lineSupInfo(o.supplierId, l);
     const siSub = si ? `<div class="rfq-cmp-sub">🏷 ${esc(si.code || '—')}${si.desc ? ' · ' + esc(si.desc) : ''}</div>` : '';
+    const warn = ordLineListinoWarn(o, l);
     const qty = Number(l.qty) || 0, price = (l.price === '' || l.price == null) ? null : Number(l.price);
     const amount = price != null ? qty * price : null;
     const rec = Number(l.received) || 0, residual = qty - rec;
     return `<tr>
       <td>${i + 1}</td>
       <td style="font-family:var(--mono)">${codeLink(l.itemId, l.code || '')}</td>
-      <td>${esc(l.description)}${l.itemId ? '' : ' <span class="rfq-manual-tag">manuale</span>'}${siSub}${l.note ? `<div class="line-note">📝 ${esc(l.note)}</div>` : ''}</td>
+      <td>${esc(l.description)}${l.itemId ? '' : ' <span class="rfq-manual-tag">manuale</span>'}${warn ? ' ' + warn : ''}${siSub}${l.note ? `<div class="line-note">📝 ${esc(l.note)}</div>` : ''}</td>
       <td>${esc(l.uom || '')}</td>
       <td><input type="number" class="rfq-qty-input lock-contract" value="${l.qty}" min="0" step="any" onchange="ordSetLine('${id}','${l.id}','qty',this.value)"></td>
       <td><input type="number" class="rfq-price-input lock-contract" value="${price != null ? price : ''}" min="0" step="any" placeholder="—" onchange="ordSetLine('${id}','${l.id}','price',this.value)"></td>
@@ -1034,7 +1120,8 @@ function renderOrderEdit(id) {
         <button class="btn-outline lock-reception" onclick="ordMarkAllReceived('${id}')">✓ Segna tutto ricevuto</button>
       </span></h3>
     <div class="table-wrap"><table class="rfq-table">
-      <thead><tr><th>#</th><th>Codice</th><th>Descrizione</th><th>U.M.</th><th>Q.tà</th><th>Prezzo unit.</th><th>Importo</th>
+      <thead><tr><th>#</th><th>Codice</th><th>Descrizione</th><th>U.M.</th><th>Q.tà</th>
+        <th title="Prezzo di una unità, nella U.M. della riga">Prezzo unit. (${esc(cur())}/U.M.)</th><th>Importo (${esc(cur())})</th>
         <th title="Data che abbiamo chiesto">Richiesta</th>
         <th title="Data che il fornitore ha confermato">Confermata</th>
         <th>Ricevuto</th><th>Residuo</th><th></th></tr></thead>
@@ -1079,7 +1166,9 @@ function exportOrderPDF(id) {
   const body = (o.lines || []).map((l, i) => {
     const si = lineSupInfo(o.supplierId, l);
     const qty = Number(l.qty) || 0, price = (l.price === '' || l.price == null) ? null : Number(l.price);
-    const tail = [qty + ' ' + (l.uom || ''), price != null ? fmtN(price) : '', price != null ? fmtN(qty * price) : '', fmtDateIt(l.deliveryDate)];
+    const tail = [(qty + ' ' + (l.uom || '')).trim(),
+      price != null ? fmtN(price) + (l.uom ? '/' + l.uom : '') : '',
+      price != null ? fmtN(qty * price) : '', fmtDateIt(l.deliveryDate)];
     return hasSup ? [i + 1, l.code || '', lineDescDoc(l), si ? si.code : '', si ? si.desc : '', ...tail] : [i + 1, l.code || '', lineDescDoc(l), ...tail];
   });
   const totLabel = { content: 'Totale / Total', styles: { halign: 'right', fontStyle: 'bold' } };
@@ -1118,9 +1207,12 @@ function exportOrderExcel(id) {
   for (let i = 0; i < Math.max(coLines.length, supLines.length); i++) data.push([coLines[i] || '', '', supLines[i] || '']);
   data.push([]);
   const hasSup = (o.lines || []).some(l => lineSupInfo(o.supplierId, l));
+  // Nel foglio i numeri restano numeri: la valuta si dichiara in intestazione,
+  // l'unità sta nella sua colonna e vale per q.tà, ricevuto e residuo.
+  const hPrezzo = `Prezzo unitario (${cur()}/U.M.)`, hImporto = `Importo (${cur()})`;
   data.push(hasSup
-    ? ['#', 'Codice', 'Descrizione', 'Codice fornitore', 'Descrizione fornitore', 'Q.tà', 'U.M.', 'Prezzo unitario', 'Importo', 'Consegna', 'Ricevuto', 'Residuo', 'Nota']
-    : ['#', 'Codice', 'Descrizione', 'Q.tà', 'U.M.', 'Prezzo unitario', 'Importo', 'Consegna', 'Ricevuto', 'Residuo', 'Nota']);
+    ? ['#', 'Codice', 'Descrizione', 'Codice fornitore', 'Descrizione fornitore', 'Q.tà', 'U.M.', hPrezzo, hImporto, 'Consegna', 'Ricevuto', 'Residuo', 'Nota']
+    : ['#', 'Codice', 'Descrizione', 'Q.tà', 'U.M.', hPrezzo, hImporto, 'Consegna', 'Ricevuto', 'Residuo', 'Nota']);
   (o.lines || []).forEach((l, i) => {
     const si = lineSupInfo(o.supplierId, l);
     const qty = Number(l.qty) || 0, price = (l.price === '' || l.price == null) ? '' : Number(l.price);

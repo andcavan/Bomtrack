@@ -13,7 +13,7 @@
 // Revisione in esecuzione, mostrata accanto al logo. Va tenuta allineata alla
 // voce in cima al changelog del README (l'app si copia a mano tra PC: sapere
 // quale revisione sta girando su una postazione è l'unico modo per capirlo).
-const APP_VERSION = '0.35.0';
+const APP_VERSION = '0.36.0';
 
 let currentUser = null;      // utente della sessione (null = schermata di accesso)
 let currentBomId = null;     // articolo prodotto attualmente aperto nelle Distinte
@@ -42,6 +42,32 @@ let orderDirty = false;      // modifiche non salvate nell'editor ordine
 function cur() { return (db.settings && db.settings.currency) || '€'; }
 function fmtN(n) { return cur() + (Number(n) || 0).toFixed(2); }
 function esc(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
+
+// ─── L'unità di misura accanto al numero ───
+// Un numero senza unità è un numero da indovinare. «15» in una riga di
+// fabbisogno sono quindici pezzi o quindici metri? «3,20» è al pezzo o al chilo?
+// Chi ha scritto quella riga lo sa; chi la legge tre settimane dopo — o il
+// fornitore che riceve il PDF — no, e sbaglia in silenzio.
+//
+// Le quantità si formattavano già in due posti diversi (views-mrp e views-docs
+// ne avevano una copia a testa, identiche per caso): la definizione sta qui, una
+// sola, e con lei i tre modi di appiccicare un'unità a un numero.
+//
+//   fmtQty  15        →  "15"          quantità nuda (una colonna U.M. accanto)
+//   fmtUom  15, 'm'   →  "15 m"        quantità con la sua unità
+//   fmtPer  3.2, 'kg' →  "€3.20/kg"    prezzo o costo *per* unità
+//   labelUom('Scorta minima', 'm')     →  "Scorta minima (m)"
+//
+// L'unità vuota non produce niente: un articolo senza U.M. resta un numero
+// nudo, non "15 " con uno spazio in fondo o "15 (—)".
+function fmtQty(n) { n = Number(n) || 0; return Number.isInteger(n) ? String(n) : String(+n.toFixed(3)); }
+function uomSuffix(u) { return u ? ' ' + esc(u) : ''; }
+function fmtUom(n, u) { return fmtQty(n) + uomSuffix(u); }
+function fmtPer(n, u) { return fmtN(n) + (u ? '/' + esc(u) : ''); }
+function labelUom(testo, u) { return u ? `${testo} (${esc(u)})` : String(testo); }
+// L'unità di un articolo, pronta da appendere. `itemUom(null)` non lancia:
+// molte righe puntano ad articoli che possono essere spariti.
+function itemUom(it) { return (it && it.uom) || ''; }
 // ─── Indice articoli e cache dei costi ───
 // getItem era una scansione lineare di db.items, chiamata dentro costOf e per
 // ogni riga di catalogo. L'indice si ricostruisce da solo quando l'array cambia

@@ -74,24 +74,28 @@ function renderReport() {
 
   const rows = [];
   flattenBom(it.id, 1, 0, 0, rows, []);
+  // Il costo unitario è per una unità **di quella riga**, e ogni riga ha la sua
+  // unità: un cavo al metro sotto un assieme al pezzo. Il denominatore sta quindi
+  // nella cella, non in testa alla colonna.
   const tableRows = rows.map(r => `<tr>
     <td style="font-family:var(--mono);color:var(--text-dim)">${esc(r.pos)}</td>
     <td style="font-family:var(--mono);padding-left:${12 + r.level * 18}px">${r.level ? '└ ' : ''}${codeLink(r.itemId, r.code)}</td>
     <td>${esc(r.name)}</td>
     <td style="color:var(--text-dim)">${esc(r.type)}</td>
-    <td style="font-family:var(--mono)">${r.qty} ${esc(r.uom)}</td>
-    <td style="font-family:var(--mono)">${fmtN(r.unit)}</td>
+    <td style="font-family:var(--mono)">${fmtUom(r.qty, r.uom)}</td>
+    <td style="font-family:var(--mono)">${fmtPer(r.unit, r.uom)}</td>
     <td style="font-family:var(--mono)">${fmtN(r.line)}</td></tr>`).join('');
 
+  const u = itemUom(it);
   wrap.innerHTML = `
     <div class="cost-summary">
-      ${kpi('Materiale', fmtN(c.material), 'orange')}
-      ${kpi('Commerciali', fmtN(c.purchased), 'accent')}
-      ${kpi('Parti', fmtN(c.parts), 'purple')}
-      ${kpi('Lavorazioni', fmtN(c.labor), 'green')}
-      ${kpi('Spese generali', fmtN(c.overhead), '')}
-      ${kpi('Costo totale', fmtN(c.total), '')}
-      ${kpi('Prezzo vendita', fmtN(price), 'green')}
+      ${kpi('Materiale', fmtPer(c.material, u), 'orange')}
+      ${kpi('Commerciali', fmtPer(c.purchased, u), 'accent')}
+      ${kpi('Parti', fmtPer(c.parts, u), 'purple')}
+      ${kpi('Lavorazioni', fmtPer(c.labor, u), 'green')}
+      ${kpi('Spese generali', fmtPer(c.overhead, u), '')}
+      ${kpi('Costo totale', fmtPer(c.total, u), '')}
+      ${kpi('Prezzo vendita', fmtPer(price, u), 'green')}
     </div>
     <div class="breakdown-section" style="margin-bottom:20px"><h3 class="sub-title">Incidenza voci di costo
       <button class="btn-outline" style="margin-left:10px" onclick="costWhyModal('${it.id}')">🔍 Da dove viene questo costo</button></h3>${bars}</div>
@@ -142,7 +146,7 @@ function costWhyModal(itemId) {
       <div class="breakdown-stats"><span>${fmtN(x.line)}</span><span style="color:var(--text-dim)">${quota(x).toFixed(1)}%</span></div>
     </div>`).join('');
   openModal(`<h3>🔍 Da dove viene il costo di ${esc(it.code)}</h3>
-    <p>${esc(it.name)} — costo totale <strong>${fmtN(totale)}</strong>.</p>
+    <p>${esc(it.name)} — costo totale <strong>${fmtPer(totale, itemUom(it))}</strong>.</p>
     ${tutti.length ? `<p class="empty-text" style="text-align:left;padding:0 0 10px">I ${top.length} articoli che pesano di più, sommati su tutta la distinta: ${totale > 0 ? (coperto / totale * 100).toFixed(0) : 0}% del costo${tutti.length > top.length ? `, su ${tutti.length} voci in tutto` : ''}. Le lavorazioni e le spese generali non compaiono qui: stanno nelle barre di incidenza.</p>
       ${righe}`
     : '<div class="empty-text">Nessun componente con un costo: la distinta è vuota, oppure tutto quello che contiene vale zero.</div>'}
@@ -155,7 +159,10 @@ function exportBomExcel() {
   const it = getItem(reportBomId || currentBomId); if (!it) { showToast('Seleziona un prodotto', 'error'); return; }
   const c = costOf(it.id);
   const rows = reportRows();
-  const data = [['Pos.', 'Codice', 'Articolo', 'Livello', 'Tipo', 'Quantità', 'U.M.', 'Costo unitario', 'Costo riga']];
+  // Nel foglio i numeri restano numeri (si devono poter sommare): la valuta va
+  // detta in intestazione, che è l'unico posto dove non rompe una formula.
+  const data = [['Pos.', 'Codice', 'Articolo', 'Livello', 'Tipo', 'Quantità', 'U.M.',
+    `Costo unitario (${cur()}/U.M.)`, `Costo riga (${cur()})`]];
   rows.forEach(r => data.push([r.pos, '  '.repeat(r.level) + r.code, r.name, r.level, r.type, r.qty, r.uom, +r.unit.toFixed(4), +r.line.toFixed(4)]));
   data.push([]);
   data.push(['', '', 'Materiale', '', '', '', '', '', +c.material.toFixed(2)]);
@@ -181,7 +188,8 @@ function exportBomPDF() {
   doc.setFontSize(10); doc.setTextColor(120);
   doc.text(`Codice: ${it.code || '-'}   Data: ${new Date().toLocaleDateString('it-IT')}`, 14, 23);
   // Il rientro sta sul codice, come a video: la descrizione parte sempre dallo stesso margine.
-  const rows = reportRows().map(r => [r.pos, '  '.repeat(r.level) + r.code, r.name, r.type, r.qty + ' ' + r.uom, fmtN(r.unit), fmtN(r.line)]);
+  const rows = reportRows().map(r => [r.pos, '  '.repeat(r.level) + r.code, r.name, r.type,
+    (r.qty + ' ' + r.uom).trim(), fmtN(r.unit) + (r.uom ? '/' + r.uom : ''), fmtN(r.line)]);
   doc.autoTable({
     startY: 28, head: [['Pos.', 'Codice', 'Articolo', 'Tipo', 'Q.tà', 'Costo un.', 'Costo riga']], body: rows,
     styles: { fontSize: 8 }, headStyles: { fillColor: [58, 123, 232] },

@@ -211,6 +211,64 @@ Richiede solo **Node 18 o superiore** — nessun `npm install`, nessuna dipenden
 
 Le revisioni seguono il versionamento semantico `0.MINOR.PATCH`: **MINOR** per nuove funzionalità, **PATCH** per correzioni. La versione in cima è quella in `APP_VERSION` (`core.js`) e mostrata nell'header dell'app.
 
+### 0.36.0 — 2026-08-03
+
+**Nei documenti verso i fornitori si applica sempre il listino applicabile: la quotazione più recente del fornitore a cui il documento è intestato.** Prima si applicava la quotazione **in uso** — quella scelta per la costificazione — a prescindere da chi fosse l'intestatario. Un ordine a Bianchi partiva col prezzo di Rossi, nell'unità di Rossi: un numero sbagliato dall'aria giusta, che si scopre alla fattura.
+
+**Cambiato**
+- **Prezzo, unità di misura, codice e descrizione vengono tutti dalla stessa riga di listino**: la quotazione più recente di quel fornitore. Se quota a chilo, l'ordine parte in chili al suo €/kg. A parità di data vince l'ultima registrata.
+- **Se quel fornitore non ha l'articolo a listino non si applica niente.** La riga nasce senza prezzo, nell'unità di gestione, e lo dice: badge **⚠ non a listino** in riga, e il toast dell'aggiunta da catalogo conta quante righe sono partite vuote e perché. Una casella vuota si vede; il prezzo di un altro no.
+- **Vale per tutte e quattro le strade**: «+ Da catalogo» su ordine e su richiesta, e i documenti generati dal fabbisogno. La richiesta d'offerta continua a non portare prezzo — è la domanda, non la risposta — ma ora lo chiede nell'unità in cui quel fornitore quota.
+- **Anche i giorni di consegna** seguono la stessa riga: sono termini del fornitore come il prezzo. Se a febbraio ha detto 90 giorni, pianificare sui 21 di gennaio è pianificare su termini scaduti, e la commessa slitta senza che nessuno l'abbia vista arrivare.
+- **Il fornitore cambiato a documento avviato si segnala in riga.** I prezzi non si riscrivono da soli — nessun prezzo cambia da sé, in quest'app, ed è la regola su cui poggia tutto il resto — ma una riga rimasta col listino di un altro porta un **⚠** che dice quanto quota il fornitore attuale.
+- **Nel fabbisogno**, quando il listino applicabile dice un prezzo diverso da quello di costificazione, il pannello di generazione lo mostra (**⇄ a listino …**) e l'anteprima dell'importo è quella che il documento porterà davvero. La costificazione non si tocca: risponde a un'altra domanda — quanto vale l'articolo nei nostri conti, non quanto ce lo fa oggi quel fornitore.
+
+**Come funziona, e perché così**
+- Una porta sola, `supplierPriceRow(it, fornitore)`, e da lì passano documenti, unità, minimi di riga, tempi di consegna e riferimenti. Il fornitore da cui si compra lo decide ancora la quotazione **in uso** — è la scelta che qualcuno ha fatto — ma il *listino* che gli si applica è il suo più recente.
+- **La quotazione in uso non ha privilegio nei documenti.** Riguarda la costificazione, che è un'altra domanda; confonderle è ciò che mandava fuori il prezzo di un fornitore diverso.
+- La forma «fornitore e prezzo sui campi dell'articolo, listino vuoto» è quella dei database precedenti al listino: `migrateDB()` la converte in una quotazione all'avvio, quindi un database vecchio genera ordini col prezzo giusto. C'è un test che parte proprio da lì.
+
+**Verifica**
+- 9 nuovi controlli (suite da 854 a 863) e due riscritti sulla regola nuova: il prezzo e l'unità di ciascun fornitore sul proprio documento, la quotazione più recente che vince anche su una sua più vecchia in uso, il fornitore senza listino che non eredita niente, i tempi di consegna che seguono il fornitore giusto e non l'ultima quotazione di chiunque, i tre stati del segnale quando l'intestatario cambia, e un ordine generato da un database vecchio migrato all'avvio.
+
+### 0.35.2 — 2026-08-03
+
+**Codice e descrizione «presso il fornitore» escono sul documento del fornitore giusto, e sono quelli aggiornati.** Non sono dati dell'articolo: sono il modo in cui *quel* fornitore lo chiama. Rossi lo chiama `ROSSI-1`, Bianchi lo chiama `BIA-9`, e la stessa riga d'ordine deve stampare l'uno o l'altro a seconda di a chi è intestata. Sbagliarli non è un dettaglio estetico: è un codice d'ordine che il fornitore prende per buono, e su cui spedisce il pezzo di qualcun altro.
+
+**Corretto**
+- **Un ordine al secondo fornitore lasciava la casella vuota** pur avendo il dato a listino. La ricerca guardava solo la quotazione **in uso**: rispondeva a «come lo chiama il fornitore da cui compro di solito?» invece che a «come lo chiama questo qui?». Ora la coincidenza si verifica dentro il listino, sulla quotazione di quel fornitore.
+- **Correggere un refuso nel codice fornitore non arrivava ai documenti.** L'articolo ne tiene una copia — è il "prezzo in uso" — e si riallineava solo quando cambiava il prezzo o l'unità. Un codice corretto nel listino restava vecchio sull'ordine, e in giro c'erano due codici di cui uno sbagliato che nessuna schermata mostrava come tale.
+- **Nella scheda articolo la tabella del listino mostrava il solo codice**, non la descrizione: ora entrambi, riga per riga, con l'intestazione che dice di chi sono.
+
+**Come funziona, e perché così**
+- `supplierPriceRow(it, fornitore)` è l'unica porta: cerca fra le quotazioni quella di **quel** fornitore. Se ne ha più d'una vince quella in uso; fra le altre, la più recente — è l'ultima volta che ci si è parlati.
+- La regola resta quella di prima, applicata sul serio: **se il fornitore non coincide non esce niente**. Nessuna quotazione sua, nessun riferimento — meglio una casella vuota di un codice di qualcun altro. Vale anche per un documento senza fornitore e per le righe manuali.
+- Codice e descrizione si leggono ora **dalla quotazione** anche nella scheda articolo e nel riepilogo prezzo: gli stessi valori di prima, ma da un posto solo. I campi `supplierCode`/`supplierDesc` restano sull'articolo (sono nello schema cloud) e continuano a seguire la quotazione in uso, ora anche quando la si corregge.
+
+**Verifica**
+- 15 nuovi controlli (suite da 839 a 854): il riferimento di ciascun fornitore sul proprio documento, il silenzio su quello di un altro, le quotazioni multiple dello stesso fornitore, la correzione che arriva fino all'ordine, e i tre casi in cui non deve uscire niente (nessun fornitore, riga manuale, articolo cancellato).
+
+### 0.35.1 — 2026-08-03
+
+**Ogni numero a schermo dice di cosa parla.** Le unità c'erano dove capitava: la scheda articolo scriveva la giacenza in chilogrammi ma la scorta minima nuda, il fabbisogno metteva la colonna U.M. e poi segnalava «impegnato 40» senza dire quaranta di cosa, la modale «Aggiungi componente» chiedeva una «Quantità» che poteva essere di pezzi o di metri a seconda dell'articolo che si stava per scegliere. Un numero senza unità non è ambiguo per chi lo scrive — è ambiguo per chi lo legge tre settimane dopo, o per il fornitore che riceve il PDF, e l'errore che ne segue è di un fattore, plausibile, e non se ne accorge nessuno.
+
+**Cambiato**
+- **Quantità, costi ed etichette portano l'unità.** Giacenze, impegni, movimenti, scorta minima, lotto di riordino, quantità minima del listino, righe di distinta, ciclo, confronto revisioni: dove non c'è una colonna `U.M.` accanto, l'unità sta nel numero. I costi unitari portano il denominatore (`€10.00/kg`), quelli che sono totali no.
+- **Le etichette dei campi seguono l'unità che si sta scegliendo.** Nella scheda articolo «Scorta minima» diventa «Scorta minima (kg)» appena si sceglie l'U.M., e cambia se la si cambia; il «Fattore di conversione» diventa «Fattore di conversione (kg in 1 m)». Nella modale di componente l'etichetta della quantità si completa quando si sceglie l'articolo. Nelle righe di richiesta e ordine, «Quantità (m)» e «Prezzo unitario (€/m)».
+- **Le intestazioni dicono la valuta.** `Prezzo unit. (€/U.M.)`, `Importo (€)`, `Costo un. (€/U.M.)` nelle tabelle di anagrafica, listino, fabbisogno, richieste e ordini.
+- **Sui documenti che escono di qui** — PDF e Excel di richieste e ordini — il prezzo unitario esce con il suo denominatore, e nei fogli la valuta si dichiara in intestazione (i numeri restano numeri, sommabili).
+- **Corretto: il confronto offerte scriveva «pz» su ogni riga**, letteralmente, anche per una barra quotata al chilo. Ora usa l'unità della riga d'offerta — confrontare `€/kg` con `€/m` senza dirlo è peggio che non confrontare.
+- **Corretto: nella scheda articolo il prezzo d'acquisto usciva come `€12.00 €/pz`**, con il simbolo due volte.
+
+**Come funziona, e perché così**
+- Le tre forme stanno in `core.js`, una volta sola: `fmtUom(15,'m')` → `15 m`, `fmtPer(3.2,'kg')` → `€3.20/kg`, `labelUom('Scorta minima','kg')` → `Scorta minima (kg)`. Con loro è rientrata a casa anche `fmtQty`, che viveva in due copie identiche per caso in `views-mrp.js` e `views-docs.js`.
+- **Un articolo senza U.M. resta un numero nudo**: niente `15 ` con lo spazio in fondo, niente `Scorta minima ()`. L'unità assente non si finge.
+- **Le intestazioni dei fogli d'import non cambiano.** Sono la chiave con cui l'import riconosce le colonne (`normHeader` toglie tutto ciò che non è lettera o cifra): scriverci dentro `(€/h)` renderebbe illeggibile ogni file già in giro. L'unità si dichiara nel foglio **Istruzioni**, che è dove si guarda prima di compilare.
+- Dove una colonna `U.M.` è già in tabella — righe d'ordine, fabbisogno, albero di distinta — l'unità non si ripete su ogni cella: si dice in intestazione. Ripeterla renderebbe illeggibile proprio la colonna dei numeri.
+
+**Verifica**
+- 10 nuovi controlli (suite da 829 a 839): le tre forme e il caso dell'unità vuota, la scheda articolo che porta l'unità su giacenze e costi, e il confronto offerte che non scrive più «pz».
+
 ### 0.35.0 — 2026-08-02
 
 **Gli articoli si esportano e si importano in due file, uno per mestiere: Acquisti e Progetto.** Il foglio era uno solo per tutti e sei i tipi, con una colonna `Tipo` da indovinare e una trentina di colonne di cui la maggior parte non riguardava la tua riga. Chi compilava doveva sapere quali celle valessero per cosa; chi caricava scopriva gli errori a database già scritto. E dell'export non esisteva niente: il catalogo non si portava via, quindi non c'era nemmeno un file da cui partire.

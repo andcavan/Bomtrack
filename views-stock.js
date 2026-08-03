@@ -206,16 +206,17 @@ function stockPanelHtml(it) {
   const imp = commitsOn(it.id, null);
   const impQty = imp.reduce((a, c) => a + c.qty, 0);
   const libero = s.onHand + s.incoming - impQty;
-  const elencoImp = imp.map(c => `${c.number}${c.title ? ' (' + c.title + ')' : ''}: ${fmtQty(c.qty)}`).join(' · ');
+  const u = itemUom(it);
+  const elencoImp = imp.map(c => `${c.number}${c.title ? ' (' + c.title + ')' : ''}: ${fmtUom(c.qty, u)}`).join(' · ');
   return `<div class="cloud-section" style="margin-top:12px${sotto ? ';border-color:var(--red)' : ''}">
     <div style="flex:1">
       <strong>📦 Magazzino</strong>
       <div class="cost-summary" style="margin:8px 0">
-        ${kpi('Esistente', fmtQty(s.onHand) + ' ' + esc(it.uom || ''), sotto ? 'orange' : '')}
-        ${kpi('In arrivo', fmtQty(s.incoming) + ' ' + esc(it.uom || ''), 'accent')}
-        ${kpi('Impegnato', fmtQty(impQty) + ' ' + esc(it.uom || ''), impQty > 0 ? 'orange' : '')}
-        ${kpi('Libero', fmtQty(libero) + ' ' + esc(it.uom || ''), libero < 0 ? 'red' : '')}
-        ${kpi('Scorta minima', fmtQty(safetyStockOf(it)), '')}
+        ${kpi('Esistente', fmtUom(s.onHand, u), sotto ? 'orange' : '')}
+        ${kpi('In arrivo', fmtUom(s.incoming, u), 'accent')}
+        ${kpi('Impegnato', fmtUom(impQty, u), impQty > 0 ? 'orange' : '')}
+        ${kpi('Libero', fmtUom(libero, u), libero < 0 ? 'red' : '')}
+        ${kpi('Scorta minima', fmtUom(safetyStockOf(it), u), '')}
       </div>
       ${sotto ? '<p style="color:var(--red);margin:0 0 8px">⚠ Sotto la scorta minima.</p>' : ''}
       ${libero < 0 ? '<p style="color:var(--red);margin:0 0 8px">⚠ I piani aperti ne hanno promesso più di quanto ne esista o ne sia in arrivo.</p>' : ''}
@@ -233,12 +234,12 @@ function stockAdjustModal(itemId) {
   const it = getItem(itemId); if (!it || !hasStock(it)) return;
   const attuale = onHandOf(it.id);
   openModal(`<h3>✏ Rettifica giacenza — ${esc(it.code)}</h3>
-    <p>Esistente calcolato adesso: <strong>${fmtQty(attuale)} ${esc(it.uom || '')}</strong>.</p>
+    <p>Esistente calcolato adesso: <strong>${fmtUom(attuale, itemUom(it))}</strong>.</p>
     <div class="modal-grid">
       <div class="modal-field"><label>Tipo</label><select id="mv-kind">
         ${Object.keys(MOVEMENT_KINDS).map(k => `<option value="${k}">${esc(MOVEMENT_KINDS[k])}</option>`).join('')}
       </select></div>
-      <div class="modal-field"><label>Quantità contata / movimentata</label>
+      <div class="modal-field"><label>${labelUom('Quantità contata / movimentata', itemUom(it))}</label>
         <input type="number" id="mv-qty" step="any" value="${attuale}"></div>
     </div>
     <p class="empty-text" style="text-align:left;padding:0 0 8px" id="mv-hint"></p>
@@ -275,18 +276,20 @@ function saveStockAdjust(itemId) {
   addMovement(it.id, kind, delta, val('mv-note'));
   closeModal();
   if (typeof renderCatalogs === 'function') renderCatalogs();
-  showToast(`Giacenza aggiornata: ${fmtQty(onHandOf(it.id))} ${it.uom || ''}`);
+  // Il toast passa già da esc(): qui l'unità va concatenata cruda, non da fmtUom.
+  showToast(`Giacenza aggiornata: ${fmtQty(onHandOf(it.id))} ${itemUom(it)}`.trim());
 }
 
 function stockMovementsModal(itemId) {
   const it = getItem(itemId); if (!it) return;
   const mv = movementsOf(it.id);
   const ordini = (db.orders || []).filter(o => (o.lines || []).some(l => l.itemId === it.id && (Number(l.received) || 0) > 0));
+  const u = itemUom(it);
   const righeMv = mv.map(m => `<div class="mgmt-item">
       <span style="width:150px">${esc(MOVEMENT_KINDS[m.kind] || m.kind)}</span>
       <span class="empty-text" style="padding:0;width:90px">${esc(String(m.date || '').slice(0, 10))}</span>
       <span style="flex:1">${esc(m.note || '')}</span>
-      <span style="font-family:var(--mono);color:${m.qty < 0 ? 'var(--red)' : 'var(--green)'}">${m.qty > 0 ? '+' : ''}${fmtQty(m.qty)}</span>
+      <span style="font-family:var(--mono);color:${m.qty < 0 ? 'var(--red)' : 'var(--green)'}">${m.qty > 0 ? '+' : ''}${fmtUom(m.qty, u)}</span>
       <button class="mini-btn danger" onclick="delMovement('${m.id}','${it.id}')" title="Elimina movimento">🗑</button>
     </div>`).join('');
   const righeOrd = ordini.map(o => {
@@ -295,12 +298,12 @@ function stockMovementsModal(itemId) {
       <span style="width:150px">Ricevuto da ordine</span>
       <span class="empty-text" style="padding:0;width:90px">${esc(String(o.date || '').slice(0, 10))}</span>
       <span style="flex:1">${esc(o.number)}${o.title ? ' — ' + esc(o.title) : ''}</span>
-      <span style="font-family:var(--mono);color:var(--green)">+${fmtQty(q)}</span>
+      <span style="font-family:var(--mono);color:var(--green)">+${fmtUom(q, u)}</span>
       <span style="width:28px"></span>
     </div>`;
   }).join('');
   openModal(`<h3>🕘 Movimenti — ${esc(it.code)} ${esc(it.name)}</h3>
-    <p>Esistente: <strong>${fmtQty(onHandOf(it.id))} ${esc(it.uom || '')}</strong>, in arrivo <strong>${fmtQty(incomingOf(it.id))}</strong>.</p>
+    <p>Esistente: <strong>${fmtUom(onHandOf(it.id), u)}</strong>, in arrivo <strong>${fmtUom(incomingOf(it.id), u)}</strong>.</p>
     ${righeOrd ? `<h4 class="settings-group-title">Dai ricevimenti d'ordine</h4><div style="display:flex;flex-direction:column;gap:6px">${righeOrd}</div>
       <p class="empty-text" style="text-align:left;padding:6px 0 0">Queste righe si correggono sull'ordine, dove è registrato il ricevimento.</p>` : ''}
     ${righeMv ? `<h4 class="settings-group-title">Rettifiche e consumi</h4><div style="display:flex;flex-direction:column;gap:6px">${righeMv}</div>` : ''}

@@ -186,8 +186,8 @@ function downloadBomTemplate() {
     ['Colonna', 'Descrizione'],
     ['CodicePadre', 'Codice dell\'assieme (macchina/gruppo/sottogruppo).'],
     ['CodiceFiglio', 'Codice del componente contenuto.'],
-    ['Qta', 'Quantità (default 1).'],
-    ['Scarto%', 'Percentuale di scarto (default 0).'],
+    ['Qta', 'Quantità del figlio dentro il padre, nell\'UM del figlio (default 1).'],
+    ['Scarto%', 'Percentuale di scarto, in % (default 0).'],
   ]);
   info['!cols'] = [{ wch: 16 }, { wch: 70 }];
   const wb = XLSX.utils.book_new();
@@ -371,7 +371,10 @@ function settingsInfoAoa() {
     ['Condizioni offerta', 'Tipo = Trasporto o Pagamento. Predefinita = Sì sulla voce che precompila le nuove richieste.'],
     ['Famiglie (tre fogli)', 'Un foglio per ambito — ' + FAMILY_SHEETS.map(f => f.name).join(', ') + ' — così l\'ambito è il foglio e non una colonna da sbagliare. Chiave: Macrofamiglia. Una riga per sottofamiglia; riga con Sottofamiglia vuota = solo macrofamiglia. Si legge ancora anche il vecchio foglio unico "Famiglie" con la colonna Ambito.'],
     ['Concetti', 'Sempre in MAIUSCOLO. Chiave: il nome stesso.'],
-    ['Centri di lavoro', 'Chiave: Nome. La tariffa non può essere negativa.'],
+    // L'unità non si può scrivere nell'intestazione: normHeader() la userebbe
+    // per il riconoscimento e un file esportato non si riaprirebbe più. Va detta
+    // qui, che è dove si guarda prima di compilare la colonna.
+    ['Centri di lavoro', 'Chiave: Nome. La tariffa oraria è in ' + cur() + ' per ora, e non può essere negativa.'],
     ['Unità di misura', 'Chiave: Codice. Il codice non si rinomina da qui (si rinomina in Gestione, che propaga il nuovo codice ad articoli e documenti): un codice diverso crea una nuova unità.'],
     ['Impostazioni', 'Coppie Parametro/Valore. La colonna "Valori ammessi" è solo un promemoria: non viene letta.'],
   ];

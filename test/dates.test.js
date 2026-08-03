@@ -124,13 +124,27 @@ describe('Lead time: entro quando ordinare', () => {
     assert.equal(m1.orderBy, '2026-09-30', 'nessun anticipo, non un anticipo inventato');
   });
 
-  it('i giorni di consegna vengono dalla quotazione IN USO, non dalla migliore', () => {
+  // I tempi di consegna sono termini del fornitore, come il prezzo: valgono
+  // quelli della sua quotazione più recente. Se a febbraio ha detto 90 giorni,
+  // pianificare sui 21 di gennaio è pianificare su termini scaduti — e la
+  // commessa slitta senza che nessuno l'abbia visto arrivare.
+  it('i giorni di consegna sono quelli dell\'ultima quotazione di quel fornitore', () => {
     const a = piano(app(), [{ id: 'l1', itemId: 'mac', qty: 1, dueDate: '2026-09-30' }]);
     a.eval(`const it = getItem("m1");
       it.priceList.push({ id: 'p9', supplierId: 's1', price: 1, leadDays: 90, date: '2026-02-01' });
       touch(it); saveDB();`);
+    assert.equal(righe(a).find(x => x.code === 'M1').leadDays, 90,
+      'l\'ultima parola di quel fornitore sui suoi tempi');
+  });
+
+  it('ma la quotazione di un ALTRO fornitore non detta i tempi', () => {
+    const a = piano(app(), [{ id: 'l1', itemId: 'mac', qty: 1, dueDate: '2026-09-30' }]);
+    a.eval(`db.suppliers.push({ id: 's9', name: 'Altro', active: true });
+      const it = getItem("m1");
+      it.priceList.push({ id: 'p9', supplierId: 's9', price: 1, leadDays: 90, date: '2026-06-01' });
+      touch(it); saveDB();`);
     assert.equal(righe(a).find(x => x.code === 'M1').leadDays, 21,
-      'il fornitore da cui si compra è quello in uso, e sono i suoi tempi che contano');
+      'si compra da SKF: sono i tempi di SKF che contano, per recente che sia l\'altra');
   });
 
   it('un valore sporco non produce una data assurda', () => {

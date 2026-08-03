@@ -19,6 +19,26 @@
 function hasPriceList(it) { return !!it && (it.type === 'acquistato' || it.type === 'materiale' || it.type === 'parte'); }
 function priceRows(it) { return (it && it.priceList) || []; }
 function activePriceRow(it) { return priceRows(it).find(r => r.id === it.activePriceId) || null; }
+// ─── La quotazione con cui si parla a UN fornitore preciso ───
+// Prezzo, unità, codice e descrizione su un documento non sono dell'articolo:
+// sono di quel fornitore. Rossi lo chiama ROSSI-1 e lo quota 10 €/m, Bianchi lo
+// chiama BIA-9 e lo quota 12 €/kg, e la stessa riga d'ordine porta l'uno o
+// l'altro a seconda di a chi è intestata.
+//
+// Prenderli dalla quotazione **in uso** rispondeva alla domanda sbagliata —
+// «quanto lo pago di solito?» invece di «quanto me lo fa questo qui?» — e
+// mandava a un fornitore il prezzo di un altro.
+//
+// Fra le sue quotazioni vince la **più recente**: è l'ultima volta che ci si è
+// parlati, e un listino vecchio di due anni non è il prezzo di oggi. A parità di
+// data vince l'ultima registrata. La quotazione in uso non ha alcun privilegio
+// qui: quella riguarda la costificazione, che è un'altra domanda.
+function supplierPriceRow(it, supplierId) {
+  if (!it || !supplierId) return null;
+  return priceRows(it)
+    .filter(r => r.supplierId === supplierId)
+    .reduce((best, r) => (!best || (r.date || '') >= (best.date || '') ? r : best), null);
+}
 // ─── Quotazioni in un'unità diversa da quella di gestione ───
 // L'unità in cui è espressa QUESTA quotazione. Vale solo se è l'unità
 // alternativa dell'articolo: qualunque altra cosa vale come unità di gestione,
@@ -52,9 +72,12 @@ function bestPriceRow(it) {
 // Unità in cui si parla col fornitore: quella della quotazione in uso. È la
 // lingua in cui vanno scritti richieste e ordini — «15 m» a chi vende a chilo
 // è un ordine da rifare.
-function docUomOf(it) {
-  const attiva = activePriceRow(it);
-  return (attiva && priceUomOf(it, attiva)) || (it ? (it.uom || '') : '');
+// L'unità in cui si parla a un fornitore preciso: quella della sua quotazione
+// applicabile. Senza quotazioni sue si ricade sull'unità di gestione — non
+// sull'unità di un altro fornitore, che sarebbe una lingua inventata.
+function docUomFor(it, supplierId) {
+  const row = supplierPriceRow(it, supplierId);
+  return (row && priceUomOf(it, row)) || itemUom(it);
 }
 // Porta una quotazione nei campi dell'articolo: da qui in poi è quella che costa.
 // È la porta unica in cui avviene la conversione, ed è il motivo per cui il
@@ -123,11 +146,16 @@ function priceListBody(id) {
 
   const vuoto = `<tr><td colspan="7" class="empty-text">Nessuna quotazione registrata. Aggiungine una, oppure registrale da una richiesta di offerta ricevuta.</td></tr>`;
   const attuale = campo
-    ? `<p style="margin-bottom:12px">Prezzo in uso nella costificazione: <strong style="font-family:var(--mono)">${fmtN(Number(it[campo]) || 0)}</strong>${doppia ? ` <span style="color:var(--text-dim)">per ${esc(it.uom || '')} — l'unità con cui l'articolo si gestisce e si mette in distinta</span>` : ''}${inUso ? '' : ' <span style="color:var(--text-dim)">(inserito a mano, non da listino)</span>'}</p>`
+    ? `<p style="margin-bottom:12px">Prezzo in uso nella costificazione: <strong style="font-family:var(--mono)">${fmtPer(Number(it[campo]) || 0, itemUom(it))}</strong>${doppia ? ` <span style="color:var(--text-dim)">— ${esc(itemUom(it))} è l'unità con cui l'articolo si gestisce e si mette in distinta</span>` : ''}${inUso ? '' : ' <span style="color:var(--text-dim)">(inserito a mano, non da listino)</span>'}</p>`
     : `<p style="margin-bottom:12px;color:var(--text-dim)">Il costo di questa parte è derivato dalla distinta parte e dal ciclo di lavorazione. Con “✓ Usa” si può passare al prezzo del fornitore, cambiando il modo di calcolo.</p>`;
+  // Prezzo e quantità minima sono entrambi nell'unità **della quotazione**, che
+  // può non essere quella di gestione: quando le due differiscono la colonna
+  // dell'unità compare accanto al prezzo e l'intestazione non la anticipa.
+  const uQuot = doppia ? 'U.M. quotazione' : (itemUom(it) || 'U.M.');
   return `${attuale}
     <div class="table-wrap"><table class="price-table">
-      <thead><tr><th></th><th>Fornitore</th><th>Prezzo</th><th>Q.tà min</th><th title="Giorni di consegna">GG</th><th>Data</th><th></th></tr></thead>
+      <thead><tr><th></th><th>Fornitore</th><th>Prezzo (${esc(cur())}/${esc(uQuot)})</th><th>Q.tà min (${esc(uQuot)})</th>
+        <th title="Giorni di consegna">GG</th><th>Data</th><th></th></tr></thead>
       <tbody>${corpo || vuoto}</tbody></table></div>
     <div style="margin-top:10px"><button class="add-btn-sm" onclick="priceAddRow()">+ Aggiungi quotazione</button></div>`;
 }
@@ -180,7 +208,14 @@ function priceSetField(rowId, field, value) {
   // altrimenti listino e costificazione direbbero due cose diverse. Vale anche
   // per l'unità: cambiarla senza ricalcolare lascerebbe un costo che è un
   // numero giusto nell'unità sbagliata, cioè un numero sbagliato.
-  if ((field === 'price' || field === 'priceUom') && it.activePriceId === row.id) applyPriceRow(it, row);
+  //
+  // E vale per fornitore, codice e descrizione: l'articolo ne tiene una copia
+  // (è il "prezzo in uso"), e correggere un refuso nel codice del fornitore
+  // sulla riga in uso lasciava quella copia al valore vecchio — cioè lasciava
+  // in giro un secondo codice, sbagliato, che nessuna schermata mostrava come
+  // tale. Si riapplica la riga: è già la porta unica per questo travaso.
+  const RIAPPLICA = ['price', 'priceUom', 'supplierId', 'code', 'desc'];
+  if (RIAPPLICA.includes(field) && it.activePriceId === row.id) applyPriceRow(it, row);
   saveDB(); priceListRefresh(); renderCatalogs();
 }
 function priceUseRow(rowId) {
@@ -198,7 +233,9 @@ function priceApplyRow(rowId) {
   const found = priceRowById(rowId); if (!found || !found.row) return;
   applyPriceRow(found.it, found.row);
   touch(found.it); saveDB(); priceListRefresh(); renderCatalogs();
-  showToast('Prezzo in uso aggiornato: ' + fmtN(Number(found.row.price) || 0));
+  // showToast passa già da esc(): l'unità va concatenata cruda, non da fmtPer.
+  const uRiga = priceUomOf(found.it, found.row);
+  showToast('Prezzo in uso aggiornato: ' + fmtN(Number(found.row.price) || 0) + (uRiga ? '/' + uRiga : ''));
 }
 function priceSourcingModal(rowId) {
   const found = priceRowById(rowId); if (!found || !found.row) return;
@@ -305,8 +342,11 @@ function usageBody(id) {
     return `<div class="empty-text">Questo articolo non è usato da nessuna parte: si può eliminare senza conseguenze.</div>`;
   }
 
+  // Le quantità in colonna sono di **questo** articolo dentro i suoi padri: la
+  // sua unità vale per tutte le righe e si dice una volta, in testa.
+  const u = itemUom(it);
   const tabDiretti = `<div class="cat-group-title">Impieghi diretti (${diretti.length})</div>
-    <table><thead><tr><th>Codice</th><th>Articolo</th><th>Tipo</th><th style="text-align:right">Q.tà</th><th></th></tr></thead>
+    <table><thead><tr><th>Codice</th><th>Articolo</th><th>Tipo</th><th style="text-align:right">${labelUom('Q.tà', u)}</th><th></th></tr></thead>
     <tbody>${diretti.map(r => `<tr>
       <td style="font-family:var(--mono)">${codeLink(r.item.id, r.item.code)}</td>
       <td>${esc(r.item.name)}</td>
@@ -322,28 +362,31 @@ function usageBody(id) {
   const righe = cime.map(c => {
     const costoOra = costOf(c.item.id).total;
     const prezzoOra = sellingPrice(c.item.id);
+    // Costi e prezzi qui sono di una unità della **cima** impattata, che ha la
+    // sua unità e non quella dell'articolo simulato.
+    const uc = itemUom(c.item);
     let celleSim = '';
     if (simula) {
       const costoDopo = withTempCost(it, nuovo, () => costOf(c.item.id).total);
       const delta = costoDopo - costoOra;
       const segno = delta > 0 ? '+' : '';
       const colore = Math.abs(delta) < 0.005 ? 'var(--text-dim)' : (delta > 0 ? 'var(--red)' : 'var(--green)');
-      celleSim = `<td style="text-align:right;font-family:var(--mono)">${fmtN(costoDopo)}</td>
-        <td style="text-align:right;font-family:var(--mono);color:${colore}">${segno}${fmtN(delta)}</td>`;
+      celleSim = `<td style="text-align:right;font-family:var(--mono)">${fmtPer(costoDopo, uc)}</td>
+        <td style="text-align:right;font-family:var(--mono);color:${colore}">${segno}${fmtPer(delta, uc)}</td>`;
     }
     return `<tr>
       <td style="font-family:var(--mono)">${codeLink(c.item.id, c.item.code)}</td>
       <td>${esc(c.item.name)}</td>
       <td style="text-align:right;font-family:var(--mono)">${fmtQty(c.qty)}</td>
-      <td style="text-align:right;font-family:var(--mono)">${fmtN(costoOra)}</td>
-      <td style="text-align:right;font-family:var(--mono)">${fmtN(prezzoOra)}</td>
+      <td style="text-align:right;font-family:var(--mono)">${fmtPer(costoOra, uc)}</td>
+      <td style="text-align:right;font-family:var(--mono)">${fmtPer(prezzoOra, uc)}</td>
       ${celleSim}</tr>`;
   }).join('');
 
   return `${tabDiretti}
     <div class="cat-group-title">${etichettaCime} (${cime.length})</div>
     <table><thead><tr><th>Codice</th><th>Articolo</th>
-      <th style="text-align:right">Q.tà impiegata</th><th style="text-align:right">Costo attuale</th>
+      <th style="text-align:right">${labelUom('Q.tà impiegata', u)}</th><th style="text-align:right">Costo attuale</th>
       <th style="text-align:right">Prezzo vendita</th>${colonneSim}</tr></thead>
     <tbody>${righe}</tbody></table>
     <p style="color:var(--text-dim);font-size:12px;margin-top:10px">La quantità è quella necessaria per una unità dell'assieme di testa, scarto compreso.</p>`;
@@ -498,7 +541,10 @@ function renderCatalog(scope) {
   rows.forEach(i => { const k = groupKey(i); (groups[k] = groups[k] || { items: [], ord: order(i) }).items.push(i); });
   const keys = Object.keys(groups).sort((a, b) => groups[a].ord - groups[b].ord || a.localeCompare(b));
 
-  const head = `<thead><tr><th></th><th>Codice</th><th>Nome</th><th>Tipo</th><th>Famiglia</th><th>U.M.</th><th>Costo un.</th><th>Dettaglio</th><th></th></tr></thead>`;
+  // «Costo un.» è per una unità dell'articolo, cioè nella U.M. della colonna
+  // accanto: si dice in intestazione, una volta, invece che su ogni riga.
+  const head = `<thead><tr><th></th><th>Codice</th><th>Nome</th><th>Tipo</th><th>Famiglia</th><th>U.M.</th>
+    <th title="Costo di una unità, nella U.M. della colonna accanto">Costo un. (${esc(cur())}/U.M.)</th><th>Dettaglio</th><th></th></tr></thead>`;
   // Si riempiono i gruppi nell'ordine di visualizzazione finché c'è spazio.
   // Il titolo dice sempre quanti articoli contiene il gruppo per intero, anche
   // quando ne sono disegnati solo i primi: il conteggio non deve mentire.
@@ -540,12 +586,13 @@ function itemPricingSummary(it) {
   const riga = activePriceRow(it);
   const n = priceRows(it).length;
   const prezzo = campo
-    ? `<strong style="font-family:var(--mono)">${fmtN(Number(it[campo]) || 0)}</strong> ${cur()}/${esc(it.uom || 'U.M.')}`
+    ? `<strong style="font-family:var(--mono)">${fmtPer(Number(it[campo]) || 0, itemUom(it) || 'U.M.')}</strong>`
     : '<em>derivato dal ciclo di lavorazione</em>';
   const forn = riga && riga.supplierId
     ? esc(supplierName(riga.supplierId) || '—')
     : (it.supplierId ? esc(supplierName(it.supplierId) || '—') : '<span style="color:var(--text-dim)">nessun fornitore</span>');
-  const rif = [it.supplierCode, it.supplierDesc].filter(Boolean).map(esc).join(' · ');
+  // Dalla quotazione in uso, non dalla copia sull'articolo: un posto solo.
+  const rif = riga ? [riga.code, riga.desc].filter(Boolean).map(esc).join(' · ') : '';
   return `<span class="empty-text" style="padding:0">
     ${prezzo} · ${forn}${rif ? ' · ' + rif : ''}<br>
     ${n ? `${n} ${n === 1 ? 'quotazione a listino' : 'quotazioni a listino'}${riga ? '' : ' — nessuna in uso'}` : 'Nessuna quotazione a listino'}${apri}</span>`;
@@ -579,7 +626,7 @@ function itemModalBody(it, scope) {
         <span class="empty-text" style="padding:0">Nome: <strong id="part-name-preview"></strong></span></div>
     </div>
     <div class="modal-grid">
-      <div class="modal-field"><label>Unità di misura</label><select id="it-uom">${uomOptions(it ? (it.uom || defaultUom()) : defaultUom())}</select></div>
+      <div class="modal-field"><label>Unità di misura</label><select id="it-uom" onchange="itemUomLabelsRefresh()">${uomOptions(it ? (it.uom || defaultUom()) : defaultUom())}</select></div>
       <div class="modal-field" id="fld-sourcing"><label>Approvvigionamento</label>
         <select id="it-sourcing">${partSourcingOptions(it ? partSourcing(it) : defaultPartSourcing())}</select></div>
       <div class="modal-field" id="fld-assembly-note" style="grid-column:1/-1"><label>Composizione</label><span class="empty-text" style="padding:0">La distinta (componenti e lavorazioni) si gestisce in <strong>Distinta base → Gestione DB</strong>.</span></div>
@@ -608,15 +655,15 @@ function itemModalBody(it, scope) {
     </div>
     <div class="modal-grid" id="fld-altuom">
       <div class="modal-field"><label>U.M. d'acquisto (se diversa)</label>
-        <select id="it-altuom">${uomOptions(it ? (it.altUom || '') : '')}</select></div>
-      <div class="modal-field"><label>Fattore di conversione</label>
+        <select id="it-altuom" onchange="itemUomLabelsRefresh()">${uomOptions(it ? (it.altUom || '') : '')}</select></div>
+      <div class="modal-field"><label id="it-altfactor-label">${altFactorLabel(it ? (it.altUom || '') : '', it ? (it.uom || defaultUom()) : defaultUom())}</label>
         <input type="number" id="it-altfactor" min="0" step="any" value="${it && it.altFactor != null ? it.altFactor : ''}" placeholder="es. 8"></div>
       <div class="modal-field" style="grid-column:1/-1"><span class="empty-text" style="padding:0">Da usare quando il fornitore quota in un'unità diversa da quella con cui l'articolo si gestisce e si mette in distinta. Il fattore dice <strong>quante unità d'acquisto stanno in una di gestione</strong>: una barra gestita in <span style="font-family:var(--mono)">m</span> che pesa 8 kg al metro ha U.M. d'acquisto <span style="font-family:var(--mono)">kg</span> e fattore <span style="font-family:var(--mono)">8</span>.<br>Serve a non sbagliare il costo: senza, un prezzo a chilo finirebbe nella costificazione come se fosse al metro. Lasciare vuoto se le due unità coincidono.</span></div>
     </div>
     <div class="modal-grid" id="fld-stock">
-      <div class="modal-field"><label>Scorta minima</label>
+      <div class="modal-field"><label id="it-safety-label">${labelUom('Scorta minima', it ? (it.uom || defaultUom()) : defaultUom())}</label>
         <input type="number" id="it-safety" min="0" step="any" value="${it && it.safetyStock != null ? it.safetyStock : ''}" placeholder="0"></div>
-      <div class="modal-field"><label>Lotto di riordino</label>
+      <div class="modal-field"><label id="it-lot-label">${labelUom('Lotto di riordino', it ? (it.uom || defaultUom()) : defaultUom())}</label>
         <input type="number" id="it-lot" min="0" step="any" value="${it && it.lotSize != null ? it.lotSize : ''}" placeholder="nessuno"></div>
       <div class="modal-field" style="grid-column:1/-1"><span class="empty-text" style="padding:0">La <strong>scorta minima</strong> è la quantità che il fabbisogno netto vuole lasciare a magazzino dopo aver coperto il piano. Il <strong>lotto di riordino</strong> arrotonda per eccesso quanto si compra: vuoto = nessun arrotondamento.</span></div>
     </div>
@@ -624,6 +671,28 @@ function itemModalBody(it, scope) {
     <div class="modal-field"><label>Note</label><textarea id="it-notes" rows="2">${it ? esc(it.notes || '') : ''}</textarea></div>
     ${stampLine(it)}`;
 }
+// ─── Le etichette che seguono l'unità di misura ───
+// Scorta minima e lotto di riordino sono quantità dell'articolo, e il fattore di
+// conversione è un rapporto fra due unità: scriverli senza unità lascia decidere
+// a chi compila, che tira a indovinare e sbaglia di un fattore. L'unità però si
+// sceglie **dentro lo stesso form**, qualche riga più su, quindi le etichette la
+// inseguono a ogni cambio invece di essere fissate al primo disegno.
+function altFactorLabel(altUom, uom) {
+  return altUom && altUom !== uom
+    ? `Fattore di conversione (${esc(altUom)} in 1 ${esc(uom || 'U.M.')})`
+    : 'Fattore di conversione';
+}
+function itemUomLabelsRefresh() {
+  const u = val('it-uom') || defaultUom();
+  const set = (id, testo) => { const el = document.getElementById(id); if (el) el.textContent = testo; };
+  // textContent: l'unità arriva da un <select> di codici già validati, e passarla
+  // come testo evita di doverla riescapare a mano.
+  set('it-safety-label', `Scorta minima${u ? ' (' + u + ')' : ''}`);
+  set('it-lot-label', `Lotto di riordino${u ? ' (' + u + ')' : ''}`);
+  const alt = val('it-altuom');
+  set('it-altfactor-label', alt && alt !== u ? `Fattore di conversione (${alt} in 1 ${u || 'U.M.'})` : 'Fattore di conversione');
+}
+
 // ─── Campi di codifica (macchina › gruppo) nella modale articolo ───
 function machineOptions(selectedId) {
   return `<option value="">—</option>` + machineItems()
@@ -921,17 +990,20 @@ function renderCycleSummary(it) {
   const bomTot = rows.filter(r => r.kind !== 'op').reduce((s, r) => s + cycleRowCost(r), 0);
   const opsTot = rows.filter(r => r.kind === 'op').reduce((s, r) => s + cycleRowCost(r), 0);
   const c = costOf(it.id);
+  const u = itemUom(it);
   el.innerHTML = [
-    kpi('Distinta parte', fmtN(bomTot), 'orange'),
-    kpi('Lavorazioni', fmtN(opsTot), 'green'),
-    kpi('Costo unitario a mano', fmtN(Number(it.unitCost) || 0), 'purple'),
-    kpi('Costo parte', fmtN(c.total), ''),
+    kpi('Distinta parte', fmtPer(bomTot, u), 'orange'),
+    kpi('Lavorazioni', fmtPer(opsTot, u), 'green'),
+    kpi('Costo unitario a mano', fmtPer(Number(it.unitCost) || 0, u), 'purple'),
+    kpi('Costo parte', fmtPer(c.total, u), ''),
   ].join('') + (c.cycle ? '<div class="empty-text" style="color:var(--red)">⚠ Rilevato riferimento ciclico: una riga risale a questa stessa parte.</div>' : '');
 }
 function cycleBomTable(bomRows) {
   if (!bomRows.length) return '<div class="empty-text" style="padding:8px 0">Nessun articolo. Usa "+ Articolo" per aggiungere commerciali e materie prime.</div>';
   const head = `<div class="cycle-row cycle-head">
-    <span>Voce</span><span>Fornitore</span><span>U.M.</span><span class="num">Q.tà</span><span class="num">Costo</span><span class="num">Costo riga</span><span></span></div>`;
+    <span>Voce</span><span>Fornitore</span><span>U.M.</span><span class="num">Q.tà</span>
+    <span class="num" title="Costo di una unità: vuoto = quello calcolato dall'anagrafica">Costo (${esc(cur())}/U.M.)</span>
+    <span class="num">Costo riga (${esc(cur())})</span><span></span></div>`;
   return head + bomRows.map(({ r, i }) => {
     const ci = getItem(r.itemId);
     return `<div class="cycle-row">
@@ -951,7 +1023,8 @@ function cycleBomTable(bomRows) {
 function cycleOpsTable(opRows) {
   if (!opRows.length) return '<div class="empty-text" style="padding:8px 0">Nessuna lavorazione. Usa "+ Lavorazione" per aggiungere una fase.</div>';
   const head = `<div class="cycle-row cycle-op-row cycle-head">
-    <span>Fase</span><span>Lavorazione</span><span>Fornitore</span><span class="num">Costo</span><span class="num">Costo riga</span><span>Ordine</span><span></span></div>`;
+    <span>Fase</span><span>Lavorazione</span><span>Fornitore</span>
+    <span class="num">Costo (${esc(cur())})</span><span class="num">Costo riga (${esc(cur())})</span><span>Ordine</span><span></span></div>`;
   const last = opRows.length - 1;
   return head + opRows.map(({ r, i }, k) => `<div class="cycle-row cycle-op-row">
       <span class="cycle-phase">${cyclePhaseNumber(k)}</span>

@@ -354,8 +354,17 @@ function catInfoAoa(scope) {
     ['', 'Il foglio Liste contiene tutti i valori ammessi. Menu a tendina: Dati → Convalida → Elenco → =Liste!$A$2:$A$50'],
     ['', 'Decimali con la virgola o con il punto: vanno bene entrambi. Le date come 2025-01-31 o 31/01/2025.'],
     [],
+    ['Unità di misura', ''],
+    // Le intestazioni non si possono arricchire con l'unità — sono la chiave con
+    // cui l'import riconosce le colonne, e rinominarle romperebbe i file già in
+    // giro. L'unità si dichiara qui, dove si legge prima di compilare.
+    ['', 'Scorta minima, Lotto riordino e le quantità sono nell\'UM dell\'articolo (colonna UM).'],
+    ['', 'Q.tà min è invece nell\'UM della quotazione (UM prezzo, se valorizzata; altrimenti UM).'],
+    ['', 'GG consegna è in giorni di calendario.'],
+    [],
     ['Prezzi', ''],
     ['', 'Prezzo e fornitore sulla riga articolo creano una QUOTAZIONE nel listino e diventano il prezzo in uso.'],
+    ['', 'Il prezzo è per una unità: nell\'UM prezzo se valorizzata, altrimenti nell\'UM dell\'articolo.'],
     ['', 'Un articolo con più quotazioni le tiene nel foglio Listino, e la riga articolo le lascia vuote.'],
     ['', 'Una quotazione senza fornitore azzera il fornitore dell\'articolo.'],
     ['', 'UM prezzo vale solo se coincide con UM acquisto dell\'articolo; qualunque altro valore viene ignorato.'],

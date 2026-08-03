@@ -85,14 +85,17 @@ function renderBom() {
   }
   const c = costOf(it.id);
   const price = sellingPrice(it.id);
+  // Sono tutti costi **unitari**, per una unità dell'assieme aperto: senza il
+  // denominatore si leggono come il costo di una commessa intera.
+  const u = itemUom(it);
   summary.innerHTML = [
-    kpi('Materiale', fmtN(c.material), 'orange'),
-    kpi('Commerciali', fmtN(c.purchased), 'accent'),
-    kpi('Parti', fmtN(c.parts), 'purple'),
-    kpi('Lavorazioni', fmtN(c.labor), 'green'),
-    kpi('Spese generali', fmtN(c.overhead), ''),
-    kpi('Costo totale', fmtN(c.total), ''),
-    kpi('Prezzo vendita', fmtN(price), 'green'),
+    kpi('Materiale', fmtPer(c.material, u), 'orange'),
+    kpi('Commerciali', fmtPer(c.purchased, u), 'accent'),
+    kpi('Parti', fmtPer(c.parts, u), 'purple'),
+    kpi('Lavorazioni', fmtPer(c.labor, u), 'green'),
+    kpi('Spese generali', fmtPer(c.overhead, u), ''),
+    kpi('Costo totale', fmtPer(c.total, u), ''),
+    kpi('Prezzo vendita', fmtPer(price, u), 'green'),
   ].join('') + (c.cycle ? '<div class="empty-text" style="color:var(--red)">⚠ Rilevato riferimento ciclico nella distinta!</div>' : '');
 
   // Albero
@@ -305,6 +308,16 @@ function selectPickerItem(id) {
   const search = document.getElementById('cmp-search');
   if (search && it) search.value = it.code + ' — ' + it.name;
   renderPickerResults();
+  cmpQtyLabelRefresh();
+}
+// «Quantità» da sola non dice quantità *di che cosa*: due o due metri cambiano
+// la distinta. L'unità è quella del componente, che qui si sceglie dopo aver
+// aperto il form — quindi l'etichetta la segue invece di essere scritta una
+// volta sola. Finché non si è scelto niente resta "Quantità", senza parentesi
+// vuote da riempire con l'immaginazione.
+function cmpQtyLabelRefresh() {
+  const lbl = document.getElementById('cmp-qty-label'); if (!lbl) return;
+  lbl.textContent = labelUom('Quantità', itemUom(getItem(val('cmp-item'))));
 }
 function allowedHint(parentType) {
   const allowed = (ALLOWED_CHILDREN[parentType] || []).map(typeLabel);
@@ -319,12 +332,13 @@ function addComponentModal() {
     <p class="empty-text" style="text-align:left;padding:0 0 10px">${allowedHint(it.type)}</p>
     ${itemPickerField(null)}
     <div class="modal-grid">
-      <div class="modal-field"><label>Quantità</label><input type="number" id="cmp-qty" min="0" step="0.001" value="1"></div>
+      <div class="modal-field"><label id="cmp-qty-label">Quantità</label><input type="number" id="cmp-qty" min="0" step="0.001" value="1"></div>
       <div class="modal-field"><label>Scarto %</label><input type="number" id="cmp-scrap" min="0" step="0.1" value="0"></div>
     </div>
     <div class="modal-actions"><button class="btn-ghost" onclick="closeModal()">Annulla</button>
       <button class="add-btn-sm" onclick="saveNewComponent()">Aggiungi</button></div>`);
   renderPickerResults();
+  cmpQtyLabelRefresh();
 }
 function isAllowedChild(parentType, childId) {
   const child = getItem(childId);
@@ -351,7 +365,7 @@ function editComponentModal(idx) {
     <p class="empty-text" style="text-align:left;padding:0 0 10px">${allowedHint(it.type)}</p>
     ${itemPickerField(comp.itemId)}
     <div class="modal-grid">
-      <div class="modal-field"><label>Quantità</label><input type="number" id="cmp-qty" min="0" step="0.001" value="${comp.qty}"></div>
+      <div class="modal-field"><label id="cmp-qty-label">${labelUom('Quantità', itemUom(getItem(comp.itemId)))}</label><input type="number" id="cmp-qty" min="0" step="0.001" value="${comp.qty}"></div>
       <div class="modal-field"><label>Scarto %</label><input type="number" id="cmp-scrap" min="0" step="0.1" value="${comp.scrapPct || 0}"></div>
     </div>
     <div class="modal-actions"><button class="btn-ghost" onclick="closeModal()">Annulla</button>
@@ -428,7 +442,7 @@ function addOperationModal() {
   openModal(`<h3>🔧 Aggiungi lavorazione</h3>
     <div class="modal-field"><label>Centro di lavoro</label><select id="op-wc">${wcOptions(null)}</select></div>
     <div class="modal-grid">
-      <div class="modal-field"><label>Ore</label><input type="number" id="op-hours" min="0" step="0.25" value="1"></div>
+      <div class="modal-field"><label>Ore (h)</label><input type="number" id="op-hours" min="0" step="0.25" value="1"></div>
       <div class="modal-field"><label>Nota</label><input type="text" id="op-note" placeholder="opzionale"></div>
     </div>
     <div class="modal-actions"><button class="btn-ghost" onclick="closeModal()">Annulla</button>
@@ -449,7 +463,7 @@ function editOperationModal(idx) {
   openModal(`<h3>🔧 Modifica lavorazione</h3>
     <div class="modal-field"><label>Centro di lavoro</label><select id="op-wc">${wcOptions(op.workCenterId)}</select></div>
     <div class="modal-grid">
-      <div class="modal-field"><label>Ore</label><input type="number" id="op-hours" min="0" step="0.25" value="${op.hours}"></div>
+      <div class="modal-field"><label>Ore (h)</label><input type="number" id="op-hours" min="0" step="0.25" value="${op.hours}"></div>
       <div class="modal-field"><label>Nota</label><input type="text" id="op-note" value="${esc(op.note || '')}"></div>
     </div>
     <div class="modal-actions"><button class="btn-ghost" onclick="closeModal()">Annulla</button>
