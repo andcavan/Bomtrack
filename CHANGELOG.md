@@ -2,6 +2,23 @@
 
 Le revisioni seguono il versionamento semantico `0.MINOR.PATCH`: **MINOR** per nuove funzionalità, **PATCH** per correzioni. La versione in cima è quella in `APP_VERSION` (`core.js`) e mostrata nell'header dell'app.
 
+### 0.41.0 — 2026-08-03
+
+**Richieste d'offerta e ordini erano due copie quasi identiche: ora ogni regola è scritta una volta sola.** Sono lo stesso oggetto — una testata con un fornitore, delle righe, uno stato e un blocco che dipende dallo stato — e per molte versioni sono stati due elenchi paralleli di funzioni gemelle. Correggere qualcosa significava ricordarsi di correggerlo due volte, e le differenze vere fra i due documenti erano sparse nel codice invece di essere dichiarate.
+
+**Cambiato**
+- **Un registro dei due tipi di documento** (`DOC_KINDS`) che dice in un elenco leggibile in cosa differiscono: sulla richiesta il prezzo è la risposta attesa e resta compilabile dopo l'invio, sull'ordine è concordato e dopo l'invio arrivano invece le merci; lo stato della richiesta deriva dai prezzi, quello dell'ordine dai ricevimenti.
+- **Una funzione sola per ogni regola**: guardie e blocchi, sblocco, modifica di campi e righe, riga manuale, aggiunta da catalogo, salvataggio, eliminazione, uscita dall'editor. I nomi di sempre (`rfqSetLine`, `ordSetLine`…) restano come adattatori di una riga — sono citati in centinaia di `onclick` nei template e rinominarli avrebbe aggiunto solo rischio.
+- **`docPartyLines()`**: l'intestazione «chi ordina / chi riceve» che i quattro export ripetevano identica, con la partita IVA bilingue sui documenti stampati e le righe vuote che cadono da sole.
+
+**Come funziona, e perché così**
+- **Il file non si è accorciato** (1063 → 1072 righe di codice) e non era quello lo scopo: il registro documentato costa quanto le copie tolte. Il guadagno è che una modifica si fa in un punto invece che in due, e che le differenze fra i due documenti si leggono in un elenco invece di doverle cercare confrontando venti funzioni a mano.
+- **La presentazione resta duplicata di proposito**: i due editor e i quattro export PDF/Excel non hanno un test, ed è esattamente il motivo per cui questo lavoro era rimandato. Si toccheranno dopo aver scritto i test, non prima.
+
+**Verifica**
+- 7 nuovi controlli (suite da 912 a 919), sopra i 29 della versione precedente che facevano da rete: il registro conosce entrambi i tipi (e un tipo inventato non fa esplodere niente), lo stesso campo è governato da blocchi diversi nei due documenti, la guardia respinge allo stesso modo su entrambi, l'intestazione salta le righe vuote ed è bilingue sui documenti stampati.
+- Tutti i 29 controlli su stati, ricevimenti e blocchi passano **senza essere stati toccati**: è la prova che il comportamento non è cambiato.
+
 ### 0.40.0 — 2026-08-03
 
 **La rete sotto i documenti.** `views-docs.js` è il file più lungo dell'app e il più duplicato, e proprio le sue tre cose più delicate — stati, ricevimenti e blocchi — non avevano un solo test. Finché è così, qualunque riordino di quel file è un salto senza rete: adesso la rete c'è, e la prossima versione può riscriverlo.

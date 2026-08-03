@@ -211,6 +211,98 @@ vede, e nessun controllo JS può accorgersene. Vedi A8 sotto.
 
 ---
 
+## Risolto fra la 0.37.0 e la 0.41.0
+
+Controllo generale ripetuto sull'intero codice (agosto 2026). Le voci qui sotto
+non erano tutte in questo documento: metà sono difetti trovati in quel giro.
+
+### 16. Venti mutatori della Gestione senza `roleGuard` *(0.37.0)*
+`views-manage.js`: termini di trasporto e pagamento, dati azienda, fornitori,
+famiglie e sottofamiglie, centri di lavoro e unità di misura scrivevano senza
+chiedere il permesso, mentre le funzioni sugli utenti nello stesso file lo
+chiedevano. La protezione era la sola navigazione: un pannello lasciato aperto
+mentre il ruolo cambiava scriveva lo stesso. Aggiunta anche a `releaseRevision`
+(`views-rev.js`), che è globale e contava sui chiamanti.
+
+La regola dichiarata in `core.js` — «le guardie stanno nei mutatori, non nella
+UI» — vale solo se non ha eccezioni: un'eccezione la trasforma in una
+convenzione, e le convenzioni si dimenticano.
+
+### 17. La home leggeva il toggle lordo/netto di un'altra vista *(0.37.0)*
+`renderHome` passava `mrpNet` a `mrpBuyRows`. Il conteggio delle righe da
+ordinare cambiava a seconda di come qualcuno aveva lasciato la vista
+Fabbisogno, e due persone sulla stessa base dati leggevano numeri diversi senza
+avere modo di accorgersene. Ora è sempre il **netto**, che è il numero
+azionabile. `views-mrp.js` documentava già che `netMode` è un parametro e non
+una lettura del toggle: la home era l'unico punto che lo violava.
+
+### 18. `costContributors` risolveva gli articoli per codice *(0.37.0)*
+`views-report.js` usava `getItemByCode(r.code)` avendo `r.itemId` sulla riga.
+I codici duplicati esistono per scelta (§12), e `codeIndex()` risolve sempre sul
+primo: una foglia omonima di un assieme veniva scartata come «assieme» e la sua
+spesa spariva dal conto, oppure due articoli distinti si fondevano in una voce
+sola. Ora si risolve e si aggrega per id. Corretti nello stesso giro due casi
+che nessuno aveva notato: le righe di lavorazione comparivano tra i contributi
+(la finestra dichiara che stanno nelle barre di incidenza) e una parte prodotta
+in casa contava sia per sé sia per le righe del proprio ciclo.
+
+### 19. `itemInfoRows` aveva il contratto di escaping rovesciato *(0.37.0)*
+Era l'unico helper del repo in cui l'escaping toccava al chiamante: funzionava
+per disciplina, e una voce aggiunta senza pensarci sarebbe diventata
+un'iniezione HTML silenziosa. Ora escapa dentro e i valori che sono davvero
+HTML lo dichiarano (`rawHtml`). Stessa correzione sul banner di sblocco
+documenti, che riceveva il gestore del click come **stringa di JavaScript**.
+
+### 20. Quattro lavori quadratici sui percorsi più caldi *(0.38.0)*
+Nessuno cambiava un numero; tutti costavano.
+- `renderHome` riesplodeva tutte le distinte di tutti i piani aperti, che
+  `commitIndex()` aveva già esploso per calcolare gli impegni. È la schermata di
+  ogni accesso.
+- La simulazione di costo chiamava `withTempCost` **dentro** la `.map` sulle
+  cime impattate: 2N azzeramenti delle cache globali e 2N rollup da zero, a ogni
+  carattere digitato. Ora una volta sola attorno all'intera mappa.
+- Lo storico revisioni ricalcolava `revSnapshot()` — tre copie profonde e un
+  rollup — per ogni revisione in elenco, ottenendo N volte la stessa fotografia.
+- La scheda articolo riesplodeva ogni piano a ogni apertura, ed è il gesto più
+  frequente dell'app: ora c'è `planUseIndex()`, con lo stesso ciclo di vita
+  degli altri indici. Copre anche i piani chiusi, perché la domanda della scheda
+  è storica e `commitIndex()` risponde a un'altra domanda.
+
+### 21. Quattro toppe diverse allo stesso problema *(0.39.0)*
+Ogni gesto riscrive l'HTML della vista intera, e questo butta via scroll, campo
+a fuoco e punto di digitazione. Quattro viste se n'erano accorte separatamente e
+si erano scritte quattro rimedi diversi. Ora c'è `renderInto(contenitore, fn)`
+in `core.js`, e il caso del menu a tendina a fuoco ha una risposta esplicita:
+**non si ridisegna affatto**, perché un elenco che si rimescola mentre lo si sta
+aprendo non è ripristinabile.
+
+### 22. C1 — la duplicazione RFQ/ODA, per la parte che conta *(0.41.0)*
+*(Prerequisito chiuso nella 0.40.0: `test/docs-state.test.js`, 29 controlli su
+stati, ricevimenti, blocchi e numerazione — vedi C3.)*
+
+Le due dozzine di coppie speculari sono diventate **un registro dei due tipi di
+documento** (`DOC_KINDS`) più una funzione sola per ogni regola: guardie,
+blocchi, sblocco, modifica di campi e righe, aggiunta manuale e da catalogo,
+salvataggio, eliminazione, uscita dall'editor. I nomi storici (`rfqSetLine`,
+`ordSetLine`…) restano come adattatori di una riga: sono citati in centinaia di
+`onclick` nei template, e rinominarli avrebbe aggiunto rischio senza aggiungere
+niente. Ne restano 37, tutti di una riga.
+
+**Il volume del file non è cambiato** (1063 → 1072 righe di codice): il registro
+e la sua documentazione costano quanto le copie tolte. Il guadagno non era
+quello — è che ogni regola ha un punto solo, e che le differenze fra i due
+documenti sono ora dichiarate in un elenco invece di essere sparse in venti
+funzioni, dove per trovarle bisognava confrontarle a mano.
+
+**Resta duplicata la presentazione**: `renderRfqEdit`/`renderOrderEdit` e i
+quattro export PDF/Excel (~300 righe). Deliberatamente: **non hanno un test**,
+e il motivo per cui C1 era rimandato era esattamente questo. Estratta però
+`docPartyLines()`, l'intestazione richiedente/fornitore che i quattro export
+ripetevano identica. Il prossimo passo, se si vuole chiudere anche quello, è un
+test sull'export prima del refactor — non dopo.
+
+---
+
 ## Aperto
 
 ### A. Sicurezza
@@ -265,22 +357,24 @@ sembri: le quantità dipendono dal percorso, quindi la memoizzazione va fatta su
 
 ### C. Manutenibilità
 
-**C1 — RFQ e ODA sono due copie quasi identiche** in `views-docs.js`: quattordici
-coppie speculari (`rfqGuard`/`ordGuard`, `rfqSetLine`/`ordSetLine`,
-`exportRfqPDF`/`exportOrderPDF`…). L'astrazione condivisa esiste già a metà
-(`docFilterBar`, `applyDocLock`, `lineIdentityFields`, `catalogPickerModal`).
-*Rimandato:* è il refactor più grosso del repo e non ha rete — vedi C3.
+**C1 residuo — resta duplicata la *presentazione* dei documenti** *(la logica è
+chiusa nella 0.41.0, vedi §22)*: `renderRfqEdit`/`renderOrderEdit` e i quattro
+export PDF/Excel, circa 300 righe. Il motivo per cui non è stata toccata è lo
+stesso di sempre: **gli export non hanno un test**. Serve prima quello — un
+export si verifica sui dati che produce, non sul PDF — e poi il refactor.
 
-**C3 — buchi di copertura** *(ridotto nella 0.22.0, vedi §8)*. Restano scoperti
-`views-manage.js` (`renameUom`, `addUser`, le anagrafiche di servizio) e — il
-buco che pesa di più — `views-docs.js` oltre i filtri di lista: **transizioni di
-stato, ricevimenti e lock dei documenti** non hanno un test. È lo stesso file di
-C1: finché non è coperto, la deduplica RFQ/ODA resta un refactor senza rete.
+**C3 residuo — buchi di copertura** *(ridotto nella 0.22.0 §8, e di nuovo nella
+0.40.0 con `test/docs-state.test.js`)*. Restano scoperti gli **export PDF/Excel**
+(nessuna delle quattro funzioni ha un test, vedi C1 residuo) e parte di
+`views-manage.js` (`renameUom` e le anagrafiche di servizio; le guardie di ruolo
+sono ora coperte da `test/guards.test.js`).
 
-**C4 — file lunghi con scope globale piatto:** `views-catalog.js` ~1200 righe,
-`views-docs.js` ~1100, `views-manage.js` 640, `store.js` 620, `core.js` 640.
+**C4 — file lunghi con scope globale piatto:** `views-catalog.js` ~1400 righe,
+`views-docs.js` ~1270, `core.js` ~930, `store.js` ~900, `views-manage.js` ~670.
 Senza moduli, ogni nome è globale e una collisione non dà errore: vince l'ultimo
-caricato.
+caricato. Nota: la deduplica della 0.41.0 non ha accorciato `views-docs.js` e
+non doveva — sono due problemi diversi, e questo si chiude solo con i moduli,
+cioè rinunciando all'apertura da `file://`.
 
 ---
 

@@ -250,6 +250,60 @@ describe('Numerazione: progressiva per anno e per tipo', () => {
   });
 });
 
+describe('Una regola sola per i due tipi di documento (0.41.0)', () => {
+  // Dopo la deduplica le due strade passano dalle stesse funzioni: questi
+  // controlli verificano che il parametro `kind` scelga davvero il
+  // comportamento giusto, ed è ciò che impedisce alle due copie di tornare.
+  it('il registro conosce entrambi i tipi, e un tipo inventato non lancia', () => {
+    const a = app();
+    assert.equal(a.eval('docKind("order").coll'), 'orders');
+    assert.equal(a.eval('docKind("rfq").coll'), 'rfqs');
+    assert.equal(a.eval('docKind("inesistente").coll'), 'rfqs', 'ripiega sul primo invece di rompersi');
+  });
+
+  it('il prezzo di riga esiste sull\'ordine e non sulla richiesta', () => {
+    const a = app();
+    assert.equal(a.eval('docKind("order").hasLinePrice'), true);
+    assert.equal(a.eval('docKind("rfq").hasLinePrice'), false, 'la richiesta è la domanda, non la risposta');
+  });
+
+  it('lo stesso campo è governato da blocchi diversi nei due documenti', () => {
+    const a = app();
+    assert.equal(a.eval('docKind("rfq").lineLock("price")'), 'offer', 'sulla richiesta il prezzo torna col preventivo');
+    assert.equal(a.eval('docKind("order").lineLock("price")'), 'contract', 'sull\'ordine è concordato');
+    assert.equal(a.eval('docKind("order").lineLock("received")'), 'reception');
+  });
+
+  it('docGuard blocca lo stesso su entrambi, e il messaggio si accorda', () => {
+    const a = conOrdine(conRfq(app(), 'chiusa', [3]), 'annullato', 10, 0);
+    assert.equal(a.eval('docGuard("rfq", "r1", "contract")'), false);
+    assert.equal(a.eval('docGuard("order", "o1", "contract")'), false);
+    assert.equal(a.eval('docGuard("order", "inesistente", "contract")'), false, 'un id che non esiste non passa');
+  });
+
+  it('l\'intestazione del documento salta le righe vuote', () => {
+    const a = app();
+    a.eval(`db.settings.company = { name: 'Acme', street: 'Via Roma', streetNumber: '1',
+      zip: '41100', city: 'Modena', province: 'MO', country: 'Italia', vat: '123', email: '', phone: '' }`);
+    const righe = JSON.parse(a.eval('JSON.stringify(docPartyLines(db.settings.company))'));
+    assert.deepEqual(righe, ['Acme', 'Via Roma 1', '41100 Modena (MO)', 'Italia', 'P.IVA 123']);
+    assert.ok(!righe.some(r => !r), 'un recapito mancante non lascia una riga bianca nel blocco');
+  });
+
+  it('sul documento stampato la partita IVA è bilingue', () => {
+    const a = app();
+    const it = JSON.parse(a.eval('JSON.stringify(docPartyLines({ name: "Acme", vat: "123" }))'));
+    const en = JSON.parse(a.eval('JSON.stringify(docPartyLines({ name: "Acme", vat: "123" }, true))'));
+    assert.deepEqual(it, ['Acme', 'P.IVA 123']);
+    assert.deepEqual(en, ['Acme', 'P.IVA / VAT 123'], 'i documenti vanno anche a fornitori esteri');
+  });
+
+  it('un fornitore non ancora scelto non produce righe', () => {
+    const a = app();
+    assert.deepEqual(JSON.parse(a.eval('JSON.stringify(docPartyLines(null))')), []);
+  });
+});
+
 describe('Dalla richiesta all\'ordine', () => {
   it('l\'ordine eredita fornitore, condizioni e righe, e azzera i ricevimenti', () => {
     const a = conRfq(app(), 'ricevuta', [3]);
