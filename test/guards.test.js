@@ -116,6 +116,40 @@ describe('La home conta il fabbisogno netto, qualunque cosa dica il toggle', () 
   });
 });
 
+describe('Le ottimizzazioni non cambiano i numeri (0.38.0)', () => {
+  it('withTempCost su più cime in un colpo solo dà gli stessi costi di una chiamata per cima', () => {
+    const a = app(makeDb({
+      items: [
+        asm('mac1', 'macchina', { components: [comp('m1', 2)] }),
+        asm('mac2', 'macchina', { components: [comp('m1', 5)] }),
+        mat('m1', 10),
+      ],
+    }));
+    const unoPerVolta = JSON.parse(a.eval(`JSON.stringify([
+      withTempCost(getItem('m1'), 99, () => costOf('mac1').total),
+      withTempCost(getItem('m1'), 99, () => costOf('mac2').total),
+    ])`));
+    const inBlocco = JSON.parse(a.eval(`JSON.stringify(
+      withTempCost(getItem('m1'), 99, () => ['mac1', 'mac2'].map(id => costOf(id).total))
+    )`));
+    assert.deepEqual(inBlocco, unoPerVolta);
+    approx(a.eval('costOf("mac1").total'), 20, 'fuori dalla simulazione il costo vero torna');
+  });
+
+  it('la scheda articolo elenca anche i piani chiusi in cui l\'articolo compare esploso', () => {
+    // planUseIndex() ha sostituito la riesplosione per apertura: la semantica
+    // storica («per cosa serviva?») deve restare, piani chiusi compresi —
+    // commitIndex() li scarta, questo indice no.
+    const a = app(makeDb({
+      items: [asm('mac', 'macchina', { components: [comp('c1', 2)] }), acq('c1', 5)],
+      plans: [{ id: 'pl1', number: 'FAB-9', active: false, lines: [{ id: 'l1', itemId: 'mac', qty: 1 }] }],
+    }));
+    const html = a.eval('itemInfoDocumenti(getItem("c1"))');
+    assert.match(html, /FAB-9/);
+    assert.match(html, /piano chiuso/);
+  });
+});
+
 describe('I contributi di costo si contano per id, non per codice', () => {
   it('una foglia col codice di un assieme non sparisce dal conto', () => {
     // Prima si risolveva con getItemByCode: il codice DUP trovava l'assieme,

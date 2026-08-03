@@ -359,7 +359,11 @@ function usageBody(id) {
 
   const etichettaCime = cime.some(c => c.item.type === 'macchina') ? 'Macchine impattate' : 'Assiemi di testa impattati';
   const colonneSim = simula ? '<th style="text-align:right">Costo simulato</th><th style="text-align:right">Differenza</th>' : '';
-  const righe = cime.map(c => {
+  // Un solo withTempCost per tutte le cime: entra e esce dalla simulazione una
+  // volta, non una per riga — ogni giro azzerava le cache globali due volte e
+  // rifaceva ogni rollup da zero, a ogni carattere digitato nel campo.
+  const costiDopo = simula ? withTempCost(it, nuovo, () => cime.map(c => costOf(c.item.id).total)) : null;
+  const righe = cime.map((c, i) => {
     const costoOra = costOf(c.item.id).total;
     const prezzoOra = sellingPrice(c.item.id);
     // Costi e prezzi qui sono di una unità della **cima** impattata, che ha la
@@ -367,7 +371,7 @@ function usageBody(id) {
     const uc = itemUom(c.item);
     let celleSim = '';
     if (simula) {
-      const costoDopo = withTempCost(it, nuovo, () => costOf(c.item.id).total);
+      const costoDopo = costiDopo[i];
       const delta = costoDopo - costoOra;
       const segno = delta > 0 ? '+' : '';
       const colore = Math.abs(delta) < 0.005 ? 'var(--text-dim)' : (delta > 0 ? 'var(--red)' : 'var(--green)');

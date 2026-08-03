@@ -213,8 +213,11 @@ function releaseRevisionConfirm(itemId) {
 function revHistoryModal(itemId) {
   const it = getItem(itemId || currentBomId); if (!it) return;
   const lista = revisionsOf(it.id);
+  // La fotografia dell'attuale è la stessa per tutte le righe: si scatta una
+  // volta, non tre deep-clone e un rollup di costo per ogni revisione in elenco.
+  const attuale = lista.length ? revSnapshot(it) : null;
   const corpo = lista.length ? lista.map(r => {
-    const d = revDiff(r.snapshot, revSnapshot(it));
+    const d = revDiff(r.snapshot, attuale);
     const quante = d.aggiunte.length + d.rimosse.length + d.cambiate.length;
     return `<div class="mgmt-item" style="display:block">
       <div style="display:flex;align-items:center;gap:8px">

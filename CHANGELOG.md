@@ -2,6 +2,19 @@
 
 Le revisioni seguono il versionamento semantico `0.MINOR.PATCH`: **MINOR** per nuove funzionalità, **PATCH** per correzioni. La versione in cima è quella in `APP_VERSION` (`core.js`) e mostrata nell'header dell'app.
 
+### 0.38.0 — 2026-08-03
+
+**Prestazioni sui percorsi caldi: stessi numeri, molto meno lavoro.** Quattro punti riesplodevano distinte o rifacevano cloni dentro cicli; ora il lavoro pesante si fa una volta e si riusa. Nessun valore mostrato cambia — è la proprietà verificata dai test.
+
+**Cambiato**
+- **La home ricava le righe di fabbisogno da `commitIndex()`**, che ha già esploso tutti i piani aperti per calcolare gli impegni: prima li riesplodeva una seconda volta con `mrpBuyRows`, raddoppiando il costo della schermata mostrata a ogni accesso.
+- **La simulazione di costo entra ed esce una sola volta**: con N assiemi di testa impattati faceva 2N azzeramenti delle cache globali e 2N rollup da zero — a ogni carattere digitato. Ora un solo `withTempCost` attorno a tutte le cime.
+- **Lo storico revisioni fotografa la distinta attuale una volta**, non tre deep-clone e un rollup di costo per ogni revisione in elenco.
+- **La scheda articolo usa un indice articolo → piani** (`planUseIndex`, stesso ciclo di vita degli altri indici) invece di riesplodere ogni piano a ogni apertura — ed è il gesto più frequente dell'app. L'indice copre anche i piani chiusi: la domanda della scheda è storica, e i piani chiusi ne fanno parte.
+
+**Verifica**
+- 2 nuovi controlli (suite da 874 a 876): la simulazione in blocco dà gli stessi costi di una chiamata per cima (e fuori dalla simulazione il costo vero torna), e la scheda articolo continua a elencare i piani chiusi in cui l'articolo compare esploso. Il benchmark (`node test/bench.js`) resta invariato: guadagno 82× sulla risalita.
+
 ### 0.37.0 — 2026-08-03
 
 **Correttezza e guardie: quattro difetti trovati da un controllo generale del codice.** Nessuna funzionalità nuova; cambia che alcuni numeri ora sono giusti per costruzione e alcune porte che sembravano chiuse ora lo sono davvero.

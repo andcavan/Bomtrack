@@ -323,12 +323,40 @@ function itemInfoImpieghi(it) {
 // In quali documenti e piani compare. È la domanda che segue sempre le altre —
 // «l'ho già ordinato?», «per cosa serviva?» — e finora si rispondeva solo
 // aprendo gli elenchi e filtrandoli uno per uno.
+// Indice articolo → piani in cui compare (in riga diretta o nell'esplosione).
+// Copre anche i piani chiusi: la domanda della scheda è storica («per cosa
+// serviva?»), mentre commitIndex() guarda i soli piani aperti e risponde a
+// un'altra domanda. Stesso ciclo di vita degli altri indici: costruito al primo
+// uso, azzerato da invalidateCaches() via l'hook in core.js — prima la scheda
+// riesplodeva tutti i piani a ogni apertura, ed è il gesto più frequente
+// dell'app.
+let _planUseIdx = null;
+function invalidateItemDocs() { _planUseIdx = null; }
+function planUseIndex() {
+  if (_planUseIdx) return _planUseIdx;
+  const idx = new Map();
+  const aggiungi = (itemId, planId) => {
+    if (!itemId) return;
+    let s = idx.get(itemId);
+    if (!s) { s = new Set(); idx.set(itemId, s); }
+    s.add(planId);
+  };
+  (db.plans || []).forEach(p => {
+    (p.lines || []).forEach(l => aggiungi(l.itemId, p.id));
+    if ((p.lines || []).length && typeof mrpExplode === 'function') {
+      mrpExplode(p.lines).buy.forEach(e => aggiungi(e.item.id, p.id));
+    }
+  });
+  _planUseIdx = idx;
+  return idx;
+}
+
 function itemInfoDocumenti(it) {
   const conRiga = (lista) => (lista || []).filter(d => (d.lines || []).some(l => l.itemId === it.id));
   const rfqs = conRiga(db.rfqs);
   const ordini = conRiga(db.orders);
-  const piani = (db.plans || []).filter(p => mrpExplode(p.lines).buy.some(e => e.item.id === it.id)
-    || (p.lines || []).some(l => l.itemId === it.id));
+  const inPiani = planUseIndex().get(it.id);
+  const piani = inPiani ? (db.plans || []).filter(p => inPiani.has(p.id)) : [];
   if (!rfqs.length && !ordini.length && !piani.length) return '';
   const qtaIn = d => (d.lines || []).filter(l => l.itemId === it.id).reduce((s, l) => s + (Number(l.qty) || 0), 0);
   const voce = (icona, d, extra) => `<div class="mgmt-item">

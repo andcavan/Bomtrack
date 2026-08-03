@@ -26,18 +26,19 @@ function homeSegnali() {
   const commesseTardi = (db.jobs || []).filter(jobLate);
   agg(commesseTardi.length, commesseTardi.length === 1 ? 'commessa oltre la data di consegna' : 'commesse oltre la data di consegna', 'jobs', 'alta');
 
-  // Fabbisogno: righe da ordinare subito o già oltre
+  // Fabbisogno: righe da ordinare subito o già oltre. Sempre al netto di
+  // giacenza e impegni — è il numero azionabile («cosa manca davvero da
+  // ordinare») e non dipende dal toggle lordo/netto della vista Fabbisogno:
+  // due utenti sulla stessa base dati leggono lo stesso conteggio.
+  //
+  // Le righe si ricavano da commitIndex(), che ha già esploso tutti i piani
+  // aperti una volta (i chiusi non sono più lavoro da fare): riesploderli qui
+  // con mrpBuyRows raddoppiava il costo della schermata di atterraggio.
   let ritardo = 0, urgente = 0;
-  (db.plans || []).forEach(p => {
-    // Un piano chiuso non è più lavoro da fare: le sue righe in ritardo sono
-    // storia, e tenerle nei segnali riempirebbe la home di allarmi che nessuno
-    // può più spegnere.
-    if (p.active === false || !(p.lines || []).length) return;
-    // Sempre al netto di giacenza e impegni: è il numero azionabile («cosa manca
-    // davvero da ordinare»), e non deve dipendere dal toggle lordo/netto lasciato
-    // acceso nella vista Fabbisogno — due utenti sulla stessa base dati devono
-    // leggere lo stesso conteggio.
-    mrpBuyRows(p, true).forEach(r => {
+  commitIndex().forEach((commits, itemId) => {
+    const it = getItem(itemId); if (!it) return;
+    commits.forEach(c => {
+      const r = mrpBuyRow({ item: it, qty: c.qty, due: c.due }, true, c.planId);
       if (r.qtyOrder <= 0) return;
       if (r.urgenza === 'ritardo') ritardo++;
       else if (r.urgenza === 'urgente') urgente++;
