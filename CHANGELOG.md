@@ -2,6 +2,19 @@
 
 Le revisioni seguono il versionamento semantico `0.MINOR.PATCH`: **MINOR** per nuove funzionalità, **PATCH** per correzioni. La versione in cima è quella in `APP_VERSION` (`core.js`) e mostrata nell'header dell'app.
 
+### 0.40.0 — 2026-08-03
+
+**La rete sotto i documenti.** `views-docs.js` è il file più lungo dell'app e il più duplicato, e proprio le sue tre cose più delicate — stati, ricevimenti e blocchi — non avevano un solo test. Finché è così, qualunque riordino di quel file è un salto senza rete: adesso la rete c'è, e la prossima versione può riscriverlo.
+
+**Verifica**
+- Nuovo `test/docs-state.test.js`: **29 controlli** (suite da 883 a 912). Coprono cosa deve continuare a succedere, non com'è scritto oggi.
+  - **Stato derivato dell'ordine**: ricevuto in parte → Parziale, ricevuto tutto → Evaso, ricevimenti azzerati → si torna a Inviato o a Confermato secondo che la conferma del fornitore sia arrivata; non si riceve più di quanto ordinato (si tronca); «ricevi tutto» chiude in un gesto; Bozza e Annullato restano scelte di chi scrive e non si derivano mai.
+  - **Stato derivato della richiesta**: tutte le righe con prezzo → Offerta ricevuta, un prezzo tolto → torna Inviata; una bozza non diventa «ricevuta» solo perché ha i prezzi, e una richiesta senza righe non è un'offerta tornata.
+  - **Blocchi**: a richiesta inviata la quantità è chiusa e il prezzo aperto; a ordine inviato il prezzo è chiuso e i ricevimenti aperti; note e stato restano sempre modificabili; un documento annullato o chiuso è sola lettura; lo sblocco vale per un documento solo e si perde tornando all'elenco; il ruolo viene prima del blocco di stato.
+  - **Numerazione**: progressiva per anno e per tipo, riprende dal massimo (i buchi delle eliminazioni non si riusano) e gli anni precedenti non la spostano.
+  - **Richiesta → ordine**: eredita fornitore, condizioni, righe e prezzi offerti, azzera i ricevimenti, tiene la tracciabilità, nasce in bozza; la richiesta uscita si chiude da sé, una bozza no.
+- Due comportamenti che i test hanno reso espliciti (erano già così, non erano scritti da nessuna parte): su un ordine già uscito **quantità e righe sono protette** — modificarle richiede lo sblocco esplicito — e la **data confermata dal fornitore** si registra a ordine inviato, perché arriva dopo l'invio per definizione.
+
 ### 0.39.0 — 2026-08-03
 
 **Ridisegnare senza far perdere il posto, con una regola sola.** Ogni gesto nell'app riscrive per intero l'HTML della vista, e un ridisegno integrale butta via tre cose che l'utente sta usando: la posizione dello scroll, il campo a fuoco e il punto in cui stava scrivendo. Quattro viste si erano scritte da sole la stessa toppa, ognuna diversa; ora la regola sta in un punto e le quattro la usano.
