@@ -80,6 +80,9 @@ function revSnapshot(it) {
 // Rilascia la revisione in lavorazione e ne apre la successiva.
 // Ritorna il record creato, o null se non c'era niente da rilasciare.
 function releaseRevision(itemId, motivo) {
+  // La guardia sta nel mutatore, non solo nei chiamanti: la funzione è globale
+  // e chiunque la raggiunga deve passare dallo stesso controllo.
+  if (!roleGuard('bom')) return null;
   const it = getItem(itemId);
   if (!it || !hasRevisions(it)) return null;
   const rev = itemRev(it);

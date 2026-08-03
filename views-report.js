@@ -121,15 +121,22 @@ function costContributors(itemId) {
   const per = new Map();
   // La radice è la riga 0: è il totale, non un contributo a se stesso.
   rows.slice(1).forEach(r => {
+    // Le righe di lavorazione (🔧) non portano un articolo: stanno nelle barre
+    // di incidenza, come dice la finestra, non qui.
+    if (!r.itemId) return;
+    // Si risolve e si aggrega per id, non per codice: i codici duplicati
+    // esistono (vedi duplicateCodeGroups) e per codice due articoli distinti
+    // si fonderebbero, o un assieme omonimo di una foglia falserebbe il filtro.
+    const it = getItem(r.itemId);
     // Solo le foglie: un assieme e i suoi componenti conterebbero due volte la
-    // stessa spesa, e i totali non tornerebbero più.
-    const it = r.code ? getItemByCode(r.code) : null;
-    const foglia = !it || !isAssembly(it.type);
-    if (!foglia) return;
-    const k = r.code || r.name;
-    const e = per.get(k) || { id: r.itemId, code: r.code, name: r.name, type: r.type, qty: 0, line: 0 };
+    // stessa spesa. Una parte prodotta in casa che esplode il proprio ciclo
+    // conta con le sue righe, non con se stessa — stessa regola.
+    const esplode = it && (isAssembly(it.type)
+      || (it.type === 'parte' && partSourcing(it) !== 'buy' && (it.cycle || []).length));
+    if (esplode) return;
+    const e = per.get(r.itemId) || { id: r.itemId, code: r.code, name: r.name, type: r.type, qty: 0, line: 0 };
     e.qty += r.qty; e.line += r.line;
-    per.set(k, e);
+    per.set(r.itemId, e);
   });
   return Array.from(per.values()).filter(x => x.line > 0).sort((a, b) => b.line - a.line);
 }

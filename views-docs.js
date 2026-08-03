@@ -23,14 +23,17 @@ function modeAllows(mode, kind) {
 // Lo sblocco vale per il documento aperto e dura quanto la sessione di editing:
 // uscendo verso l'elenco il documento si richiude da solo.
 let rfqUnlockedId = null, orderUnlockedId = null;
-function docLockBanner(mode, kind, onUnlock) {
+function docLockBanner(mode, kind, docKind, id) {
   if (mode === 'full') return '';
   const what = mode === 'offer' ? 'Prezzo unitario e data consegna restano compilabili'
     : mode === 'reception' ? 'La colonna Ricevuto resta compilabile'
       : 'Il documento è in sola lettura';
+  // Il gestore si compone qui da un tipo noto, non arriva come JavaScript grezzo
+  // dal chiamante: nessun template deve poter iniettare codice in un onclick.
+  const fn = docKind === 'order' ? 'ordUnlock' : 'rfqUnlock';
   return `<div class="doc-lock-banner">
     <span>🔒 ${esc(kind)} — i dati sono protetti dalle modifiche accidentali. ${what}; note e stato restano sempre modificabili.</span>
-    <button class="btn-outline" onclick="${onUnlock}">🔓 Sblocca per modifica</button></div>`;
+    <button class="btn-outline" onclick="${fn}('${esc(id)}')">🔓 Sblocca per modifica</button></div>`;
 }
 // Disabilita in un passaggio gli input marcati, invece di condizionare ogni template.
 function applyDocLock(mode, host) {
@@ -505,7 +508,7 @@ function renderRfqEdit(id) {
   const coWarn = co.name ? '' : `<div class="rfq-warn">⚠ Dati azienda non impostati: compilali in <strong>Gestione › Dati azienda</strong> per stamparli sul documento.</div>`;
   const dis = rfqDirty ? 'disabled title="Salva la richiesta prima di generare il documento"' : '';
   const mode = rfqMode(r);
-  const lockBanner = docLockBanner(mode, 'Richiesta ' + (RFQ_STATUS[r.status] || r.status).toLowerCase(), `rfqUnlock('${id}')`);
+  const lockBanner = docLockBanner(mode, 'Richiesta ' + (RFQ_STATUS[r.status] || r.status).toLowerCase(), 'rfq', id);
   return `<div class="manage-wrap">
     <div class="bom-toolbar">
       <button class="btn-outline" onclick="rfqBackToList()">← Elenco</button>
@@ -1079,7 +1082,7 @@ function renderOrderEdit(id) {
   const rfqRef = docOriginRef(o);
   const dis = orderDirty ? 'disabled title="Salva l\'ordine prima di generare il documento"' : '';
   const mode = ordMode(o);
-  const lockBanner = docLockBanner(mode, 'Ordine ' + (ORDER_STATUS[o.status] || o.status).toLowerCase(), `ordUnlock('${id}')`);
+  const lockBanner = docLockBanner(mode, 'Ordine ' + (ORDER_STATUS[o.status] || o.status).toLowerCase(), 'order', id);
   return `<div class="manage-wrap">
     <div class="bom-toolbar">
       <button class="btn-outline" onclick="orderBackToList()">← Elenco</button>

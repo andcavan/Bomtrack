@@ -101,9 +101,16 @@ function itemInfoSection(titolo, corpo) {
   return corpo ? `<h4 class="settings-group-title">${titolo}</h4>${corpo}` : '';
 }
 // Griglia etichetta/valore. Le voci vuote cadono qui, una volta per tutte.
+// Il testo viene escapato qui dentro, come ovunque nel repo: un valore che è
+// già HTML lo dichiara passando da rawHtml() — così una voce nuova aggiunta
+// senza pensarci è al sicuro per costruzione, non per disciplina.
+function rawHtml(h) { return { html: String(h == null ? '' : h) }; }
 function itemInfoRows(voci) {
   const righe = voci.filter(v => v && v[1] !== '' && v[1] != null)
-    .map(([k, v]) => `<div class="info-row"><span class="info-key">${k}</span><span class="info-val">${v}</span></div>`)
+    .map(([k, v]) => {
+      const val = (v && typeof v === 'object' && 'html' in v) ? v.html : esc(String(v));
+      return `<div class="info-row"><span class="info-key">${esc(k)}</span><span class="info-val">${val}</span></div>`;
+    })
     .join('');
   return righe ? `<div class="info-grid">${righe}</div>` : '';
 }
@@ -115,20 +122,20 @@ function itemInfoAnagrafica(it) {
   const mac = getItem(it.machineItemId);
   const grp = getItem(it.groupItemId);
   return itemInfoSection('Anagrafica', itemInfoRows([
-    ['Codice', _mono(it.code)],
-    ['Nome', esc(it.name)],
-    it.type === 'parte' && it.conceptId ? ['Concetto', esc(conceptName(it.conceptId))] : null,
-    ['Tipo', esc(typeLabel(it.type))],
-    ['Unità di misura', _mono(it.uom || '—')],
-    it.type === 'parte' ? ['Approvvigionamento', esc(PART_SOURCING[partSourcing(it)])] : null,
-    fam ? ['Macrofamiglia', esc(fam)] : null,
-    sub ? ['Sottofamiglia', esc(sub)] : null,
-    it.sigla ? ['Sigla', _mono(it.sigla)] : null,
-    mac ? ['Macchina', codeLink(mac.id, mac.code) + ' — ' + esc(mac.name)] : null,
-    grp ? ['Gruppo', codeLink(grp.id, grp.code) + ' — ' + esc(grp.name)] : null,
+    ['Codice', rawHtml(_mono(it.code))],
+    ['Nome', it.name],
+    it.type === 'parte' && it.conceptId ? ['Concetto', conceptName(it.conceptId)] : null,
+    ['Tipo', typeLabel(it.type)],
+    ['Unità di misura', rawHtml(_mono(it.uom || '—'))],
+    it.type === 'parte' ? ['Approvvigionamento', PART_SOURCING[partSourcing(it)]] : null,
+    fam ? ['Macrofamiglia', fam] : null,
+    sub ? ['Sottofamiglia', sub] : null,
+    it.sigla ? ['Sigla', rawHtml(_mono(it.sigla))] : null,
+    mac ? ['Macchina', rawHtml(codeLink(mac.id, mac.code) + ' — ' + esc(mac.name))] : null,
+    grp ? ['Gruppo', rawHtml(codeLink(grp.id, grp.code) + ' — ' + esc(grp.name))] : null,
     it.favorite ? ['Preferito', '★ sì'] : null,
-    it.obsolete ? ['Obsoleto', '<span style="color:var(--red)">⛔ non più utilizzabile</span>'] : null,
-    it.notes ? ['Note', esc(it.notes)] : null,
+    it.obsolete ? ['Obsoleto', rawHtml('<span style="color:var(--red)">⛔ non più utilizzabile</span>')] : null,
+    it.notes ? ['Note', it.notes] : null,
   ]));
 }
 
@@ -149,18 +156,18 @@ function itemInfoAcquisto(it) {
   // fornitore, quindi l'etichetta lo nomina — gli altri stanno in tabella, ognuno
   // col suo.
   const nomeForn = supplierName(it.supplierId);
-  const presso = nomeForn ? ` presso ${esc(nomeForn)}` : ' presso il fornitore';
+  const presso = nomeForn ? ` presso ${nomeForn}` : ' presso il fornitore';
   const testa = itemInfoRows([
-    ['Fornitore', esc(nomeForn || '— nessuno')],
-    attiva && attiva.code ? ['Codice' + presso, _mono(attiva.code)] : null,
-    attiva && attiva.desc ? ['Descrizione' + presso, esc(attiva.desc)] : null,
-    inUso != null ? ['Costo in uso', `<strong>${fmtPer(inUso, itemUom(it))}</strong>${inUso > 0 ? '' : ' <span style="color:var(--red)">⚠ nessun prezzo</span>'}`] : null,
-    attiva ? ['Quotazione in uso', `${fmtPer(attiva.price, priceUomOf(it, attiva))}${attiva.date ? ' · ' + esc(fmtDateIt(attiva.date)) : ''}`] : null,
-    attiva && attiva.leadDays ? ['Giorni di consegna', esc(String(attiva.leadDays)) + ' gg'] : null,
+    ['Fornitore', nomeForn || '— nessuno'],
+    attiva && attiva.code ? ['Codice' + presso, rawHtml(_mono(attiva.code))] : null,
+    attiva && attiva.desc ? ['Descrizione' + presso, attiva.desc] : null,
+    inUso != null ? ['Costo in uso', rawHtml(`<strong>${fmtPer(inUso, itemUom(it))}</strong>${inUso > 0 ? '' : ' <span style="color:var(--red)">⚠ nessun prezzo</span>'}`)] : null,
+    attiva ? ['Quotazione in uso', rawHtml(`${fmtPer(attiva.price, priceUomOf(it, attiva))}${attiva.date ? ' · ' + esc(fmtDateIt(attiva.date)) : ''}`)] : null,
+    attiva && attiva.leadDays ? ['Giorni di consegna', String(attiva.leadDays) + ' gg'] : null,
     attiva && attiva.minQty ? ['Quantità minima', fmtUom(attiva.minQty, priceUomOf(it, attiva))] : null,
-    hasAltUom(it) ? ['U.M. d\'acquisto', `${_mono(altUomOf(it))} · ${fmtUom(altFactorOf(it), altUomOf(it))} in 1 ${esc(itemUom(it))}`] : null,
+    hasAltUom(it) ? ['U.M. d\'acquisto', rawHtml(`${_mono(altUomOf(it))} · ${fmtUom(altFactorOf(it), altUomOf(it))} in 1 ${esc(itemUom(it))}`)] : null,
     best && bestCosto != null && inUso != null && bestCosto < inUso - 0.00005
-      ? ['Miglior quotazione', `<span class="price-best">${fmtPer(bestCosto, itemUom(it))} da ${esc(supplierName(best.supplierId) || '—')}</span> — più bassa di quella in uso, ma il prezzo non cambia da sé: si sceglie dal listino`]
+      ? ['Miglior quotazione', rawHtml(`<span class="price-best">${fmtPer(bestCosto, itemUom(it))} da ${esc(supplierName(best.supplierId) || '—')}</span> — più bassa di quella in uso, ma il prezzo non cambia da sé: si sceglie dal listino`)]
       : null,
   ]);
 
@@ -196,10 +203,10 @@ function itemInfoCosto(it) {
   ].filter(v => Math.abs(v[1]) > 0.00005);
   // Ogni voce è la sua quota **per unità**, non la spesa di un lotto: senza il
   // denominatore la ripartizione si legge come un totale e non torna con niente.
-  const corpo = itemInfoRows(voci.map(([k, v]) => [k, `<span style="font-family:var(--mono)">${fmtPer(v, u)}</span>`]).concat([
-    ['Costo industriale', `<strong style="font-family:var(--mono)">${fmtPer(c.total, u)}</strong>`],
-    ['Prezzo di vendita', `<span style="font-family:var(--mono)">${fmtPer(sellingPrice(it.id), u)}</span>`],
-    c.cycle ? ['⚠ Attenzione', '<span style="color:var(--red)">Riferimento ciclico nella distinta: il costo è troncato su quel ramo.</span>'] : null,
+  const corpo = itemInfoRows(voci.map(([k, v]) => [k, rawHtml(`<span style="font-family:var(--mono)">${fmtPer(v, u)}</span>`)]).concat([
+    ['Costo industriale', rawHtml(`<strong style="font-family:var(--mono)">${fmtPer(c.total, u)}</strong>`)],
+    ['Prezzo di vendita', rawHtml(`<span style="font-family:var(--mono)">${fmtPer(sellingPrice(it.id), u)}</span>`)],
+    c.cycle ? ['⚠ Attenzione', rawHtml('<span style="color:var(--red)">Riferimento ciclico nella distinta: il costo è troncato su quel ramo.</span>')] : null,
   ]));
   return itemInfoSection('💰 Costo unitario', corpo);
 }
@@ -217,12 +224,12 @@ function itemInfoMagazzino(it) {
     ? `<div class="empty-text" style="text-align:left;padding:0 0 8px">Impegnato dai piani aperti: ${imp.map(x => `${esc(x.number)}${x.title ? ' (' + esc(x.title) + ')' : ''} ${fmtUom(x.qty, u)}`).join(' · ')}.</div>`
     : '';
   return itemInfoSection('📦 Magazzino', itemInfoRows([
-    ['Esistente', `<span style="font-family:var(--mono)">${fmtUom(s.onHand, u)}</span>`],
-    ['In arrivo', `<span style="font-family:var(--mono)">${fmtUom(s.incoming, u)}</span>`],
-    ['Impegnato', `<span style="font-family:var(--mono)">${fmtUom(impQty, u)}</span>`],
-    ['Libero', `<strong style="font-family:var(--mono)${libero < 0 ? ';color:var(--red)' : ''}">${fmtUom(libero, u)}</strong>`],
-    safetyStockOf(it) ? ['Scorta minima', `<span style="font-family:var(--mono)">${fmtUom(safetyStockOf(it), u)}</span>`] : null,
-    lotSizeOf(it) ? ['Lotto di riordino', `<span style="font-family:var(--mono)">${fmtUom(lotSizeOf(it), u)}</span>`] : null,
+    ['Esistente', rawHtml(`<span style="font-family:var(--mono)">${fmtUom(s.onHand, u)}</span>`)],
+    ['In arrivo', rawHtml(`<span style="font-family:var(--mono)">${fmtUom(s.incoming, u)}</span>`)],
+    ['Impegnato', rawHtml(`<span style="font-family:var(--mono)">${fmtUom(impQty, u)}</span>`)],
+    ['Libero', rawHtml(`<strong style="font-family:var(--mono)${libero < 0 ? ';color:var(--red)' : ''}">${fmtUom(libero, u)}</strong>`)],
+    safetyStockOf(it) ? ['Scorta minima', rawHtml(`<span style="font-family:var(--mono)">${fmtUom(safetyStockOf(it), u)}</span>`)] : null,
+    lotSizeOf(it) ? ['Lotto di riordino', rawHtml(`<span style="font-family:var(--mono)">${fmtUom(lotSizeOf(it), u)}</span>`)] : null,
     ['Movimenti registrati', String(movementsOf(it.id).length)],
   ]) + dettaglio);
 }

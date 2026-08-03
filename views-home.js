@@ -33,7 +33,11 @@ function homeSegnali() {
     // storia, e tenerle nei segnali riempirebbe la home di allarmi che nessuno
     // può più spegnere.
     if (p.active === false || !(p.lines || []).length) return;
-    mrpBuyRows(p, mrpNet).forEach(r => {
+    // Sempre al netto di giacenza e impegni: è il numero azionabile («cosa manca
+    // davvero da ordinare»), e non deve dipendere dal toggle lordo/netto lasciato
+    // acceso nella vista Fabbisogno — due utenti sulla stessa base dati devono
+    // leggere lo stesso conteggio.
+    mrpBuyRows(p, true).forEach(r => {
       if (r.qtyOrder <= 0) return;
       if (r.urgenza === 'ritardo') ritardo++;
       else if (r.urgenza === 'urgente') urgente++;

@@ -184,6 +184,7 @@ function renderTerms() {
     ${sect('payment', '💳 Tipi di pagamento', s.paymentDefault)}</div>`;
 }
 function termsAdd(kind) {
+  if (!roleGuard('manage')) return;
   const v = val('terms-' + kind + '-new'); if (!v) { showToast('Valore richiesto', 'error'); return; }
   const key = kind + 'Options';
   db.settings[key] = db.settings[key] || [];
@@ -192,6 +193,7 @@ function termsAdd(kind) {
   saveDB(); renderManage(); showToast('Aggiunto');
 }
 function termsDel(kind, i) {
+  if (!roleGuard('manage')) return;
   const key = kind + 'Options', arr = db.settings[key] || [];
   const v = arr[i]; if (v == null) return;
   db.settings[key] = arr.filter((_, idx) => idx !== i);
@@ -199,6 +201,7 @@ function termsDel(kind, i) {
   saveDB(); renderManage(); showToast('Eliminato');
 }
 function termsSetDefault(kind, i) {
+  if (!roleGuard('manage')) return;
   const arr = db.settings[kind + 'Options'] || [];
   const v = arr[i]; if (v == null) return;
   db.settings[kind + 'Default'] = (db.settings[kind + 'Default'] === v) ? '' : v;
@@ -221,6 +224,7 @@ function renderCompany() {
     <button class="add-btn-sm" onclick="saveCompany()">Salva dati azienda</button></div>`;
 }
 function saveCompany() {
+  if (!roleGuard('manage')) return;
   db.settings.company = Object.assign({
     name: val('co-name'), referente: val('co-ref'), email: val('co-email'),
     phone: val('co-phone'), vat: val('co-vat'),
@@ -248,6 +252,7 @@ function renderSuppliers() {
     <p class="empty-text" style="text-align:left;padding:6px 0 0">Indirizzo completo e P.IVA si inseriscono con ✏ Modifica.</p></div>`;
 }
 function addSupplier() {
+  if (!roleGuard('manage')) return;
   const n = val('sup-name'); if (!n) { showToast('Nome richiesto', 'error'); return; }
   Store.insert('suppliers', { id: gid(), name: n, referente: val('sup-ref'), email: val('sup-email'),
     phone: val('sup-phone'), vat: '', street: '', streetNumber: '', zip: '', city: '', province: '', country: '',
@@ -288,6 +293,7 @@ function editSupplierModal(id) {
       <button class="add-btn-sm" onclick="saveSupplier('${id}')">Salva</button></div>`, true);
 }
 function saveSupplier(id) {
+  if (!roleGuard('manage')) return;
   const s = db.suppliers.find(x => x.id === id); if (!s) return;
   s.name = val('es-name'); s.referente = val('es-ref'); s.email = val('es-email');
   s.phone = val('es-phone'); s.vat = val('es-vat');
@@ -315,6 +321,7 @@ function supplierUses(id) {
   return usi;
 }
 function delSupplier(id) {
+  if (!roleGuard('manage')) return;
   const usi = supplierUses(id);
   if (usi.length) { showToast('Fornitore usato in: ' + usi.join(', '), 'error'); return; }
   askConfirm('Eliminare il fornitore?', () => {
@@ -357,6 +364,7 @@ function renderFamilies(kind) {
       <button class="add-btn-sm" onclick="addFamily('${kind}')">+ Aggiungi macrofamiglia</button></div></div></div>`;
 }
 function addFamily(kind) {
+  if (!roleGuard('manage')) return;
   kind = kind || 'acquistato';
   const n = val('fam-name-' + kind); if (!n) { showToast('Nome richiesto', 'error'); return; }
   const sg = val('fam-sigla-' + kind);
@@ -374,6 +382,7 @@ function editFamilyModal(id) {
       <button class="add-btn-sm" onclick="saveFamily('${id}')">Salva</button></div>`);
 }
 function saveFamily(id) {
+  if (!roleGuard('manage')) return;
   const f = getFamily(id); if (!f) return;
   f.name = val('ef-name') || f.name;
   const sg = val('ef-sigla'); f.sigla = sg ? sg.toUpperCase() : siglaFromName(f.name);
@@ -381,6 +390,7 @@ function saveFamily(id) {
   saveDB(); closeModal(); renderManage(); showToast('Aggiornata');
 }
 function delFamily(id) {
+  if (!roleGuard('manage')) return;
   const used = db.items.filter(i => i.familyId === id);
   if (used.length) { showToast('Famiglia usata da ' + used.length + ' articoli', 'error'); return; }
   askConfirm('Eliminare la macrofamiglia e le sue sottofamiglie?', () => {
@@ -388,6 +398,7 @@ function delFamily(id) {
   });
 }
 function addSubFamily(familyId) {
+  if (!roleGuard('manage')) return;
   const f = getFamily(familyId); if (!f) return;
   const n = val('sub-name-' + familyId); if (!n) { showToast('Nome richiesto', 'error'); return; }
   if (!f.subs) f.subs = [];
@@ -407,6 +418,7 @@ function editSubFamilyModal(familyId, subId) {
       <button class="add-btn-sm" onclick="saveSubFamily('${familyId}','${subId}')">Salva</button></div>`);
 }
 function saveSubFamily(familyId, subId) {
+  if (!roleGuard('manage')) return;
   const f = getFamily(familyId); const s = f && (f.subs || []).find(x => x.id === subId); if (!s) return;
   s.name = val('esf-name') || s.name;
   const sg = val('esf-sigla'); s.sigla = sg ? sg.toUpperCase() : siglaFromName(s.name);
@@ -414,6 +426,7 @@ function saveSubFamily(familyId, subId) {
   saveDB(); closeModal(); renderManage(); showToast('Aggiornata');
 }
 function delSubFamily(familyId, subId) {
+  if (!roleGuard('manage')) return;
   const used = db.items.filter(i => i.subFamilyId === subId);
   if (used.length) { showToast('Sottofamiglia usata da ' + used.length + ' articoli', 'error'); return; }
   askConfirm('Eliminare la sottofamiglia?', () => {
@@ -437,6 +450,7 @@ function renderWorkCenters() {
       <button class="add-btn-sm" onclick="addWc()">+ Aggiungi</button></div></div>`;
 }
 function addWc() {
+  if (!roleGuard('manage')) return;
   const n = val('wc-name'); if (!n) { showToast('Nome richiesto', 'error'); return; }
   if (isNeg('wc-rate')) { showToast('La tariffa non può essere negativa', 'error'); return; }
   Store.insert('workCenters', { id: gid(), name: n, hourlyRate: numVal('wc-rate', 0), active: true });
@@ -451,6 +465,7 @@ function editWcModal(id) {
       <button class="add-btn-sm" onclick="saveWc('${id}')">Salva</button></div>`);
 }
 function saveWc(id) {
+  if (!roleGuard('manage')) return;
   const w = db.workCenters.find(x => x.id === id); if (!w) return;
   if (isNeg('ew-rate')) { showToast('La tariffa non può essere negativa', 'error'); return; }
   w.name = val('ew-name'); w.hourlyRate = numVal('ew-rate', 0);
@@ -458,6 +473,7 @@ function saveWc(id) {
   saveDB(); closeModal(); renderManage(); showToast('Aggiornato');
 }
 function delWc(id) {
+  if (!roleGuard('manage')) return;
   const used = db.items.filter(i => (i.operations || []).some(o => o.workCenterId === id));
   if (used.length) { showToast('Usato in ' + used.length + ' distinte', 'error'); return; }
   askConfirm('Eliminare il centro di lavoro?', () => {
@@ -556,6 +572,7 @@ function renderUoms() {
       <button class="add-btn-sm" onclick="addUom()">+ Aggiungi</button></div></div>`;
 }
 function addUom() {
+  if (!roleGuard('manage')) return;
   const code = val('uom-code'); if (!code) { showToast('Codice richiesto', 'error'); return; }
   if (uomList().some(u => u.code === code)) { showToast('Unità di misura già presente', 'error'); return; }
   db.settings.uoms.push({ code, name: val('uom-name') });
@@ -570,6 +587,7 @@ function editUomModal(i) {
       <button class="add-btn-sm" onclick="saveUom(${i})">Salva</button></div>`);
 }
 function saveUom(i) {
+  if (!roleGuard('manage')) return;
   const u = uomList()[i]; if (!u) return;
   const code = val('eu-code'); if (!code) { showToast('Codice richiesto', 'error'); return; }
   if (code !== u.code && uomList().some((x, j) => j !== i && x.code === code)) { showToast('Codice già in uso', 'error'); return; }
@@ -585,6 +603,7 @@ function renameUom(oldCode, newCode) {
   if (db.settings.uomDefault === oldCode) db.settings.uomDefault = newCode;
 }
 function delUom(i) {
+  if (!roleGuard('manage')) return;
   const u = uomList()[i]; if (!u) return;
   const used = uomUsage(u.code);
   if (used) { showToast(`Usata in ${used} tra articoli e righe documento`, 'error'); return; }
@@ -595,6 +614,7 @@ function delUom(i) {
   });
 }
 function uomSetDefault(i) {
+  if (!roleGuard('manage')) return;
   const u = uomList()[i]; if (!u) return;
   db.settings.uomDefault = u.code;
   saveDB(); renderManage();

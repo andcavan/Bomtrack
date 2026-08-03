@@ -2,6 +2,19 @@
 
 Le revisioni seguono il versionamento semantico `0.MINOR.PATCH`: **MINOR** per nuove funzionalità, **PATCH** per correzioni. La versione in cima è quella in `APP_VERSION` (`core.js`) e mostrata nell'header dell'app.
 
+### 0.37.0 — 2026-08-03
+
+**Correttezza e guardie: quattro difetti trovati da un controllo generale del codice.** Nessuna funzionalità nuova; cambia che alcuni numeri ora sono giusti per costruzione e alcune porte che sembravano chiuse ora lo sono davvero.
+
+**Corretto**
+- **La Gestione è protetta nei mutatori, non solo nel menu.** Venti funzioni (termini di trasporto e pagamento, dati azienda, fornitori, famiglie e sottofamiglie, centri di lavoro, unità di misura) modificavano i dati senza chiedere `roleGuard('manage')`: un pannello rimasto aperto mentre il ruolo cambiava scriveva lo stesso. Ora rifiutano e lo dicono, come già facevano le funzioni sugli utenti. Anche `releaseRevision` è guardata dentro (`bom`): era globale e contava sui chiamanti.
+- **La home conta il fabbisogno sempre al netto** di giacenza e impegni. Prima leggeva il toggle lordo/netto lasciato acceso nella vista Fabbisogno: due utenti sulla stessa base dati leggevano numeri diversi, e nessuno dei due se ne accorgeva. Il netto è il numero azionabile — cosa manca davvero da ordinare.
+- **«Da dove viene questo costo» risolve gli articoli per id, non per codice.** Con due articoli dallo stesso codice (esistono, e la Gestione li elenca apposta) la finestra fondeva voci distinte o scartava una foglia scambiandola per l'assieme omonimo. Ora ogni articolo conta per sé; le righe di lavorazione (🔧) non compaiono più tra i contributi — stanno nelle barre di incidenza, come la finestra ha sempre dichiarato — e una parte prodotta in casa conta con le righe del suo ciclo, non due volte.
+- **La scheda articolo escapa i valori per costruzione.** `itemInfoRows` era l'unico helper del repo con il contratto rovesciato («il chiamante escapa»): una voce nuova aggiunta senza pensarci diventava un'iniezione HTML silenziosa. Ora il testo si escapa dentro l'helper e i valori che sono davvero HTML lo dichiarano (`rawHtml`). Stesso principio sul banner di sblocco documenti: il gestore del click si compone da un tipo noto, non arriva più come JavaScript grezzo dal chiamante.
+
+**Verifica**
+- 11 nuovi controlli (suite da 863 a 874): i ruoli non-admin respinti dai mutatori di Gestione e l'admin che passa, il rilascio revisione negato al lettore e concesso alla progettazione, la home identica con il toggle in entrambe le posizioni (e muta quando il magazzino copre il piano), la foglia col codice di un assieme che non sparisce dal conto e i due omonimi che restano due voci.
+
 ### 0.36.1 — 2026-08-03
 
 **Il changelog vive in un file suo.** Il README era diventato per l'80% storico delle versioni (oltre 100 KB): la parte descrittiva — avvio, funzionalità, modello di costo — era sommersa. Ora `README.md` descrive l'app e rimanda qui; questo file, `CHANGELOG.md`, tiene lo storico completo. Nessuna voce è andata persa e la convenzione non cambia: versione in cima allineata ad `APP_VERSION`, `0.MINOR.PATCH`, voci datate.
