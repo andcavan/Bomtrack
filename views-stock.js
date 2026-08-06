@@ -316,3 +316,201 @@ function delMovement(id, itemId) {
     removeConUndo('movements', id, 'Movimento eliminato', () => stockMovementsModal(itemId));
   });
 }
+
+// ═══════════════════════════════════════════════════════════
+//  VISTA: MAGAZZINO
+// ═══════════════════════════════════════════════════════════
+// L'anagrafica guardata dal lato delle giacenze.
+//
+// ── Perché una vista sua ──
+// Tutti i numeri qui sotto esistevano già, ma solo **un articolo per volta**:
+// nella sua scheda o dentro una riga di fabbisogno. Per rispondere a «cosa è
+// sotto scorta?» bisognava aprire gli articoli a uno a uno, cioè non lo si
+// chiedeva mai. Qui non si calcola niente di nuovo — `stockIndex` e
+// `commitIndex` sono gli stessi del fabbisogno, e devono restare gli stessi:
+// due conti diversi della stessa giacenza sarebbero due verità.
+//
+// ── Perché una sola pagina per commerciali e progetto ──
+// Il magazzino non conosce quella divisione: uno scaffale contiene viti
+// comprate e parti lavorate insieme, e chi fa l'inventario le conta nello
+// stesso giro. Le due anagrafiche sono divise per competenza di chi le
+// **scrive**, il magazzino per ciò che si **tiene**.
+const STOCK_TYPES = ['acquistato', 'materiale', 'parte'];   // gli stessi di hasStock()
+const STOCK_PFX = 'stk';
+const STOCK_PAGE = 200;
+let stockLimit = STOCK_PAGE;
+
+function onStockTypeChange() { syncFamilyFilters(STOCK_PFX, STOCK_TYPES); stockFilterChange(); }
+function onStockFamilyChange() { syncFamilyFilters(STOCK_PFX, STOCK_TYPES); stockFilterChange(); }
+// Punto d'ingresso di tutti i filtri: il limite riparte da capo, perché chi
+// filtra vuole vedere l'inizio del nuovo risultato.
+function stockFilterChange() { stockLimit = STOCK_PAGE; renderStock(); }
+function stockSearchInput() { debounced('stk', stockFilterChange); }
+function stockShowMore() { stockLimit += STOCK_PAGE; renderStock(); }
+function stockShowAll() { stockLimit = Infinity; renderStock(); }
+
+// Lo stato di un articolo, in una parola. Serve al filtro e alla riga: che il
+// ⚠ e il filtro «sotto scorta» dicano la stessa cosa non è scontato se la
+// condizione è scritta in due posti.
+function stockState(it) {
+  const s = stockOf(it.id);
+  const safety = safetyStockOf(it);
+  return {
+    onHand: s.onHand, incoming: s.incoming,
+    committed: committedOf(it.id, null),
+    libero: freeStockOf(it.id, null),
+    safety, lotSize: lotSizeOf(it),
+    sotto: safety > 0 && s.onHand < safety,
+  };
+}
+const STOCK_STATE_FILTERS = {
+  sotto: st => st.sotto,
+  zero: st => st.onHand <= 0,
+  con: st => st.onHand > 0,
+  negativo: st => st.libero < 0,
+};
+// Le stesse voci del menu in pagina: servono all'export, che scrive nel file i
+// filtri per esteso e non il valore interno.
+const STOCK_STATE_LABELS = {
+  sotto: 'Sotto la scorta minima', zero: 'Giacenza a zero',
+  con: 'Con giacenza', negativo: 'Libero negativo',
+};
+
+function stockRow(it) {
+  const st = stockState(it);
+  const u = itemUom(it);
+  const flags = `${it.favorite ? '<span class="pick-fav" title="Preferito">★</span>' : ''}${it.obsolete ? '<span class="obs-mark" title="Obsoleto">⛔</span>' : ''}`
+    + (st.sotto ? '<span title="Sotto la scorta minima">⚠</span>' : '');
+  const num = (v, colore) => `<td style="font-family:var(--mono);text-align:right${colore ? ';color:' + colore : ''}">${fmtQty(v)}</td>`;
+  const nMov = movementsOf(it.id).length;
+  return `<tr class="${it.obsolete ? 'row-obsolete' : ''}">
+    <td style="width:1%;white-space:nowrap">${flags}</td>
+    <td style="font-family:var(--mono)">${codeLink(it.id, it.code)}</td>
+    <td>${esc(it.name)}</td>
+    <td><span class="bom-type-tag tt-${it.type}">${typeShort(it.type)}</span> ${typeLabel(it.type)}</td>
+    <td style="color:var(--text-dim)">${esc(codingLabel(it) || familyLabel(it))}</td>
+    <td>${esc(u)}</td>
+    ${num(st.onHand, st.sotto ? 'var(--orange, #d90)' : '')}
+    ${num(st.incoming, st.incoming > 0 ? 'var(--accent)' : 'var(--text-dim)')}
+    ${num(st.committed, st.committed > 0 ? 'var(--orange, #d90)' : 'var(--text-dim)')}
+    ${num(st.libero, st.libero < 0 ? 'var(--red)' : '')}
+    ${num(st.safety, st.safety > 0 ? '' : 'var(--text-dim)')}
+    ${num(st.lotSize, st.lotSize > 0 ? '' : 'var(--text-dim)')}
+    <td style="text-align:right;white-space:nowrap">
+      <button class="mini-btn" title="Rettifica giacenza" onclick="stockAdjustModal('${it.id}')">⚖</button>
+      <button class="mini-btn" title="Movimenti (${nMov})" onclick="stockMovementsModal('${it.id}')">🕘</button>
+      <button class="mini-btn" title="Dove è usato e impatto costi" onclick="usageModal('${it.id}')">🔗</button>
+      <button class="mini-btn" onclick="editItemModal('${it.id}')">✏</button>
+    </td></tr>`;
+}
+
+// Le righe che la vista mostra, filtrate e ordinate. Sta fuori dal disegno
+// perché la serve anche l'export: se il filtro fosse scritto due volte, prima o
+// poi il file esportato conterrebbe righe diverse da quelle guardate.
+function stockFilteredRows() {
+  const leggi = k => (document.getElementById(STOCK_PFX + '-' + k) || {}).value || '';
+  const q = leggi('search').toLowerCase();
+  const ft = leggi('type'), ff = leggi('family'), fsf = leggi('subfamily'), fs = leggi('state');
+  // Gli assiemi restano fuori: un gruppo si produce, non si stocca, e la sua
+  // giacenza sarebbe quella dei suoi componenti contata due volte.
+  let rows = (db.items || []).filter(hasStock);
+  if (ft) rows = rows.filter(i => i.type === ft);
+  if (ff) rows = rows.filter(i => usesFamily(i.type) && i.familyId === ff);
+  if (fsf) rows = rows.filter(i => i.subFamilyId === fsf);
+  if (q) rows = rows.filter(i => (i.code + ' ' + i.name).toLowerCase().includes(q));
+  const statoOk = STOCK_STATE_FILTERS[fs];
+  if (statoOk) rows = rows.filter(i => statoOk(stockState(i)));
+  return rows.sort((a, b) => (a.code || '').localeCompare(b.code || ''));
+}
+
+function renderStock() {
+  invalidateCaches();
+  syncFamilyFilters(STOCK_PFX, STOCK_TYPES);
+  const rows = stockFilteredRows();
+
+  // I conteggi in testa parlano di **tutto** il magazzino, non del filtro
+  // attivo: sono lì per dire se c'è qualcosa da guardare, e un numero che
+  // cambia con il filtro non risponderebbe più a quella domanda.
+  const tutti = (db.items || []).filter(hasStock);
+  let sotto = 0, inArrivo = 0, valore = 0;
+  tutti.forEach(i => {
+    const st = stockState(i);
+    if (st.sotto) sotto++;
+    if (st.incoming > 0) inArrivo++;
+    valore += st.onHand * itemUnitCost(i);
+  });
+  const kpiHost = document.getElementById(STOCK_PFX + '-kpi');
+  if (kpiHost) kpiHost.innerHTML = [
+    kpi('Articoli a magazzino', String(tutti.length), ''),
+    kpi('Sotto scorta minima', String(sotto), sotto > 0 ? 'red' : ''),
+    kpi('Con merce in arrivo', String(inArrivo), 'accent'),
+    kpi(`Valore giacenza (${esc(cur())})`, fmtN(valore), 'purple'),
+  ].join('');
+
+  const { groups, keys } = catalogGroups(rows);
+  const head = `<thead><tr><th></th><th>Codice</th><th>Nome</th><th>Tipo</th><th>Famiglia</th><th>U.M.</th>
+    <th style="text-align:right" title="Ricevuto sugli ordini più i movimenti">Esistente</th>
+    <th style="text-align:right" title="Atteso da ordini inviati, confermati o parziali">In arrivo</th>
+    <th style="text-align:right" title="Promesso dai piani di fabbisogno aperti">Impegnato</th>
+    <th style="text-align:right" title="Esistente + in arrivo − impegnato: quanto se ne può ancora promettere">Libero</th>
+    <th style="text-align:right">Scorta min.</th><th style="text-align:right">Lotto</th><th></th></tr></thead>`;
+  // Stessa paginazione dell'anagrafica, e stessa regola sul titolo: dice quanti
+  // articoli contiene il gruppo per intero anche quando ne disegna solo i primi.
+  let restanti = stockLimit;
+  let disegnati = 0;
+  const html = keys.map(k => {
+    const gruppo = groups[k].items;
+    const visibili = gruppo.slice(0, Math.max(0, restanti));
+    restanti -= visibili.length;
+    disegnati += visibili.length;
+    if (!visibili.length) return '';
+    const conteggio = visibili.length < gruppo.length ? `${visibili.length} di ${gruppo.length}` : `${gruppo.length}`;
+    return `<div class="cat-group-title">${esc(k)} <span style="color:var(--text-dim);font-weight:500">(${conteggio})</span></div>
+      <table>${head}<tbody>${visibili.map(stockRow).join('')}</tbody></table>`;
+  }).join('');
+  const mancanti = rows.length - disegnati;
+  const piu = mancanti > 0 ? `<div class="cat-more">
+      <span>Mostrati ${disegnati} di ${rows.length} articoli</span>
+      <button class="btn-outline" onclick="stockShowMore()">Mostra altri ${Math.min(STOCK_PAGE, mancanti)}</button>
+      <button class="btn-outline" onclick="stockShowAll()">Mostra tutti</button>
+    </div>` : '';
+  const tabella = document.getElementById(STOCK_PFX + '-table');
+  tabella.innerHTML = rows.length ? html + piu
+    : `<div class="empty-text">${tutti.length ? 'Nessun articolo con questi filtri.' : 'Nessun articolo a magazzino: qui compaiono commerciali, materie prime e parti.'}</div>`;
+  a11yFields(tabella);
+}
+
+// ─── Export ───
+// Le stesse righe e le stesse colonne che si stanno guardando. Il limite di
+// disegno (`stockLimit`) non entra qui: difende il ridisegno, non il contenuto.
+function stockExportSpec() {
+  const leggi = k => (document.getElementById(STOCK_PFX + '-' + k) || {}).value || '';
+  const fam = getFamily(leggi('family'));
+  const sub = (fam && (fam.subs || []).find(s => s.id === leggi('subfamily'))) || null;
+  const righe = stockFilteredRows().map(it => {
+    const st = stockState(it);
+    return [it.code || '', it.name || '', typeLabel(it.type), codingLabel(it) || familyLabel(it),
+      itemUom(it), st.onHand, st.incoming, st.committed, st.libero, st.safety, st.lotSize];
+  });
+  return {
+    titolo: 'Magazzino',
+    slug: 'magazzino',
+    filtri: [
+      ['Ricerca', leggi('search')],
+      ['Tipo', leggi('type') ? typeLabel(leggi('type')) : ''],
+      ['Famiglia', fam ? fam.name : ''],
+      ['Sottofamiglia', sub ? sub.name : ''],
+      ['Stato', STOCK_STATE_LABELS[leggi('state')] || ''],
+    ],
+    sezioni: [{
+      nome: 'Magazzino',
+      colonne: [
+        { h: 'Codice', w: 18 }, { h: 'Nome', w: 34 }, { h: 'Tipo', w: 16 }, { h: 'Famiglia', w: 24 },
+        { h: 'U.M.', w: 8 }, { h: 'Esistente', w: 12, num: true }, { h: 'In arrivo', w: 12, num: true },
+        { h: 'Impegnato', w: 12, num: true }, { h: 'Libero', w: 12, num: true },
+        { h: 'Scorta minima', w: 14, num: true }, { h: 'Lotto', w: 10, num: true },
+      ],
+      righe,
+    }],
+  };
+}

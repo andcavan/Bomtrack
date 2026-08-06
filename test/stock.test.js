@@ -476,6 +476,150 @@ describe('Documenti generati dal fabbisogno netto', () => {
   });
 });
 
+// La vista Magazzino non calcola niente di suo: mette in tabella stockIndex e
+// commitIndex. Quello che questi test proteggono è il **taglio** — chi entra
+// nell'elenco e chi no, e che il filtro «sotto scorta» dica la stessa cosa del
+// ⚠ sulla riga. Un filtro che seleziona righe diverse da quelle segnalate è
+// peggio di nessun filtro: fa credere di aver guardato.
+describe('Vista Magazzino', () => {
+  function conParte() {
+    const d = base();
+    d.items.push(parte('p1'), Object.assign(mat('m2', 3), { safetyStock: 50 }));
+    return d;
+  }
+  // Disegna con i filtri indicati e restituisce l'HTML della tabella.
+  function disegna(a, filtri) {
+    ['search', 'type', 'family', 'subfamily', 'state'].forEach(k => {
+      a.el('stk-' + k).value = (filtri || {})[k] || '';
+    });
+    a.eval('stockLimit = STOCK_PAGE; renderStock()');
+    return a.html('stk-table');
+  }
+  // I codici presenti in tabella, letti dalle celle monospaziate del codice.
+  const codici = html => (html.match(/>([A-Z]\d)</g) || []).map(s => s.slice(1, -1)).sort();
+
+  it('elenca solo ciò che si tiene a magazzino', () => {
+    const a = app(conParte());
+    const c = codici(disegna(a));
+    assert.deepEqual(c, ['C1', 'M1', 'M2', 'P1']);
+    assert.ok(!c.includes('MAC') && !c.includes('G1'),
+      'un assieme si produce: la sua giacenza sarebbe quella dei componenti contata due volte');
+  });
+
+  it('commerciali, materie prime e parti stanno nella stessa lista', () => {
+    const a = app(conParte());
+    const html = disegna(a);
+    assert.ok(html.includes('tt-acquistato') && html.includes('tt-materiale') && html.includes('tt-parte'),
+      'il magazzino non conosce la divisione fra acquisti e progetto');
+  });
+
+  it('il filtro per tipo restringe ai soli articoli di quel tipo', () => {
+    const a = app(conParte());
+    assert.deepEqual(codici(disegna(a, { type: 'parte' })), ['P1']);
+  });
+
+  it('la ricerca guarda codice e nome', () => {
+    const a = app(conParte());
+    assert.deepEqual(codici(disegna(a, { search: 'm2' })), ['M2']);
+    assert.deepEqual(codici(disegna(a, { search: 'commerciale' })), ['C1']);
+  });
+
+  it('«sotto la scorta minima» isola le stesse righe che portano il ⚠', () => {
+    const a = app(conParte());
+    const tutto = disegna(a);
+    assert.equal((tutto.match(/⚠/g) || []).length, 1, 'solo M2 ha una scorta minima non raggiunta');
+    assert.deepEqual(codici(disegna(a, { state: 'sotto' })), ['M2']);
+  });
+
+  it('una scorta ricostituita esce dal filtro', () => {
+    const a = app(conParte());
+    a.eval('addMovement("m2", "carico", 50, "")');
+    assert.deepEqual(codici(disegna(a, { state: 'sotto' })), [],
+      'la scorta minima è raggiunta: non c\'è più niente da segnalare');
+    assert.ok(disegna(a, {}).indexOf('⚠') === -1);
+  });
+
+  it('«giacenza a zero» e «con giacenza» dividono l\'elenco in due', () => {
+    const a = app(conParte());
+    a.eval('addMovement("m1", "carico", 7, "")');
+    assert.deepEqual(codici(disegna(a, { state: 'con' })), ['M1']);
+    assert.deepEqual(codici(disegna(a, { state: 'zero' })), ['C1', 'M2', 'P1']);
+  });
+
+  it('«libero negativo» trova ciò che i piani aperti hanno promesso due volte', () => {
+    const a = app(conParte());
+    a.eval(`Store.insert('plans', { id: 'pl1', number: 'FAB-1', active: true, lines: [{ id: 'l1', itemId: 'mac', qty: 10 }] });`);
+    a.eval('addMovement("m1", "carico", 10, "")');   // 10 in casa, 40 promessi
+    const c = codici(disegna(a, { state: 'negativo' }));
+    assert.ok(c.includes('M1'), 'esistente 10, impegnato 40: liberi −30');
+    assert.ok(!c.includes('M2'), 'chi non è impegnato da nessuno non è negativo');
+  });
+
+  it('la riga porta esistente, in arrivo, impegnato e libero', () => {
+    const a = app(conParte());
+    a.eval(`Store.insert('plans', { id: 'pl1', number: 'FAB-1', active: true, lines: [{ id: 'l1', itemId: 'mac', qty: 10 }] });`);
+    a.eval('addMovement("m1", "carico", 100, "")');
+    ordine(a, { status: 'inviato', lines: [riga('m1', 60, 0)] });
+    const r = JSON.parse(a.eval('JSON.stringify(stockState(getItem("m1")))'));
+    assert.equal(r.onHand, 100);
+    assert.equal(r.incoming, 60);
+    assert.equal(r.committed, 40);
+    assert.equal(r.libero, 120, '100 + 60 − 40');
+    const html = disegna(a);
+    ['100', '60', '40', '120'].forEach(n =>
+      assert.ok(html.includes('>' + n + '<'), `la riga deve mostrare ${n}`));
+  });
+
+  it('i conteggi in testa parlano di tutto il magazzino, non del filtro attivo', () => {
+    const a = app(conParte());
+    disegna(a, { type: 'parte' });
+    const kpi = a.html('stk-kpi');
+    assert.ok(kpi.includes('>4<'), 'gli articoli a magazzino restano quattro anche filtrando le sole parti');
+    assert.ok(kpi.includes('>1<'), 'e uno solo è sotto la scorta minima');
+  });
+
+  it('il conteggio dei sotto scorta è lo stesso del Riepilogo', () => {
+    const a = app(conParte());
+    disegna(a);
+    const segnale = JSON.parse(a.eval('JSON.stringify(homeSegnali().find(s => s.testo.includes("scorta minima")))'));
+    assert.equal(segnale.n, 1);
+    assert.equal(segnale.vista, 'stock', 'il segnale deve portare dove quel numero si vede e si corregge');
+    assert.ok(a.html('stk-kpi').includes('>1<'), 'due conteggi diversi della stessa cosa sarebbero due verità');
+  });
+
+  it('senza articoli a magazzino lo dice, invece di mostrare una tabella vuota', () => {
+    const a = app(makeDb({ items: [asm('mac', 'macchina', {})] }));
+    assert.ok(disegna(a).includes('Nessun articolo a magazzino'));
+  });
+
+  it('con dei filtri che non trovano niente il messaggio è un altro', () => {
+    const a = app(conParte());
+    assert.ok(disegna(a, { search: 'zzz' }).includes('Nessun articolo con questi filtri'));
+  });
+
+  it('una rettifica fatta dal Magazzino aggiorna la vista senza cambiare pagina', () => {
+    const a = app(conParte());
+    a.eval('activeView = "stock"');
+    disegna(a);
+    a.el('mv-kind').value = 'carico';
+    a.el('mv-qty').value = '12';
+    a.eval('saveStockAdjust("m1")');
+    assert.equal(a.eval('onHandOf("m1")'), 12);
+    assert.ok(a.html('stk-table').includes('>12<'), 'renderCatalogs deve conoscere anche il Magazzino');
+    assert.equal(a.eval('activeView'), 'stock');
+  });
+
+  it('la vista è sotto l\'area del catalogo: chi non la scrive non la movimenta', () => {
+    const a = app(conParte());
+    assert.equal(a.eval('VIEW_AREA.stock'), 'catalog');
+    a.asRole('lettore');
+    a.el('mv-kind').value = 'carico';
+    a.el('mv-qty').value = '50';
+    a.eval('saveStockAdjust("m1")');
+    assert.equal((a.snapshot().movements || []).length, 0);
+  });
+});
+
 describe('Le giacenze nel giro verso il database condiviso', () => {
   it('i movimenti sono una collezione come le altre', () => {
     const a = app();

@@ -130,6 +130,11 @@ const NAV = [
   { id: 'anag', icon: '📇', label: 'Anagrafica', views: [
     { id: 'buy', label: 'Acquisti' },
     { id: 'design', label: 'Progetto' }] },
+  // Il magazzino sta accanto alle anagrafiche perché elenca gli stessi articoli,
+  // ma è un gruppo suo: non conosce la divisione fra acquisti e progetto —
+  // commerciali, materie prime e parti stanno sullo stesso scaffale.
+  { id: 'stock', icon: '📦', label: 'Magazzino', views: [
+    { id: 'stock', label: 'Magazzino' }] },
   { id: 'cicli', icon: '🔧', label: 'Cicli di lavorazione', views: [
     { id: 'cycles', label: 'Cicli di lavorazione' }] },
   { id: 'db', icon: '🌳', label: 'Distinta base', views: [
@@ -216,6 +221,7 @@ function setView(v) {
   renderNav();
   if (v === 'bom') renderBom();
   else if (v === 'buy' || v === 'design') renderCatalog(v);
+  else if (v === 'stock') renderStock();
   else if (v === 'cycles') renderCycles();
   else if (v === 'report') renderReport();
   else if (v === 'home') renderHome();

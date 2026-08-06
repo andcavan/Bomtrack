@@ -128,7 +128,11 @@
 
   <!-- ARTICOLI D'ACQUISTO (commerciali e materie prime) -->
   <div id="view-buy" class="view-panel">
-    <h2 class="section-title">📦 Commerciali &amp; Materie prime</h2>
+    <div class="bom-toolbar">
+      <h2 class="section-title">📦 Commerciali &amp; Materie prime</h2>
+      <button class="export-btn-xls" onclick="exportListXlsx(catalogExportSpec('buy'))">📗 Esporta Excel</button>
+      <button class="export-btn-pdf" onclick="exportListPdf(catalogExportSpec('buy'))">📄 Esporta PDF</button>
+    </div>
     <div class="catalog-filters">
       <input type="text" class="search" id="buy-search" placeholder="🔍 Cerca codice o nome..." oninput="catalogSearchInput('buy')">
       <select id="buy-type" onchange="onCatTypeChange('buy')">
@@ -150,7 +154,11 @@
 
   <!-- ARTICOLI DI PROGETTO (macchine, gruppi, sottogruppi, parti) -->
   <div id="view-design" class="view-panel">
-    <h2 class="section-title">🏗 Macchine, Gruppi &amp; Parti</h2>
+    <div class="bom-toolbar">
+      <h2 class="section-title">🏗 Macchine, Gruppi &amp; Parti</h2>
+      <button class="export-btn-xls" onclick="exportListXlsx(catalogExportSpec('design'))">📗 Esporta Excel</button>
+      <button class="export-btn-pdf" onclick="exportListPdf(catalogExportSpec('design'))">📄 Esporta PDF</button>
+    </div>
     <div class="catalog-filters">
       <input type="text" class="search" id="des-search" placeholder="🔍 Cerca codice o nome..." oninput="catalogSearchInput('design')">
       <select id="des-type" onchange="onCatTypeChange('design')">
@@ -171,9 +179,46 @@
     <div class="table-wrap" id="des-table"></div>
   </div>
 
+  <!-- MAGAZZINO — commerciali, materie prime e parti nella stessa lista -->
+  <div id="view-stock" class="view-panel">
+    <div class="bom-toolbar">
+      <h2 class="section-title">📦 Magazzino</h2>
+      <button class="export-btn-xls" onclick="exportListXlsx(stockExportSpec())">📗 Esporta Excel</button>
+      <button class="export-btn-pdf" onclick="exportListPdf(stockExportSpec())">📄 Esporta PDF</button>
+    </div>
+    <div class="catalog-filters">
+      <input type="text" class="search" id="stk-search" placeholder="🔍 Cerca codice o nome..." oninput="stockSearchInput()">
+      <select id="stk-type" onchange="onStockTypeChange()">
+        <option value="">Tutti i tipi</option>
+        <option value="acquistato">Componente commerciale</option>
+        <option value="materiale">Materia prima</option>
+        <option value="parte">Parte (lavorato)</option>
+      </select>
+      <select id="stk-family" onchange="onStockFamilyChange()">
+        <option value="">Tutte le famiglie</option>
+      </select>
+      <select id="stk-subfamily" onchange="stockFilterChange()">
+        <option value="">Tutte le sottofamiglie</option>
+      </select>
+      <select id="stk-state" onchange="stockFilterChange()">
+        <option value="">Tutti gli stati</option>
+        <option value="sotto">Sotto la scorta minima</option>
+        <option value="zero">Giacenza a zero</option>
+        <option value="con">Con giacenza</option>
+        <option value="negativo">Libero negativo</option>
+      </select>
+    </div>
+    <div id="stk-kpi" class="cost-summary"></div>
+    <div class="table-wrap" id="stk-table"></div>
+  </div>
+
   <!-- CICLI DI LAVORAZIONE (distinta parte + fasi di una Parte) -->
   <div id="view-cycles" class="view-panel">
-    <h2 class="section-title">🔧 Cicli di lavorazione</h2>
+    <div class="bom-toolbar">
+      <h2 class="section-title">🔧 Cicli di lavorazione</h2>
+      <button class="export-btn-xls" onclick="exportListXlsx(cycleExportSpec())">📗 Esporta Excel</button>
+      <button class="export-btn-pdf" onclick="exportListPdf(cycleExportSpec())">📄 Esporta PDF</button>
+    </div>
     <div class="catalog-filters">
       <input type="text" class="search" id="cyc-search" placeholder="🔍 Cerca codice o nome..." oninput="cycleSearchInput()">
       <select id="cyc-family" onchange="onCycleFilterChange()">
@@ -249,6 +294,9 @@
 <script src="views-item.js"></script>
 <script src="views-docs.js"></script>
 <script src="views-manage.js"></script>
+<!-- PDF ed Excel degli elenchi: legge le specifiche che le viste descrivono,
+     quindi va dopo di loro. -->
+<script src="export-lists.js"></script>
 <script src="import-catalog.js"></script>
 <script src="import-export.js"></script>
 </body>

@@ -489,6 +489,49 @@ function docFilterApply(kind, docs) {
   });
 }
 
+// ─── Export dell'elenco documenti ───
+// Una funzione per i due tipi: richieste e ordini si filtrano allo stesso modo
+// e si guardano per le stesse ragioni. L'unica differenza è ciò che l'ordine sa
+// in più — quanto vale e quanto ne è arrivato — e sta in due colonne.
+// Attenzione a cosa **non** è: l'export del documento aperto, che esiste già
+// (`exportRfqPDF`, `exportOrderExcel`…) ed è quello che parte verso il fornitore.
+function docListExportSpec(kind) {
+  const ordini = kind === 'order';
+  const K = docKind(kind);
+  const f = docFilters[kind];
+  const mappaStati = ordini ? ORDER_STATUS : RFQ_STATUS;
+  const docs = docFilterApply(kind, (ordini ? db.orders : db.rfqs).slice()
+    .sort((a, b) => (b.number || '').localeCompare(a.number || '')));
+  const colonne = [
+    { h: 'Numero', w: 18 }, { h: 'Oggetto', w: 34 }, { h: 'Stato', w: 14 },
+    { h: 'Fornitore', w: 28 }, { h: 'Data', w: 12 }, { h: 'Righe', w: 8, num: true },
+  ];
+  if (ordini) colonne.push({ h: `Totale (${cur()})`, w: 16, num: true },
+    { h: 'Ordinato', w: 12, num: true }, { h: 'Ricevuto', w: 12, num: true });
+  return {
+    titolo: ordini ? 'Ordini a fornitore' : 'Richieste di offerta',
+    slug: ordini ? 'ordini' : 'richieste',
+    filtri: [
+      ['Ricerca', f.q],
+      ['Stato', mappaStati[f.status] || ''],
+      ['Fornitore', f.supplierId === 'none' ? 'senza fornitore' : (supplierName(f.supplierId) || '')],
+    ],
+    sezioni: [{
+      nome: K.nome,
+      colonne,
+      righe: docs.map(d => {
+        const base = [d.number || '', d.title || '', mappaStati[d.status] || d.status || '',
+          supplierName(d.supplierId) || '', fmtDateIt(d.date), (d.lines || []).length];
+        if (!ordini) return base;
+        const rec = orderReception(d);
+        return base.concat([+orderTotal(d).toFixed(2), rec.ordered, rec.received]);
+      }),
+    }],
+  };
+}
+function rfqListExportSpec() { return docListExportSpec('rfq'); }
+function orderListExportSpec() { return docListExportSpec('order'); }
+
 function renderRfq() {
   const host = document.getElementById('view-rfq');
   if (rfqView === 'edit' && getRfq(currentRfqId)) {
@@ -530,6 +573,7 @@ function renderRfqList() {
       <h2 class="section-title">📨 Richieste di offerta</h2>
       <button class="add-btn-sm" onclick="newRfq()">+ Nuova richiesta</button>
       <button class="btn-outline" onclick="openRfqCompare()">📊 Confronta offerte</button>
+      ${listExportButtons('rfqListExportSpec')}
     </div>
     ${docFilterBar('rfq', RFQ_STATUS, docFilterApply('rfq', db.rfqs).length, db.rfqs.length)}
     <div class="mgmt-list" id="rfq-list">${rfqListRows()}</div></div>`;
@@ -1019,6 +1063,7 @@ function renderOrderList() {
     <div class="bom-toolbar">
       <h2 class="section-title">🧾 Ordini a fornitore</h2>
       <button class="add-btn-sm" onclick="newOrder()">+ Nuovo ordine</button>
+      ${listExportButtons('orderListExportSpec')}
     </div>
     ${docFilterBar('order', ORDER_STATUS, docFilterApply('order', db.orders).length, db.orders.length)}
     <div class="mgmt-list" id="order-list">${orderListRows()}</div></div>`;

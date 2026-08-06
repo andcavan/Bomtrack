@@ -14,11 +14,12 @@ La revisione in esecuzione è mostrata accanto al logo, in alto a sinistra (es. 
 
 ## Funzionalità
 
-La barra dei comandi ha **cinque gruppi**; le voci del gruppo aperto compaiono su una seconda riga, e ogni gruppo ricorda l'ultima voce usata.
+La barra dei comandi ha **sei gruppi**; le voci del gruppo aperto compaiono su una seconda riga, e ogni gruppo ricorda l'ultima voce usata.
 
 | Gruppo | Voci |
 |---|---|
 | 📇 **Anagrafica** | Acquisti · Progetto |
+| 📦 **Magazzino** | — |
 | 🔧 **Cicli di lavorazione** | — |
 | 🌳 **Distinta base** | Gestione DB · Visualizza DB (costificazione) |
 | 📨 **Documenti** | Fabbisogno · Richieste offerta · Ordini |
@@ -27,6 +28,7 @@ La barra dei comandi ha **cinque gruppi**; le voci del gruppo aperto compaiono s
 - **🌳 Distinta base → Gestione DB** — albero multi-livello espandibile della macchina selezionata, con **numerazione di posizione** (1, 1.1, 1.1.1, 1.2, 2…), costo unitario e di riga per ogni componente, lavorazioni interne e card di riepilogo costi. Aggiunta/modifica/eliminazione di componenti e lavorazioni. I sottogruppi possono contenere altri sottogruppi, senza limite di profondità. Una **barra filtri** (testo, livello, macchina di appartenenza) restringe l'elenco delle distinte; la distinta aperta resta sempre raggiungibile anche quando il filtro la escluderebbe.
 - **📇 Anagrafica → Acquisti** — anagrafica di ciò che si compra: **materie prime** (costo unitario per U.M., es. €/kg) e **componenti commerciali**, con flag **preferito ★** (e filtro dedicato) e flag **obsoleto ⛔**. Fornitore e prezzo non si scrivono qui: la scheda li mostra in sola lettura e rimanda al **listino fornitori**.
 - **📇 Anagrafica → Progetto** — anagrafica di ciò che si costruisce: **macchina**, **gruppo**, **sottogruppo** (assiemi, con propria distinta e lavorazioni) e **parte** (foglia con distinta parte e ciclo di lavorazione, con flag **obsoleto ⛔**). Ogni parte dichiara il proprio **approvvigionamento**: prodotta in casa oppure acquistata da un fornitore.
+- **📦 Magazzino** — lo stato delle giacenze di tutto ciò che si tiene a scaffale, in una lista sola: **commerciali, materie prime e parti insieme**, perché il magazzino non conosce la divisione fra acquisti e progetto (gli assiemi restano fuori: si producono, non si stoccano). Per ogni articolo **esistente, in arrivo, impegnato, libero, scorta minima e lotto**, con il ⚠ su chi è sotto scorta. Stessi filtri dell'anagrafica (testo, tipo, famiglia, sottofamiglia) più il filtro per **stato**: sotto la scorta minima, giacenza a zero, con giacenza, libero negativo. Dalla riga si registra una **rettifica** o si apre lo **storico dei movimenti**. I numeri sono gli stessi del fabbisogno: nessun campo scrivibile, l'esistente resta *ricevuto sugli ordini + movimenti*.
 - **🔧 Cicli di lavorazione** — vista dedicata alle parti: in alto la scelta della parte con i filtri per famiglia, sottofamiglia e testo; sotto la **distinta parte** (materie prime e commerciali necessari) e il **ciclo di lavorazione** (fasi 10, 20, 30… riordinabili con ↑ ↓). In testa una riga dice da dove viene il costo di quella parte, secondo il suo approvvigionamento. Ogni modifica si salva subito.
 - **🌳 Distinta base → Visualizza DB** — costificazione: incidenza delle voci di costo e distinta esplosa; **export PDF ed Excel**.
 - **📨 Documenti → Fabbisogno materiali** — piani di produzione salvati (3 × macchina A, 2 × macchina B): le distinte si esplodono e si sommano in una **lista d'acquisto consolidata**, raggruppabile per fornitore, più l'elenco delle **parti da fabbricare**. Da qui si **generano richieste di offerta e ordini**, un documento per fornitore, scegliendo quali righe includere. Il **fabbisogno netto** toglie quello che è già a magazzino, quello già ordinato e quello **impegnato dagli altri piani aperti**, così due piani non si dichiarano coperti con la stessa merce; un piano che non serve più si **chiude** (🔓) e la sua quota torna libera. Export Excel e PDF.
@@ -36,6 +38,7 @@ La barra dei comandi ha **cinque gruppi**; le voci del gruppo aperto compaiono s
 - **🧾 Ordini a fornitore (ODA)** — generabili da una richiesta, da un piano di fabbisogno o da zero, con prezzi, importi, consegne e **registrazione dei ricevimenti** (ricevuto/residuo per riga).
 - Gli elenchi di richieste e ordini si filtrano per **stato**, **fornitore** e **testo** (numero, oggetto, fornitore, note e righe del documento).
 - **🔎 Scheda articolo di sola lettura** — un click su un **codice**, in qualunque tabella, apre la scheda completa: anagrafica, listino, costo, magazzino (esistente, impegnato, libero), composizione, dove è usato, documenti e piani in cui compare, revisioni. Non modifica niente, e per questo si può aprire in mezzo a qualunque lavoro; dentro la scheda i codici sono a loro volta cliccabili, con il tasto ← Indietro.
+- **📗📄 Export degli elenchi** — Magazzino, le due anagrafiche, Cicli, Commesse, Richieste, Ordini e piani di Fabbisogno hanno i pulsanti **Esporta Excel** ed **Esporta PDF**. Si esporta **quello che si vede**: filtri attivi applicati, stesse colonne, e la paginazione a schermo non taglia niente. I filtri finiscono scritti nel file — un foglio **Estrazione** nell'Excel, una riga sotto il titolo nel PDF — così a distanza di tempo si sa ancora cosa contiene. Il PDF porta la testata azienda e il numero di pagina su ogni pagina; l'Excel l'autofiltro sull'intestazione e i numeri come numeri.
 - **🔎 Ricerca globale (Ctrl+K)** — un campo solo per articoli, richieste, ordini e piani: si scrive un codice o un numero e si salta dove serve, senza passare dalla vista giusta e dai suoi filtri.
 - **🖨 Stampa della vista aperta (Ctrl+P)** — distinta, costificazione, fabbisogno, richiesta o ordine escono su carta ripuliti di navigazione, filtri e pulsanti, con intestazione, data e autore.
 - **Autore delle modifiche** — in fondo a schede articolo, richieste, ordini e piani si legge chi ha creato il record e chi l'ha aggiornato per ultimo, con data e ora.
@@ -183,12 +186,13 @@ Il motivo è lo storico: finché lo stesso dato si poteva scrivere in due posti,
 | `shell.js` | ricerca globale, stampa, navigazione tra le viste |
 | `views-bom.js` | distinte base e *Dove è usato* |
 | `views-rev.js` | revisioni della distinta: rilascio, storico e confronto |
-| `views-stock.js` | giacenze, movimenti di magazzino, impegni dei piani aperti e calcolo del fabbisogno netto |
+| `views-stock.js` | giacenze, movimenti di magazzino, impegni dei piani aperti, calcolo del fabbisogno netto e vista **Magazzino** |
 | `views-jobs.js` | commesse cliente e tracciabilità commessa → fabbisogno → richiesta → ordine |
 | `views-home.js` | riepilogo: cosa richiede attenzione, con il collegamento a dove si risolve |
 | `views-catalog.js` | anagrafiche, listino fornitori, scheda articolo, cicli di lavorazione |
 | `views-report.js` | costificazione e report |
 | `views-mrp.js` | fabbisogno materiali |
+| `export-lists.js` | export PDF ed Excel degli elenchi: una specifica per vista, due traduttori |
 | `views-item.js` | scheda articolo di sola lettura e codice cliccabile |
 | `views-docs.js` | richieste di offerta e ordini |
 | `views-manage.js` | gestione (utenti, anagrafiche di servizio, impostazioni) |

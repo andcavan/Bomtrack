@@ -2,6 +2,47 @@
 
 Le revisioni seguono il versionamento semantico `0.MINOR.PATCH`: **MINOR** per nuove funzionalità, **PATCH** per correzioni. La versione in cima è quella in `APP_VERSION` (`core.js`) e mostrata nell'header dell'app.
 
+### 0.45.0 — 2026-08-06
+
+**Gli elenchi si portano via.** Si esportava un *documento* per volta — una distinta, un piano, una richiesta, un ordine — e nessuna *lista*. Chi filtrava il magazzino su «sotto la scorta minima» vedeva la risposta a schermo e non aveva modo di portarsela in officina o di allegarla a una mail. L'unico export di articoli che esisteva è il template d'import, che è un'altra cosa: tutte le colonne, tutti gli articoli, tre fogli di contorno.
+
+**Aggiunto**
+- 📗 **Esporta Excel** e 📄 **Esporta PDF** su otto elenchi: **Magazzino**, **Anagrafica Acquisti**, **Anagrafica Progetto**, **Cicli di lavorazione**, **Commesse**, **Richieste di offerta**, **Ordini** e **piani di Fabbisogno**.
+- Si esporta **quello che si vede**: filtri attivi applicati, stesse colonne e stesso ordine della tabella. I filtri finiscono scritti nel file — nell'Excel su un foglio **Estrazione** (azienda, data, utente, filtri, righe), nel PDF sotto il titolo. Senza, dopo una settimana nessuno sa più cosa contenga quel foglio.
+- Il PDF ha **testata azienda e numero di pagina, su ogni pagina**. Nessun PDF dell'app numerava le pagine: un elenco di trecento righe stampato e poi fatto cadere non si rimette in ordine. Orizzontale sopra le sette colonne.
+- Nell'Excel **autofiltro** sull'intestazione e larghezze di colonna, come già faceva l'export del catalogo.
+
+**Cambiato**
+- Le viste che filtravano dentro il disegno ora dichiarano la selezione a parte (`stockFilteredRows`, `catalogFilteredRows`, `jobFilteredList`, `planFilteredList`): schermo ed export leggono la **stessa** funzione. Con il filtro scritto due volte, prima o poi il file esportato conterrebbe righe diverse da quelle guardate.
+- La paginazione a schermo («Mostra altri 200») **non** limita l'export: difende il ridisegno, non il contenuto. Esportare 200 righe di 900 senza dirlo è il modo più silenzioso di far prendere una decisione su dati monchi.
+
+**Non cambiato, di proposito**
+- **Gli otto export che c'erano restano identici.** Distinta, fabbisogno, RFQ e ordini sono documenti già impaginati apposta, alcuni verso i fornitori: funzionano, e riscriverli per uniformarli avrebbe cambiato l'aspetto di quello che esce di qui.
+- **Nessun `roleGuard`**: esportare è una lettura, ed è la regola già seguita da tutti gli export tranne quello delle impostazioni, guardato perché elenca nomi ed email degli utenti. Nessuno di questi elenchi contiene dati di utenti.
+
+**Verifica**
+- 41 nuovi controlli (suite da 948 a 989). Il grosso sta sulla **specifica** che ogni vista produce, che è la parte pura: ogni riga ha tante celle quante intestazioni, i filtri restringono davvero anche l'export, i numeri restano numeri e la valuta non entra mai in una cella.
+- PDF ed Excel avevano **zero copertura** in tutta la storia dell'app. Ora un doppio finto delle due librerie registra come vengono chiamate: ha già colto un difetto che a occhio non si vedeva — con due sezioni sulla stessa pagina la testata veniva scritta due volte sopra sé stessa — e tiene fermi il numero di pagina e l'autofiltro, che si ferma prima della riga dei totali.
+
+### 0.44.0 — 2026-08-06
+
+**Il magazzino ha una pagina.** I numeri c'erano già tutti — esistente, in arrivo, impegnato, libero — ma si vedevano **un articolo per volta**: nella sua scheda, o dentro una riga di fabbisogno. Per rispondere a «cosa è sotto scorta?» bisognava aprire gli articoli a uno a uno, cioè non lo si chiedeva mai. Il riepilogo lo segnalava e mandava all'anagrafica, dove quel dato non compare.
+
+**Aggiunto**
+- **📦 Magazzino**, nuovo gruppo in barra e pulsante nel Riepilogo. Una lista sola per **commerciali, materie prime e parti**: il magazzino non conosce la divisione fra acquisti e progetto — sullo stesso scaffale ci sono viti comprate e parti lavorate, e chi fa l'inventario le conta nello stesso giro. Gli assiemi restano fuori: un gruppo si produce, non si stocca, e la sua giacenza sarebbe quella dei componenti contata due volte.
+- Per riga: **esistente, in arrivo, impegnato, libero, scorta minima, lotto**, con il ⚠ su chi è sotto scorta e il libero in rosso quando i piani aperti hanno promesso più merce di quanta ne esista. Dalla riga si registra una **rettifica** (⚖) o si apre lo **storico dei movimenti** (🕘), col codice cliccabile e la modifica dell'articolo dove stanno in tutte le altre tabelle.
+- **Filtri dell'anagrafica** (testo, tipo, famiglia, sottofamiglia) più uno di **stato**: sotto la scorta minima, giacenza a zero, con giacenza, libero negativo. In testa quattro conteggi che parlano di **tutto** il magazzino e non del filtro attivo — sono lì per dire se c'è qualcosa da guardare, e un numero che cambia col filtro non risponderebbe più a quella domanda.
+
+**Cambiato**
+- Il segnale «articoli sotto la scorta minima» del Riepilogo porta al Magazzino invece che all'anagrafica Acquisti: adesso c'è la vista dove quel numero si vede e si corregge.
+- Filtri famiglia/sottofamiglia, raggruppamento per famiglia e costo unitario erano scritti dentro `renderCatalog`: sono diventati `syncFamilyFilters`, `catalogGroups` e `itemUnitCost`, usati da anagrafica e magazzino. Nessun cambio di comportamento — due copie della stessa logica si sarebbero disallineate alla prima modifica.
+
+**Non cambiato, di proposito**
+- **Nessun campo nuovo sull'articolo.** L'esistente resta *ricevuto sugli ordini + movimenti*, e l'impegnato resta calcolato dai piani aperti: la vista li mette in tabella, non li duplica. Una colonna scrivibile qui darebbe due numeri per la stessa giacenza, e un test verifica che il conteggio dei sotto scorta sia lo stesso del Riepilogo.
+
+**Verifica**
+- 15 nuovi controlli (suite da 933 a 948): chi entra nell'elenco e chi no, che il filtro «sotto scorta» selezioni **le stesse righe** che portano il ⚠ (un filtro che ne seleziona altre fa credere di aver guardato), i quattro stati, i conteggi in testa indipendenti dal filtro, e che una rettifica fatta da qui aggiorni la riga senza far cambiare pagina.
+
 ### 0.43.2 — 2026-08-03
 
 **Corretto**

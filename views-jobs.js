@@ -80,10 +80,37 @@ function renderJobs() {
   a11yFields(host);
 }
 function jobSearchInput() { debounced('jobs', renderJobs); }
-function renderJobList() {
+// Le commesse che l'elenco mostra. Fuori dal disegno perché le serve anche
+// l'export: filtrare due volte è il modo di far divergere schermo e file.
+function jobFilteredList() {
   const q = (val('job-search') || '').toLowerCase();
   const tutte = jobList().slice().sort((a, b) => String(b.number || '').localeCompare(String(a.number || '')));
-  const righe = tutte.filter(j => !q || (j.number + ' ' + (j.customer || '') + ' ' + (j.title || '')).toLowerCase().includes(q));
+  return q ? tutte.filter(j => (j.number + ' ' + (j.customer || '') + ' ' + (j.title || '')).toLowerCase().includes(q)) : tutte;
+}
+// ─── Export dell'elenco ───
+function jobsExportSpec() {
+  return {
+    titolo: 'Commesse',
+    slug: 'commesse',
+    filtri: [['Ricerca', val('job-search')]],
+    sezioni: [{
+      nome: 'Commesse',
+      colonne: [
+        { h: 'Numero', w: 18 }, { h: 'Stato', w: 14 }, { h: 'Cliente', w: 28 }, { h: 'Descrizione', w: 34 },
+        { h: 'Consegna', w: 12 }, { h: 'In ritardo', w: 10 }, { h: 'Piani', w: 8, num: true },
+        { h: 'Ordini', w: 8, num: true }, { h: `Ordinato (${cur()})`, w: 16, num: true },
+      ],
+      righe: jobFilteredList().map(j => {
+        const t = jobTotals(j.id);
+        return [j.number || '', JOB_STATUS[j.status] || j.status || '', j.customer || '', j.title || '',
+          fmtDateIt(j.dueDate), jobLate(j) ? 'sì' : '', jobPlans(j.id).length, t.ordini, +t.ordinato.toFixed(2)];
+      }),
+    }],
+  };
+}
+function renderJobList() {
+  const tutte = jobList();
+  const righe = jobFilteredList();
   const corpo = righe.map(j => {
     const t = jobTotals(j.id);
     const piani = jobPlans(j.id).length;
@@ -101,6 +128,7 @@ function renderJobList() {
     <div class="bom-toolbar">
       <h2 class="section-title">🧾 Commesse</h2>
       <button class="add-btn-sm" onclick="newJob()">+ Nuova commessa</button>
+      ${listExportButtons('jobsExportSpec')}
     </div>
     <div class="catalog-filters">
       <input type="text" class="search" id="job-search" value="${esc(val('job-search'))}" placeholder="🔍 Numero, cliente o descrizione..." oninput="jobSearchInput()">

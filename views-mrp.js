@@ -632,10 +632,36 @@ function renderMrp() {
   else { mrpView = 'list'; host.innerHTML = renderPlanList(); }
   a11yFields(host);
 }
-function renderPlanList() {
+// I piani che l'elenco mostra. Estratta dal disegno perché la usa l'export.
+function planFilteredList() {
   const q = (val('plan-search') || '').toLowerCase();
   const tutti = (db.plans || []).slice().sort((a, b) => (b.number || '').localeCompare(a.number || ''));
-  const list = q ? tutti.filter(p => (p.number + ' ' + (p.title || '')).toLowerCase().includes(q)) : tutti;
+  return q ? tutti.filter(p => (p.number + ' ' + (p.title || '')).toLowerCase().includes(q)) : tutti;
+}
+// ─── Export dell'elenco dei piani ───
+// L'elenco, non il contenuto di un piano: quello ha già i suoi export
+// (`exportMrpExcel`/`exportMrpPDF`) dentro il piano aperto.
+function planListExportSpec() {
+  return {
+    titolo: 'Fabbisogno materiali — piani',
+    slug: 'piani',
+    filtri: [['Ricerca', val('plan-search')]],
+    sezioni: [{
+      nome: 'Piani',
+      colonne: [
+        { h: 'Numero', w: 18 }, { h: 'Titolo', w: 34 }, { h: 'Stato', w: 12 },
+        { h: 'Data', w: 12 }, { h: 'Consegna', w: 12 }, { h: 'Articoli a piano', w: 14, num: true },
+      ],
+      righe: planFilteredList().map(p => [
+        p.number || '', p.title || '', p.active === false ? 'chiuso' : 'aperto',
+        fmtDateIt(p.date), fmtDateIt(p.dueDate), (p.lines || []).length,
+      ]),
+    }],
+  };
+}
+function renderPlanList() {
+  const tutti = db.plans || [];
+  const list = planFilteredList();
   const rows = list.map(p => {
     const n = (p.lines || []).length;
     const chiuso = p.active === false;
@@ -656,6 +682,7 @@ function renderPlanList() {
     <div class="bom-toolbar">
       <h2 class="section-title">📋 Fabbisogno materiali</h2>
       <button class="add-btn-sm" onclick="newPlan()">+ Nuovo piano</button>
+      ${listExportButtons('planListExportSpec')}
     </div>
     <div class="catalog-filters">
       <input type="text" class="search" id="plan-search" value="${esc(val('plan-search'))}" placeholder="🔍 Numero o titolo..." oninput="planSearchInput()">

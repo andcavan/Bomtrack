@@ -412,15 +412,23 @@ function renderCatalogs() {
   // I costi mostrati nei cicli vengono dalle stesse anagrafiche: cambiando un
   // articolo la vista aperta deve rifare i conti.
   else if (activeView === 'cycles') renderCycles();
+  // Il Magazzino elenca gli stessi articoli: una rettifica di giacenza registrata
+  // da lì deve aggiornare la riga senza far cambiare pagina a chi la sta facendo.
+  else if (activeView === 'stock') renderStock();
 }
 // Allinea i filtri famiglia/sottofamiglia al tipo selezionato, preservando le selezioni compatibili
 function updateCatFamilyFilters(scope) {
-  const pfx = CATALOG_SCOPES[scope].pfx;
+  syncFamilyFilters(CATALOG_SCOPES[scope].pfx, CATALOG_SCOPES[scope].types);
+}
+// Il corpo vero, su prefisso e tipi anziché su uno scope di anagrafica: la vista
+// Magazzino ha la stessa barra di filtri ma non è una delle due anagrafiche, e
+// due copie della stessa logica si sarebbero disallineate alla prima modifica.
+function syncFamilyFilters(pfx, types) {
   const famSel = document.getElementById(pfx + '-family');
   const subSel = document.getElementById(pfx + '-subfamily');
   const ft = document.getElementById(pfx + '-type').value;
-  // Senza tipo selezionato valgono le famiglie di tutti i tipi dello scope che ne usano
-  const kinds = (ft ? [ft] : CATALOG_SCOPES[scope].types).filter(usesFamily);
+  // Senza tipo selezionato valgono le famiglie di tutti i tipi in elenco che ne usano
+  const kinds = (ft ? [ft] : types).filter(usesFamily);
   const famApplies = !!kinds.length; // gli assiemi non hanno famiglia
   famSel.disabled = !famApplies; subSel.disabled = !famApplies;
   const fams = (db.families || []).filter(f => kinds.includes(f.kind || 'acquistato'));
@@ -458,9 +466,16 @@ function itemBadgesTxt(i) {
   if (!i) return '';
   return (i.favorite ? '★ ' : '') + (i.obsolete ? '⛔ ' : '');
 }
-function catalogRow(i) {
-  const unit = (isAssembly(i.type) || i.type === 'parte') ? costOf(i.id).total
-    : (i.type === 'acquistato' ? (i.purchasePrice || 0) : (i.unitCost || 0));
+// Costo di una unità, nella U.M. di gestione dell'articolo: calcolato per ciò
+// che si produce, letto dal listino per ciò che si compra.
+function itemUnitCost(i) {
+  if (!i) return 0;
+  if (isAssembly(i.type) || i.type === 'parte') return costOf(i.id).total;
+  return i.type === 'acquistato' ? (i.purchasePrice || 0) : (i.unitCost || 0);
+}
+// La colonna «Dettaglio»: cosa c'è da sapere su quell'articolo in una riga
+// sola, e cambia con il tipo. Estratta dalla riga perché la usa anche l'export.
+function catalogMeta(i) {
   let meta = '';
   if (i.type === 'acquistato') { const s = getSupplier(i.supplierId); meta = s ? s.name : '—'; }
   else if (i.type === 'materiale' && priceRows(i).length) meta = '';
@@ -476,6 +491,11 @@ function catalogRow(i) {
   const quot = hasPriceList(i) ? priceRows(i).length : 0;
   if (quot > 1) meta = (meta && meta !== '—' ? meta + ' · ' : '') + quot + ' quotazioni';
   else if (!meta) meta = '—';
+  return meta;
+}
+function catalogRow(i) {
+  const unit = itemUnitCost(i);
+  const meta = catalogMeta(i);
   // Indicatori a sinistra, di sola visione (i flag si impostano nella scheda articolo)
   const flags = `${i.favorite ? '<span class="pick-fav" title="Preferito">★</span>' : ''}${i.obsolete ? '<span class="obs-mark" title="Obsoleto">⛔</span>' : ''}`
     + (i.type === 'parte' && partSourcing(i) === 'buy' ? '<span class="buy-mark" title="Parte acquistata da fornitore">🛒</span>' : '');
@@ -515,24 +535,12 @@ function catalogFilterChange(scope) {
 function catalogSearchInput(scope) {
   debounced('cat-' + scope, () => catalogFilterChange(scope));
 }
-function renderCatalog(scope) {
-  invalidateCaches();
-  const sc = CATALOG_SCOPES[scope]; if (!sc) return;
-  updateCatFamilyFilters(scope);
-  const pfx = sc.pfx;
-  const q = (document.getElementById(pfx + '-search').value || '').toLowerCase();
-  const ft = document.getElementById(pfx + '-type').value;
-  const ff = document.getElementById(pfx + '-family').value;
-  const fsf = document.getElementById(pfx + '-subfamily').value;
-  let rows = db.items.filter(i => sc.types.includes(i.type));
-  if (ft) rows = rows.filter(i => i.type === ft);
-  if (scope === 'buy' && favOnly) rows = rows.filter(i => i.favorite);
-  if (ff) rows = rows.filter(i => usesFamily(i.type) && i.familyId === ff);
-  if (fsf) rows = rows.filter(i => i.subFamilyId === fsf);
-  if (q) rows = rows.filter(i => (i.code + ' ' + i.name).toLowerCase().includes(q));
-  rows.sort((a, b) => (a.code || '').localeCompare(b.code || ''));
-
-  // Raggruppamento: commerciali e materie prime per macrofamiglia, gli altri tipi per categoria
+// ─── Raggruppamento delle righe ───
+// Commerciali, materie prime e parti per macrofamiglia; gli altri tipi per
+// categoria. Restituisce i gruppi e le loro chiavi già in ordine di
+// visualizzazione. Lo usano l'anagrafica e il magazzino: la stessa lista di
+// articoli deve raggrupparsi allo stesso modo ovunque la si guardi.
+function catalogGroups(rows) {
   const GROUP_LABELS = { materiale: 'Materie prime', parte: 'Parti', sottogruppo: 'Sottogruppi', gruppo: 'Gruppi', macchina: 'Macchine' };
   const ORDER = { acquistato: 0, materiale: 1, parte: 2, sottogruppo: 3, gruppo: 4, macchina: 5 };
   const NO_FAMILY_LABELS = { acquistato: 'Commerciali senza famiglia', materiale: 'Materie prime senza famiglia', parte: 'Parti senza famiglia' };
@@ -543,6 +551,32 @@ function renderCatalog(scope) {
   const groups = {};
   rows.forEach(i => { const k = groupKey(i); (groups[k] = groups[k] || { items: [], ord: order(i) }).items.push(i); });
   const keys = Object.keys(groups).sort((a, b) => groups[a].ord - groups[b].ord || a.localeCompare(b));
+  return { groups, keys };
+}
+// Gli articoli che la vista mostra, filtrati e ordinati. Come per il magazzino
+// sta fuori dal disegno: l'export deve dare esattamente queste righe, e un
+// filtro scritto due volte prima o poi dice due cose diverse.
+function catalogFilteredRows(scope) {
+  const sc = CATALOG_SCOPES[scope]; if (!sc) return [];
+  const leggi = k => (document.getElementById(sc.pfx + '-' + k) || {}).value || '';
+  const q = leggi('search').toLowerCase();
+  const ft = leggi('type'), ff = leggi('family'), fsf = leggi('subfamily');
+  let rows = db.items.filter(i => sc.types.includes(i.type));
+  if (ft) rows = rows.filter(i => i.type === ft);
+  if (scope === 'buy' && favOnly) rows = rows.filter(i => i.favorite);
+  if (ff) rows = rows.filter(i => usesFamily(i.type) && i.familyId === ff);
+  if (fsf) rows = rows.filter(i => i.subFamilyId === fsf);
+  if (q) rows = rows.filter(i => (i.code + ' ' + i.name).toLowerCase().includes(q));
+  return rows.sort((a, b) => (a.code || '').localeCompare(b.code || ''));
+}
+function renderCatalog(scope) {
+  invalidateCaches();
+  const sc = CATALOG_SCOPES[scope]; if (!sc) return;
+  updateCatFamilyFilters(scope);
+  const pfx = sc.pfx;
+  const rows = catalogFilteredRows(scope);
+
+  const { groups, keys } = catalogGroups(rows);
 
   // «Costo un.» è per una unità dell'articolo, cioè nella U.M. della colonna
   // accanto: si dice in intestazione, una volta, invece che su ogni riga.
@@ -572,6 +606,43 @@ function renderCatalog(scope) {
   const tabella = document.getElementById(pfx + '-table');
   tabella.innerHTML = rows.length ? html + piu : '<div class="empty-text">Nessun articolo trovato.</div>';
   a11yFields(tabella);
+}
+// ─── Export dell'anagrafica ───
+// È l'elenco che si sta guardando, non il template d'import: quello resta
+// `exportCatalogXlsx` in Gestione, con tutte le colonne e i fogli di contorno.
+// Sono due cose diverse e vanno tenute diverse — chi esporta da qui vuole le
+// righe che ha davanti, non un file da ricaricare.
+function catalogExportSpec(scope) {
+  const sc = CATALOG_SCOPES[scope] || CATALOG_SCOPES.buy;
+  const leggi = k => (document.getElementById(sc.pfx + '-' + k) || {}).value || '';
+  const fam = getFamily(leggi('family'));
+  const sub = (fam && (fam.subs || []).find(s => s.id === leggi('subfamily'))) || null;
+  const righe = catalogFilteredRows(scope).map(i => [
+    i.code || '', i.name || '', typeLabel(i.type), codingLabel(i) || familyLabel(i),
+    i.uom || '', +(itemUnitCost(i) || 0).toFixed(4), catalogMeta(i),
+  ]);
+  return {
+    titolo: scope === 'buy' ? 'Anagrafica — Commerciali e materie prime' : 'Anagrafica — Macchine, gruppi e parti',
+    slug: scope === 'buy' ? 'anagrafica_acquisti' : 'anagrafica_progetto',
+    filtri: [
+      ['Ricerca', leggi('search')],
+      ['Tipo', leggi('type') ? typeLabel(leggi('type')) : ''],
+      ['Famiglia', fam ? fam.name : ''],
+      ['Sottofamiglia', sub ? sub.name : ''],
+      ['Preferiti', scope === 'buy' && favOnly ? 'solo i preferiti' : ''],
+    ],
+    sezioni: [{
+      nome: scope === 'buy' ? 'Acquisti' : 'Progetto',
+      colonne: [
+        { h: 'Codice', w: 18 }, { h: 'Nome', w: 34 }, { h: 'Tipo', w: 16 }, { h: 'Famiglia', w: 24 },
+        { h: 'U.M.', w: 8 },
+        // La valuta sta in intestazione: nella cella romperebbe ogni formula.
+        { h: `Costo unitario (${cur()}/U.M.)`, w: 18, num: true },
+        { h: 'Dettaglio', w: 28 },
+      ],
+      righe,
+    }],
+  };
 }
 // Etichette del menu "Tipo" (l'elenco è ristretto ai tipi della vista di provenienza)
 const TYPE_OPTION_LABELS = {
@@ -1046,6 +1117,64 @@ function cycleOpsTable(opRows) {
       <button class="mini-btn danger" title="Elimina" onclick="delCycleRow(${i})">🗑</button>
     </div>`).join('');
 }
+// ─── Export del ciclo aperto ───
+// I Cicli non sono un elenco ma una scheda: si esporta la parte che si sta
+// guardando, con le sue due tavole. `cycleRowLabel` qui non serve — restituisce
+// HTML, e in un foglio di calcolo un tag è solo sporcizia.
+function cycleExportSpec() {
+  const it = currentCycleItem();
+  const righe = ((it && it.cycle) || []).map((r, i) => ({ r, i }));
+  const bom = righe.filter(x => x.r.kind !== 'op');
+  const ops = righe.filter(x => x.r.kind === 'op');
+  const fam = getFamily(val('cyc-family'));
+  const sub = (fam && (fam.subs || []).find(s => s.id === val('cyc-subfamily'))) || null;
+  const tot = rs => +rs.reduce((s, x) => s + cycleRowCost(x.r), 0).toFixed(2);
+  const nome = it ? ((it.code || '') + ' — ' + (it.name || '')).trim() : '(nessuna parte)';
+  return {
+    titolo: 'Ciclo di lavorazione — ' + nome,
+    // Il codice finisce nel nome del file: quello che non è lettera o cifra
+    // diventa un trattino, perché una barra in un nome di file non è un nome.
+    slug: 'ciclo_' + String((it && it.code) || 'parte').replace(/[^A-Za-z0-9]+/g, '-'),
+    filtri: [
+      ['Parte', nome],
+      ['Ricerca', val('cyc-search')],
+      ['Famiglia', fam ? fam.name : ''],
+      ['Sottofamiglia', sub ? sub.name : ''],
+    ],
+    sezioni: [
+      {
+        nome: 'Distinta parte',
+        colonne: [
+          { h: 'Codice', w: 18 }, { h: 'Descrizione', w: 34 }, { h: 'Fornitore', w: 24 },
+          { h: 'U.M.', w: 8 }, { h: 'Q.tà', w: 10, num: true },
+          { h: `Costo unitario (${cur()}/U.M.)`, w: 18, num: true },
+          { h: `Costo riga (${cur()})`, w: 16, num: true },
+        ],
+        righe: bom.map(({ r }) => {
+          const ci = getItem(r.itemId);
+          return [ci ? (ci.code || '') : '(articolo mancante)', ci ? (ci.name || '') : '',
+            supplierName(ci && ci.supplierId) || '', ci ? (ci.uom || '') : '',
+            Number(r.qty) || 0, +cycleRowComputed(r).toFixed(4), +cycleRowCost(r).toFixed(2)];
+        }),
+        totali: bom.length ? ['Totale distinta parte', '', '', '', '', '', tot(bom)] : null,
+      },
+      {
+        nome: 'Ciclo di lavorazione',
+        colonne: [
+          { h: 'Fase', w: 8, num: true }, { h: 'Lavorazione', w: 34 }, { h: 'Fornitore', w: 24 },
+          { h: `Costo (${cur()})`, w: 16, num: true },
+        ],
+        righe: ops.map(({ r }, k) => {
+          const wc = getWorkCenter(r.workCenterId);
+          return [cyclePhaseNumber(k), wc ? wc.name : '(centro mancante)',
+            supplierName(r.supplierId) || '', +cycleRowCost(r).toFixed(2)];
+        }),
+        totali: ops.length ? ['Totale lavorazioni', '', '', tot(ops)] : null,
+      },
+    ],
+  };
+}
+
 // Dopo una modifica di valore si aggiornano solo le celle calcolate: ridisegnare
 // tutto porterebbe via il campo su cui l'utente sta passando col tabulatore.
 function refreshCycleCosts(it) {

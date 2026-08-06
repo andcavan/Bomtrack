@@ -13,7 +13,7 @@
 // Revisione in esecuzione, mostrata accanto al logo. Va tenuta allineata alla
 // voce in cima a CHANGELOG.md (l'app si copia a mano tra PC: sapere
 // quale revisione sta girando su una postazione è l'unico modo per capirlo).
-const APP_VERSION = '0.43.2';
+const APP_VERSION = '0.45.0';
 
 let currentUser = null;      // utente della sessione (null = schermata di accesso)
 let currentBomId = null;     // articolo prodotto attualmente aperto nelle Distinte
@@ -288,7 +288,7 @@ function roleGuard(area) {
   return false;
 }
 // Area di scrittura corrispondente a ciascuna vista (per il banner di sola lettura)
-const VIEW_AREA = { home: null, bom: 'bom', buy: 'catalog', design: 'catalog', cycles: 'catalog', report: null, jobs: 'docs', mrp: 'docs', rfq: 'docs', orders: 'docs', manage: 'manage' };
+const VIEW_AREA = { home: null, bom: 'bom', buy: 'catalog', design: 'catalog', stock: 'catalog', cycles: 'catalog', report: null, jobs: 'docs', mrp: 'docs', rfq: 'docs', orders: 'docs', manage: 'manage' };
 
 // Le due viste di anagrafica: ciò che si compra e ciò che si progetta.
 // Ogni vista ha i suoi filtri (prefisso degli id nella pagina) e la creazione

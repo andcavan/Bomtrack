@@ -55,9 +55,10 @@ function homeSegnali() {
   const rfqAperte = (db.rfqs || []).filter(r => r.status === 'inviata');
   agg(rfqAperte.length, rfqAperte.length === 1 ? 'richiesta inviata in attesa di risposta' : 'richieste inviate in attesa di risposta', 'rfq', 'info');
 
-  // Articoli sotto la scorta minima
+  // Articoli sotto la scorta minima. Portano al Magazzino, non all'anagrafica:
+  // è la vista dove quel numero si vede e da dove si rettifica.
   const sottoScorta = (db.items || []).filter(it => hasStock(it) && safetyStockOf(it) > 0 && onHandOf(it.id) < safetyStockOf(it));
-  agg(sottoScorta.length, sottoScorta.length === 1 ? 'articolo sotto la scorta minima' : 'articoli sotto la scorta minima', 'buy', 'media');
+  agg(sottoScorta.length, sottoScorta.length === 1 ? 'articolo sotto la scorta minima' : 'articoli sotto la scorta minima', 'stock', 'media');
 
   // Articoli che si comprano e non hanno un prezzo: in un ordine varrebbero zero
   const senzaPrezzo = (db.items || []).filter(it => hasPriceList(it) && costField(it) && !(Number(it[costField(it)]) > 0));
@@ -129,6 +130,7 @@ function renderHome() {
       <div class="cycle-section-head"><h3>↪ Riprendi</h3></div>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
         <button class="btn-outline" onclick="setView('bom')">🌳 Distinta base</button>
+        <button class="btn-outline" onclick="setView('stock')">📦 Magazzino</button>
         <button class="btn-outline" onclick="setView('mrp')">📋 Fabbisogno</button>
         <button class="btn-outline" onclick="setView('orders')">🧾 Ordini</button>
         <button class="btn-outline" onclick="globalSearchModal()">🔎 Cerca ovunque (Ctrl+K)</button>

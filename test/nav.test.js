@@ -35,20 +35,20 @@ describe('Integrità della barra', () => {
 
   it('i gruppi sono quelli richiesti, nell\'ordine', () => {
     assert.deepEqual(nav(app()).map(g => g.label),
-      ['Riepilogo', 'Anagrafica', 'Cicli di lavorazione', 'Distinta base', 'Documenti', 'Gestione']);
+      ['Riepilogo', 'Anagrafica', 'Magazzino', 'Cicli di lavorazione', 'Distinta base', 'Documenti', 'Gestione']);
   });
 });
 
 describe('navGroups — cosa vede chi', () => {
   it('l\'amministratore vede tutti i gruppi', () => {
-    assert.equal(app('admin').eval('navGroups().length'), 6);
+    assert.equal(app('admin').eval('navGroups().length'), 7);
   });
 
   it('gli altri ruoli non vedono Gestione', () => {
     ['acquisti', 'progettazione', 'lettore'].forEach(r => {
       const ids = Array.from(app(r).eval('navGroups().map(g => g.id)'));
       assert.ok(!ids.includes('manage'), `il ruolo ${r} non deve vedere Gestione`);
-      assert.equal(ids.length, 5);
+      assert.equal(ids.length, 6);
     });
   });
 });
