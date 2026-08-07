@@ -13,9 +13,9 @@ const path = require('node:path');
 const ROOT = path.join(__dirname, '..');
 // Stessa sequenza di index.html: i file si caricano nello stesso contesto e
 // condividono lo scope globale, esattamente come i <script> della pagina.
-const SRC = ['store.js', 'core.js', 'auth.js', 'costing.js', 'shell.js',
-  'views-bom.js', 'views-catalog.js', 'views-report.js', 'views-mrp.js',
-  'views-docs.js', 'views-manage.js', 'import-export.js'];
+const SRC = ['store.js', 'cloud-map.js', 'core.js', 'auth.js', 'costing.js', 'shell.js',
+  'views-bom.js', 'views-rev.js', 'views-stock.js', 'views-catalog.js', 'views-report.js', 'views-jobs.js', 'views-home.js', 'views-mrp.js', 'views-item.js',
+  'views-docs.js', 'views-manage.js', 'export-lists.js', 'import-catalog.js', 'import-export.js'];
 
 // localStorage finto. `quotaBytes` opzionale: oltre soglia lancia lo stesso
 // errore dei browser, per poter testare la gestione dello spazio esaurito.
@@ -58,9 +58,17 @@ function elementoFinto() {
     classList: { add() {}, remove() {}, toggle() {}, contains() { return false; } },
     insertBefore(c) { this.children.unshift(c); c.parentNode = this; return c; },
     firstChild: null,
-    remove() {}, focus() {}, click() {}, closest() { return null; },
+    remove() {}, click() {}, closest() { return null; },
     querySelectorAll() { return []; }, querySelector() { return null; },
     insertAdjacentHTML() {}, setAttribute() {}, removeAttribute() {},
+    // Il minimo che serve a renderInto(): chi ha il focus, chi contiene chi, e
+    // il punto di digitazione. Il focus è finto ma coerente — `focus()` lo
+    // sposta davvero, così un test può verificare che il ridisegno lo restituisca.
+    tagName: 'DIV', id: '', selectionStart: null, selectionEnd: null,
+    scrollTop: 0, scrollLeft: 0,
+    focus() { if (this.ownerDocument) this.ownerDocument.activeElement = this; },
+    contains(x) { return x === this || this.children.includes(x); },
+    setSelectionRange(a, b) { this.selectionStart = a; this.selectionEnd = b; },
   };
 }
 
@@ -71,6 +79,9 @@ function loadApp(opts) {
   const sandbox = {
     console: o.silent ? { log() {}, warn() {}, error() {} } : console,
     crypto: globalThis.crypto || require('node:crypto').webcrypto,
+    // Globale della piattaforma, presente in ogni browser ma non nei contesti
+    // vm: lo usa sha256Hex() per convertire la stringa in byte UTF-8.
+    TextEncoder,
     localStorage: storage,
     // Volutamente assenti: `document` e `window`. La guardia in fondo a import-export.js
     // (`if (typeof document !== 'undefined') init()`) impedisce l'avvio dell'app.
@@ -91,17 +102,26 @@ function loadApp(opts) {
   const elementi = new Map();
   sandbox.document = {
     getElementById(id) {
-      if (!elementi.has(id)) elementi.set(id, elementoFinto());
+      if (!elementi.has(id)) {
+        const e = elementoFinto();
+        e.id = id; e.ownerDocument = sandbox.document;
+        elementi.set(id, e);
+      }
       return elementi.get(id);
     },
     querySelectorAll() { return []; },
     createElement() { return elementoFinto(); },
     body: elementoFinto(),
+    // Chi ha il focus. `null` come nel DOM vero prima di ogni interazione:
+    // le funzioni che lo confrontano si comportano come su una pagina appena
+    // caricata, dove nessun campo è a fuoco.
+    activeElement: null,
   };
   sandbox.window = sandbox;
   sandbox.innerWidth = 1280; sandbox.innerHeight = 800;   // i pannelli si posizionano rispetto alla finestra
   sandbox.confirm = () => true;   // le richieste di conferma si accettano: il test verifica l'effetto
   sandbox.setTimeout = (fn) => { void fn; return 0; };   // niente code differite nei test
+  sandbox.clearTimeout = () => {};                       // globale della piattaforma, assente nei contesti vm
 
   const ref = name => vm.runInContext(name, ctx);
 
@@ -111,10 +131,9 @@ function loadApp(opts) {
     ref,
     // Elemento finto per id (persistente): permette di leggere ciò che una
     // funzione di render ha scritto e di preimpostare il valore di un campo.
-    el(id) {
-      if (!elementi.has(id)) elementi.set(id, elementoFinto());
-      return elementi.get(id);
-    },
+    // Passa dalla stessa porta dell'app: un elemento creato qui e uno creato da
+    // getElementById devono essere lo stesso oggetto, con id e documento.
+    el(id) { return sandbox.document.getElementById(id); },
     html(id) { return this.el(id).innerHTML; },
     // Sessione finta: i mutatori passano da roleGuard() e senza utente sono
     // tutti bloccati. Il ruolo si sceglie, così si può verificare anche chi

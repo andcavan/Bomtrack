@@ -41,19 +41,19 @@ function computeCost(it, itemId, visited) {
     return { ...zero, purchased: v, base: v, total: v };
   }
   if (it.type === 'parte') {
-    // Tre modi di calcolo (campo costMode): solo costo unitario a mano, solo
-    // valore del ciclo di lavorazione, oppure la somma dei due.
-    const mode = partCostMode(it);
-    const manual = Number(it.unitCost) || 0;
-    // Senza righe di ciclo resta solo il costo manuale, nella voce "Parti".
-    if (mode === 'unit' || !(it.cycle || []).length) {
-      return { ...zero, parts: manual, base: manual, total: manual };
+    // Da dove viene il costo lo dice l'approvvigionamento, e basta quello:
+    // una parte comprata costa il prezzo del fornitore, una prodotta in casa
+    // costa quello che serve per farla. Senza righe di ciclo non c'è niente da
+    // calcolare, quindi anche lì resta il prezzo a listino.
+    const prezzo = Number(it.unitCost) || 0;
+    if (partSourcing(it) === 'buy' || !(it.cycle || []).length) {
+      return { ...zero, parts: prezzo, base: prezzo, total: prezzo };
     }
-    // Col ciclo il costo è derivato e ogni riga confluisce nella propria voce:
-    // materie prime → Materiale, commerciali → Commerciali, lavorazioni → Lavorazioni.
+    // Prodotta in casa: il costo è derivato e ogni riga confluisce nella propria
+    // voce: materie prime → Materiale, commerciali → Commerciali, lavorazioni → Lavorazioni.
     const next = new Set(visited); next.add(itemId);
     let material = 0, purchased = 0, labor = 0;
-    const parts = mode === 'sum' ? manual : 0;   // 'sum': il costo unitario si aggiunge al ciclo
+    const parts = 0;   // il prezzo a listino non concorre: qui la parte la facciamo noi
     // Accumulatore: raccoglie l'eventuale anello incontrato dalle righe del ciclo.
     // Senza, un troncamento da ricorsione passerebbe per un costo valido.
     const out = { cycle: false };
@@ -84,7 +84,7 @@ function computeCost(it, itemId, visited) {
     childOverhead += cc.overhead * factor;
   });
   (it.operations || []).forEach(o => {
-    const wc = db.workCenters.find(w => w.id === o.workCenterId);
+    const wc = getWorkCenter(o.workCenterId);
     labor += (Number(o.hours) || 0) * (wc ? (Number(wc.hourlyRate) || 0) : 0);
   });
   const base = material + purchased + labor + parts;  // costo puro (figli a costo + manodopera)
@@ -94,22 +94,34 @@ function computeCost(it, itemId, visited) {
   const total = base + overhead;
   return { material, purchased, labor, parts, overhead, base, total, cycle };
 }
-// ─── Modo di calcolo del costo di una parte ───
-const PART_COST_MODES = {
-  unit: 'Solo costo unitario',
-  cycle: 'Solo valore ciclo di lavorazione',
-  sum: 'Costo unitario + valore ciclo',
+// ─── Approvvigionamento di una parte (campo sourcing) ───
+// Unica domanda da cui dipende tutto: la parte la facciamo o la compriamo?
+// Da lì discendono sia il costo sia il fabbisogno, senza un secondo interruttore
+// da tenere allineato a mano.
+//   make → il costo lo determinano distinta parte e ciclo; il fabbisogno scende
+//          nella distinta e compra quello che serve per farla.
+//   buy  → il costo è il prezzo scelto a listino; nel fabbisogno la parte è una
+//          foglia d'acquisto come un commerciale, e la distinta non si esplode.
+const PART_SOURCING = {
+  make: 'Produzione interna',
+  buy: 'Acquisto da fornitore',
 };
-function defaultPartCostMode() {
-  const d = db.settings && db.settings.partCostModeDefault;
-  return PART_COST_MODES[d] ? d : 'cycle';
+// Proposto alle parti NUOVE (Gestione → Impostazioni). Di serie è l'acquisto:
+// nella maggior parte dei casi la parte la lavora un terzista, e chi la produce
+// in casa è l'eccezione che si dichiara.
+function defaultPartSourcing() {
+  const d = db.settings && db.settings.partSourcingDefault;
+  return PART_SOURCING[d] ? d : 'buy';
 }
-function partCostMode(it) {
-  const m = it && it.costMode;
-  return PART_COST_MODES[m] ? m : defaultPartCostMode();
+// Attenzione: qui il ripiego è 'make', non il default delle impostazioni. Una
+// parte senza il campo è una parte di prima di questa funzione, e va lasciata
+// com'era: cambiare l'impostazione deve valere per le prossime, non riscrivere
+// il fabbisogno di quelle già a catalogo.
+function partSourcing(it) {
+  return (it && PART_SOURCING[it.sourcing]) ? it.sourcing : 'make';
 }
-function partCostModeOptions(sel) {
-  return Object.entries(PART_COST_MODES)
+function partSourcingOptions(sel) {
+  return Object.entries(PART_SOURCING)
     .map(([k, v]) => `<option value="${k}" ${k === sel ? 'selected' : ''}>${v}</option>`).join('');
 }
 

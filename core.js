@@ -11,9 +11,9 @@
 // ═══════════════════════════════════════════════════════════
 
 // Revisione in esecuzione, mostrata accanto al logo. Va tenuta allineata alla
-// voce in cima al changelog del README (l'app si copia a mano tra PC: sapere
+// voce in cima a CHANGELOG.md (l'app si copia a mano tra PC: sapere
 // quale revisione sta girando su una postazione è l'unico modo per capirlo).
-const APP_VERSION = '0.20.0';
+const APP_VERSION = '0.45.0';
 
 let currentUser = null;      // utente della sessione (null = schermata di accesso)
 let currentBomId = null;     // articolo prodotto attualmente aperto nelle Distinte
@@ -30,6 +30,7 @@ let rfqDirty = false;        // modifiche non salvate nell'editor RFQ (il docume
 let mrpView = 'list';        // 'list' | 'edit' — vista Fabbisogno materiali
 let currentPlanId = null;    // piano di produzione aperto
 let mrpGrouped = false;      // lista d'acquisto raggruppata per fornitore
+let mrpNet = false;          // fabbisogno netto (tolti esistente e in arrivo) invece che lordo
 let orderView = 'list';      // 'list' | 'edit'
 let currentOrderId = null;   // ordine aperto in editor
 let orderDirty = false;      // modifiche non salvate nell'editor ordine
@@ -41,6 +42,32 @@ let orderDirty = false;      // modifiche non salvate nell'editor ordine
 function cur() { return (db.settings && db.settings.currency) || '€'; }
 function fmtN(n) { return cur() + (Number(n) || 0).toFixed(2); }
 function esc(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
+
+// ─── L'unità di misura accanto al numero ───
+// Un numero senza unità è un numero da indovinare. «15» in una riga di
+// fabbisogno sono quindici pezzi o quindici metri? «3,20» è al pezzo o al chilo?
+// Chi ha scritto quella riga lo sa; chi la legge tre settimane dopo — o il
+// fornitore che riceve il PDF — no, e sbaglia in silenzio.
+//
+// Le quantità si formattavano già in due posti diversi (views-mrp e views-docs
+// ne avevano una copia a testa, identiche per caso): la definizione sta qui, una
+// sola, e con lei i tre modi di appiccicare un'unità a un numero.
+//
+//   fmtQty  15        →  "15"          quantità nuda (una colonna U.M. accanto)
+//   fmtUom  15, 'm'   →  "15 m"        quantità con la sua unità
+//   fmtPer  3.2, 'kg' →  "€3.20/kg"    prezzo o costo *per* unità
+//   labelUom('Scorta minima', 'm')     →  "Scorta minima (m)"
+//
+// L'unità vuota non produce niente: un articolo senza U.M. resta un numero
+// nudo, non "15 " con uno spazio in fondo o "15 (—)".
+function fmtQty(n) { n = Number(n) || 0; return Number.isInteger(n) ? String(n) : String(+n.toFixed(3)); }
+function uomSuffix(u) { return u ? ' ' + esc(u) : ''; }
+function fmtUom(n, u) { return fmtQty(n) + uomSuffix(u); }
+function fmtPer(n, u) { return fmtN(n) + (u ? '/' + esc(u) : ''); }
+function labelUom(testo, u) { return u ? `${testo} (${esc(u)})` : String(testo); }
+// L'unità di un articolo, pronta da appendere. `itemUom(null)` non lancia:
+// molte righe puntano ad articoli che possono essere spariti.
+function itemUom(it) { return (it && it.uom) || ''; }
 // ─── Indice articoli e cache dei costi ───
 // getItem era una scansione lineare di db.items, chiamata dentro costOf e per
 // ogni riga di catalogo. L'indice si ricostruisce da solo quando l'array cambia
@@ -54,6 +81,96 @@ function itemIndex() {
   return _itemIdx;
 }
 function getItem(id) { return itemIndex().get(id); }
+// ─── Indice per codice articolo ───
+// L'import cerca gli articoli per codice, una `db.items.find` per riga: un
+// foglio da 5.000 righe su un catalogo da 5.000 articoli sono ~50 milioni di
+// confronti. Serve anche al controllo di unicità del codice, che senza indice
+// costerebbe una scansione a ogni salvataggio.
+//
+// La chiave normalizza come faceva il confronto che sostituisce: senza spazi ai
+// bordi e senza distinzione di maiuscole. "M1" e " m1 " sono lo stesso codice.
+function itemCodeKey(code) { return String(code == null ? '' : code).trim().toLowerCase(); }
+let _codeIdx = null, _codeIdxArr = null, _codeIdxLen = -1;
+function codeIndex() {
+  if (_codeIdx && db.items === _codeIdxArr && db.items.length === _codeIdxLen) return _codeIdx;
+  const idx = new Map();
+  (db.items || []).forEach(i => {
+    const k = itemCodeKey(i.code);
+    // Il primo vince, come faceva il `.find()` che questo indice sostituisce:
+    // finché i duplicati sono possibili, il comportamento non deve cambiare.
+    if (k && !idx.has(k)) idx.set(k, i);
+  });
+  _codeIdx = idx; _codeIdxArr = db.items; _codeIdxLen = db.items.length;
+  return idx;
+}
+function getItemByCode(code) { const k = itemCodeKey(code); return k ? codeIndex().get(k) : undefined; }
+// Registra un articolo appena creato senza ricostruire l'indice. Serve
+// all'import, che aggiunge migliaia di righe prima del salvataggio: senza
+// questo, ogni riga farebbe scattare la ricostruzione (il push cambia la
+// lunghezza) e si tornerebbe al costo quadratico di prima.
+// Chi dimentica di chiamarla non rompe niente: la ricostruzione successiva
+// rimette tutto a posto, semplicemente costa.
+function codeIndexAdd(it) {
+  if (!_codeIdx || db.items !== _codeIdxArr) return;
+  const k = itemCodeKey(it && it.code);
+  if (k && !_codeIdx.has(k)) _codeIdx.set(k, it);
+  _codeIdxLen = db.items.length;
+}
+// Codici usati da più di un articolo. Oggi nulla lo impedisce, e l'import ci
+// inciampa in silenzio: risolve sempre sul primo trovato. Il report in
+// Gestione › Backup li mostra perché qualcuno decida quale tenere — rinominarli
+// da soli significherebbe cambiare un identificativo aziendale di nascosto.
+function duplicateCodeGroups() {
+  const per = new Map();
+  (db.items || []).forEach(i => {
+    const k = itemCodeKey(i.code);
+    if (!k) return;
+    let l = per.get(k);
+    if (!l) { l = []; per.set(k, l); }
+    l.push(i);
+  });
+  const out = [];
+  per.forEach((items, k) => { if (items.length > 1) out.push({ code: items[0].code, key: k, items }); });
+  return out.sort((a, b) => a.key.localeCompare(b.key));
+}
+// ─── Indici per fornitori e centri di lavoro ───
+// Stesso motivo dell'indice articoli: `db.suppliers.find(...)` compariva dentro
+// il disegno di ogni riga di elenco e di ogni lavorazione del rollup.
+let _supIdx = null, _wcIdx = null;
+function supplierIndex() {
+  if (!_supIdx) _supIdx = new Map((db.suppliers || []).map(s => [s.id, s]));
+  return _supIdx;
+}
+function getSupplier(id) { return id ? supplierIndex().get(id) : undefined; }
+function workCenterIndex() {
+  if (!_wcIdx) _wcIdx = new Map((db.workCenters || []).map(w => [w.id, w]));
+  return _wcIdx;
+}
+function getWorkCenter(id) { return id ? workCenterIndex().get(id) : undefined; }
+// ─── Indice inverso figlio → padri ───
+// usedBy() scansionava tutto il catalogo a ogni chiamata, e "Dove è usato" la
+// invoca una volta per antenato e una seconda per ogni riga della simulazione:
+// su un catalogo grande il costo diventava quadratico. L'indice si costruisce
+// una volta sola per giro di disegno, come quello degli articoli.
+let _parentIdx = null;
+function parentIndex() {
+  if (_parentIdx) return _parentIdx;
+  const idx = new Map();
+  const aggiungi = (childId, padre) => {
+    if (!childId) return;
+    let l = idx.get(childId);
+    if (!l) { l = []; idx.set(childId, l); }
+    // Lo stesso figlio può comparire più volte nella stessa distinta: il padre
+    // va elencato una volta sola, le quantità le somma usageQty().
+    if (l[l.length - 1] !== padre) l.push(padre);
+  };
+  (db.items || []).forEach(i => {
+    if (isAssembly(i.type)) (i.components || []).forEach(c => aggiungi(c.itemId, i));
+    else if (i.type === 'parte') (i.cycle || []).forEach(r => { if (r.kind !== 'op') aggiungi(r.itemId, i); });
+  });
+  _parentIdx = idx;
+  return idx;
+}
 // Risultati di costOf già calcolati in questo giro di rendering.
 let _costCache = new Map();
 // Azzera indice e cache. Chiamata da Store.commit() — l'unico punto di scrittura
@@ -61,6 +178,67 @@ let _costCache = new Map();
 function invalidateCaches() {
   _costCache.clear();
   _itemIdx = null; _itemIdxArr = null; _itemIdxLen = -1;
+  _codeIdx = null; _codeIdxArr = null; _codeIdxLen = -1;
+  _supIdx = null; _wcIdx = null; _parentIdx = null;
+  if (typeof invalidateStock === 'function') invalidateStock();   // sta in views-stock.js, caricato dopo
+  if (typeof invalidateItemDocs === 'function') invalidateItemDocs(); // sta in views-item.js, caricato dopo
+}
+// ─── Librerie esterne (PDF ed Excel) ───
+// Arrivano da CDN, ma l'app è fatta per aprirsi con un doppio click su file://
+// e girare anche offline. Senza rete `window.jspdf` semplicemente non esiste: la
+// destrutturazione lanciava un TypeError che nessuno intercettava e l'utente
+// premeva "Esporta" senza vedere accadere nulla.
+function requirePdf() {
+  const lib = typeof window !== 'undefined' && window.jspdf;
+  if (lib && lib.jsPDF) return lib.jsPDF;
+  showToast('Libreria PDF non disponibile: serve la connessione a internet al primo caricamento', 'error');
+  return null;
+}
+function requireXlsx() {
+  if (typeof XLSX !== 'undefined' && XLSX) return XLSX;
+  showToast('Libreria Excel non disponibile: serve la connessione a internet al primo caricamento', 'error');
+  return null;
+}
+// ─── Ridisegno che non fa perdere il posto ───
+// Riscrive l'innerHTML di un contenitore preservando ciò che un ridisegno
+// integrale butta via: lo scroll, il focus (ritrovato per id) e il punto di
+// digitazione. È la regola generale dietro le toppe che le viste si erano
+// scritte da sole — «ridisegna solo la lista», «salta il select se ha il
+// focus», «conserva il valore del campo».
+//
+// Due comportamenti da conoscere:
+// - se il focus è su un <select> dentro il contenitore, NON si ridisegna e si
+//   ritorna false: un menu a tendina aperto che si richiude sotto il mouse non
+//   si può "ripristinare", si può solo non rompere. Il chiamante ridisegnerà
+//   al giro successivo.
+// - il focus si ritrova per id: un campo attivo senza id non può essere
+//   ripristinato, e il ridisegno glielo toglie. I campi su cui si digita
+//   dentro un contenitore ridisegnabile devono avere un id.
+function renderInto(id, htmlFn) {
+  const host = typeof id === 'string' ? document.getElementById(id) : id;
+  if (!host) return false;
+  const att = document.activeElement;
+  const dentro = att && (att === host || (host.contains && host.contains(att)));
+  if (dentro && att.tagName === 'SELECT') return false;
+  const stato = dentro && att.id ? {
+    id: att.id, value: att.value,
+    selStart: att.selectionStart, selEnd: att.selectionEnd,
+  } : null;
+  const scrollTop = host.scrollTop, scrollLeft = host.scrollLeft;
+  host.innerHTML = htmlFn();
+  a11yFields(host);
+  host.scrollTop = scrollTop; host.scrollLeft = scrollLeft;
+  if (stato) {
+    const el = document.getElementById(stato.id);
+    if (el) {
+      if (el.value !== undefined && stato.value !== undefined) el.value = stato.value;
+      if (el.focus) el.focus();
+      if (stato.selStart != null && el.setSelectionRange) {
+        try { el.setSelectionRange(stato.selStart, stato.selEnd); } catch { /* tipi senza selezione (number, date…) */ }
+      }
+    }
+  }
+  return true;
 }
 // Indirizzo strutturato → righe di testo (per documenti) o riga singola (per liste)
 function addressLines(o) {
@@ -110,7 +288,7 @@ function roleGuard(area) {
   return false;
 }
 // Area di scrittura corrispondente a ciascuna vista (per il banner di sola lettura)
-const VIEW_AREA = { bom: 'bom', buy: 'catalog', design: 'catalog', cycles: 'catalog', report: null, mrp: 'docs', rfq: 'docs', orders: 'docs', manage: 'manage' };
+const VIEW_AREA = { home: null, bom: 'bom', buy: 'catalog', design: 'catalog', stock: 'catalog', cycles: 'catalog', report: null, jobs: 'docs', mrp: 'docs', rfq: 'docs', orders: 'docs', manage: 'manage' };
 
 // Le due viste di anagrafica: ciò che si compra e ciò che si progetta.
 // Ogni vista ha i suoi filtri (prefisso degli id nella pagina) e la creazione
@@ -144,6 +322,55 @@ function uomOptions(selected) {
   if (!sel) list.unshift({ code: '', name: '—' });
   return list.map(u => `<option value="${esc(u.code)}" ${u.code === sel ? 'selected' : ''}>${esc(u.code)}${u.name ? ' — ' + esc(u.name) : ''}</option>`).join('');
 }
+// ─── Doppia unità di misura: si gestisce in metri, si compra a chilo ───
+// Una barra si gestisce in metri — la distinta dice «2 m», il magazzino conta
+// metri — ma il fornitore quota **a chilo**. Senza conversione il prezzo del
+// listino finisce tale e quale nel costo dell'articolo, che risulta in €/kg
+// mentre le quantità sono in metri: il totale della distinta è sbagliato di un
+// fattore, in silenzio, e nessuno se ne accorge finché non arriva la fattura.
+// È l'errore peggiore che questa app possa fare — il numero c'è, è plausibile,
+// ed è falso.
+//
+// La divisione dei dati segue la natura di ciò che descrivono:
+//   `altUom` + `altFactor` stanno sull'**articolo**, perché sono fisica e non
+//   commercio: una barra pesa quel che pesa, uguale per tutti i fornitori.
+//   Duplicare il fattore su ogni quotazione vorrebbe dire poterlo sbagliare in
+//   un posto solo su cinque.
+//   `priceUom` sta sulla **riga di listino**: quella sì è una scelta del
+//   fornitore, e due fornitori possono quotare lo stesso articolo diversamente.
+//
+// Articoli senza `altUom` e righe senza `priceUom` si comportano esattamente
+// come prima: fattore 1, nessuna conversione, nessuna migrazione.
+function altUomOf(it) { return (it && it.altUom) ? String(it.altUom) : ''; }
+function altFactorOf(it) {
+  const f = Number(it && it.altFactor);
+  return isFinite(f) && f > 0 ? f : 0;
+}
+// Un'unità alternativa serve solo se ha anche un fattore: senza, sarebbe
+// un'etichetta che non converte niente e produrrebbe conti a caso.
+function hasAltUom(it) { return !!altUomOf(it) && altFactorOf(it) > 0 && altUomOf(it) !== (it.uom || ''); }
+// Quante `uom` stanno in 1 unità di gestione dell'articolo.
+// Sconosciuta o uguale a quella di gestione → 1, cioè nessuna conversione.
+function uomFactor(it, uom) {
+  if (!uom || !hasAltUom(it) || uom === (it.uom || '')) return 1;
+  return uom === altUomOf(it) ? altFactorOf(it) : 1;
+}
+// Gestione → altra unità (15 m → 120 kg)
+function toAltUom(it, qty, uom) { return (Number(qty) || 0) * uomFactor(it, uom); }
+// Altra unità → gestione (120 kg → 15 m). È la direzione che riporta a casa i
+// ricevimenti: il fornitore consegna chili, il magazzino conta metri.
+function fromAltUom(it, qty, uom) {
+  const f = uomFactor(it, uom);
+  return f > 0 ? (Number(qty) || 0) / f : (Number(qty) || 0);
+}
+// Le due unità di un articolo, per i menu a tendina. Una sola se non c'è la seconda.
+function itemUomOptions(it, selected) {
+  const uoms = [it.uom || ''];
+  if (hasAltUom(it)) uoms.push(altUomOf(it));
+  const sel = uoms.includes(selected) ? selected : uoms[0];
+  return uoms.map(u => `<option value="${esc(u)}" ${u === sel ? 'selected' : ''}>${esc(u)}</option>`).join('');
+}
+
 // ── Concetti (parte "standardizzata" del nome di una Parte) ──
 function conceptList() { return (db.settings && db.settings.concepts) || []; }
 function conceptById(id) { return conceptList().find(c => c.id === id); }
@@ -327,12 +554,47 @@ function codingLabel(it) {
   return gs ? ms + ' › ' + gs : ms;
 }
 
-function showToast(m, t = 'success') {
+// `azione` opzionale: { label, fn }. È l'annulla subito dopo un'eliminazione —
+// l'unico momento in cui serve davvero, perché è l'unico in cui l'utente sa
+// ancora cosa ha appena fatto. Andare a cercarlo nel cestino cinque minuti dopo
+// è un'altra cosa, e infatti il cestino c'è lo stesso.
+let _toastAzione = null, _toastTimer = null;
+const TOAST_MS = 2500, TOAST_AZIONE_MS = 7000;   // con un pulsante serve il tempo di leggerlo e cliccarlo
+function showToast(m, t = 'success', azione) {
   const el = document.getElementById('toast');
-  el.textContent = m;
+  if (!el) return;
+  _toastAzione = (azione && typeof azione.fn === 'function') ? azione.fn : null;
+  el.innerHTML = esc(m) + (_toastAzione
+    ? ` <button class="toast-action" onclick="toastAzione()">${esc(azione.label || 'Annulla')}</button>` : '');
   el.style.background = t === 'error' ? 'var(--red)' : 'var(--green)';
   el.classList.add('show');
-  setTimeout(() => el.classList.remove('show'), 2500);
+  clearTimeout(_toastTimer);
+  _toastTimer = setTimeout(() => { el.classList.remove('show'); _toastAzione = null; }, _toastAzione ? TOAST_AZIONE_MS : TOAST_MS);
+}
+function toastAzione() {
+  const fn = _toastAzione; _toastAzione = null;
+  const el = document.getElementById('toast'); if (el) el.classList.remove('show');
+  if (fn) fn();
+}
+// Elimina e offre di rimettere a posto. Da usare al posto di showToast dopo
+// ogni Store.remove: il record è nel cestino comunque, questo è solo il modo
+// più rapido di riaverlo.
+function toastEliminato(msg, onUndo) {
+  showToast(msg, 'success', { label: '↶ Annulla', fn: onUndo });
+}
+// Elimina, ridisegna, avvisa e offre di rimettere a posto: il gesto completo in
+// una riga sola, così nessun punto di eliminazione se lo dimentica per strada.
+// `dopo` è il ridisegno della vista, e viene richiamato anche al ripristino.
+function removeConUndo(coll, id, msg, dopo) {
+  if (!Store.remove(coll, id)) return false;
+  const voce = Store.lastRemoved();
+  if (typeof dopo === 'function') dopo();
+  toastEliminato(msg, () => {
+    Store.restore(voce);
+    if (typeof dopo === 'function') dopo();
+    showToast('Ripristinato');
+  });
+  return true;
 }
 // ─── Esito del salvataggio locale ───
 // Hook chiamati da Store.commit(). Quando localStorage rifiuta la scrittura
@@ -380,6 +642,68 @@ function renderUnsavedBadge() {
   el.title = aperto ? 'Le ultime modifiche sono rimaste solo in memoria: esporta un backup prima di chiudere la scheda' : '';
 }
 
+// ─── Errori non previsti ───
+// Fuori da store.js non c'era nessuna rete: un'eccezione dentro un render*
+// lasciava la vista a metà — mezza tabella, un pannello vuoto — senza dire
+// niente. L'utente vedeva l'app "ferma" e non aveva modo di sapere che era
+// successo qualcosa, né di raccontarlo a chi doveva ripararla.
+//
+// Qui non si tenta nessun recupero: un errore in un render lascia comunque uno
+// stato incerto, e fingere che sia tutto a posto è peggio che dirlo. Si fa
+// l'unica cosa utile — renderlo visibile e conservarlo.
+const ERROR_LOG_MAX = 20;    // gli ultimi errori: quanto basta a raccontare cos'è successo
+const _errorLog = [];
+function logAppError(kind, msg, err) {
+  const rec = {
+    ts: nowISO(),
+    kind,
+    msg: String(msg || ''),
+    stack: err && err.stack ? String(err.stack).split('\n').slice(0, 8).join('\n') : '',
+    view: typeof activeView !== 'undefined' ? activeView : '',
+    version: APP_VERSION,
+  };
+  _errorLog.push(rec);
+  if (_errorLog.length > ERROR_LOG_MAX) _errorLog.shift();
+  return rec;
+}
+function appErrorLog() { return _errorLog.slice(); }
+// Come per il salvataggio: la finestra esplicativa si mostra una volta sola,
+// poi restano il toast e il registro. Ripeterla a ogni errore di un render che
+// fallisce a ripetizione renderebbe l'app inutilizzabile.
+let appErrorShown = false;
+function onAppError(kind, msg, err) {
+  const rec = logAppError(kind, msg, err);
+  if (typeof console !== 'undefined') console.error('Errore non gestito (' + kind + '):', msg, err || '');
+  if (typeof document === 'undefined' || !document.getElementById('toast')) return rec;
+  showToast('Si è verificato un errore: la schermata potrebbe essere incompleta', 'error');
+  if (!appErrorShown) {
+    appErrorShown = true;
+    setTimeout(() => showAppErrorModal(rec), 0);
+  }
+  return rec;
+}
+function showAppErrorModal(rec) {
+  openModal(`<h3>⚠ Errore non previsto</h3>
+    <p>Qualcosa è andato storto mentre l'app disegnava la pagina: <strong>quello che vedi a schermo potrebbe essere incompleto</strong>. I dati salvati non sono stati toccati.</p>
+    <p>Ricarica la pagina per tornare a uno stato pulito. Se l'errore si ripete, scarica il registro e allegalo alla segnalazione.</p>
+    <p class="muted" style="font-family:var(--mono,monospace);font-size:12px">${esc(rec.msg)}</p>
+    <div class="modal-actions">
+      <button class="btn-ghost" onclick="closeModal()">Ho capito</button>
+      <button class="btn-ghost" onclick="downloadErrorLog()">⬇ Scarica registro errori</button>
+      <button class="add-btn-sm" onclick="location.reload()">↻ Ricarica la pagina</button>
+    </div>`, false, 'avviso');
+}
+function downloadErrorLog() {
+  if (!_errorLog.length) { showToast('Nessun errore registrato in questa sessione'); return; }
+  const testo = _errorLog.map(r =>
+    `[${r.ts}] ${r.kind} · vista: ${r.view} · Bomtrack ${r.version}\n${r.msg}\n${r.stack}`).join('\n\n───\n\n');
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([testo], { type: 'text/plain' }));
+  a.download = `bomtrack-errori-${new Date().toISOString().slice(0, 10)}.txt`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
 // ─── Pannelli ───
 // Le schede non oscurano più la pagina: sono finestre mobili appoggiate sopra
 // il contenuto, si spostano trascinandole per il titolo e si ridimensionano
@@ -410,13 +734,82 @@ function openModal(h, wide, key) {
   if (nuovo) {
     p = document.createElement('div');
     p.dataset.panelKey = k;
+    // Una scheda è un dialogo: chi naviga con un lettore di schermo deve
+    // sentirsi dire che ne è stata aperta una, non trovarsi del testo nuovo
+    // in mezzo alla pagina senza sapere da dove arriva.
+    p.setAttribute('role', 'dialog');
+    p.setAttribute('aria-modal', 'true');
+    // Dove tornare quando si chiude: senza, il focus finisce a inizio pagina e
+    // chi usa la tastiera deve rifare tutta la strada per riprendere il lavoro.
+    p._focusPrima = document.activeElement || null;
     root.appendChild(p);
   }
   p.className = 'panel' + (wide ? ' panel-wide' : '');
-  p.innerHTML = `<button class="panel-x" title="Chiudi (Esc)" onclick="closePanel(this.parentNode)">✕</button>${h}`;
+  p.innerHTML = `<button class="panel-x" title="Chiudi (Esc)" aria-label="Chiudi (Esc)" onclick="closePanel(this.parentNode)">✕</button>${h}`;
   if (nuovo) panelPlace(p);
   panelRaise(p);
+  a11yFields(p);
+  panelFocus(p);
   return p;
+}
+// ─── Etichette, pulsanti-icona e titolo della scheda ───
+// I template scrivono `<div class="modal-field"><label>Nome</label><input id="…">`:
+// l'associazione fra i due c'è per posizione ma non per il browser, quindi
+// cliccare l'etichetta non mette a fuoco il campo e un lettore di schermo
+// annuncia «casella di testo» senza dire di cosa. Collegarli a mano avrebbe
+// voluto dire centocinquanta modifiche e centocinquanta occasioni di sbagliare
+// un id; qui si fa una volta, sulla struttura, e vale anche per i form che
+// verranno.
+//
+// Stessa logica per i pulsanti a sola icona (✏ 🗑 🔗 ★): il `title` che hanno
+// già dice cosa fanno a chi passa il mouse, e diventa l'etichetta accessibile
+// per chi non lo usa.
+let _a11ySeq = 0;
+function a11yFields(host) {
+  if (!host || !host.querySelectorAll) return;
+  host.querySelectorAll('.modal-field').forEach(f => {
+    const lab = f.querySelector('label');
+    if (!lab || lab.getAttribute('for')) return;
+    const campo = f.querySelector('input, select, textarea');
+    if (!campo) return;
+    if (!campo.id) campo.id = 'a11y-' + (++_a11ySeq);
+    lab.setAttribute('for', campo.id);
+  });
+  host.querySelectorAll('button[title]').forEach(b => {
+    if (b.getAttribute('aria-label')) return;
+    // Solo i pulsanti che non hanno un testo leggibile: dove c'è già una
+    // parola, ripeterla nell'etichetta la farebbe annunciare due volte.
+    const txt = (b.textContent || '').replace(/[^\p{L}\p{N}]/gu, '').trim();
+    if (!txt) b.setAttribute('aria-label', b.getAttribute('title'));
+  });
+  // Il titolo della scheda le dà un nome: senza, un dialogo si annuncia senza
+  // dire quale.
+  if (host.getAttribute && host.getAttribute('role') === 'dialog' && !host.getAttribute('aria-label')) {
+    const h3 = host.querySelector('h3');
+    if (h3 && h3.textContent) host.setAttribute('aria-label', h3.textContent.trim());
+  }
+}
+// ─── Righe e simboli cliccabili, raggiungibili anche da tastiera ───
+// Un `<div onclick>` è invisibile alla tastiera: non si può raggiungere col
+// tabulatore e Invio non lo attiva. Chi non usa il mouse — per abitudine o
+// perché non può — resta fuori da quella funzione senza che nulla glielo dica.
+// Questi attributi sono lo stesso patto che `codeLink` rispetta da sempre:
+// dichiararsi pulsante, entrare nel giro del tabulatore, rispondere a Invio e
+// alla barra spaziatrice. `azione` è la stessa chiamata che sta nell'onclick.
+function clickAttrs(azione, etichetta) {
+  const a = String(azione);
+  return `role="button" tabindex="0" onclick="${a}"`
+    + ` onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();${a}}"`
+    + (etichetta ? ` aria-label="${esc(etichetta)}"` : '');
+}
+// Il focus entra nella scheda appena aperta: sul primo campo da compilare, o —
+// se non ce ne sono — sul primo pulsante, che nelle conferme è sempre quello
+// che **non** fa danni.
+function panelFocus(p) {
+  if (!p || !p.querySelector) return;
+  const primo = p.querySelector('input:not([type="hidden"]):not([disabled]), select:not([disabled]), textarea:not([disabled])')
+    || p.querySelector('.modal-actions button');
+  if (primo && primo.focus) setTimeout(() => primo.focus(), 0);
 }
 // Il primo pannello al centro, i successivi a scalare: due schede aperte non
 // devono coprirsi esattamente, altrimenti sembra che sia una sola.
@@ -450,8 +843,12 @@ function panelTop() {
     (best, el) => (!best || (+el.style.zIndex || 0) >= (+best.style.zIndex || 0)) ? el : best, null);
 }
 function closePanel(p) {
+  const torna = p && p._focusPrima;
   if (p && p.parentNode) p.parentNode.removeChild(p);
   if (!panelRoot() || !panelRoot().children.length) _panelZ = PANEL_Z;   // gli z-index non crescono all'infinito
+  // Il focus torna da dove era partito: chi ha aperto la scheda dal pulsante ✏
+  // di una riga si ritrova su quel pulsante, non a inizio pagina.
+  if (torna && torna.focus && torna.parentNode) torna.focus();
 }
 // Chiude la scheda in primo piano: le decine di "Annulla" e i salvataggi che
 // chiamano closeModal() intendono sempre quella con cui si sta lavorando.
@@ -545,6 +942,20 @@ if (typeof document !== 'undefined') {
   // Il Ctrl+P del browser deve trovare l'intestazione già compilata.
   // Riferimento differito: printHeadFill sta in uno script caricato dopo questo.
   window.addEventListener('beforeprint', () => printHeadFill());
+  // Rete per tutto ciò che non ha un try/catch proprio. `error` cattura anche il
+  // caricamento fallito degli script CDN, che però hanno già le loro guardie
+  // (requirePdf/requireXlsx) e non vanno segnalati due volte.
+  window.addEventListener('error', e => {
+    if (e.target && e.target !== window && e.target.tagName) return;   // risorsa non caricata, non un'eccezione
+    onAppError('errore', e.message || 'errore sconosciuto', e.error);
+  });
+  // Indietro/Avanti del browser e link con hash: la navigazione risponde
+  // all'indirizzo. Riferimento differito: onHashChange sta in shell.js.
+  window.addEventListener('hashchange', () => onHashChange());
+  window.addEventListener('unhandledrejection', e => {
+    const r = e.reason;
+    onAppError('promessa', r && r.message ? r.message : String(r), r instanceof Error ? r : null);
+  });
 }
 function val(id) { const e = document.getElementById(id); return e ? e.value.trim() : ''; }
 function setVal(id, v) { const e = document.getElementById(id); if (e) e.value = v; }

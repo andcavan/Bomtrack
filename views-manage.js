@@ -41,6 +41,7 @@ function renderManage() {
   else if (mgmtTab === 'settings') c.innerHTML = renderSettings();
   else if (mgmtTab === 'import') c.innerHTML = renderImport();
   else if (mgmtTab === 'backup') c.innerHTML = renderBackup();
+  a11yFields(c);
 }
 function setMgmtTab(t) { mgmtTab = t; renderManage(); }
 
@@ -93,8 +94,8 @@ function addUser() {
   const u = { id: gid(), name, username: val('nu-username'), email, role: val('nu-role') || 'lettore',
     color: safeColor(val('nu-color')), active: true };
   setUserPassword(u, pwd);
-  db.users.push(stampNew(u));
-  saveDB(); renderManage(); showToast('Utente creato');
+  Store.insert('users', u);
+  renderManage(); showToast('Utente creato');
 }
 function editUserModal(id) {
   if (!roleGuard('manage')) return;
@@ -160,8 +161,7 @@ function delUser(id) {
   if (currentUser && id === currentUser.id) { showToast('Non puoi eliminare te stesso', 'error'); return; }
   if (u.role === 'admin' && !activeAdmins(id).length) { showToast('Deve restare almeno un amministratore attivo', 'error'); return; }
   askConfirm(`Eliminare l'utente "${u.name}"? I record che ha creato restano, con il riferimento all'autore.`, () => {
-    db.users = db.users.filter(x => x.id !== id);
-    saveDB(); renderManage(); showToast('Utente eliminato');
+    removeConUndo('users', id, `Utente "${u.name}" eliminato`, renderManage);
   });
 }
 
@@ -185,6 +185,7 @@ function renderTerms() {
     ${sect('payment', '💳 Tipi di pagamento', s.paymentDefault)}</div>`;
 }
 function termsAdd(kind) {
+  if (!roleGuard('manage')) return;
   const v = val('terms-' + kind + '-new'); if (!v) { showToast('Valore richiesto', 'error'); return; }
   const key = kind + 'Options';
   db.settings[key] = db.settings[key] || [];
@@ -193,6 +194,7 @@ function termsAdd(kind) {
   saveDB(); renderManage(); showToast('Aggiunto');
 }
 function termsDel(kind, i) {
+  if (!roleGuard('manage')) return;
   const key = kind + 'Options', arr = db.settings[key] || [];
   const v = arr[i]; if (v == null) return;
   db.settings[key] = arr.filter((_, idx) => idx !== i);
@@ -200,6 +202,7 @@ function termsDel(kind, i) {
   saveDB(); renderManage(); showToast('Eliminato');
 }
 function termsSetDefault(kind, i) {
+  if (!roleGuard('manage')) return;
   const arr = db.settings[kind + 'Options'] || [];
   const v = arr[i]; if (v == null) return;
   db.settings[kind + 'Default'] = (db.settings[kind + 'Default'] === v) ? '' : v;
@@ -222,6 +225,7 @@ function renderCompany() {
     <button class="add-btn-sm" onclick="saveCompany()">Salva dati azienda</button></div>`;
 }
 function saveCompany() {
+  if (!roleGuard('manage')) return;
   db.settings.company = Object.assign({
     name: val('co-name'), referente: val('co-ref'), email: val('co-email'),
     phone: val('co-phone'), vat: val('co-vat'),
@@ -249,11 +253,12 @@ function renderSuppliers() {
     <p class="empty-text" style="text-align:left;padding:6px 0 0">Indirizzo completo e P.IVA si inseriscono con ✏ Modifica.</p></div>`;
 }
 function addSupplier() {
+  if (!roleGuard('manage')) return;
   const n = val('sup-name'); if (!n) { showToast('Nome richiesto', 'error'); return; }
-  db.suppliers.push(stampNew({ id: gid(), name: n, referente: val('sup-ref'), email: val('sup-email'),
+  Store.insert('suppliers', { id: gid(), name: n, referente: val('sup-ref'), email: val('sup-email'),
     phone: val('sup-phone'), vat: '', street: '', streetNumber: '', zip: '', city: '', province: '', country: '',
-    defaultTransport: '', defaultPayment: '', active: true }));
-  saveDB(); renderManage(); showToast('Fornitore aggiunto');
+    defaultTransport: '', defaultPayment: '', active: true });
+  renderManage(); showToast('Fornitore aggiunto');
 }
 function addressFieldsHtml(pfx, o) {
   o = o || {};
@@ -289,6 +294,7 @@ function editSupplierModal(id) {
       <button class="add-btn-sm" onclick="saveSupplier('${id}')">Salva</button></div>`, true);
 }
 function saveSupplier(id) {
+  if (!roleGuard('manage')) return;
   const s = db.suppliers.find(x => x.id === id); if (!s) return;
   s.name = val('es-name'); s.referente = val('es-ref'); s.email = val('es-email');
   s.phone = val('es-phone'); s.vat = val('es-vat');
@@ -297,11 +303,30 @@ function saveSupplier(id) {
   touch(s);
   saveDB(); closeModal(); renderManage(); showToast('Aggiornato');
 }
+// Dove compare un fornitore: articoli, quotazioni a listino, documenti e
+// lavorazioni esterne di ciclo. Controllare i soli articoli lasciava riferimenti
+// orfani — uno storico prezzi che punta a un fornitore che non esiste più.
+function supplierUses(id) {
+  const usi = [];
+  const n = (a) => a.length;
+  const articoli = (db.items || []).filter(i => i.supplierId === id);
+  if (n(articoli)) usi.push(articoli.length + (articoli.length === 1 ? ' articolo' : ' articoli'));
+  const quotati = (db.items || []).filter(i => (i.priceList || []).some(r => r.supplierId === id));
+  if (n(quotati)) usi.push(quotati.length + (quotati.length === 1 ? ' listino' : ' listini'));
+  const cicli = (db.items || []).filter(i => (i.cycle || []).some(r => r.kind === 'op' && r.supplierId === id));
+  if (n(cicli)) usi.push(cicli.length + (cicli.length === 1 ? ' ciclo' : ' cicli'));
+  const rfqs = (db.rfqs || []).filter(r => r.supplierId === id);
+  if (n(rfqs)) usi.push(rfqs.length + (rfqs.length === 1 ? ' richiesta' : ' richieste'));
+  const ordini = (db.orders || []).filter(o => o.supplierId === id);
+  if (n(ordini)) usi.push(ordini.length + (ordini.length === 1 ? ' ordine' : ' ordini'));
+  return usi;
+}
 function delSupplier(id) {
-  const used = db.items.filter(i => i.supplierId === id);
-  if (used.length) { showToast('Fornitore usato da ' + used.length + ' articoli', 'error'); return; }
+  if (!roleGuard('manage')) return;
+  const usi = supplierUses(id);
+  if (usi.length) { showToast('Fornitore usato in: ' + usi.join(', '), 'error'); return; }
   askConfirm('Eliminare il fornitore?', () => {
-    db.suppliers = db.suppliers.filter(x => x.id !== id); saveDB(); renderManage(); showToast('Eliminato');
+    removeConUndo('suppliers', id, 'Fornitore eliminato', renderManage);
   });
 }
 
@@ -340,11 +365,12 @@ function renderFamilies(kind) {
       <button class="add-btn-sm" onclick="addFamily('${kind}')">+ Aggiungi macrofamiglia</button></div></div></div>`;
 }
 function addFamily(kind) {
+  if (!roleGuard('manage')) return;
   kind = kind || 'acquistato';
   const n = val('fam-name-' + kind); if (!n) { showToast('Nome richiesto', 'error'); return; }
   const sg = val('fam-sigla-' + kind);
-  db.families.push(stampNew({ id: gid(), name: n, kind, sigla: sg ? sg.toUpperCase() : siglaFromName(n), subs: [] }));
-  saveDB(); renderManage(); showToast('Macrofamiglia aggiunta');
+  Store.insert('families', { id: gid(), name: n, kind, sigla: sg ? sg.toUpperCase() : siglaFromName(n), subs: [] });
+  renderManage(); showToast('Macrofamiglia aggiunta');
 }
 function editFamilyModal(id) {
   const f = getFamily(id); if (!f) return;
@@ -357,6 +383,7 @@ function editFamilyModal(id) {
       <button class="add-btn-sm" onclick="saveFamily('${id}')">Salva</button></div>`);
 }
 function saveFamily(id) {
+  if (!roleGuard('manage')) return;
   const f = getFamily(id); if (!f) return;
   f.name = val('ef-name') || f.name;
   const sg = val('ef-sigla'); f.sigla = sg ? sg.toUpperCase() : siglaFromName(f.name);
@@ -364,14 +391,15 @@ function saveFamily(id) {
   saveDB(); closeModal(); renderManage(); showToast('Aggiornata');
 }
 function delFamily(id) {
+  if (!roleGuard('manage')) return;
   const used = db.items.filter(i => i.familyId === id);
   if (used.length) { showToast('Famiglia usata da ' + used.length + ' articoli', 'error'); return; }
   askConfirm('Eliminare la macrofamiglia e le sue sottofamiglie?', () => {
-    db.families = db.families.filter(f => f.id !== id);
-    saveDB(); renderManage(); showToast('Eliminata');
+    removeConUndo('families', id, 'Macrofamiglia eliminata', renderManage);
   });
 }
 function addSubFamily(familyId) {
+  if (!roleGuard('manage')) return;
   const f = getFamily(familyId); if (!f) return;
   const n = val('sub-name-' + familyId); if (!n) { showToast('Nome richiesto', 'error'); return; }
   if (!f.subs) f.subs = [];
@@ -391,6 +419,7 @@ function editSubFamilyModal(familyId, subId) {
       <button class="add-btn-sm" onclick="saveSubFamily('${familyId}','${subId}')">Salva</button></div>`);
 }
 function saveSubFamily(familyId, subId) {
+  if (!roleGuard('manage')) return;
   const f = getFamily(familyId); const s = f && (f.subs || []).find(x => x.id === subId); if (!s) return;
   s.name = val('esf-name') || s.name;
   const sg = val('esf-sigla'); s.sigla = sg ? sg.toUpperCase() : siglaFromName(s.name);
@@ -398,6 +427,7 @@ function saveSubFamily(familyId, subId) {
   saveDB(); closeModal(); renderManage(); showToast('Aggiornata');
 }
 function delSubFamily(familyId, subId) {
+  if (!roleGuard('manage')) return;
   const used = db.items.filter(i => i.subFamilyId === subId);
   if (used.length) { showToast('Sottofamiglia usata da ' + used.length + ' articoli', 'error'); return; }
   askConfirm('Eliminare la sottofamiglia?', () => {
@@ -417,14 +447,15 @@ function renderWorkCenters() {
   return `<div class="mgmt-panel"><div class="mgmt-list">${list}</div>
     <div class="mgmt-form">
       <input id="wc-name" placeholder="Nome (es. Tornitura)">
-      <input id="wc-rate" type="number" min="0" step="0.5" placeholder="Tariffa €/h">
+      <input id="wc-rate" type="number" min="0" step="0.5" placeholder="Tariffa ${esc(cur())}/h" title="Tariffa oraria del centro di lavoro, in ${esc(cur())} per ora">
       <button class="add-btn-sm" onclick="addWc()">+ Aggiungi</button></div></div>`;
 }
 function addWc() {
+  if (!roleGuard('manage')) return;
   const n = val('wc-name'); if (!n) { showToast('Nome richiesto', 'error'); return; }
   if (isNeg('wc-rate')) { showToast('La tariffa non può essere negativa', 'error'); return; }
-  db.workCenters.push(stampNew({ id: gid(), name: n, hourlyRate: numVal('wc-rate', 0), active: true }));
-  saveDB(); renderManage(); showToast('Centro di lavoro aggiunto');
+  Store.insert('workCenters', { id: gid(), name: n, hourlyRate: numVal('wc-rate', 0), active: true });
+  renderManage(); showToast('Centro di lavoro aggiunto');
 }
 function editWcModal(id) {
   const w = db.workCenters.find(x => x.id === id); if (!w) return;
@@ -435,6 +466,7 @@ function editWcModal(id) {
       <button class="add-btn-sm" onclick="saveWc('${id}')">Salva</button></div>`);
 }
 function saveWc(id) {
+  if (!roleGuard('manage')) return;
   const w = db.workCenters.find(x => x.id === id); if (!w) return;
   if (isNeg('ew-rate')) { showToast('La tariffa non può essere negativa', 'error'); return; }
   w.name = val('ew-name'); w.hourlyRate = numVal('ew-rate', 0);
@@ -442,10 +474,11 @@ function saveWc(id) {
   saveDB(); closeModal(); renderManage(); showToast('Aggiornato');
 }
 function delWc(id) {
+  if (!roleGuard('manage')) return;
   const used = db.items.filter(i => (i.operations || []).some(o => o.workCenterId === id));
   if (used.length) { showToast('Usato in ' + used.length + ' distinte', 'error'); return; }
   askConfirm('Eliminare il centro di lavoro?', () => {
-    db.workCenters = db.workCenters.filter(x => x.id !== id); saveDB(); renderManage(); showToast('Eliminato');
+    removeConUndo('workCenters', id, 'Centro di lavoro eliminato', renderManage);
   });
 }
 
@@ -540,6 +573,7 @@ function renderUoms() {
       <button class="add-btn-sm" onclick="addUom()">+ Aggiungi</button></div></div>`;
 }
 function addUom() {
+  if (!roleGuard('manage')) return;
   const code = val('uom-code'); if (!code) { showToast('Codice richiesto', 'error'); return; }
   if (uomList().some(u => u.code === code)) { showToast('Unità di misura già presente', 'error'); return; }
   db.settings.uoms.push({ code, name: val('uom-name') });
@@ -554,6 +588,7 @@ function editUomModal(i) {
       <button class="add-btn-sm" onclick="saveUom(${i})">Salva</button></div>`);
 }
 function saveUom(i) {
+  if (!roleGuard('manage')) return;
   const u = uomList()[i]; if (!u) return;
   const code = val('eu-code'); if (!code) { showToast('Codice richiesto', 'error'); return; }
   if (code !== u.code && uomList().some((x, j) => j !== i && x.code === code)) { showToast('Codice già in uso', 'error'); return; }
@@ -569,6 +604,7 @@ function renameUom(oldCode, newCode) {
   if (db.settings.uomDefault === oldCode) db.settings.uomDefault = newCode;
 }
 function delUom(i) {
+  if (!roleGuard('manage')) return;
   const u = uomList()[i]; if (!u) return;
   const used = uomUsage(u.code);
   if (used) { showToast(`Usata in ${used} tra articoli e righe documento`, 'error'); return; }
@@ -579,6 +615,7 @@ function delUom(i) {
   });
 }
 function uomSetDefault(i) {
+  if (!roleGuard('manage')) return;
   const u = uomList()[i]; if (!u) return;
   db.settings.uomDefault = u.code;
   saveDB(); renderManage();
@@ -592,9 +629,9 @@ function renderSettings() {
       <div class="modal-field"><label>Spese generali / overhead (%)</label><input type="number" id="set-ov" min="0" max="1000" step="0.1" value="${s.overheadPct}"></div>
       <div class="modal-field"><label>Margine / markup (%)</label><input type="number" id="set-mg" min="0" max="1000" step="0.1" value="${s.marginPct}"></div>
       <div class="modal-field"><label>Simbolo valuta</label><input id="set-cur" value="${esc(s.currency)}" maxlength="3"></div>
-      <div class="modal-field"><label>Calcolo costo parte (default)</label><select id="set-partcost">${partCostModeOptions(defaultPartCostMode())}</select></div>
+      <div class="modal-field"><label>Approvvigionamento parte (default)</label><select id="set-partsourcing">${partSourcingOptions(defaultPartSourcing())}</select></div>
     </div>
-    <p class="empty-text" style="text-align:left;padding:4px 0 12px">Le percentuali sono i valori di default applicati a tutti i prodotti. Si possono sovrascrivere per singola macchina dalla "Modifica testata".<br>Il calcolo del costo parte è quello proposto alle <strong>nuove</strong> parti: su ciascuna resta poi modificabile nella sua scheda.</p>
+    <p class="empty-text" style="text-align:left;padding:4px 0 12px">Le percentuali sono i valori di default applicati a tutti i prodotti. Si possono sovrascrivere per singola macchina dalla "Modifica testata".<br>L'approvvigionamento è quello proposto alle <strong>nuove</strong> parti, e da esso dipende anche da dove viene il costo: dal ciclo se prodotta in casa, dal listino se acquistata. Su ciascuna parte resta modificabile nella sua scheda; quelle già a catalogo non si toccano.</p>
 
     <h3 class="settings-group-title">🏷 Codifica automatica articoli</h3>
     <div class="modal-grid">
@@ -605,6 +642,12 @@ function renderSettings() {
     </div>
     <p class="empty-text" style="text-align:left;padding:4px 0 12px">Le cifre della parte incrementale determinano lo zero-padding del progressivo (es. 3 → <span style="font-family:var(--mono)">${esc(s.codePrefixMateriale || 'MAT')}-ACC-LAM-001</span>). Il prefisso codice è la sigla iniziale usata nei codici automatici per commerciali, materie prime e parti.<br>Macchine, gruppi, sottogruppi e le parti legate a una macchina usano invece la <strong>codifica gerarchica</strong> (es. <span style="font-family:var(--mono)">TRN-BAS-001</span>), il cui schema si configura sulla singola macchina.</p>
 
+    <h3 class="settings-group-title">🔒 Accesso</h3>
+    <div class="modal-grid">
+      <div class="modal-field"><label>Durata della sessione salvata (giorni)</label><input type="number" id="set-session" min="0" max="365" step="1" value="${sessionMaxDays()}"></div>
+    </div>
+    <p class="empty-text" style="text-align:left;padding:4px 0 12px">Passati questi giorni dall'ultimo accesso, "Ricordami su questo PC" smette di valere e va reinserita la password. <strong>0 = la sessione non scade mai</strong> (com'era fino alla 0.21.0): comodo su un PC personale, meno su una postazione condivisa in officina.</p>
+
     <button class="add-btn-sm" onclick="saveSettings()">Salva impostazioni</button></div>`;
 }
 function saveSettings() {
@@ -613,12 +656,13 @@ function saveSettings() {
   db.settings.overheadPct = numVal('set-ov', 0, 1000);
   db.settings.marginPct = numVal('set-mg', 0, 1000);
   db.settings.currency = val('set-cur') || '€';
-  const pcm = val('set-partcost');
-  db.settings.partCostModeDefault = PART_COST_MODES[pcm] ? pcm : 'cycle';
+  const pso = val('set-partsourcing');
+  db.settings.partSourcingDefault = PART_SOURCING[pso] ? pso : 'buy';
   const d = parseInt(val('set-digits'), 10);
   db.settings.codeDigits = (d >= 1 && d <= 10) ? d : 3;
   db.settings.codePrefixAcquistato = (val('set-pfx-acq') || 'CMM').toUpperCase();
   db.settings.codePrefixMateriale = (val('set-pfx-mat') || 'MAT').toUpperCase();
   db.settings.codePrefixParte = (val('set-pfx-prt') || 'PRT').toUpperCase();
+  db.settings.sessionDays = numVal('set-session', 0, 365);
   saveDB(); renderManage(); showToast('Impostazioni salvate');
 }

@@ -7,6 +7,12 @@ input,select,button,textarea{font-family:var(--font)}
 /* Toast */
 #toast{position:fixed;top:16px;right:16px;padding:10px 20px;border-radius:8px;color:#fff;font-weight:600;z-index:999;font-size:13px;box-shadow:0 4px 20px rgba(0,0,0,.4);transform:translateY(-20px);opacity:0;transition:all .25s ease;pointer-events:none}
 #toast.show{transform:translateY(0);opacity:1}
+/* Col pulsante l'avviso deve essere cliccabile: pointer-events resta none
+   finché non c'è niente da cliccare, così un toast non intercetta i click. */
+#toast.show:has(.toast-action){pointer-events:auto}
+.toast-action{margin-left:10px;background:rgba(255,255,255,.22);border:1px solid rgba(255,255,255,.5);color:#fff;
+  font-weight:700;font-size:12px;padding:3px 10px;border-radius:6px;cursor:pointer}
+.toast-action:hover{background:rgba(255,255,255,.35)}
 
 /* Modal */
 /* Le schede sono finestre mobili, non modali: niente velo scuro sopra la
@@ -38,6 +44,25 @@ input,select,button,textarea{font-family:var(--font)}
 .gs-meta{margin-left:auto;color:var(--text-dim);font-size:11px;white-space:nowrap;padding-left:10px}
 /* Autore e data delle modifiche, in fondo alle schede */
 .stamp-line{margin-top:14px;padding-top:10px;border-top:1px solid var(--border);color:var(--text-dim);font-size:11px}
+
+/* Un codice a catalogo è sempre cliccabile e apre la scheda di sola lettura.
+   La sottolineatura punteggiata è il segnale: senza, un codice cliccabile e uno
+   che non lo è si assomigliano troppo, e si prova a cliccare quello sbagliato.
+   Il font e la dimensione si ereditano di proposito — questo stile si applica
+   dentro tabelle, alberi e titoli, e non deve riscriverne la tipografia. */
+.code-link{font-family:inherit;color:inherit;cursor:pointer;border-bottom:1px dotted var(--text-dim);transition:color .12s,border-color .12s}
+.code-link:hover,.code-link:focus{color:var(--accent);border-bottom-color:var(--accent);outline:none}
+.code-link:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:2px}
+
+/* Griglia etichetta/valore della scheda di sola lettura. A schermo stretto le
+   due colonne diventano una: un valore lungo schiacciato in mezza riga è
+   illeggibile, e questa scheda esiste per essere letta. */
+.info-grid{display:grid;grid-template-columns:minmax(140px,auto) 1fr;gap:4px 16px;margin:0 0 14px;font-size:13px}
+.info-row{display:contents}
+.info-key{color:var(--text-dim)}
+.info-val{min-width:0;overflow-wrap:anywhere}
+@media(max-width:640px){.info-grid{grid-template-columns:1fr;gap:0 0}
+  .info-key{margin-top:8px;font-size:11px}}
 .picker-results{margin-top:6px;max-height:240px;overflow-y:auto;border:1px solid var(--border);border-radius:8px;background:var(--bg)}
 .picker-results:empty{display:none}
 .picker-row{padding:8px 12px;font-size:13px;cursor:pointer;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;transition:background .12s}
@@ -120,6 +145,7 @@ input,select,button,textarea{font-family:var(--font)}
 .kpi-card.green .kpi-value{color:var(--green)}
 .kpi-card.orange .kpi-value{color:var(--orange)}
 .kpi-card.purple .kpi-value{color:var(--purple)}
+.kpi-card.red .kpi-value{color:var(--red)}
 
 /* Breakdown bars */
 .breakdown-section{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:24px}
@@ -191,9 +217,10 @@ input,select,button,textarea{font-family:var(--font)}
 .cycle-picker-box .search:focus{border-color:var(--accent)}
 /* Vista Cicli di lavorazione */
 .cyc-part-select{flex:1;min-width:240px}
-.cycle-mode{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:18px}
-.cycle-mode label{font-size:11px;font-weight:600;color:var(--text-dim);text-transform:uppercase;letter-spacing:.05em}
-.cycle-mode select{background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:8px 10px;color:var(--text);font-size:13px;outline:none}
+/* Da dove viene il costo della parte: si legge qui, si sceglie nella scheda articolo */
+.cycle-note{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:18px;padding:10px 12px;
+  background:var(--bg);border:1px solid var(--border);border-radius:8px;font-size:13px;color:var(--text-dim);line-height:1.5}
+.cycle-note strong{color:var(--text)}
 .cycle-section{margin-bottom:20px}
 .cycle-section-head{display:flex;align-items:center;gap:10px;margin-bottom:8px}
 .cycle-section-head h3{font-size:14px;font-weight:700;margin:0;display:flex;align-items:center;gap:8px}
@@ -205,7 +232,7 @@ input,select,button,textarea{font-family:var(--font)}
 .cycle-move .mini-btn[disabled]:hover{color:var(--text-dim);border-color:var(--border)}
 /* Sola lettura: niente riordino e nessun campo modificabile nelle righe */
 .view-readonly .cycle-move{display:none}
-.view-readonly .cycle-row input,.view-readonly .cycle-row select,.view-readonly .cycle-mode select{pointer-events:none;opacity:.6}
+.view-readonly .cycle-row input,.view-readonly .cycle-row select{pointer-events:none;opacity:.6}
 @media(max-width:640px){
   .cycle-row,.cycle-op-row{grid-template-columns:1fr 1fr;gap:4px}
   .cycle-head{display:none}
@@ -218,6 +245,20 @@ input,select,button,textarea{font-family:var(--font)}
 .mrp-total td{border-top:2px solid var(--border);font-weight:700}
 .mrp-warn{color:var(--orange);font-size:11px;white-space:nowrap}
 .mrp-section .btn-outline.active{color:var(--text);border-color:var(--accent)}
+/* Modale "Genera documenti": fornitori a gruppi, righe a spunta */
+.plandoc-group{border:1px solid var(--border);border-radius:8px;margin-bottom:10px;overflow:hidden}
+.plandoc-head{display:flex;align-items:center;gap:8px;padding:9px 12px;background:var(--bg);font-size:13px;cursor:pointer}
+.plandoc-row{display:flex;align-items:center;gap:8px;padding:6px 12px 6px 30px;font-size:13px;cursor:pointer;border-top:1px solid var(--border)}
+.plandoc-row:hover{background:var(--bg)}
+/* Riga già finita in un documento di questo tipo: resta visibile — sapere che
+   c'è già è un'informazione — ma non si può riselezionare. */
+.plandoc-used{opacity:.5;cursor:not-allowed}
+.plandoc-used:hover{background:transparent}
+.plandoc-qty{margin-left:auto;font-family:var(--mono);font-size:12px;color:var(--text-dim);white-space:nowrap}
+.plandoc-head .plandoc-qty{margin-left:auto}
+.plandoc-links{display:flex;flex-wrap:wrap;gap:8px}
+.plandoc-link{border:1px solid var(--border);border-radius:6px;padding:6px 10px;font-size:12px;cursor:pointer}
+.plandoc-link:hover{border-color:var(--accent);color:var(--text)}
 
 /* Summary card */
 .cost-summary{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:20px}
@@ -265,9 +306,11 @@ tr{border-bottom:1px solid rgba(42,46,59,.4)}
 .price-table input:focus,.price-table select:focus{border-color:var(--accent)}
 .price-table .num{font-family:var(--mono);text-align:right}
 .price-table .pl-flag{width:1%;white-space:nowrap;padding-top:14px}
-.pl-sup{min-width:170px}
+.pl-sup{min-width:240px}
 .pl-sub{display:flex;align-items:center;gap:8px;margin-top:4px}
 .pl-sub input{font-family:var(--mono);font-size:11px;padding:4px 6px;max-width:150px}
+/* La descrizione presso il fornitore è testo corrente, non un codice */
+.pl-sub input.pl-desc{font-family:inherit;max-width:210px}
 .pl-sub span{color:var(--text-dim);font-size:11px;white-space:nowrap}
 .price-table .pl-price{width:88px}
 .price-table .pl-small{width:62px}
@@ -281,6 +324,8 @@ tr{border-bottom:1px solid rgba(42,46,59,.4)}
 .fav-star.off{color:var(--border)}
 .fav-star.off:hover{color:var(--orange)}
 .obs-mark{font-size:12px;margin-left:2px}
+/* Parte comprata da fornitore invece che prodotta in casa */
+.buy-mark{font-size:12px;margin-left:2px}
 .pick-fav{color:var(--orange);font-size:12px}
 .row-obsolete td{opacity:.55}
 .flag-check{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:400;color:var(--text);text-transform:none;letter-spacing:normal;cursor:pointer;padding:9px 0}
@@ -315,6 +360,9 @@ textarea.notes-internal{border-style:dashed}
   .print-sub{font-size:11px;color:#333}
   .kpi-card,.mgmt-panel,.bom-tree,.cycle-box,.table-wrap{border:1px solid #bbb;box-shadow:none;animation:none}
   input,select,textarea{border:none!important;background:transparent!important;color:#000!important;padding:0!important;-webkit-appearance:none;appearance:none}
+  /* Su carta un codice non si clicca: la sottolineatura sarebbe una promessa
+     che il foglio non può mantenere. */
+  .code-link{border-bottom:none;color:inherit}
   /* Le righe non si spezzano a metà tra due fogli */
   tr,.bom-node,.cycle-row,.mgmt-item{page-break-inside:avoid}
   thead{display:table-header-group}

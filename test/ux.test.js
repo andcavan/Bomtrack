@@ -218,3 +218,41 @@ describe('Stampa', () => {
     app.eval('printHeadFill()');   // non deve lanciare
   });
 });
+
+describe('Errori non previsti: il registro', () => {
+  it('conserva messaggio, vista e revisione dell\'app', () => {
+    const app = conDb(makeDb({ items: [] }));
+    app.eval('activeView = "mrp"');
+    app.eval('logAppError("errore", "qualcosa è esploso", new Error("boom"))');
+    const log = app.eval('JSON.stringify(appErrorLog())');
+    const r = JSON.parse(log)[0];
+    assert.equal(r.msg, 'qualcosa è esploso');
+    assert.equal(r.view, 'mrp', 'sapere dove è successo è metà della segnalazione');
+    assert.equal(r.version, app.eval('APP_VERSION'));
+    assert.ok(r.ts, 'senza data non si ricostruisce la sequenza');
+  });
+
+  it('tiene gli ultimi N e butta i più vecchi', () => {
+    const app = conDb(makeDb({ items: [] }));
+    const max = app.eval('ERROR_LOG_MAX');
+    app.eval(`for (let i = 0; i < ${max + 5}; i++) logAppError('errore', 'e' + i, null);`);
+    const log = JSON.parse(app.eval('JSON.stringify(appErrorLog())'));
+    assert.equal(log.length, max, 'un render che fallisce in ciclo non deve mangiarsi la memoria');
+    assert.equal(log[0].msg, 'e5', 'restano i più recenti');
+  });
+
+  it('il registro esposto è una copia: chi lo legge non lo altera', () => {
+    const app = conDb(makeDb({ items: [] }));
+    app.eval('logAppError("errore", "uno", null)');
+    app.eval('appErrorLog().push({ msg: "intruso" })');
+    assert.equal(app.eval('appErrorLog().length'), 1);
+  });
+
+  it('onAppError non lancia mai a sua volta', () => {
+    const app = conDb(makeDb({ items: [] }));
+    assert.doesNotThrow(() => app.eval('onAppError("errore", "x", new Error("y"))'));
+    assert.doesNotThrow(() => app.eval('onAppError("promessa", "", null)'),
+      'un handler di errori che lancia lascerebbe l\'app muta proprio quando serve');
+    assert.equal(app.eval('appErrorLog().length'), 2);
+  });
+});

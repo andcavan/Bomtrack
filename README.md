@@ -8,38 +8,44 @@ Costruita con lo stesso stile di TimeTrack: vanilla JavaScript + HTML + CSS, nes
 
 Aprire `index.html` in un browser (doppio click, oppure usare l'estensione "Live Server" di VS Code). Al primo avvio l'app chiede di creare l'**amministratore** (nome, email, password) e carica dei dati di esempio (macchina "Nastro Trasportatore NT-100"). Agli avvii successivi si entra con email e password; "Ricordami" conserva l'email e la sessione resta aperta fino a **Esci**.
 
+**Non serve la rete**, mai: le librerie di export stanno in `vendor/` dentro la cartella dell'app. Copiando la cartella su un altro PC funziona tutto, PDF ed Excel compresi.
+
 La revisione in esecuzione è mostrata accanto al logo, in alto a sinistra (es. `v0.6.0`), e corrisponde alla voce in cima al [changelog](#changelog).
 
 ## Funzionalità
 
-La barra dei comandi ha **cinque gruppi**; le voci del gruppo aperto compaiono su una seconda riga, e ogni gruppo ricorda l'ultima voce usata.
+La barra dei comandi ha **sei gruppi**; le voci del gruppo aperto compaiono su una seconda riga, e ogni gruppo ricorda l'ultima voce usata.
 
 | Gruppo | Voci |
 |---|---|
 | 📇 **Anagrafica** | Acquisti · Progetto |
+| 📦 **Magazzino** | — |
 | 🔧 **Cicli di lavorazione** | — |
 | 🌳 **Distinta base** | Gestione DB · Visualizza DB (costificazione) |
 | 📨 **Documenti** | Fabbisogno · Richieste offerta · Ordini |
 | ⚙ **Gestione** | — (solo amministratori) |
 
-- **🌳 Distinta base → Gestione DB** — albero multi-livello espandibile della macchina selezionata, con **numerazione di posizione** (1, 1.1, 1.1.1, 1.2, 2…), costo unitario e di riga per ogni componente, lavorazioni interne e card di riepilogo costi. Aggiunta/modifica/eliminazione di componenti e lavorazioni. I sottogruppi possono contenere altri sottogruppi, senza limite di profondità.
-- **📇 Anagrafica → Acquisti** — anagrafica di ciò che si compra: **materie prime** (costo unitario per U.M., es. €/kg) e **componenti commerciali** (prezzo d'acquisto da fornitore), con flag **preferito ★** (e filtro dedicato) e flag **obsoleto ⛔**.
-- **📇 Anagrafica → Progetto** — anagrafica di ciò che si costruisce: **macchina**, **gruppo**, **sottogruppo** (assiemi, con propria distinta e lavorazioni) e **parte** (foglia con distinta parte e ciclo di lavorazione, con flag **obsoleto ⛔**).
-- **🔧 Cicli di lavorazione** — vista dedicata alle parti: in alto la scelta della parte con i filtri per famiglia, sottofamiglia e testo; sotto la **distinta parte** (materie prime e commerciali necessari) e il **ciclo di lavorazione** (fasi 10, 20, 30… riordinabili con ↑ ↓). Ogni modifica si salva subito.
+- **🌳 Distinta base → Gestione DB** — albero multi-livello espandibile della macchina selezionata, con **numerazione di posizione** (1, 1.1, 1.1.1, 1.2, 2…), costo unitario e di riga per ogni componente, lavorazioni interne e card di riepilogo costi. Aggiunta/modifica/eliminazione di componenti e lavorazioni. I sottogruppi possono contenere altri sottogruppi, senza limite di profondità. Una **barra filtri** (testo, livello, macchina di appartenenza) restringe l'elenco delle distinte; la distinta aperta resta sempre raggiungibile anche quando il filtro la escluderebbe.
+- **📇 Anagrafica → Acquisti** — anagrafica di ciò che si compra: **materie prime** (costo unitario per U.M., es. €/kg) e **componenti commerciali**, con flag **preferito ★** (e filtro dedicato) e flag **obsoleto ⛔**. Fornitore e prezzo non si scrivono qui: la scheda li mostra in sola lettura e rimanda al **listino fornitori**.
+- **📇 Anagrafica → Progetto** — anagrafica di ciò che si costruisce: **macchina**, **gruppo**, **sottogruppo** (assiemi, con propria distinta e lavorazioni) e **parte** (foglia con distinta parte e ciclo di lavorazione, con flag **obsoleto ⛔**). Ogni parte dichiara il proprio **approvvigionamento**: prodotta in casa oppure acquistata da un fornitore.
+- **📦 Magazzino** — lo stato delle giacenze di tutto ciò che si tiene a scaffale, in una lista sola: **commerciali, materie prime e parti insieme**, perché il magazzino non conosce la divisione fra acquisti e progetto (gli assiemi restano fuori: si producono, non si stoccano). Per ogni articolo **esistente, in arrivo, impegnato, libero, scorta minima e lotto**, con il ⚠ su chi è sotto scorta. Stessi filtri dell'anagrafica (testo, tipo, famiglia, sottofamiglia) più il filtro per **stato**: sotto la scorta minima, giacenza a zero, con giacenza, libero negativo. Dalla riga si registra una **rettifica** o si apre lo **storico dei movimenti**. I numeri sono gli stessi del fabbisogno: nessun campo scrivibile, l'esistente resta *ricevuto sugli ordini + movimenti*.
+- **🔧 Cicli di lavorazione** — vista dedicata alle parti: in alto la scelta della parte con i filtri per famiglia, sottofamiglia e testo; sotto la **distinta parte** (materie prime e commerciali necessari) e il **ciclo di lavorazione** (fasi 10, 20, 30… riordinabili con ↑ ↓). In testa una riga dice da dove viene il costo di quella parte, secondo il suo approvvigionamento. Ogni modifica si salva subito.
 - **🌳 Distinta base → Visualizza DB** — costificazione: incidenza delle voci di costo e distinta esplosa; **export PDF ed Excel**.
-- **📨 Documenti → Fabbisogno materiali** — piani di produzione salvati (3 × macchina A, 2 × macchina B): le distinte si esplodono e si sommano in una **lista d'acquisto consolidata**, raggruppabile per fornitore, più l'elenco delle **parti da fabbricare**. Export Excel e PDF.
-- **💶 Listino fornitori** — più quotazioni per articolo (fornitore, prezzo, q.tà minima, giorni di consegna, data), alimentate anche dai prezzi tornati con le richieste di offerta. Il prezzo che entra nella costificazione si sceglie esplicitamente dal listino.
+- **📨 Documenti → Fabbisogno materiali** — piani di produzione salvati (3 × macchina A, 2 × macchina B): le distinte si esplodono e si sommano in una **lista d'acquisto consolidata**, raggruppabile per fornitore, più l'elenco delle **parti da fabbricare**. Da qui si **generano richieste di offerta e ordini**, un documento per fornitore, scegliendo quali righe includere. Il **fabbisogno netto** toglie quello che è già a magazzino, quello già ordinato e quello **impegnato dagli altri piani aperti**, così due piani non si dichiarano coperti con la stessa merce; un piano che non serve più si **chiude** (🔓) e la sua quota torna libera. Export Excel e PDF.
+- **💶 Listino fornitori** — l'unico posto dove nasce un prezzo d'acquisto. Più quotazioni per articolo (fornitore, codice e descrizione presso il fornitore, prezzo, q.tà minima, giorni di consegna, data), alimentate anche dai prezzi tornati con le richieste di offerta. Vale per commerciali, materie prime **e parti**. Il prezzo che entra nella costificazione si sceglie esplicitamente dal listino.
 - **🔗 Dove è usato** — da ogni articolo si risale a chi lo contiene e alle macchine impattate, con **simulazione del costo**: si prova un prezzo diverso e si vede subito l'effetto sul costo delle macchine, senza salvare nulla.
 - **📨 Richieste di offerta (RFQ)** — una richiesta per fornitore, righe da catalogo o manuali, documento bilingue IT/EN in PDF ed Excel, compilazione dei prezzi al ritorno dell'offerta e **confronto offerte** tra più richieste.
-- **🧾 Ordini a fornitore (ODA)** — generabili da una richiesta o da zero, con prezzi, importi, consegne e **registrazione dei ricevimenti** (ricevuto/residuo per riga).
+- **🧾 Ordini a fornitore (ODA)** — generabili da una richiesta, da un piano di fabbisogno o da zero, con prezzi, importi, consegne e **registrazione dei ricevimenti** (ricevuto/residuo per riga).
 - Gli elenchi di richieste e ordini si filtrano per **stato**, **fornitore** e **testo** (numero, oggetto, fornitore, note e righe del documento).
+- **🔎 Scheda articolo di sola lettura** — un click su un **codice**, in qualunque tabella, apre la scheda completa: anagrafica, listino, costo, magazzino (esistente, impegnato, libero), composizione, dove è usato, documenti e piani in cui compare, revisioni. Non modifica niente, e per questo si può aprire in mezzo a qualunque lavoro; dentro la scheda i codici sono a loro volta cliccabili, con il tasto ← Indietro.
+- **📗📄 Export degli elenchi** — Magazzino, le due anagrafiche, Cicli, Commesse, Richieste, Ordini e piani di Fabbisogno hanno i pulsanti **Esporta Excel** ed **Esporta PDF**. Si esporta **quello che si vede**: filtri attivi applicati, stesse colonne, e la paginazione a schermo non taglia niente. I filtri finiscono scritti nel file — un foglio **Estrazione** nell'Excel, una riga sotto il titolo nel PDF — così a distanza di tempo si sa ancora cosa contiene. Il PDF porta la testata azienda e il numero di pagina su ogni pagina; l'Excel l'autofiltro sull'intestazione e i numeri come numeri.
 - **🔎 Ricerca globale (Ctrl+K)** — un campo solo per articoli, richieste, ordini e piani: si scrive un codice o un numero e si salta dove serve, senza passare dalla vista giusta e dai suoi filtri.
 - **🖨 Stampa della vista aperta (Ctrl+P)** — distinta, costificazione, fabbisogno, richiesta o ordine escono su carta ripuliti di navigazione, filtri e pulsanti, con intestazione, data e autore.
 - **Autore delle modifiche** — in fondo a schede articolo, richieste, ordini e piani si legge chi ha creato il record e chi l'ha aggiornato per ultimo, con data e ora.
 - **Schede mobili** — le finestre di dialogo non bloccano più la pagina: si spostano trascinandole per il titolo, si ridimensionano dall'angolo e si chiudono con ✕ o Esc. Dietro si continua a navigare, e listino, *Dove è usato* e un form possono restare aperti insieme.
 - Le anagrafiche mostrano **200 articoli per volta** (*Mostra altri* / *Mostra tutti* in fondo all'elenco): i cataloghi grandi restano scorrevoli.
 - **🔒 Note interne** su richieste e ordini: restano nell'app, non compaiono mai su PDF ed Excel. Passano dalla richiesta all'ordine generato e sono modificabili in qualunque stato del documento.
-- **⚙ Gestione** — dati azienda, fornitori, condizioni di offerta (trasporto/pagamento), famiglie articolo, **concetti** (nomenclatura delle parti), centri di lavoro (tariffe €/h), **unità di misura**, impostazioni globali (spese generali %, margine %, valuta, calcolo costo parte), **import massivo da Excel** e backup JSON (esporta/importa/ripristina/**azzera tutto**).
+- **⚙ Gestione** — dati azienda, fornitori, condizioni di offerta (trasporto/pagamento), famiglie articolo, **concetti** (nomenclatura delle parti), centri di lavoro (tariffe €/h), **unità di misura**, impostazioni globali (spese generali %, margine %, valuta, approvvigionamento parte), **import massivo da Excel** e backup JSON (esporta/importa/ripristina/**azzera tutto**).
 
 ### Utenti e ruoli
 
@@ -116,11 +122,18 @@ Due schemi convivono, scelti in base al tipo di articolo:
 
 Il codice proposto resta modificabile a mano: appena lo si edita, l'app smette di rigenerarlo.
 
-### Import massivo da Excel (Gestione → ⬆ Import)
+### Import ed export Excel (Gestione → ⬆ Import)
 
-- **Articoli** — carica un foglio con colonne `Tipo, Codice, Nome, UM, CostoUnitario, PrezzoAcquisto, Fornitore, Macrofamiglia, Sottofamiglia, Note`. Se il codice esiste l'articolo viene **aggiornato**, altrimenti creato (codice auto per materie prime/commerciali). Fornitori e famiglie mancanti vengono creati al volo.
-- **Distinte** — carica un foglio padre-figlio (`CodicePadre, CodiceFiglio, Qta, Scarto%`). Gli articoli devono già esistere (importali prima). Per ogni padre i componenti vengono **sostituiti** (reimport idempotente); relazioni non ammesse o cicliche vengono segnalate e saltate.
-- Entrambe le sezioni offrono un **template Excel** scaricabile (con foglio "Istruzioni") e un **report di esito** (creati / aggiornati / saltati / errori).
+Quattro sezioni. In tutte l'**export è anche il template** — si esporta, si modifica, si ricarica — e ogni file porta con sé un foglio **Istruzioni**.
+
+- **🛒 Articoli — Acquisti**: fogli `Commerciali`, `Materie prime`, `Listino`.
+- **🏗 Articoli — Progetto**: fogli `Macchine`, `Gruppi`, `Sottogruppi`, `Parti`, `Listino`. **Il tipo è il foglio**: niente colonna `Tipo` da sbagliare, e ogni foglio ha solo le colonne che valgono per quel tipo. I fogli si applicano **in ordine**, così un gruppo può puntare a una macchina definita nello stesso file: si caricano sigle, appartenenze e schema di codifica gerarchica. **La distinta base non è in questi file.**
+- Il **Codice** è la chiave: se esiste l'articolo viene **aggiornato**, se è vuoto viene **generato**. Fornitori e famiglie mancanti si creano al volo; i **concetti no** (finiscono dentro il nome della parte, e un refuso resterebbe per sempre). Fornitore e prezzo creano una **quotazione nel listino** dell'articolo e diventano il prezzo in uso: anche da Excel, un prezzo nasce dove nascono tutti gli altri.
+- **🔍 Verifica** fa l'import per intero, mostra il report e poi **annulla tutto**: gli errori si leggono prima di scrivere, e dal report si procede con «Importa davvero».
+- Ogni file ha un foglio **Liste** con tutti i valori ammessi (unità, fornitori, coppie famiglia/sottofamiglia, macchine e gruppi con i loro codici, concetti). Non sono menu a tendina — la libreria Excel dell'app non sa scriverli — ma sono elenchi pronti per `Dati → Convalida → Elenco`, e sono il posto a cui rimandano i messaggi d'errore.
+- **🌳 Distinte** — carica un foglio padre-figlio (`CodicePadre, CodiceFiglio, Qta, Scarto%`). Gli articoli devono già esistere (importali prima). Per ogni padre i componenti vengono **sostituiti** (reimport idempotente); relazioni non ammesse o cicliche vengono segnalate e saltate.
+- **⚙ Impostazioni di Gestione** — tutto ciò che si configura in Gestione, un foglio per scheda: `Azienda, Utenti, Fornitori, Condizioni offerta, Famiglie commerciali, Famiglie materie prime, Famiglie parti, Concetti, Centri di lavoro, Unità di misura, Impostazioni`. Le **password non sono nel file**.
+- L'import è sempre **additivo**: aggiorna ciò che riconosce, crea ciò che manca, **non cancella niente**. Un foglio assente viene saltato, una colonna assente lascia il campo com'è, una colonna presente ma vuota lo svuota. Il **report di esito** conta creati / aggiornati / invariati **per foglio**, e separa gli avvisi dagli errori, ciascuno con foglio e numero di riga.
 
 ## Modello di costo
 
@@ -135,21 +148,33 @@ prezzo vendita = costo totale × (1 + margine %)
 
 Le percentuali di spese generali e margine sono globali (Impostazioni) e sovrascrivibili per singola macchina dalla *Modifica testata*; sono ammesse tra 0 e 1000%. I riferimenti ciclici sono rilevati e impediti sia nella distinta sia nel ciclo di lavorazione delle parti: un articolo coinvolto in un anello viene segnalato invece di restituire un costo troncato.
 
-Gli articoli di tipo **parte** fanno eccezione: oltre al costo unitario a mano possono avere una **distinta parte** (materie prime e commerciali) e un **ciclo di lavorazione** (fasi a costo fisso), gestiti nella vista *🔧 Cicli di lavorazione*. Ogni parte sceglie lì come combinare le due cose:
+### Parti: una domanda sola, la facciamo o la compriamo?
 
-| Calcolo | Costo della parte |
-|---|---|
-| Solo costo unitario | il campo manuale; distinta e ciclo restano documentali e non entrano nel costo |
-| Solo valore ciclo | la somma delle righe di distinta parte e ciclo (il campo manuale si disabilita) |
-| Costo unitario + valore ciclo | la somma dei due |
+Gli articoli di tipo **parte** fanno eccezione: possono avere una **distinta parte** (materie prime e commerciali) e un **ciclo di lavorazione** (fasi a costo fisso), gestiti nella vista *🔧 Cicli di lavorazione*. Da dove venga il loro costo lo decide un campo solo, l'**approvvigionamento**, nella scheda articolo:
 
-Il **fabbisogno materiali** scende nelle distinte con queste stesse regole (scarto compreso, e distinta parte esplosa solo quando concorre al costo): quantità e importi della lista d'acquisto tornano con la costificazione della stessa macchina.
+| Approvvigionamento | Costo della parte | Nel fabbisogno |
+|---|---|---|
+| 🏭 Produzione interna | la somma delle righe di distinta parte e ciclo | si scende nella distinta e si compra quel che serve per farla |
+| 🛒 Acquisto da fornitore | il prezzo scelto nel **listino fornitori** | è una foglia d'acquisto come un commerciale: la distinta non si esplode |
 
-L'ordine delle fasi è documentale: riordinarle non cambia il costo. Il modo proposto alle nuove parti si imposta in *Gestione → Impostazioni*. Le parti già esistenti conservano il comportamento precedente (ciclo se ne avevano uno, altrimenti costo manuale).
+Una parte in produzione interna ma **senza righe di ciclo** non ha niente da calcolare: vale anche lì il prezzo a listino.
+
+Costo e fabbisogno partono così dalla stessa risposta e non possono contraddirsi. La distinta e il ciclo di una parte acquistata **restano salvati** e consultabili — servono a sapere quanto costerebbe farla in casa — semplicemente non concorrono al costo.
+
+Il **fabbisogno materiali** scende nelle distinte con queste stesse regole (scarto compreso): quantità e importi della lista d'acquisto tornano con la costificazione della stessa macchina. L'ordine delle fasi è documentale: riordinarle non cambia il costo.
+
+Le parti nuove nascono **da acquisto** — è il caso più frequente, la parte la lavora un terzista — e chi la produce in casa lo dichiara; il valore proposto si cambia in *Gestione → Impostazioni*. Le parti **già a catalogo non si toccano**: cambiare l'impostazione vale per le prossime.
+
+### Da dove arriva un prezzo d'acquisto
+
+Fornitore, prezzo, codice e descrizione presso il fornitore **nascono solo nel listino**. La scheda articolo li mostra in sola lettura, con un pulsante che apre il listino; creando un articolo che si compra, il listino si apre da solo. Un prezzo senza fornitore resta possibile — è una quotazione con il fornitore vuoto, marcata *a mano*.
+
+Il motivo è lo storico: finché lo stesso dato si poteva scrivere in due posti, un prezzo corretto nella scheda spariva senza lasciare traccia, e alla domanda «quando e da chi l'abbiamo pagato così?» non c'era risposta. Vale per commerciali, materie prime e parti; su una parte prodotta in casa, scegliere una quotazione chiede prima di segnarla come acquistata, invece di spostare il costo di nascosto.
 
 ## File
 
-- `index.html` — struttura, navigazione, barre filtri delle due anagrafiche, CDN (jsPDF, SheetJS).
+- `index.html` — struttura, navigazione, barre filtri delle due anagrafiche, caricamento degli script.
+- `vendor/` — le librerie di export (SheetJS per Excel, jsPDF per i PDF), tenute nel repo invece che su un CDN. Versioni, origine e come si aggiornano: `vendor/LEGGIMI.md`.
 - `store.js` — layer dati: schema, migrazioni versionate, `Store` (API repository) su localStorage, hashing delle password e autore delle modifiche.
 - Il codice dell'app, diviso in **classic script caricati in sequenza** da `index.html` (nessun modulo, nessun build: la pagina si apre anche con un doppio click). Lo scope globale è condiviso, quindi restano un solo insieme di funzioni e un solo stato:
 
@@ -160,15 +185,26 @@ L'ordine delle fasi è documentale: riordinarle non cambia il costo. Il modo pro
 | `costing.js` | motore di costificazione (rollup ricorsivo, modi di calcolo delle parti) |
 | `shell.js` | ricerca globale, stampa, navigazione tra le viste |
 | `views-bom.js` | distinte base e *Dove è usato* |
+| `views-rev.js` | revisioni della distinta: rilascio, storico e confronto |
+| `views-stock.js` | giacenze, movimenti di magazzino, impegni dei piani aperti, calcolo del fabbisogno netto e vista **Magazzino** |
+| `views-jobs.js` | commesse cliente e tracciabilità commessa → fabbisogno → richiesta → ordine |
+| `views-home.js` | riepilogo: cosa richiede attenzione, con il collegamento a dove si risolve |
 | `views-catalog.js` | anagrafiche, listino fornitori, scheda articolo, cicli di lavorazione |
 | `views-report.js` | costificazione e report |
 | `views-mrp.js` | fabbisogno materiali |
+| `export-lists.js` | export PDF ed Excel degli elenchi: una specifica per vista, due traduttori |
+| `views-item.js` | scheda articolo di sola lettura e codice cliccabile |
 | `views-docs.js` | richieste di offerta e ordini |
 | `views-manage.js` | gestione (utenti, anagrafiche di servizio, impostazioni) |
-| `import-export.js` | import da Excel, backup JSON e avvio dell'app |
+| `cloud-map.js` | traduzione fra la forma annidata locale e quella normalizzata del futuro database condiviso. Funzioni pure, **nessun codice di rete**: l'app resta locale |
+| `import-catalog.js` | articoli ⇄ Excel nei due file Acquisti e Progetto: colonne per tipo, foglio Liste, verifica senza importare |
+| `import-export.js` | import distinte da Excel, impostazioni di Gestione ⇄ Excel, backup JSON, cestino e avvio dell'app |
 - `style.css` — tema dark.
+- `CHANGELOG.md` — lo storico completo delle versioni.
 - `docs/cloud-schema.md` — contratto per il futuro backend condiviso (mappatura tabelle, adapter).
-- `test/` — suite di verifica del motore di costo, delle migrazioni e del salvataggio. **Non serve all'app**: `index.html` non la carica, e copiando la cartella su un altro PC si può anche omettere.
+- `docs/analisi-tecnica.md` — controllo generale del codice: cosa è stato risolto, cosa resta aperto e perché.
+- `test/` — suite di verifica del motore di costo, delle migrazioni, del salvataggio, dell'import Excel e dell'accesso. **Non serve all'app**: `index.html` non la carica, e copiando la cartella su un altro PC si può anche omettere.
+- `.github/workflows/test.yml` — esegue la suite a ogni push. Come `test/`, non serve all'app.
 
 ### Test
 
@@ -177,222 +213,13 @@ node test/run.js      # suite completa
 node test/bench.js    # benchmark del motore di costificazione
 ```
 
-Richiede solo **Node 18 o superiore** — nessun `npm install`, nessuna dipendenza: la suite usa i moduli core e carica `store.js` e `app.js` in un contesto isolato, esattamente come li carica `index.html`.
+Richiede solo **Node 18 o superiore** — nessun `npm install`, nessuna dipendenza: la suite usa i moduli core e carica i sorgenti dell'app in un contesto isolato, nella stessa sequenza di `index.html`.
 
 ## Changelog
 
-Le revisioni seguono il versionamento semantico `0.MINOR.PATCH`: **MINOR** per nuove funzionalità, **PATCH** per correzioni. La versione in cima è quella in `APP_VERSION` (`app.js`) e mostrata nell'header dell'app.
+Le revisioni seguono il versionamento semantico `0.MINOR.PATCH`: **MINOR** per nuove funzionalità, **PATCH** per correzioni. La versione in cima è quella in `APP_VERSION` (`core.js`) e mostrata nell'header dell'app.
 
-### 0.20.0 — 2026-07-30
-
-**Aggiunto**
-- **Ogni riga della distinta ha il suo numero di posizione**: `1`, `1.1`, `1.1.1`, `1.2`, `2`… Prima il livello si leggeva solo dal rientro, e su una distinta profonda — o peggio, su un foglio stampato — non si riusciva a citare una riga né a capire da chi dipendesse. Ora si dice «guarda la 1.2.1» e si guarda tutti la stessa cosa.
-  - La numerazione **riparte da 1 sotto ogni padre**, senza limite di profondità. La macchina in testa all'albero resta senza numero: i suoi componenti sono `1`, `2`, `3`…
-  - Quando si apre una **parte**, gli articoli della sua distinta parte continuano la numerazione del padre (`2.1`, `2.2`…); con il calcolo «costo unitario + ciclo» la quota manuale chiude la serie. Le **fasi di lavorazione 🔧 restano senza numero** — sono operazioni, non pezzi da citare in distinta — e non consumano una posizione: la serie degli articoli prosegue senza buchi anche quando una fase sta in mezzo.
-  - Lo stesso numero compare **ovunque**: nell'albero di *Gestione DB*, nella colonna **Pos.** della distinta esplosa in *Visualizza DB*, negli **export Excel e PDF** (dove diventa la prima colonna, accanto al Livello già presente) e in stampa. Una riga si chiama allo stesso modo in ufficio tecnico e dal fornitore.
-
-**Cambiato**
-- Nella distinta esplosa di *Visualizza DB* il **rientro dei livelli è passato dalla descrizione al codice** — a video, in Excel e in PDF. I codici disegnano l'albero, le descrizioni ripartono tutte dallo stesso margine e si leggono in colonna invece che a scalini.
-
-### 0.19.0 — 2026-07-29
-
-**Cambiato**
-- **La barra dei comandi passa da nove pulsanti a cinque gruppi.** Le voci del gruppo aperto compaiono su una **seconda riga** sotto l'intestazione, sempre visibili: si cambia vista con un clic solo, senza menu da aprire e chiudere.
-
-  | Gruppo | Contiene |
-  |---|---|
-  | 📇 Anagrafica | Acquisti · Progetto |
-  | 🔧 Cicli di lavorazione | — |
-  | 🌳 Distinta base | **Gestione DB** (la distinta di prima) · **Visualizza DB** (la costificazione di prima) |
-  | 📨 Documenti | Fabbisogno · Richieste offerta · Ordini |
-  | ⚙ Gestione | — |
-
-- **Dov'è finita la Costificazione**: in *Distinta base → Visualizza DB*. Le *Distinte base* sono *Distinta base → Gestione DB*. Nessuna vista è cambiata dentro: è cambiato solo come ci si arriva.
-- Ogni gruppo **ricorda l'ultima voce usata**: se stavi sugli Ordini e passi in Anagrafica, tornando su Documenti ritrovi gli Ordini. Vale per la sessione, non si salva.
-- I gruppi con una voce sola (Cicli, Gestione) non mostrano la seconda riga, e l'intestazione stampata ora dice da dove viene il foglio (*Distinta base › Visualizza DB*).
-
-### 0.18.1 — 2026-07-29
-
-**Cambiato**
-- Il codice dell'app, arrivato a 5.400 righe in un file solo, è stato **diviso in undici file** per area (motore di costo, distinte, anagrafiche, documenti, gestione, import/export…). Nell'app non cambia nulla: nessuna funzione è stata riscritta, le righe sono solo state spostate, e le 261 verifiche automatiche passano invariate.
-- **Se copi l'app su un altro PC**, copia l'intera cartella: ora `index.html` carica più file, non più solo `app.js`. Non serve installare nulla, si apre sempre con un doppio click.
-
-### 0.18.0 — 2026-07-29
-
-**Aggiunto**
-- **🔎 Cerca ovunque, con Ctrl+K** (o il pulsante nell'intestazione): un campo solo che cerca tra **articoli, richieste, ordini e piani**. Si scorre con ↑ ↓ e si apre con Invio; ogni risultato porta dove ha senso guardarlo — un assieme nella sua distinta, un articolo nella sua scheda, un documento nel suo editor. Chi sta scrivendo un codice se lo ritrova in cima all'elenco.
-- **🖨 Stampa della vista aperta** dal pulsante nell'intestazione o con il **Ctrl+P** del browser: esce quello che si sta guardando, senza barra di navigazione, filtri e pulsanti, con intestazione (azienda, sezione, documento aperto, data e chi ha stampato) e righe che non si spezzano tra due fogli.
-- **Chi ha modificato cosa**: in fondo alla scheda articolo e agli editor di richieste, ordini e piani compare *Creato da … il … · aggiornato da … il …*. Il dato era registrato da sempre, ma non si era mai potuto vedere.
-
-**Cambiato**
-- **Le conferme non sono più finestre del browser.** «Eliminare questo componente?» e le altre venti domande sono ora schede dell'app, con un titolo che dice di cosa si tratta e un pulsante che dice cosa succede (*Elimina*, *Sblocca*, *Importa e sovrascrivi*) invece di un OK generico.
-- L'**azzeramento totale** mostra cosa sta per cancellare (quanti articoli, documenti e piani, quanti MB), offre il pulsante per esportare subito un backup e chiede di scrivere **AZZERA** nella scheda stessa.
-
-### 0.17.0 — 2026-07-29
-
-**Aggiunto**
-- **📋 Fabbisogno materiali** — nuova voce di menu. Si crea un **piano di produzione** (3 × una macchina, 2 × un'altra) e l'app esplode le distinte fino alle foglie, sommando lo stesso articolo ovunque compaia: ne esce la **lista di ciò che serve comprare**, con quantità totale, fornitore, prezzo in uso e importo. Prima l'unico modo era aprire le distinte e sommare a mano, sapendo che lo stesso cuscinetto sta in tre gruppi diversi.
-- **Raggruppa per fornitore** — la lista si riordina per fornitore con il subtotale di ciascuno: è la forma in cui si passa a chiedere i prezzi.
-- **🏭 Da fabbricare** — elenco a parte delle parti richieste dal piano, con quantità, costo unitario e importo: quello che va in officina.
-- **Segnalazione del risparmio** — dove a listino esiste una quotazione più bassa di quella in uso, la riga mostra ↓ con la differenza sulla quantità di piano, e in cima si legge quanto scenderebbe il totale. Nessun prezzo cambia da sé: si sceglie sempre dal listino dell'articolo.
-- Avviso ⚠ quando la quantità richiesta è **sotto la quantità minima** del fornitore.
-- **Export Excel** (due fogli, Acquisti e Produzione) e **PDF** del fabbisogno.
-- I piani si **salvano**, si riaprono e si **duplicano** (📋): rifare il piano del mese prima è un click.
-
-**Come si comporta**
-
-Il fabbisogno usa le stesse regole della costificazione: lo scarto entra nelle quantità, e distinta parte e ciclo di una parte si esplodono solo quando concorrono al costo (col calcolo *solo costo unitario* restano documentali). Su un riferimento ciclico si ferma e lo segnala, invece di dare numeri troncati per buoni.
-
-### 0.16.0 — 2026-07-29
-
-**Aggiunto**
-- **🔧 Cicli di lavorazione** — nuova voce di menu, dedicata alle parti. In alto si sceglie la parte, filtrando per **famiglia**, **sottofamiglia** e testo; sotto ci sono due elenchi distinti: la **distinta parte** (le materie prime e i commerciali che servono) e il **ciclo di lavorazione** (le fasi). Prima erano un elenco solo, dentro una scatoletta in fondo alla scheda articolo, e per passare da una parte all'altra bisognava chiudere e riaprire la scheda.
-- **Riordino delle lavorazioni** con le frecce **↑ ↓** e numerazione di **fase 10, 20, 30…** ricalcolata dall'ordine. L'ordine è documentale: spostare una fase non cambia di un centesimo il costo della parte.
-- Pulsante **🔧** sulle parti, nel catalogo *Progetto* e nell'albero delle distinte: apre direttamente la parte nella nuova vista.
-- Il riepilogo in cima separa **quanto pesa la distinta parte** e **quanto pesano le lavorazioni**, oltre al costo della parte.
-
-**Cambiato**
-- La scheda articolo di una parte non contiene più l'editor del ciclo: al suo posto c'è il riassunto del contenuto e il pulsante per aprire la vista. Anche la scelta del **calcolo del costo della parte** si è spostata lì, accanto a ciò che governa.
-- Nella nuova vista **ogni modifica si salva subito**, come nelle Distinte base: non c'è più un *Salva* dell'articolo da ricordarsi di premere perché il ciclo non vada perso.
-- Nulla da rifare sui dati esistenti: distinta e ciclo restano la stessa cosa di prima, solo mostrata in due elenchi. Duplicando una parte (📋) la copia si porta dietro entrambi.
-
-### 0.15.0 — 2026-07-28
-
-**Aggiunto**
-- **Schede mobili al posto delle finestre modali** — le schede non oscurano più la pagina. Si **trascinano per il titolo**, si **ridimensionano** dall'angolo in basso a destra e si chiudono con la **✕**, con *Chiudi/Annulla* o con **Esc**. Sotto, la pagina resta pienamente utilizzabile: si può tenere aperto il **listino di un articolo** mentre si sfoglia una distinta, o affiancare *Dove è usato* a un form.
-- Più schede aperte insieme, una per tipo: listino, *Dove è usato*, avviso di salvataggio e form convivono. Riaprire lo **stesso** tipo di scheda riusa la finestra invece di duplicarla — lo stato di una scheda è uno solo, due listini affiancati finirebbero per scriversi addosso.
-- Con un form già aperto, aprirne un altro chiede **conferma** prima di perdere le modifiche non salvate: senza il velo scuro davanti, un click su un'altra riga non deve buttare via il lavoro fatto.
-
-Su schermi stretti (sotto 640 px) le schede occupano la pagina come prima, senza trascinamento.
-
-### 0.14.1 — 2026-07-28
-
-**Cambiato**
-- **Listino fornitori più compatto** — la riga di una quotazione era lunga nove colonne e usciva dalla finestra. Ora i numeri stanno in colonne strette (i giorni di consegna nella colonna *GG*, quattro cifre al massimo) e **codice fornitore** e **origine** scendono sotto al nome del fornitore, su una seconda riga: stessi campi, metà larghezza.
-- I giorni di consegna vengono riportati a 9999 se si digita un valore più lungo.
-
-### 0.14.0 — 2026-07-27
-
-**Aggiunto**
-- **💶 Listino fornitori e storico prezzi** — nuovo pulsante su commerciali e materie prime. Lo stesso articolo può ora avere **più quotazioni**, ognuna con fornitore, prezzo, quantità minima, giorni di consegna, codice fornitore e data. La quotazione **più bassa** è marcata con ↓, quella **in uso** con ✓.
-- **Registrazione dei prezzi dalle richieste di offerta** — nell'editor di una richiesta, il pulsante *💶 Registra a listino* trasforma i prezzi tornati con l'offerta in quotazioni degli articoli, con data e numero della richiesta di provenienza. Una riga già registrata non viene duplicata: richieste successive allo stesso fornitore costruiscono lo **storico**.
-- Le anagrafiche segnalano quanti prezzi ha un articolo (es. *3 quotazioni*) nella colonna Dettaglio.
-
-**Come si comporta**
-
-Il listino è **memoria, non un secondo calcolo**: il prezzo che entra nella costificazione resta quello nei campi dell'articolo. Registrare un'offerta **non cambia il costo** — un prezzo si mette in uso solo premendo *✓ Usa* sulla quotazione scelta, e solo allora il costo delle macchine si aggiorna. Così un'offerta ricevuta non sposta i preventivi già fatti senza che nessuno l'abbia deciso.
-
-Chi aveva già un fornitore sull'articolo lo ritrova come prima voce di listino, marcata in uso: nulla da rifare a mano.
-
-### 0.13.0 — 2026-07-27
-
-**Aggiunto**
-- **🔗 Dove è usato** — nuovo pulsante su ogni riga delle anagrafiche e dell'albero di distinta. Apre una finestra che risale la distinta invece di scenderla: mostra gli **impieghi diretti** (chi contiene l'articolo, con la quantità) e le **macchine impattate**, con la quantità complessiva necessaria per una macchina, il costo attuale e il prezzo di vendita. Da ogni riga si può risalire ancora, di livello in livello.
-- **Simulazione del costo (what-if)** — nella stessa finestra, per materie prime, commerciali e parti a costo manuale, un campo *"Simula un costo diverso"*: digitando un prezzo compaiono due colonne con il **costo simulato** di ogni macchina e la **differenza** rispetto a oggi (in rosso se sale, in verde se scende). Il valore **non viene salvato**: serve solo a rispondere a "se il fornitore aumenta del 10%, quanto mi costa la macchina?".
-- Quando si prova a eliminare un articolo ancora in uso, ora si apre direttamente il *Dove è usato* invece di elencare i codici in un messaggio.
-
-### 0.12.0 — 2026-07-27
-
-**Migliorato**
-- **Le anagrafiche non si impastano più durante la digitazione.** I campi di ricerca (cataloghi, elenchi di richieste e ordini, finestre di selezione articolo) aspettano una breve pausa prima di ridisegnare, invece di rifare tutto a ogni carattere.
-- **Il catalogo si disegna a blocchi di 200 articoli**, con i pulsanti *Mostra altri* e *Mostra tutti* in fondo. Il titolo di ogni gruppo indica sempre quanti articoli contiene per intero (es. `Riduttori (200 di 340)`), e il limite riparte da capo a ogni cambio di filtro. Con poche centinaia di articoli non cambia nulla; con qualche migliaio evita al browser di impaginare l'intero elenco a ogni battuta.
-- **Ricerca nei documenti più rapida**: il testo cercabile di ogni richiesta e ordine — righe comprese — viene ricostruito solo quando il documento cambia davvero, non a ogni carattere digitato.
-- L'**orologio** dell'intestazione si aggiorna al cambio di minuto invece che ogni secondo.
-
-### 0.11.0 — 2026-07-27
-
-**Aggiunto**
-- **Indicatore "Modifiche non salvate"** nell'header: compare quando il browser rifiuta di salvare e resta lì finché il salvataggio non riesce di nuovo. Prima l'app continuava a mostrare i dati aggiornati senza conservarli, avvisando con un messaggio che spariva dopo due secondi e mezzo: chiudendo la scheda si perdeva tutto il lavoro fatto da quel momento.
-- Quando il salvataggio fallisce compare una **finestra che spiega il motivo** — spazio esaurito, navigazione privata, dati non salvabili — con il pulsante per **esportare subito un backup JSON**, che funziona anche a spazio pieno perché lavora sui dati in memoria.
-- **Spazio occupato dal database** in *Gestione → 💾 Backup*, con avviso in rosso oltre i 4 MB: il limite del browser è circa 5 MB e ora lo si vede arrivare.
-- **Suite di test** (`node test/run.js`, 105 verifiche) su motore di costificazione, migrazioni e salvataggio. Nessuna dipendenza da installare.
-
-**Migliorato**
-- **Costificazione molto più veloce** su distinte profonde con componenti riusati: i sotto-assiemi già calcolati non vengono più ricalcolati da capo, e la ricerca degli articoli non scorre più tutto l'elenco. Su una distinta di prova con 700 articoli e 5 livelli, disegnare il catalogo passa da circa 163 ms a 2 ms.
-
-**Corretto**
-- **Valori negativi e non numerici** nei campi numerici. Costi, prezzi, quantità, ore e tariffe negativi ora **fermano il salvataggio con un messaggio** invece di finire nei calcoli; scarto (0–100%), spese generali e margine (0–1000%) vengono riportati dentro l'intervallo.
-- Nella registrazione dei ricevimenti **non si può più ricevere più di quanto ordinato**: prima l'ordine passava a "evaso" con numeri incoerenti.
-- Un **riferimento ciclico nel ciclo di lavorazione di una parte** ora viene rilevato. Non è costruibile dall'interfaccia, ma poteva arrivare da un import Excel o da un backup, e produceva un costo troncato presentato come valido.
-- Le **famiglie predefinite** di materie prime e parti nascevano senza sigla al primo caricamento, e la codifica automatica per famiglia (`MAT-ACC-LAM-001`) la usa subito: la sigla arrivava solo al riavvio successivo.
-
-### 0.10.0 — 2026-07-24
-
-**Aggiunto**
-- **Flag Obsoleto** su commerciali, materie prime e parti: marca un articolo come non più utilizzabile. Nel catalogo l'articolo obsoleto è attenuato e mostra il simbolo **⛔**.
-- I flag **Preferito ★** (solo commerciali e materie prime) e **Obsoleto** si impostano ora direttamente nella **scheda articolo** (in fondo, sopra le note). La stella ★ resta anche nell'elenco Acquisti come scorciatoia.
-- I badge **★** e **⛔** compaiono in **ogni selezione** dell'articolo: picker dei componenti di distinta, ciclo di lavorazione, duplicazione, "Aggiungi da catalogo" di richieste e ordini, e menu a tendina (con prefisso ★/⛔).
-
-### 0.9.0 — 2026-07-24
-
-**Aggiunto**
-- **Concetto nel nome delle parti** — il nome di un articolo di tipo **parte** si compone ora di un **concetto** in **maiuscolo** scelto da un elenco gestito (*Gestione → 🏷 Concetti*, es. `ALBERO`, `FLANGIA`, `STAFFA`) più una **descrizione libera**: concetto `ALBERO` + `motore 20×100` → nome `ALBERO motore 20×100`. Il concetto è **obbligatorio** per le parti; gli altri tipi mantengono il campo Nome libero. Nella modale è mostrata l'anteprima del nome composto.
-- Nuovo pannello *Gestione → 🏷 Concetti* (elenco con conteggio utilizzi, aggiunta, modifica ed eliminazione): un concetto **in uso non può essere rinominato né eliminato**, così i nomi delle parti già composte restano stabili. Un set di concetti meccanici tipici è precaricato.
-- Le parti create prima della funzione conservano il vecchio nome come descrizione libera: basta scegliere il concetto in modifica per completarle. Il nome resta il campo mostrato ovunque (cataloghi, distinte, costificazione, PDF/Excel), quindi nessuna regressione sui documenti esistenti.
-
-### 0.8.1 — 2026-07-22
-
-- **Barra superiore alleggerita**: via il pulsante Backup (resta in *Gestione → 💾 Backup*), cambio password 🔑 e uscita ridotti a icone. A sinistra della pill utente **data per esteso sopra e ora sotto** (ore e minuti).
-- La barra resta sempre **su una riga sola**: al restringersi della finestra cede nell'ordine il ruolo nella pill, le etichette del menu (che diventa a sole icone, con la vista attiva evidenziata) e solo per ultima la data.
-
-### 0.8.0 — 2026-07-22
-
-**Aggiunto**
-- **Utenti, accesso e ruoli** — schermata di accesso con email e password (al primo avvio crea l'amministratore, senza credenziali predefinite), sessione con "Ricordami", cambio password e pill utente nell'header. Nuovo pannello *Gestione → 👥 Utenti* con creazione, modifica, sospensione, reset password ed eliminazione, e l'invariante dell'ultimo amministratore attivo.
-- **Quattro ruoli** — Amministratore, Ufficio acquisti, Progettazione, Lettore — che limitano la scrittura per area (articoli, distinte, documenti, gestione), con banner di sola lettura nelle sezioni non modificabili. Vedi [Utenti e ruoli](#utenti-e-ruoli), **avvertenza sui limiti inclusa**.
-- **Tracciabilità** `createdBy`/`updatedBy` su ogni record, popolata dall'utente della sessione (nessuna UI: serve alla migrazione).
-- Struttura pensata per **Supabase**: nomi e flusso (`submitLogin`/`doLogin`/`logout`) ricalcano l'app TimeTrack già migrata, così passare ad `auth.users` + `profiles` è una sostituzione localizzata — mappatura in [docs/cloud-schema.md](docs/cloud-schema.md).
-
-**Modificato**
-- `AZZERA TUTTO` conserva l'utente che lo esegue, ricreandolo come amministratore; ripristino dei dati di esempio e import di un backup riconciliano la sessione (se il backup contiene altri utenti si torna alla schermata di accesso).
-
-### 0.7.0 — 2026-07-22
-
-**Aggiunto**
-- **Anagrafiche separate** — il Catalogo unico si divide in due viste: **📦 Acquisti** (commerciali e materie prime) e **🏗 Progetto** (macchine, gruppi, sottogruppi, parti). Ogni vista ha i propri filtri e la creazione di articoli ristretta ai tipi di sua competenza, così il menu "Tipo" non propone più sei voci di cui cinque fuori contesto.
-- **Calcolo del costo parte configurabile** — solo costo unitario, solo valore del ciclo di lavorazione, o la somma dei due; per singola parte, con default in *Gestione → Impostazioni*. Vedi [Modello di costo](#modello-di-costo).
-- **Preferiti ★** su commerciali e materie prime, con filtro "solo preferiti" nella vista Acquisti.
-- **Note interne** su richieste di offerta e ordini: non vengono stampate su PDF ed Excel, passano dalla richiesta all'ordine generato e restano modificabili in ogni stato del documento.
-- **Sottogruppi annidati** — un sottogruppo può contenere altri sottogruppi; il controllo anti-ciclo continua a impedire le auto-inclusioni.
-- **Filtri negli elenchi di richieste e ordini** — per stato, per fornitore (compreso "senza fornitore") e per testo. La ricerca guarda numero, oggetto, fornitore, note e **righe del documento**, così si risale all'ordine partendo dal codice acquistato. Accanto ai filtri il conteggio dei documenti mostrati e un pulsante per azzerarli.
-- **🗑 AZZERA TUTTO** in *Gestione → Backup*: svuota completamente il database (articoli, documenti, anagrafiche, famiglie, U.M. e impostazioni) senza ricaricare i dati di esempio. Doppia conferma, la seconda da digitare.
-
-### 0.6.0 — 2026-07-21
-
-**Aggiunto**
-- **Unità di misura gestite** — nuovo pannello *Gestione → 📏 Unità di misura* con elenco di codici e descrizioni, U.M. predefinita ★, conteggio degli utilizzi e rinomina propagata ad articoli e documenti. Tutti i campi U.M. dell'app (anagrafica articolo, testata macchina, righe RFQ e ODA) sono passati da testo libero a menu a tendina. Le U.M. già presenti nei dati e quelle incontrate nell'import Excel entrano automaticamente in elenco, così nessun valore storico va perso.
-- **Note di riga** in richieste di offerta e ordini, compilabili all'inserimento della riga e stampate sui documenti: nel PDF sotto la descrizione, nell'Excel in una colonna *Nota*. Le note viaggiano dalla richiesta all'ordine generato.
-- **Modifica delle righe** già inserite, con il pulsante ✏ su ogni riga: sulle righe manuali si correggono codice, descrizione, U.M., quantità e prezzo; sulle righe da catalogo restano modificabili quantità, prezzo e nota (codice e descrizione seguono l'anagrafica).
-- **Stati automatici** per RFQ e ODA e **blocco delle modifiche** sui documenti già inviati, con sblocco a un click — vedi [Stati dei documenti](#stati-dei-documenti-e-blocco-modifiche). Nuovo stato RFQ *Offerta ricevuta*.
-- **Badge di stato** colorato nell'elenco e nell'editor di richieste e ordini, e **versione dell'app** nell'header.
-
-**Modificato**
-- Il totale dell'ordine, gli importi di riga e il residuo si aggiornano subito alla modifica di quantità, prezzo o ricevuto (prima restavano fermi fino al salvataggio).
-- L'eliminazione di una richiesta o di un ordine non in bozza avverte dello stato nel messaggio di conferma, segnalando anche le quantità già ricevute.
-
-### 0.5.0 — 2026-07-21
-
-- **Ordini a fornitore (ODA)** — nuova vista con numerazione progressiva per anno, generazione da una richiesta di offerta, righe con prezzo/importo/consegna, registrazione dei ricevimenti (ricevuto e residuo per riga, "segna tutto ricevuto"), totale imponibile ed export PDF/Excel bilingue.
-
-### 0.4.0 — 2026-07-20
-
-- **Richieste di offerta (RFQ)** — modello a fornitore singolo, righe da catalogo (con filtri per tipo/famiglia/fornitore) o manuali, condizioni di trasporto e pagamento precompilabili, documento bilingue IT/EN in PDF ed Excel, compilazione di prezzi e date al ritorno dell'offerta e **confronto offerte** tra più richieste.
-- **Dati azienda** e anagrafica fornitori estesa (indirizzo strutturato, P.IVA, referente, condizioni predefinite), stampati come intestazione sui documenti.
-
-### 0.3.0 — 2026-07-12
-
-- **Codifica gerarchica** macchina › gruppo › sottogruppo/parte, con schema configurabile per singola macchina (lunghezza e tipo della sigla gruppo, cifre dei progressivi).
-- *Gestione → Impostazioni*: separazione tra **Costi e margini** e **Codifica automatica articoli**.
-- **Catalogo**: filtri famiglia/sottofamiglia dipendenti dal tipo di articolo selezionato.
-
-### 0.2.0 — 2026-07-12
-
-- Estrazione del layer dati in `store.js` (`Store` come API repository) e **migrazione schema v2**: ID UUID al posto degli interi legacy, timestamp `createdAt`/`updatedAt` su ogni record, migrazioni idempotenti.
-- Contratto per il futuro backend condiviso documentato in `docs/cloud-schema.md`.
-
-### 0.1.0 — 2026-07-12
-
-- Prima versione: distinte base multi-livello, catalogo articoli, costificazione con rollup ricorsivo, export PDF/Excel, import massivo da Excel, backup JSON. App monolitica su localStorage.
+Lo storico completo delle versioni è in [CHANGELOG.md](CHANGELOG.md).
 
 ## Note
 

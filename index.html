@@ -7,9 +7,19 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="style.css">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<!-- Librerie di export, dentro il repo (vedi vendor/LEGGIMI.md). Erano su CDN con
+     SRI: la firma proteggeva dal CDN compromesso, ma restavano due cose. La
+     prima è che SheetJS non pubblica più su cdnjs dalla 0.18, e quella versione
+     ha due vulnerabilità corrette a monte, su file Excel che sono input non
+     fidato. La seconda è che l'app dichiara di aprirsi con un doppio click e di
+     girare offline, e con le librerie altrove questo era vero solo dopo il primo
+     caricamento con la rete. Un file nel repo risolve entrambe: niente terzo
+     dominio da fidarsi, e l'export funziona anche su un PC in officina senza
+     rete. (requirePdf/requireXlsx in core.js restano: se un file manca lo
+     dicono, invece di lasciare il pulsante muto.) -->
+<script src="vendor/jspdf.umd.min.js"></script>
+<script src="vendor/jspdf.plugin.autotable.min.js"></script>
+<script src="vendor/xlsx.full.min.js"></script>
 </head>
 <body>
 
@@ -74,18 +84,35 @@
 
 <div id="app-main" style="display:none">
 
+  <!-- RIEPILOGO — riempita da renderHome() -->
+  <div id="view-home" class="view-panel"></div>
+
   <!-- DISTINTE BASE -->
   <div id="view-bom" class="view-panel active">
     <div class="bom-toolbar">
       <h2 class="section-title">🌳 Distinta Base &amp; Costificazione</h2>
-      <div class="field-group" style="position:relative">
-        <label>Macchina / Prodotto</label>
-        <select id="bom-select" onchange="onBomSelect()"></select>
-      </div>
       <button class="add-btn-sm" onclick="newMachineModal()">+ Nuova macchina</button>
       <button class="btn-outline" id="bom-edit-btn" onclick="editCurrentItemModal()">✏ Modifica testata</button>
       <button class="btn-outline" id="bom-del-btn" onclick="deleteCurrentMachine()">🗑 Elimina</button>
     </div>
+
+    <div class="catalog-filters">
+      <input type="text" class="search" id="bom-search" placeholder="🔍 Cerca codice o nome distinta..." oninput="bomSearchInput()">
+      <select id="bom-type" onchange="onBomFilterChange()">
+        <option value="">Tutti i livelli</option>
+        <option value="macchina">Macchine</option>
+        <option value="gruppo">Gruppi</option>
+        <option value="sottogruppo">Sottogruppi</option>
+      </select>
+      <select id="bom-machine" onchange="onBomFilterChange()">
+        <option value="">Tutte le macchine</option>
+      </select>
+      <select id="bom-select" class="cyc-part-select" onchange="onBomSelect()"></select>
+      <span class="doc-filter-count" id="bom-count"></span>
+    </div>
+
+    <!-- Revisione in lavorazione, rilascio e storico: riempita da renderBomRevBar() -->
+    <div id="bom-rev-bar" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px"></div>
 
     <div id="bom-cost-summary" class="cost-summary"></div>
 
@@ -101,7 +128,11 @@
 
   <!-- ARTICOLI D'ACQUISTO (commerciali e materie prime) -->
   <div id="view-buy" class="view-panel">
-    <h2 class="section-title">📦 Commerciali &amp; Materie prime</h2>
+    <div class="bom-toolbar">
+      <h2 class="section-title">📦 Commerciali &amp; Materie prime</h2>
+      <button class="export-btn-xls" onclick="exportListXlsx(catalogExportSpec('buy'))">📗 Esporta Excel</button>
+      <button class="export-btn-pdf" onclick="exportListPdf(catalogExportSpec('buy'))">📄 Esporta PDF</button>
+    </div>
     <div class="catalog-filters">
       <input type="text" class="search" id="buy-search" placeholder="🔍 Cerca codice o nome..." oninput="catalogSearchInput('buy')">
       <select id="buy-type" onchange="onCatTypeChange('buy')">
@@ -123,7 +154,11 @@
 
   <!-- ARTICOLI DI PROGETTO (macchine, gruppi, sottogruppi, parti) -->
   <div id="view-design" class="view-panel">
-    <h2 class="section-title">🏗 Macchine, Gruppi &amp; Parti</h2>
+    <div class="bom-toolbar">
+      <h2 class="section-title">🏗 Macchine, Gruppi &amp; Parti</h2>
+      <button class="export-btn-xls" onclick="exportListXlsx(catalogExportSpec('design'))">📗 Esporta Excel</button>
+      <button class="export-btn-pdf" onclick="exportListPdf(catalogExportSpec('design'))">📄 Esporta PDF</button>
+    </div>
     <div class="catalog-filters">
       <input type="text" class="search" id="des-search" placeholder="🔍 Cerca codice o nome..." oninput="catalogSearchInput('design')">
       <select id="des-type" onchange="onCatTypeChange('design')">
@@ -144,9 +179,46 @@
     <div class="table-wrap" id="des-table"></div>
   </div>
 
+  <!-- MAGAZZINO — commerciali, materie prime e parti nella stessa lista -->
+  <div id="view-stock" class="view-panel">
+    <div class="bom-toolbar">
+      <h2 class="section-title">📦 Magazzino</h2>
+      <button class="export-btn-xls" onclick="exportListXlsx(stockExportSpec())">📗 Esporta Excel</button>
+      <button class="export-btn-pdf" onclick="exportListPdf(stockExportSpec())">📄 Esporta PDF</button>
+    </div>
+    <div class="catalog-filters">
+      <input type="text" class="search" id="stk-search" placeholder="🔍 Cerca codice o nome..." oninput="stockSearchInput()">
+      <select id="stk-type" onchange="onStockTypeChange()">
+        <option value="">Tutti i tipi</option>
+        <option value="acquistato">Componente commerciale</option>
+        <option value="materiale">Materia prima</option>
+        <option value="parte">Parte (lavorato)</option>
+      </select>
+      <select id="stk-family" onchange="onStockFamilyChange()">
+        <option value="">Tutte le famiglie</option>
+      </select>
+      <select id="stk-subfamily" onchange="stockFilterChange()">
+        <option value="">Tutte le sottofamiglie</option>
+      </select>
+      <select id="stk-state" onchange="stockFilterChange()">
+        <option value="">Tutti gli stati</option>
+        <option value="sotto">Sotto la scorta minima</option>
+        <option value="zero">Giacenza a zero</option>
+        <option value="con">Con giacenza</option>
+        <option value="negativo">Libero negativo</option>
+      </select>
+    </div>
+    <div id="stk-kpi" class="cost-summary"></div>
+    <div class="table-wrap" id="stk-table"></div>
+  </div>
+
   <!-- CICLI DI LAVORAZIONE (distinta parte + fasi di una Parte) -->
   <div id="view-cycles" class="view-panel">
-    <h2 class="section-title">🔧 Cicli di lavorazione</h2>
+    <div class="bom-toolbar">
+      <h2 class="section-title">🔧 Cicli di lavorazione</h2>
+      <button class="export-btn-xls" onclick="exportListXlsx(cycleExportSpec())">📗 Esporta Excel</button>
+      <button class="export-btn-pdf" onclick="exportListPdf(cycleExportSpec())">📄 Esporta PDF</button>
+    </div>
     <div class="catalog-filters">
       <input type="text" class="search" id="cyc-search" placeholder="🔍 Cerca codice o nome..." oninput="cycleSearchInput()">
       <select id="cyc-family" onchange="onCycleFilterChange()">
@@ -157,6 +229,8 @@
       </select>
       <select id="cyc-part" class="cyc-part-select" onchange="onCyclePartSelect()"></select>
     </div>
+    <!-- Revisione del ciclo: riempita da renderCyclesRevBar() -->
+    <div id="cycles-rev-bar" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px"></div>
     <div id="cyc-summary" class="cost-summary"></div>
     <div id="cyc-body"></div>
   </div>
@@ -174,6 +248,9 @@
     </div>
     <div id="report-content"></div>
   </div>
+
+  <!-- COMMESSE — riempita da renderJobs() -->
+  <div id="view-jobs" class="view-panel"></div>
 
   <!-- FABBISOGNO MATERIALI (piani di produzione) -->
   <div id="view-mrp" class="view-panel"></div>
@@ -199,16 +276,28 @@
      build, così la pagina si apre anche con un doppio click (file://).
      L'ordine conta solo per l'avvio, che sta in fondo all'ultimo file. -->
 <script src="store.js"></script>
+<!-- Traduzione annidato ↔ normalizzato: legge SCHEMA da store.js, non dipende
+     da altro. Nessun codice di rete: l'app resta locale. -->
+<script src="cloud-map.js"></script>
 <script src="core.js"></script>
 <script src="auth.js"></script>
 <script src="costing.js"></script>
 <script src="shell.js"></script>
 <script src="views-bom.js"></script>
+<script src="views-rev.js"></script>
+<script src="views-stock.js"></script>
 <script src="views-catalog.js"></script>
 <script src="views-report.js"></script>
+<script src="views-jobs.js"></script>
+<script src="views-home.js"></script>
 <script src="views-mrp.js"></script>
+<script src="views-item.js"></script>
 <script src="views-docs.js"></script>
 <script src="views-manage.js"></script>
+<!-- PDF ed Excel degli elenchi: legge le specifiche che le viste descrivono,
+     quindi va dopo di loro. -->
+<script src="export-lists.js"></script>
+<script src="import-catalog.js"></script>
 <script src="import-export.js"></script>
 </body>
 </html>

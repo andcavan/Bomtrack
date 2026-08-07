@@ -8,18 +8,57 @@
 // ═══════════════════════════════════════════════════════════
 //  VISTA: DISTINTE BASE
 // ═══════════════════════════════════════════════════════════
+// ─── Filtri dell'elenco distinte ───
+// Oltre il centinaio di assiemi il menu a tendina non si scorre più. I criteri
+// sono gli stessi della vista Cicli: testo, livello e — al posto della famiglia,
+// che gli assiemi non usano — la macchina di appartenenza.
+function bomProducts() { return (db.items || []).filter(i => isAssembly(i.type)); }
+function bomFilteredProducts() {
+  const q = (val('bom-search') || '').toLowerCase();
+  const tipo = val('bom-type');
+  const mac = val('bom-machine');
+  let rows = bomProducts();
+  if (tipo) rows = rows.filter(i => i.type === tipo);
+  // La macchina stessa vale come "appartenente a sé": filtrando per una macchina
+  // ci si aspetta di trovarci dentro anche lei, non solo i suoi gruppi.
+  if (mac) rows = rows.filter(i => i.id === mac || i.machineItemId === mac);
+  if (q) rows = rows.filter(i => (i.code + ' ' + i.name).toLowerCase().includes(q));
+  return rows.sort((a, b) => String(a.code).localeCompare(String(b.code)));
+}
+// Ripopola il menu delle macchine conservando la scelta, se ancora valida
+// (stesso patto di updateCycleFamilyFilters).
+function updateBomMachineFilter() {
+  const sel = document.getElementById('bom-machine'); if (!sel) return;
+  renderInto(sel, () => {
+    const macs = (db.items || []).filter(i => i.type === 'macchina')
+      .sort((a, b) => String(a.code).localeCompare(String(b.code)));
+    const keep = macs.some(m => m.id === sel.value) ? sel.value : '';
+    return `<option value="">Tutte le macchine</option>` +
+      macs.map(m => `<option value="${m.id}" ${m.id === keep ? 'selected' : ''}>${esc(m.code)} — ${esc(m.name)}</option>`).join('');
+  });
+}
+function bomSearchInput() { debounced('bom', renderBom); }
+function onBomFilterChange() { renderBom(); }
+
 function productOptions(selectedId) {
   const opt = (i) => `<option value="${i.id}" ${i.id === selectedId ? 'selected' : ''}>${itemBadgesTxt(i)}${esc(i.code)} — ${esc(i.name)}</option>`;
+  // La distinta aperta resta sempre in elenco, anche se non passa i filtri:
+  // altrimenti restringere la ricerca chiuderebbe l'albero sotto le mani.
+  const rows = bomFilteredProducts();
+  const aperta = getItem(selectedId);
+  if (aperta && isAssembly(aperta.type) && !rows.some(i => i.id === selectedId)) rows.push(aperta);
   const groups = [['macchina', 'Macchine'], ['gruppo', 'Gruppi'], ['sottogruppo', 'Sottogruppi']];
   let h = groups.map(([t, lbl]) => {
-    const items = db.items.filter(i => i.type === t);
+    const items = rows.filter(i => i.type === t);
     return items.length ? `<optgroup label="${lbl}">${items.map(opt).join('')}</optgroup>` : '';
   }).join('');
   if (!h) h = '<option value="">— nessun assieme —</option>';
   return h;
 }
+// La selezione ricade sui prodotti NON filtrati: i filtri restringono l'elenco,
+// non decidono cosa si sta guardando.
 function ensureCurrentBom() {
-  const products = db.items.filter(i => isAssembly(i.type));
+  const products = bomProducts();
   if (!currentBomId || !products.some(p => p.id === currentBomId)) {
     const m = products.find(p => p.type === 'macchina') || products[0];
     currentBomId = m ? m.id : null;
@@ -29,9 +68,16 @@ function onBomSelect() { currentBomId = val('bom-select'); bomExpanded = new Set
 
 function renderBom() {
   invalidateCaches();   // rete di sicurezza: la cache dei costi vive dentro un singolo disegno
+  updateBomMachineFilter();
   ensureCurrentBom();
   document.getElementById('bom-select').innerHTML = productOptions(currentBomId);
+  const conta = document.getElementById('bom-count');
+  if (conta) {
+    const n = bomFilteredProducts().length, tot = bomProducts().length;
+    conta.textContent = n === tot ? `${tot} ${tot === 1 ? 'distinta' : 'distinte'}` : `${n} di ${tot}`;
+  }
   const it = getItem(currentBomId);
+  renderBomRevBar();
   const summary = document.getElementById('bom-cost-summary');
   const tree = document.getElementById('bom-tree');
   if (!it) {
@@ -41,14 +87,17 @@ function renderBom() {
   }
   const c = costOf(it.id);
   const price = sellingPrice(it.id);
+  // Sono tutti costi **unitari**, per una unità dell'assieme aperto: senza il
+  // denominatore si leggono come il costo di una commessa intera.
+  const u = itemUom(it);
   summary.innerHTML = [
-    kpi('Materiale', fmtN(c.material), 'orange'),
-    kpi('Commerciali', fmtN(c.purchased), 'accent'),
-    kpi('Parti', fmtN(c.parts), 'purple'),
-    kpi('Lavorazioni', fmtN(c.labor), 'green'),
-    kpi('Spese generali', fmtN(c.overhead), ''),
-    kpi('Costo totale', fmtN(c.total), ''),
-    kpi('Prezzo vendita', fmtN(price), 'green'),
+    kpi('Materiale', fmtPer(c.material, u), 'orange'),
+    kpi('Commerciali', fmtPer(c.purchased, u), 'accent'),
+    kpi('Parti', fmtPer(c.parts, u), 'purple'),
+    kpi('Lavorazioni', fmtPer(c.labor, u), 'green'),
+    kpi('Spese generali', fmtPer(c.overhead, u), ''),
+    kpi('Costo totale', fmtPer(c.total, u), ''),
+    kpi('Prezzo vendita', fmtPer(price, u), 'green'),
   ].join('') + (c.cycle ? '<div class="empty-text" style="color:var(--red)">⚠ Rilevato riferimento ciclico nella distinta!</div>' : '');
 
   // Albero
@@ -77,7 +126,7 @@ function renderBomNode(comp, level, parentId, editable, idx, pathPrefix, ancesto
   const isProd = isAssembly(child.type);
   // Anche una Parte è espandibile: mostra il proprio ciclo di lavorazione (articoli + lavorazioni).
   // Col calcolo "solo costo unitario" il ciclo non concorre al costo e non va mostrato nell'albero.
-  const hasCycle = child.type === 'parte' && (child.cycle || []).length > 0 && partCostMode(child) !== 'unit';
+  const hasCycle = child.type === 'parte' && (child.cycle || []).length > 0 && partSourcing(child) !== 'buy';
   const expandable = !cyc && (hasCycle || (isProd && (child.components || []).length > 0));
   const expanded = bomExpanded.has(nodeKey);
   const unit = cyc ? 0 : costOf(comp.itemId).total;
@@ -86,7 +135,8 @@ function renderBomNode(comp, level, parentId, editable, idx, pathPrefix, ancesto
   const lineCost = unit * factor;
   const indent = (level - 1) * 18;
   const toggle = expandable
-    ? `<span class="bom-toggle" onclick="toggleBom('${nodeKey}')">${expanded ? '▼' : '▶'}</span>`
+    ? `<span class="bom-toggle" ${clickAttrs(`toggleBom('${nodeKey}')`, (expanded ? 'Richiudi ' : 'Espandi ') + child.code)}
+        aria-expanded="${expanded}">${expanded ? '▼' : '▶'}</span>`
     : `<span class="bom-toggle leaf">•</span>`;
   const actions = `<button class="mini-btn" title="Dove è usato e impatto costi" onclick="usageModal('${comp.itemId}')">🔗</button>`
     + (child.type === 'parte' ? `<button class="mini-btn" title="Distinta parte e ciclo di lavorazione" onclick="openCycleFor('${comp.itemId}')">🔧</button>` : '')
@@ -97,7 +147,7 @@ function renderBomNode(comp, level, parentId, editable, idx, pathPrefix, ancesto
 
   let h = `<div class="bom-node" style="padding-left:${18 + indent}px">
     <span class="bom-name"><span class="bom-pos">${esc(pos || '')}</span>${toggle}
-      <span class="bom-code">${esc(child.code)}</span>
+      <span class="bom-code">${codeLink(child.id, child.code)}</span>
       <span class="bom-type-tag tt-${child.type}">${typeShort(child.type)}</span>
       <span class="nm" title="${esc(child.name)}">${esc(child.name)}${cyc ? ' ⚠' : ''}</span>
     </span>
@@ -116,7 +166,6 @@ function renderBomNode(comp, level, parentId, editable, idx, pathPrefix, ancesto
       let n = 0;
       h += (child.cycle || []).map(row =>
         renderCycleBomNode(row, level + 1, row.kind === 'op' ? '' : bomPos(pos, n++))).join('');
-      h += renderPartManualCostNode(child, level + 1, bomPos(pos, n));
     } else {
       h += (child.components || []).map((cc, i) =>
         renderBomNode(cc, level + 1, child.id, false, i, nodeKey, ancestorIds.concat(child.id), bomPos(pos, i))).join('');
@@ -133,7 +182,7 @@ function renderCycleBomNode(row, level, pos) {
   const lineCost = cycleRowCost(row);
   let name, qtyCell, uom, unit;
   if (row.kind === 'op') {
-    const wc = db.workCenters.find(w => w.id === row.workCenterId);
+    const wc = getWorkCenter(row.workCenterId);
     const sup = supplierName(row.supplierId);
     name = `<span class="bom-type-tag tt-lav">LAV</span>
       <span class="nm" title="${esc(wc ? wc.name : '?')}">🔧 ${esc(wc ? wc.name : '?')}${sup ? ' · ' + esc(sup) : ''}</span>`;
@@ -141,7 +190,7 @@ function renderCycleBomNode(row, level, pos) {
   } else {
     const ci = getItem(row.itemId);
     if (!ci) return `<div class="bom-node" style="padding-left:${18 + indent}px"><span class="bom-name"><span class="bom-pos">${esc(pos || '')}</span>⚠ articolo mancante</span></div>`;
-    name = `<span class="bom-code">${esc(ci.code)}</span>
+    name = `<span class="bom-code">${codeLink(ci.id, ci.code)}</span>
       <span class="bom-type-tag tt-${ci.type}">${typeShort(ci.type)}</span>
       <span class="nm" title="${esc(ci.name)}">${esc(ci.name)}</span>`;
     qtyCell = Number(row.qty) || 0; uom = ci.uom || ''; unit = costOf(row.itemId).total;
@@ -157,23 +206,6 @@ function renderCycleBomNode(row, level, pos) {
   </div>`;
 }
 
-// Col calcolo "costo unitario + ciclo" la quota manuale è una riga a sé, così le
-// righe mostrate sotto la Parte sommano al suo costo unitario.
-function renderPartManualCostNode(it, level, pos) {
-  const manual = Number(it.unitCost) || 0;
-  if (partCostMode(it) !== 'sum' || !manual) return '';
-  const indent = (level - 1) * 18;
-  return `<div class="bom-node bom-node-cycle" style="padding-left:${18 + indent}px">
-    <span class="bom-name"><span class="bom-pos">${esc(pos || '')}</span><span class="bom-toggle leaf">•</span>
-      <span class="nm">💠 Costo unitario (manuale)</span></span>
-    <span class="num">1</span>
-    <span>${esc(it.uom || '')}</span>
-    <span class="num cost">${fmtN(manual)}</span>
-    <span class="num">—</span>
-    <span class="num cost">${fmtN(manual)}</span>
-    <span class="bom-row-actions"></span>
-  </div>`;
-}
 
 // Riga radice: mostra l'articolo padre (macchina/gruppo selezionata) come prima riga dell'albero.
 function renderBomRootNode(it) {
@@ -182,7 +214,7 @@ function renderBomRootNode(it) {
     <span class="bom-name">
       <span class="bom-pos"></span>
       <span class="bom-toggle leaf">•</span>
-      <span class="bom-code">${esc(it.code)}</span>
+      <span class="bom-code">${codeLink(it.id, it.code)}</span>
       <span class="bom-type-tag tt-${it.type}">${typeShort(it.type)}</span>
       <span class="nm" title="${esc(it.name)}">${esc(it.name)}</span>
     </span>
@@ -199,10 +231,11 @@ function renderOpsBlock(item, editable, padLeft) {
   const ops = item.operations || [];
   const pl = padLeft != null ? padLeft : 18;
   const tags = ops.map((o, i) => {
-    const wc = db.workCenters.find(w => w.id === o.workCenterId);
+    const wc = getWorkCenter(o.workCenterId);
     const cost = (Number(o.hours) || 0) * (wc ? (Number(wc.hourlyRate) || 0) : 0);
-    const del = editable ? ` <span style="cursor:pointer;color:var(--red)" title="Elimina" onclick="delOperation(${i})">✕</span>` : '';
-    const ed = editable ? `<span style="cursor:pointer" onclick="editOperationModal(${i})">` : '<span>';
+    const nome = wc ? wc.name : 'lavorazione';
+    const del = editable ? ` <span style="cursor:pointer;color:var(--red)" title="Elimina" ${clickAttrs(`delOperation(${i})`, 'Elimina ' + nome)}>✕</span>` : '';
+    const ed = editable ? `<span style="cursor:pointer" ${clickAttrs(`editOperationModal(${i})`, 'Modifica ' + nome)}>` : '<span>';
     return `<span class="bom-op-tag">${ed}🔧 ${esc(wc ? wc.name : '?')} · ${(Number(o.hours) || 0)}h · ${fmtN(cost)}</span>${del}</span>`;
   }).join('');
   if (!ops.length && !editable) return '';
@@ -265,7 +298,7 @@ function renderPickerResults() {
   rows = rows.slice(0, 50);
   const sel = val('cmp-item');
   let html = rows.map(i =>
-    `<div class="picker-row ${i.id === sel ? 'is-sel' : ''}" onclick="selectPickerItem('${i.id}')">
+    `<div class="picker-row ${i.id === sel ? 'is-sel' : ''}" ${clickAttrs(`selectPickerItem('${i.id}')`, `Scegli ${i.code}`)}>
        <span class="picker-type">${typeLabel(i.type)}</span><b>${esc(i.code)}</b> — ${esc(i.name)}${itemBadges(i)}
      </div>`).join('');
   if (!html) html = `<div class="picker-empty">Nessun articolo trovato</div>`;
@@ -279,6 +312,16 @@ function selectPickerItem(id) {
   const search = document.getElementById('cmp-search');
   if (search && it) search.value = it.code + ' — ' + it.name;
   renderPickerResults();
+  cmpQtyLabelRefresh();
+}
+// «Quantità» da sola non dice quantità *di che cosa*: due o due metri cambiano
+// la distinta. L'unità è quella del componente, che qui si sceglie dopo aver
+// aperto il form — quindi l'etichetta la segue invece di essere scritta una
+// volta sola. Finché non si è scelto niente resta "Quantità", senza parentesi
+// vuote da riempire con l'immaginazione.
+function cmpQtyLabelRefresh() {
+  const lbl = document.getElementById('cmp-qty-label'); if (!lbl) return;
+  lbl.textContent = labelUom('Quantità', itemUom(getItem(val('cmp-item'))));
 }
 function allowedHint(parentType) {
   const allowed = (ALLOWED_CHILDREN[parentType] || []).map(typeLabel);
@@ -293,12 +336,13 @@ function addComponentModal() {
     <p class="empty-text" style="text-align:left;padding:0 0 10px">${allowedHint(it.type)}</p>
     ${itemPickerField(null)}
     <div class="modal-grid">
-      <div class="modal-field"><label>Quantità</label><input type="number" id="cmp-qty" min="0" step="0.001" value="1"></div>
+      <div class="modal-field"><label id="cmp-qty-label">Quantità</label><input type="number" id="cmp-qty" min="0" step="0.001" value="1"></div>
       <div class="modal-field"><label>Scarto %</label><input type="number" id="cmp-scrap" min="0" step="0.1" value="0"></div>
     </div>
     <div class="modal-actions"><button class="btn-ghost" onclick="closeModal()">Annulla</button>
       <button class="add-btn-sm" onclick="saveNewComponent()">Aggiungi</button></div>`);
   renderPickerResults();
+  cmpQtyLabelRefresh();
 }
 function isAllowedChild(parentType, childId) {
   const child = getItem(childId);
@@ -325,7 +369,7 @@ function editComponentModal(idx) {
     <p class="empty-text" style="text-align:left;padding:0 0 10px">${allowedHint(it.type)}</p>
     ${itemPickerField(comp.itemId)}
     <div class="modal-grid">
-      <div class="modal-field"><label>Quantità</label><input type="number" id="cmp-qty" min="0" step="0.001" value="${comp.qty}"></div>
+      <div class="modal-field"><label id="cmp-qty-label">${labelUom('Quantità', itemUom(getItem(comp.itemId)))}</label><input type="number" id="cmp-qty" min="0" step="0.001" value="${comp.qty}"></div>
       <div class="modal-field"><label>Scarto %</label><input type="number" id="cmp-scrap" min="0" step="0.1" value="${comp.scrapPct || 0}"></div>
     </div>
     <div class="modal-actions"><button class="btn-ghost" onclick="closeModal()">Annulla</button>
@@ -351,24 +395,37 @@ function delComponent(idx) {
     it.components.splice(idx, 1); touch(it); saveDB(); renderBom(); showToast('Componente eliminato');
   });
 }
-// Verifica se aggiungere childId dentro parentId creerebbe un ciclo
+// Verifica se aggiungere childId dentro parentId creerebbe un ciclo.
+//
+// La discesa segue entrambe le strade con cui un articolo ne contiene un altro:
+// i `components` degli assiemi e le righe di distinta nel `cycle` di una parte
+// (`kind !== 'op'`, la stessa regola di parentIndex() e del motore di costo).
+// Fino alla 0.22.0 guardava solo i componenti e usciva subito se il figlio non
+// era un assieme: la vista Cicli non aveva alcun controllo, e l'anello per
+// quella strada era impossibile solo perché CYCLE_CHILD_TYPES ammette le sole
+// foglie — una difesa che nessuno aveva scritto, e che sarebbe caduta il giorno
+// in cui si fosse allargato quell'elenco.
+//
+// Vale la pena ricordare perché è importante: un anello in distinta manda
+// costOf() in ricorsione, e il flag `cycle` che risale fino alla UI è
+// contenimento del danno, non una cura.
 function createsCycle(parentId, childId) {
   if (parentId === childId) return true;
-  const child = getItem(childId);
-  if (!child || !isAssembly(child.type)) return false;
   const visited = new Set();
   const dfs = (id) => {
     if (id === parentId) return true;
     if (visited.has(id)) return false;
     visited.add(id);
     const node = getItem(id);
-    if (!node || !isAssembly(node.type)) return false;
-    return (node.components || []).some(c => dfs(c.itemId));
+    if (!node) return false;
+    if (isAssembly(node.type)) return (node.components || []).some(c => dfs(c.itemId));
+    if (node.type === 'parte') return (node.cycle || []).some(r => r.kind !== 'op' && dfs(r.itemId));
+    return false;
   };
   return dfs(childId);
 }
 
-function supplierName(id) { const s = db.suppliers.find(x => x.id === id); return s ? s.name : ''; }
+function supplierName(id) { const s = getSupplier(id); return s ? s.name : ''; }
 function supplierOptions(selectedId) {
   return `<option value="">—</option>` + db.suppliers
     .map(s => `<option value="${s.id}" ${s.id === selectedId ? 'selected' : ''}>${esc(s.name)}</option>`).join('');
@@ -389,7 +446,7 @@ function addOperationModal() {
   openModal(`<h3>🔧 Aggiungi lavorazione</h3>
     <div class="modal-field"><label>Centro di lavoro</label><select id="op-wc">${wcOptions(null)}</select></div>
     <div class="modal-grid">
-      <div class="modal-field"><label>Ore</label><input type="number" id="op-hours" min="0" step="0.25" value="1"></div>
+      <div class="modal-field"><label>Ore (h)</label><input type="number" id="op-hours" min="0" step="0.25" value="1"></div>
       <div class="modal-field"><label>Nota</label><input type="text" id="op-note" placeholder="opzionale"></div>
     </div>
     <div class="modal-actions"><button class="btn-ghost" onclick="closeModal()">Annulla</button>
@@ -410,7 +467,7 @@ function editOperationModal(idx) {
   openModal(`<h3>🔧 Modifica lavorazione</h3>
     <div class="modal-field"><label>Centro di lavoro</label><select id="op-wc">${wcOptions(op.workCenterId)}</select></div>
     <div class="modal-grid">
-      <div class="modal-field"><label>Ore</label><input type="number" id="op-hours" min="0" step="0.25" value="${op.hours}"></div>
+      <div class="modal-field"><label>Ore (h)</label><input type="number" id="op-hours" min="0" step="0.25" value="${op.hours}"></div>
       <div class="modal-field"><label>Nota</label><input type="text" id="op-note" value="${esc(op.note || '')}"></div>
     </div>
     <div class="modal-actions"><button class="btn-ghost" onclick="closeModal()">Annulla</button>
@@ -480,12 +537,12 @@ function saveNewMachine() {
   if (d.sigla && !/^[A-Z0-9]+$/.test(d.sigla)) { showToast('La sigla macchina ammette solo A-Z e 0-9', 'error'); return; }
   if (d.sigla && machineItems().some(m => m.sigla === d.sigla)) { showToast(`Sigla macchina "${d.sigla}" già in uso`, 'error'); return; }
   const id = gid();
-  db.items.push(stampNew(Object.assign({
+  Store.insert('items', Object.assign({
     id, code: val('mac-code') || id, name, type: 'macchina', uom: val('mac-uom') || defaultUom(),
     notes: val('mac-notes'), active: true, components: [], operations: [],
-  }, d)));
+  }, d));
   currentBomId = id; bomExpanded = new Set();
-  saveDB(); closeModal(); renderBom(); showToast('Macchina creata');
+  closeModal(); renderBom(); showToast('Macchina creata');
 }
 function editCurrentItemModal() {
   if (!roleGuard('bom')) return;
@@ -522,14 +579,15 @@ function deleteCurrentMachine() {
   const used = usedBy(it.id);
   if (used.length) { showToast('Usato in: ' + used.map(u => u.code).join(', ') + '. Rimuovilo prima.', 'error'); return; }
   askConfirm(`Eliminare "${it.name}" e la sua distinta?`, () => {
-    db.items = db.items.filter(i => i.id !== it.id);
-    currentBomId = null; saveDB(); renderBom(); showToast('Eliminato');
+    currentBomId = null;
+    removeConUndo('items', it.id, `"${it.name}" eliminato`, renderBom);
   });
 }
+// Chi contiene questo articolo, dall'indice inverso: una lettura invece di una
+// scansione del catalogo. La copia protegge l'indice da chi ordina il risultato.
 function usedBy(itemId) {
-  return db.items.filter(i =>
-    (isAssembly(i.type) && (i.components || []).some(c => c.itemId === itemId)) ||
-    (i.type === 'parte' && (i.cycle || []).some(r => r.kind === 'item' && r.itemId === itemId)));
+  const l = parentIndex().get(itemId);
+  return l ? l.slice() : [];
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -550,9 +608,11 @@ function usageQty(parent, childId) {
   }
   // Nel ciclo di lavorazione una riga con override non dipende più dal costo
   // dell'articolo: conta come impiego, ma non propaga la variazione di prezzo.
-  if (parent.type === 'parte' && partCostMode(parent) !== 'unit') {
+  if (parent.type === 'parte' && partSourcing(parent) !== 'buy') {
+    // kind assente vale 'item', come nel motore di costo: una riga di ciclo è
+    // una lavorazione solo se lo dice esplicitamente.
     (parent.cycle || []).forEach(r => {
-      if (r.kind === 'item' && r.itemId === childId) q += Number(r.qty) || 0;
+      if (r.kind !== 'op' && r.itemId === childId) q += Number(r.qty) || 0;
     });
   }
   return q;
@@ -594,13 +654,15 @@ function impactedTops(itemId) {
 
 // ─── Il campo dove vive il costo proprio dell'articolo ───
 // Dipende dal tipo. Gli assiemi non ne hanno uno (il loro costo è derivato) e
-// nemmeno le parti a "solo ciclo": lì non c'è un prezzo da simulare o da
-// prendere a listino.
+// nemmeno le parti prodotte in casa con un ciclo: lì non c'è un prezzo da
+// simulare o da prendere a listino, lo determinano distinta e lavorazioni.
 function costField(it) {
   if (!it) return null;
   if (it.type === 'acquistato') return 'purchasePrice';
   if (it.type === 'materiale') return 'unitCost';
-  if (it.type === 'parte' && partCostMode(it) !== 'cycle') return 'unitCost';
+  // Una parte prodotta in casa ha il costo derivato dal ciclo: non c'è un campo
+  // da scrivere. Senza righe di ciclo il costo torna a essere il prezzo a listino.
+  if (it.type === 'parte') return (partSourcing(it) === 'buy' || !(it.cycle || []).length) ? 'unitCost' : null;
   return null;
 }
 // Esegue `fn` come se l'articolo costasse `valore`, poi rimette tutto a posto.

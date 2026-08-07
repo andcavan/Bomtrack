@@ -42,15 +42,15 @@ describe('usageQty — quantità dentro un padre', () => {
   it('conta le righe del ciclo di lavorazione di una parte', () => {
     const app = conDb(makeDb({ items: [
       mat('m', 1),
-      parte('p', { costMode: 'cycle', cycle: [{ kind: 'item', itemId: 'm', qty: 3 }] }),
+      parte('p', { cycle: [{ kind: 'item', itemId: 'm', qty: 3 }] }),
     ] }));
     approx(app.eval('usageQty(getItem("p"), "m")'), 3);
   });
 
-  it('una parte a "solo costo unitario" non impiega davvero il suo ciclo', () => {
+  it('una parte acquistata non impiega davvero la sua distinta', () => {
     const app = conDb(makeDb({ items: [
       mat('m', 1),
-      parte('p', { costMode: 'unit', unitCost: 50, cycle: [{ kind: 'item', itemId: 'm', qty: 3 }] }),
+      parte('p', { sourcing: 'buy', unitCost: 50, cycle: [{ kind: 'item', itemId: 'm', qty: 3 }] }),
     ] }));
     approx(app.eval('usageQty(getItem("p"), "m")'), 0, 'il ciclo resta documentale, non incide');
   });
@@ -158,8 +158,8 @@ describe('withTempCost — simulazione senza salvare', () => {
   it('usa il campo giusto secondo il tipo di articolo', () => {
     const app = conDb(makeDb({ items: [
       acq('c', 10), mat('m', 10),
-      parte('pu', { costMode: 'unit', unitCost: 10 }),
-      parte('pc', { costMode: 'cycle', cycle: [{ kind: 'op', cost: 10 }] }),
+      parte('pu', { sourcing: 'buy', unitCost: 10 }),
+      parte('pc', { cycle: [{ kind: 'op', cost: 10 }] }),
       asm('g', 'gruppo', { components: [] }),
     ] }));
     assert.equal(app.eval('costField(getItem("c"))'), 'purchasePrice');
@@ -204,5 +204,61 @@ describe('usageBody — contenuto della finestra', () => {
     assert.ok(html.includes('Costo simulato'), 'mancano le colonne del confronto');
     assert.ok(html.includes('Differenza'));
     approx(app.ref('costOf')('mac').total, 16, 'la simulazione ha lasciato residui');
+  });
+});
+
+describe('indice inverso figlio -> padri', () => {
+  it('un articolo usato in due gruppi li elenca entrambi, una volta ciascuno', () => {
+    const app = conDb(dbCondiviso());
+    assert.deepEqual(codici(app.eval('usedBy("vite").map(i => ({ item: i }))')), ['G1', 'G2']);
+  });
+
+  it('lo stesso componente ripetuto nel padre non lo duplica', () => {
+    const app = conDb(makeDb({ items: [
+      acq('a', 1),
+      asm('g', 'gruppo', { components: [comp('a', 2), comp('a', 3)] }),
+    ] }));
+    assert.equal(app.eval('usedBy("a").length'), 1);
+  });
+
+  it('una parte compare fra i padri dei suoi articoli di ciclo', () => {
+    const app = conDb(makeDb({ items: [
+      mat('m', 2),
+      parte('p', { cycle: [{ kind: 'item', itemId: 'm', qty: 3 }] }),
+    ] }));
+    assert.deepEqual(codici(app.eval('usedBy("m").map(i => ({ item: i }))')), ['P']);
+  });
+
+  it('le lavorazioni del ciclo non generano padri', () => {
+    const app = conDb(makeDb({ workCenters: [{ id: 'w1', name: 'CDL', hourlyRate: 0 }], items: [
+      parte('p', { cycle: [{ kind: 'op', workCenterId: 'w1', cost: 5 }] }),
+    ] }));
+    assert.equal(app.eval('usedBy("w1").length'), 0);
+  });
+
+  it('una riga di ciclo senza kind vale come articolo, come nel motore di costo', () => {
+    const app = conDb(makeDb({ items: [
+      mat('m', 2),
+      parte('p', { cycle: [{ itemId: 'm', qty: 3 }] }),
+    ] }));
+    assert.equal(app.eval('usedBy("m").length'), 1);
+  });
+
+  it('chi non e usato da nessuno restituisce una lista vuota, non undefined', () => {
+    const app = conDb(dbCondiviso());
+    assert.equal(app.eval('Array.isArray(usedBy("mac")) && usedBy("mac").length'), 0);
+  });
+
+  it('il risultato e una copia: ordinarlo non altera l indice', () => {
+    const app = conDb(dbCondiviso());
+    app.eval('usedBy("vite").reverse()');
+    assert.deepEqual(codici(app.eval('usedBy("vite").map(i => ({ item: i }))')), ['G1', 'G2']);
+  });
+
+  it('l indice si ricostruisce dopo una modifica alla distinta', () => {
+    const app = conDb(dbCondiviso());
+    assert.equal(app.eval('usedBy("vite").length'), 2);
+    app.eval('getItem("g2").components = []; invalidateCaches();');
+    assert.equal(app.eval('usedBy("vite").length'), 1);
   });
 });

@@ -86,11 +86,11 @@ describe('mrpExplode — quantità', () => {
 });
 
 describe('mrpExplode — parti', () => {
-  const dbParte = (costMode) => makeDb({
+  const dbParte = (sourcing) => makeDb({
     workCenters: [wc('w1', 0)],
     items: [
       mat('m', 2), acq('a', 5),
-      parte('p', { costMode, unitCost: 99, cycle: [
+      parte('p', { sourcing, unitCost: 99, cycle: [
         { kind: 'item', itemId: 'm', qty: 3 },
         { kind: 'op', workCenterId: 'w1', cost: 10 },
         { kind: 'item', itemId: 'a', qty: 1 },
@@ -100,30 +100,66 @@ describe('mrpExplode — parti', () => {
   });
 
   it('la parte va tra quelle da fabbricare e la sua distinta tra gli acquisti', () => {
-    const r = esplodi(conDb(dbParte('cycle')), [['mac', 4]]);
+    const r = esplodi(conDb(dbParte('make')), [['mac', 4]]);
     assert.deepEqual(r.make, { P: 8 });
     assert.deepEqual(r.buy, { M: 24, A: 8 });
   });
 
   it('le lavorazioni del ciclo non finiscono negli acquisti', () => {
-    const r = esplodi(conDb(dbParte('cycle')), [['p', 1]]);
+    const r = esplodi(conDb(dbParte('make')), [['p', 1]]);
     assert.deepEqual(Object.keys(r.buy).sort(), ['A', 'M']);
   });
 
-  it('col calcolo "solo costo unitario" distinta e ciclo non si esplodono', () => {
-    const r = esplodi(conDb(dbParte('unit')), [['mac', 4]]);
-    assert.deepEqual(r.make, { P: 8 });
-    assert.deepEqual(r.buy, {});
-  });
-
-  it('col calcolo "unitario + ciclo" la distinta si esplode comunque', () => {
-    approx(esplodi(conDb(dbParte('sum')), [['mac', 1]]).buy.M, 6);
-  });
-
   it('una parte messa a piano direttamente vale come radice', () => {
-    const r = esplodi(conDb(dbParte('cycle')), [['p', 10]]);
+    const r = esplodi(conDb(dbParte('make')), [['p', 10]]);
     assert.deepEqual(r.make, { P: 10 });
     approx(r.buy.M, 30);
+  });
+});
+
+describe('mrpExplode — parti acquistate da fornitore (sourcing)', () => {
+  // Stessa parte, stesso ciclo: cambia solo chi la fa. Da acquisto è una foglia,
+  // il suo materiale e le sue lavorazioni li mette il fornitore.
+  const dbSourcing = (sourcing) => makeDb({
+    workCenters: [wc('w1', 0)],
+    items: [
+      mat('m', 2), acq('a', 5),
+      parte('p', { sourcing, unitCost: 40, cycle: [
+        { kind: 'item', itemId: 'm', qty: 3 },
+        { kind: 'op', workCenterId: 'w1', cost: 10 },
+        { kind: 'item', itemId: 'a', qty: 1 },
+      ] }),
+      asm('mac', 'macchina', { components: [comp('p', 2)] }),
+    ],
+  });
+
+  it('da produrre: la parte è in fabbricazione e la sua distinta negli acquisti', () => {
+    const r = esplodi(conDb(dbSourcing('make')), [['mac', 3]]);
+    assert.deepEqual(r.make, { P: 6 });
+    assert.deepEqual(r.buy, { M: 18, A: 6 });
+  });
+
+  it('da acquisto: la parte è negli acquisti e la sua distinta sparisce', () => {
+    const r = esplodi(conDb(dbSourcing('buy')), [['mac', 3]]);
+    assert.deepEqual(r.make, {});
+    assert.deepEqual(r.buy, { P: 6 });
+  });
+
+  it('senza il campo la parte si produce in casa, come sempre', () => {
+    const r = esplodi(conDb(dbSourcing(undefined)), [['mac', 1]]);
+    assert.deepEqual(r.make, { P: 2 });
+  });
+
+  it('un valore inatteso non trasforma la parte in un acquisto', () => {
+    const r = esplodi(conDb(dbSourcing('boh')), [['mac', 1]]);
+    assert.deepEqual(r.make, { P: 2 });
+  });
+
+  it('costo e fabbisogno raccontano la stessa storia', () => {
+    // Prima erano due interruttori separati e potevano contraddirsi: comprare la
+    // parte da fuori ma continuare a costificarla dal ciclo interno.
+    approx(conDb(dbSourcing('buy')).ref('costOf')('p').total, 40, 'acquistata: il prezzo a listino');
+    approx(conDb(dbSourcing('make')).ref('costOf')('p').total, 2 * 3 + 5 + 10, 'prodotta: il valore del ciclo');
   });
 });
 
@@ -140,7 +176,7 @@ describe('mrpExplode — anelli', () => {
 
   it('anello indiretto attraverso una parte', () => {
     const app = conDb(makeDb({ items: [
-      parte('p', { costMode: 'cycle', cycle: [{ kind: 'item', itemId: 'g', qty: 1 }] }),
+      parte('p', { cycle: [{ kind: 'item', itemId: 'g', qty: 1 }] }),
       asm('g', 'gruppo', { components: [comp('p', 1)] }),
     ] }));
     assert.equal(esplodi(app, [['g', 1]]).cycle, true);
@@ -158,7 +194,7 @@ describe('Coerenza con la costificazione', () => {
   it('la somma degli importi d\'acquisto è materiale + commerciali del rollup', () => {
     const app = conDb(makeDb({ items: [
       mat('m', 3.5), acq('a', 7.25), acq('v', 0.4),
-      parte('p', { costMode: 'cycle', cycle: [{ kind: 'item', itemId: 'm', qty: 2.5 }] }),
+      parte('p', { cycle: [{ kind: 'item', itemId: 'm', qty: 2.5 }] }),
       asm('sg', 'sottogruppo', { components: [comp('p', 2), comp('v', 10, 5)] }),
       asm('mac', 'macchina', { components: [comp('sg', 3), comp('a', 1)] }),
     ] }));

@@ -47,8 +47,19 @@ describe('migrazione — il fornitore esistente diventa la prima quotazione', ()
     assert.equal(app.snapshot().items[0].priceList[0].price, 3.5);
   });
 
-  it('senza fornitore il listino resta vuoto', () => {
+  it('senza fornitore il prezzo diventa comunque una quotazione "a mano"', () => {
+    // I prezzi ora si toccano solo dal listino: un valore senza fornitore deve
+    // trovare una riga, altrimenti nessuna schermata potrebbe più correggerlo.
     const app = caricato({ schemaVersion: 2, items: [{ id: 'a', code: 'A', type: 'acquistato', purchasePrice: 42 }] });
+    const it0 = app.snapshot().items[0];
+    assert.equal(it0.priceList.length, 1);
+    assert.equal(it0.priceList[0].supplierId, null);
+    assert.equal(it0.priceList[0].price, 42);
+    assert.equal(it0.activePriceId, it0.priceList[0].id);
+  });
+
+  it('senza fornitore e senza prezzo il listino resta vuoto', () => {
+    const app = caricato({ schemaVersion: 2, items: [{ id: 'a', code: 'A', type: 'acquistato' }] });
     const it0 = app.snapshot().items[0];
     assert.equal(it0.priceList.length, 0);
     assert.equal(it0.priceListSeeded, true, 'il seme è comunque consumato');
@@ -62,11 +73,43 @@ describe('migrazione — il fornitore esistente diventa la prima quotazione', ()
     assert.equal(app.snapshot().items[0].priceList.length, 0);
   });
 
-  it('gli assiemi e le parti non hanno listino', () => {
+  it('gli assiemi non hanno listino, le parti sì', () => {
     const app = caricato({ schemaVersion: 2, items: [
       { id: 'g', code: 'G', type: 'gruppo' }, { id: 'p', code: 'P', type: 'parte' },
     ] });
-    app.snapshot().items.forEach(i => assert.equal(i.priceList, undefined, i.code + ' non deve avere listino'));
+    const byId = Object.fromEntries(app.snapshot().items.map(i => [i.id, i]));
+    assert.equal(byId.g.priceList, undefined, 'un gruppo non si compra: nessun listino');
+    assert.deepEqual(byId.p.priceList, [], 'una parte ha il listino, vuoto finché non ha un costo');
+  });
+
+  it('una parte col costo manuale parte con quella quotazione, senza fornitore', () => {
+    const app = caricato({ schemaVersion: 2, items: [{ id: 'p', code: 'P', type: 'parte', unitCost: 12.5 }] });
+    const it0 = app.snapshot().items[0];
+    assert.equal(it0.priceList.length, 1);
+    assert.equal(it0.priceList[0].price, 12.5);
+    assert.equal(it0.priceList[0].supplierId, null);
+    assert.equal(it0.activePriceId, it0.priceList[0].id);
+  });
+
+  it('una parte GIÀ a catalogo con un ciclo resta da produrre in casa', () => {
+    // Il default "acquisto" vale per le parti nuove: riscrivere quelle esistenti
+    // cambierebbe il fabbisogno di distinte già calcolate.
+    const app = caricato({ schemaVersion: 2, items: [
+      { id: 'p', code: 'P', type: 'parte', cycle: [{ kind: 'op', cost: 5 }] },
+    ] });
+    assert.equal(app.snapshot().items[0].sourcing, 'make');
+  });
+
+  it('il default delle impostazioni non tocca le parti esistenti', () => {
+    const app = caricato({ schemaVersion: 2,
+      items: [{ id: 'p', code: 'P', type: 'parte', cycle: [{ kind: 'op', cost: 5 }] }],
+      settings: { partSourcingDefault: 'buy' } });
+    assert.equal(app.eval('partSourcing(getItem("p"))'), 'make');
+  });
+
+  it('il sourcing già impostato non viene sovrascritto', () => {
+    const app = caricato({ schemaVersion: 2, items: [{ id: 'p', code: 'P', type: 'parte', sourcing: 'buy' }] });
+    assert.equal(app.snapshot().items[0].sourcing, 'buy');
   });
 });
 
@@ -126,6 +169,70 @@ describe('applyPriceRow — la scelta esplicita del prezzo in uso', () => {
       items: [Object.assign(mat('m', 2), { priceList: [quota({ price: 5 })], priceListSeeded: true })] }));
     app.eval('applyPriceRow(getItem("m"), priceRows(getItem("m"))[0])');
     approx(app.ref('getItem')('m').unitCost, 5);
+  });
+
+  it('il fornitore arriva anche su materie prime e parti, non solo sui commerciali', () => {
+    const app = conDb(makeDb({ suppliers: [{ id: 's1', name: 'Alfa' }, { id: 's2', name: 'Beta' }],
+      items: [Object.assign(mat('m', 2), { priceList: [quota({ supplierId: 's2', price: 5 })], priceListSeeded: true })] }));
+    app.eval('applyPriceRow(getItem("m"), priceRows(getItem("m"))[0])');
+    assert.equal(app.ref('getItem')('m').supplierId, 's2');
+  });
+});
+
+describe('parti: listino e passaggio ad acquisto', () => {
+  function conParte(over) {
+    const parte = Object.assign({ id: 'p', code: 'P', name: 'Flangia', type: 'parte', uom: 'pz',
+      unitCost: 0, cycle: [], sourcing: 'make', priceList: [quota({ id: 'q1', price: 9 })], priceListSeeded: true }, over || {});
+    return conDb(makeDb({ suppliers: [{ id: 's1', name: 'Alfa' }], items: [parte] }));
+  }
+  const conCiclo = { cycle: [{ kind: 'op', workCenterId: null, cost: 5 }] };
+
+  it('una parte ha il listino', () => {
+    const app = conParte();
+    assert.equal(app.eval('hasPriceList(getItem("p"))'), true);
+  });
+
+  it('già acquistata: il prezzo si applica subito', () => {
+    const app = conParte(Object.assign({ sourcing: 'buy' }, conCiclo));
+    app.eval('window.__priceItemId = "p"; priceUseRow("q1")');
+    approx(app.ref('getItem')('p').unitCost, 9);
+    assert.equal(app.ref('getItem')('p').activePriceId, 'q1');
+  });
+
+  it('prodotta in casa senza ciclo: il prezzo si applica subito', () => {
+    // Senza righe non c'è un costo da derivare: il listino è l'unica fonte.
+    const app = conParte();
+    app.eval('window.__priceItemId = "p"; priceUseRow("q1")');
+    approx(app.ref('getItem')('p').unitCost, 9);
+    assert.equal(app.ref('getItem')('p').sourcing, 'make', 'non serve cambiare nulla');
+  });
+
+  it('prodotta in casa con un ciclo: non applica nulla, chiede prima', () => {
+    const app = conParte(conCiclo);
+    app.eval('window.__priceItemId = "p"; priceUseRow("q1")');
+    const p = app.ref('getItem')('p');
+    approx(p.unitCost, 0, 'il costo non si muove finché non si dice che la parte si compra');
+    assert.equal(p.activePriceId, undefined);
+    assert.equal(p.sourcing, 'make');
+    approx(app.eval('costOf("p").total'), 5, 'resta il valore del ciclo');
+  });
+
+  it('confermando, la parte passa ad acquisto e il prezzo diventa il costo', () => {
+    const app = conParte(conCiclo);
+    app.eval('window.__priceItemId = "p"; priceUseAsBought("q1")');
+    const p = app.ref('getItem')('p');
+    assert.equal(p.sourcing, 'buy');
+    approx(p.unitCost, 9);
+    assert.equal(p.activePriceId, 'q1');
+    approx(app.eval('costOf("p").total'), 9, 'il ciclo non concorre più');
+    assert.deepEqual(p.cycle.length, 1, 'il ciclo resta salvato: si può tornare indietro');
+  });
+
+  it('chi non scrive il catalogo non fa passare la parte ad acquisto', () => {
+    const app = conParte(conCiclo);
+    app.asRole('acquisti');
+    app.eval('window.__priceItemId = "p"; priceUseAsBought("q1")');
+    assert.equal(app.ref('getItem')('p').sourcing, 'make');
   });
 });
 

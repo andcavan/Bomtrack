@@ -141,13 +141,44 @@ describe('migrateDB — idempotenza e normalizzazioni', () => {
     assert.ok(db.settings.uoms.some(u => u.code === 'daN'), 'daN non registrata');
   });
 
-  it('costMode dedotto dai dati storici delle parti', () => {
+  // Il modo di calcolo del costo è stato assorbito dall'approvvigionamento: era
+  // la stessa domanda posta a metà. La conversione deve conservare insieme il
+  // costo e il comportamento nel fabbisogno, altrimenti i numeri si muovono.
+  it('il vecchio modo di calcolo diventa approvvigionamento, e il campo sparisce', () => {
+    const db = caricato({ schemaVersion: 2, items: [
+      { id: 'p1', type: 'parte', costMode: 'unit', unitCost: 10, cycle: [{ kind: 'op', cost: 5 }] },
+      { id: 'p2', type: 'parte', costMode: 'cycle', unitCost: 10, cycle: [{ kind: 'op', cost: 5 }] },
+      { id: 'p3', type: 'parte', costMode: 'sum', unitCost: 10, cycle: [{ kind: 'op', cost: 5 }] },
+    ] }).snapshot();
+    assert.equal(db.items[0].sourcing, 'buy', '"unit": costava il campo manuale e non esplodeva — è un acquisto');
+    assert.equal(db.items[1].sourcing, 'make', '"cycle": il costo veniva dal ciclo');
+    assert.equal(db.items[2].sourcing, 'make', '"sum": si perde la quota manuale, il ciclo è il costo del farla');
+    db.items.forEach(i => assert.equal(i.costMode, undefined, 'il campo non deve sopravvivere'));
+  });
+
+  it('i costi convertiti restano quelli di prima, dove la conversione è esatta', () => {
+    const app = caricato({ schemaVersion: 2, items: [
+      { id: 'p1', type: 'parte', costMode: 'unit', unitCost: 10, cycle: [{ kind: 'op', cost: 5 }] },
+      { id: 'p2', type: 'parte', costMode: 'cycle', unitCost: 10, cycle: [{ kind: 'op', cost: 5 }] },
+    ] });
+    assert.equal(app.eval('costOf("p1").total'), 10, 'come il vecchio "unit"');
+    assert.equal(app.eval('costOf("p2").total'), 5, 'come il vecchio "cycle"');
+  });
+
+  it('una parte senza modo di calcolo si deduce dal ciclo', () => {
     const db = caricato({ schemaVersion: 2, items: [
       { id: 'p1', type: 'parte', unitCost: 10 },
       { id: 'p2', type: 'parte', unitCost: 10, cycle: [{ kind: 'op', cost: 5 }] },
     ] }).snapshot();
-    assert.equal(db.items[0].costMode, 'unit', 'senza ciclo resta il costo manuale');
-    assert.equal(db.items[1].costMode, 'cycle', 'col ciclo il costo è derivato');
+    assert.equal(db.items[0].sourcing, 'buy', 'senza ciclo non c\'è niente da fabbricare');
+    assert.equal(db.items[1].sourcing, 'make', 'col ciclo la si fa in casa');
+  });
+
+  it('il default delle impostazioni non ricade sulle parti già a catalogo', () => {
+    const app = caricato({ schemaVersion: 2,
+      items: [{ id: 'p', type: 'parte', cycle: [{ kind: 'op', cost: 5 }] }],
+      settings: { partSourcingDefault: 'buy' } });
+    assert.equal(app.snapshot().items[0].sourcing, 'make');
   });
 });
 
@@ -156,7 +187,7 @@ describe('migrateDB — righe di lavorazione del ciclo (ore → costo fisso)', (
     const app = caricato({
       schemaVersion: 2,
       workCenters: [{ id: 'w1', name: 'Tornitura', hourlyRate: 50 }],
-      items: [{ id: 'p', type: 'parte', costMode: 'cycle', cycle: [{ kind: 'op', workCenterId: 'w1', hours: 2 }] }],
+      items: [{ id: 'p', type: 'parte', cycle: [{ kind: 'op', workCenterId: 'w1', hours: 2 }] }],
     });
     const row = app.snapshot().items[0].cycle[0];
     assert.equal(row.cost, 100);
@@ -168,7 +199,7 @@ describe('migrateDB — righe di lavorazione del ciclo (ore → costo fisso)', (
     const app = caricato({
       schemaVersion: 2,
       workCenters: [{ id: 'w1', name: 'Tornitura', hourlyRate: 50 }],
-      items: [{ id: 'p', type: 'parte', costMode: 'cycle', cycle: [{ kind: 'op', workCenterId: 'w1', hours: 2, costOverride: 30 }] }],
+      items: [{ id: 'p', type: 'parte', cycle: [{ kind: 'op', workCenterId: 'w1', hours: 2, costOverride: 30 }] }],
     });
     const row = app.snapshot().items[0].cycle[0];
     assert.equal(row.cost, 30);
@@ -179,7 +210,7 @@ describe('migrateDB — righe di lavorazione del ciclo (ore → costo fisso)', (
     const app = caricato({
       schemaVersion: 2,
       workCenters: [{ id: 'w1', name: 'Tornitura', hourlyRate: 50 }],
-      items: [{ id: 'p', type: 'parte', costMode: 'cycle', cycle: [{ kind: 'op', workCenterId: 'w1', cost: 7 }] }],
+      items: [{ id: 'p', type: 'parte', cycle: [{ kind: 'op', workCenterId: 'w1', cost: 7 }] }],
     });
     assert.equal(app.snapshot().items[0].cycle[0].cost, 7);
   });

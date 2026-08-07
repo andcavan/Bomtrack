@@ -61,7 +61,7 @@ describe('costOf — assiemi', () => {
     const app = withDb(makeDb({
       workCenters: [wc('w', 50)],
       items: [
-        mat('m', 10), acq('a', 20), parte('p', { unitCost: 30, costMode: 'unit' }),
+        mat('m', 10), acq('a', 20), parte('p', { unitCost: 30, sourcing: 'buy' }),
         asm('g', 'gruppo', {
           components: [comp('m', 2, 10), comp('a', 1), comp('p', 1)],
           operations: [{ workCenterId: 'w', hours: 2 }],
@@ -141,12 +141,15 @@ describe('costOf — assiemi', () => {
   });
 });
 
-describe('costOf — parti e modi di calcolo', () => {
-  const dbConCiclo = costMode => makeDb({
+// Da dove viene il costo di una parte lo decide una domanda sola: la facciamo o
+// la compriamo? Prima erano due interruttori (modo di calcolo + fabbisogno) che
+// potevano dire cose diverse sulla stessa parte.
+describe('costOf — parti: il costo segue l\'approvvigionamento', () => {
+  const dbConCiclo = sourcing => makeDb({
     items: [
       mat('m', 10), acq('a', 5),
       parte('p', {
-        unitCost: 30, costMode,
+        unitCost: 30, sourcing,
         cycle: [
           { kind: 'item', itemId: 'm', qty: 2 },
           { kind: 'item', itemId: 'a', qty: 1 },
@@ -156,58 +159,53 @@ describe('costOf — parti e modi di calcolo', () => {
     ],
   });
 
-  it('"unit": solo il costo manuale, il ciclo è ignorato', () => {
-    const c = withDb(dbConCiclo('unit')).ref('costOf')('p');
+  it('acquistata: costa il prezzo a listino, il ciclo è ignorato', () => {
+    const c = withDb(dbConCiclo('buy')).ref('costOf')('p');
     approx(c.parts, 30); approx(c.material, 0); approx(c.labor, 0); approx(c.total, 30);
     assertCoerente(c);
   });
 
-  it('"cycle": ogni riga confluisce nella propria categoria', () => {
-    const c = withDb(dbConCiclo('cycle')).ref('costOf')('p');
+  it('prodotta in casa: ogni riga del ciclo confluisce nella propria categoria', () => {
+    const c = withDb(dbConCiclo('make')).ref('costOf')('p');
     approx(c.material, 20, 'materie prime del ciclo');
     approx(c.purchased, 5, 'commerciali del ciclo');
     approx(c.labor, 15, 'lavorazione a costo fisso');
-    approx(c.parts, 0, 'il costo manuale non concorre');
+    approx(c.parts, 0, 'il prezzo a listino non concorre: la parte la facciamo noi');
     approx(c.total, 40);
     assertCoerente(c);
   });
 
-  it('"sum": costo manuale + valore del ciclo', () => {
-    const c = withDb(dbConCiclo('sum')).ref('costOf')('p');
-    approx(c.parts, 30); approx(c.total, 70);
-    assertCoerente(c);
+  it('il prezzo a listino non si somma mai al ciclo', () => {
+    // Il vecchio modo "somma" non esiste più: o è il ciclo, o è il fornitore.
+    const c = withDb(dbConCiclo('make')).ref('costOf')('p');
+    approx(c.total, 40, 'niente 70');
   });
 
-  it('costMode assente: ricade sul default delle impostazioni', () => {
+  it('sourcing assente: si comporta come prodotta in casa', () => {
     const d = dbConCiclo(undefined);
-    delete d.items[2].costMode;
-    d.settings.partCostModeDefault = 'unit';
-    approx(withDb(d).ref('costOf')('p').total, 30);
-    d.settings.partCostModeDefault = 'sum';
-    approx(withDb(d).ref('costOf')('p').total, 70);
+    delete d.items[2].sourcing;
+    approx(withDb(d).ref('costOf')('p').total, 40);
   });
 
-  it('costMode non valido: ricade sul default', () => {
-    const d = dbConCiclo('inventato');
-    d.settings.partCostModeDefault = 'unit';
-    approx(withDb(d).ref('costOf')('p').total, 30);
+  it('sourcing non valido: si comporta come prodotta in casa', () => {
+    approx(withDb(dbConCiclo('inventato')).ref('costOf')('p').total, 40);
   });
 
-  it('"cycle" senza righe di ciclo: resta il costo manuale', () => {
-    const app = withDb(makeDb({ items: [parte('p', { unitCost: 42, costMode: 'cycle', cycle: [] })] }));
+  it('prodotta in casa ma senza righe di ciclo: resta il prezzo a listino', () => {
+    const app = withDb(makeDb({ items: [parte('p', { unitCost: 42, sourcing: 'make', cycle: [] })] }));
     const c = app.ref('costOf')('p');
     approx(c.parts, 42); approx(c.total, 42);
   });
 
   it('lavorazione del ciclo senza costo: 0, non NaN', () => {
-    const app = withDb(makeDb({ items: [parte('p', { costMode: 'cycle', cycle: [{ kind: 'op', workCenterId: 'w' }] })] }));
+    const app = withDb(makeDb({ items: [parte('p', { cycle: [{ kind: 'op', workCenterId: 'w' }] })] }));
     approx(app.ref('costOf')('p').total, 0);
   });
 
   it('riga di ciclo che punta a un articolo inesistente viene ignorata', () => {
     const app = withDb(makeDb({ items: [
       mat('m', 10),
-      parte('p', { costMode: 'cycle', cycle: [{ kind: 'item', itemId: 'm', qty: 1 }, { kind: 'item', itemId: 'boh', qty: 5 }] }),
+      parte('p', { cycle: [{ kind: 'item', itemId: 'm', qty: 1 }, { kind: 'item', itemId: 'boh', qty: 5 }] }),
     ] }));
     approx(app.ref('costOf')('p').total, 10);
   });
@@ -327,7 +325,7 @@ describe('flattenBom — coerenza con il motore', () => {
     const app = withDb(makeDb({
       items: [
         mat('m', 10), acq('a', 5),
-        parte('p', { unitCost: 30, costMode: 'sum', cycle: [
+        parte('p', { unitCost: 30, cycle: [
           { kind: 'item', itemId: 'm', qty: 2 },
           { kind: 'item', itemId: 'a', qty: 1 },
           { kind: 'op', workCenterId: 'w', cost: 15 },
@@ -337,7 +335,20 @@ describe('flattenBom — coerenza con il motore', () => {
     const rows = [];
     app.ref('flattenBom')('p', 1, 0, 0, rows, []);
     const figli = rows.filter(r => r.level === 1).reduce((s, r) => s + r.line, 0);
-    approx(figli, app.ref('costOf')('p').total, 'ciclo esploso + quota manuale');
+    approx(figli, app.ref('costOf')('p').total, 'le righe del ciclo sommano al costo della parte');
+  });
+
+  it('una parte acquistata non esplode: la sua distinta non concorre', () => {
+    const app = withDb(makeDb({
+      items: [
+        mat('m', 10),
+        parte('p', { unitCost: 30, sourcing: 'buy', cycle: [{ kind: 'item', itemId: 'm', qty: 2 }] }),
+      ],
+    }));
+    const rows = [];
+    app.ref('flattenBom')('p', 1, 0, 0, rows, []);
+    assert.equal(rows.length, 1, 'solo la parte stessa');
+    approx(rows[0].unit, 30);
   });
 
   it('un anello viene marcato e non esplode ricorsivamente', () => {
@@ -377,7 +388,7 @@ describe('posizione gerarchica delle righe (1, 1.1, 1.1.1…)', () => {
     const app = withDb(makeDb({
       items: [
         mat('m', 10), acq('a', 5),
-        parte('p', { unitCost: 30, costMode: 'sum', cycle: [
+        parte('p', { unitCost: 30, cycle: [
           { kind: 'item', itemId: 'm', qty: 2 },
           { kind: 'op', workCenterId: 'w', cost: 15 },
           { kind: 'item', itemId: 'a', qty: 1 },
@@ -388,9 +399,10 @@ describe('posizione gerarchica delle righe (1, 1.1, 1.1.1…)', () => {
     const rows = [];
     app.ref('flattenBom')('mac', 1, 0, 0, rows, []);
     // La fase in mezzo non consuma un numero: la serie degli articoli resta 2.1, 2.2.
-    assert.deepEqual(rows.map(r => r.pos), ['', '1', '2', '2.1', '', '2.2', '2.3']);
+    assert.deepEqual(rows.map(r => r.pos), ['', '1', '2', '2.1', '', '2.2']);
     assert.equal(rows[4].type, 'Lavorazione');
-    // La quota manuale chiude la serie, subito dopo l'ultimo articolo del ciclo.
-    assert.equal(rows[6].name, 'Costo unitario (manuale)');
+    // Nessuna riga "costo unitario manuale": il prezzo a listino non si somma
+    // più al ciclo, quindi la serie finisce con l'ultimo articolo.
+    assert.equal(rows.length, 6);
   });
 });

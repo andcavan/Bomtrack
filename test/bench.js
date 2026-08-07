@@ -40,7 +40,7 @@ function generaDb() {
   }
   return {
     schemaVersion: 2, suppliers: [], rfqs: [], orders: [], users: [], families: [], workCenters: [], items,
-    settings: { overheadPct: 12, marginPct: 20, currency: '€', partCostModeDefault: 'cycle',
+    settings: { overheadPct: 12, marginPct: 20, currency: '€', partSourcingDefault: 'make',
       uoms: [], uomDefault: 'pz', concepts: [], mpFamiliesSeeded: true, partFamiliesSeeded: true },
   };
 }
@@ -86,3 +86,28 @@ console.log(riga('come prima', comePrima));
 console.log(riga('solo indice articoli', soloIndice));
 console.log(riga('indice + memoizzazione', completo));
 console.log('\n  guadagno complessivo: ' + (comePrima.ms / completo.ms).toFixed(0) + 'x');
+
+// ─── Risalita della distinta: "Dove è usato" ───
+// usedBy() scansionava tutto il catalogo a ogni chiamata, e la finestra la
+// invoca una volta per antenato più una seconda per ogni riga della
+// simulazione. Qui si misura la risalita completa su ogni foglia.
+function misuraRisalita(app, ripetizioni) {
+  const t0 = process.hrtime.bigint();
+  for (let r = 0; r < ripetizioni; r++) {
+    app.eval('invalidateCaches(); db.items.forEach(i => ancestorTotals(i.id));');
+  }
+  return Number(process.hrtime.bigint() - t0) / 1e6 / ripetizioni;
+}
+const conIndice = misuraRisalita(app, 3);
+// Versione precedente di usedBy: un filter su tutto il catalogo per chiamata
+app.eval(`usedBy = function (itemId) {
+  return db.items.filter(i =>
+    (isAssembly(i.type) && (i.components || []).some(c => c.itemId === itemId)) ||
+    (i.type === 'parte' && (i.cycle || []).some(r => r.kind === 'item' && r.itemId === itemId)));
+};`);
+const conScansione = misuraRisalita(app, 3);
+
+console.log('\nRisalita "Dove è usato" su ogni articolo del catalogo\n');
+console.log('  ' + 'scansione (come prima)'.padEnd(24) + conScansione.toFixed(1).padStart(7) + ' ms');
+console.log('  ' + 'indice inverso'.padEnd(24) + conIndice.toFixed(1).padStart(7) + ' ms');
+console.log('\n  guadagno: ' + (conScansione / conIndice).toFixed(0) + 'x');

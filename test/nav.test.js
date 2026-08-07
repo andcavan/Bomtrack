@@ -33,22 +33,22 @@ describe('Integrità della barra', () => {
       assert.ok(viste.includes(w.id), `il gruppo "${g.id}" elenca la vista sconosciuta "${w.id}"`)));
   });
 
-  it('i gruppi sono i cinque richiesti, nell\'ordine', () => {
+  it('i gruppi sono quelli richiesti, nell\'ordine', () => {
     assert.deepEqual(nav(app()).map(g => g.label),
-      ['Anagrafica', 'Cicli di lavorazione', 'Distinta base', 'Documenti', 'Gestione']);
+      ['Riepilogo', 'Anagrafica', 'Magazzino', 'Cicli di lavorazione', 'Distinta base', 'Documenti', 'Gestione']);
   });
 });
 
 describe('navGroups — cosa vede chi', () => {
-  it('l\'amministratore vede tutti e cinque i gruppi', () => {
-    assert.equal(app('admin').eval('navGroups().length'), 5);
+  it('l\'amministratore vede tutti i gruppi', () => {
+    assert.equal(app('admin').eval('navGroups().length'), 7);
   });
 
   it('gli altri ruoli non vedono Gestione', () => {
     ['acquisti', 'progettazione', 'lettore'].forEach(r => {
       const ids = Array.from(app(r).eval('navGroups().map(g => g.id)'));
       assert.ok(!ids.includes('manage'), `il ruolo ${r} non deve vedere Gestione`);
-      assert.equal(ids.length, 4);
+      assert.equal(ids.length, 6);
     });
   });
 });
@@ -87,7 +87,8 @@ describe('Memoria del gruppo', () => {
     a.eval('openNavGroup("db")');
     assert.equal(a.eval('activeView'), 'bom');
     a.eval('openNavGroup("docs")');
-    assert.equal(a.eval('activeView'), 'mrp');
+    assert.equal(a.eval('activeView'), 'jobs',
+      'le voci del gruppo seguono la catena: commessa → fabbisogno → richiesta → ordine');
   });
 
   it('un gruppo inesistente non fa nulla', () => {

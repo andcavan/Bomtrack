@@ -16,39 +16,32 @@ function flattenBom(itemId, qty, scrap, level, rows, ancestors, pos) {
   const unit = cyc ? 0 : costOf(itemId).total;
   const factor = (Number(qty) || 0) * (1 + (Number(scrap) || 0) / 100);
   pos = pos || '';
-  rows.push({ level, pos, code: it.code, name: it.name + (cyc ? ' (ciclo!)' : ''), type: typeLabel(it.type),
+  rows.push({ level, pos, itemId, code: it.code, name: it.name + (cyc ? ' (ciclo!)' : ''), type: typeLabel(it.type),
     qty: Number(qty) || 0, uom: it.uom || '', unit, line: unit * factor });
   if (isAssembly(it.type) && !cyc) {
     (it.components || []).forEach((c, i) => flattenBom(c.itemId, c.qty, c.scrapPct, level + 1, rows, ancestors.concat(itemId), bomPos(pos, i)));
   }
   // Una Parte esplode il proprio ciclo di lavorazione: i costi riga sono scalati per la quantità del padre,
   // così la somma dei figli coincide col costo riga della Parte.
-  // (col calcolo "solo costo unitario" il ciclo non concorre al costo: niente esplosione)
-  if (it.type === 'parte' && !cyc && partCostMode(it) !== 'unit') {
+  // (una parte comprata non si esplode: il suo costo è il prezzo del fornitore)
+  if (it.type === 'parte' && !cyc && partSourcing(it) !== 'buy') {
     // Le fasi di lavorazione non prendono posizione: il contatore avanza solo sugli
     // articoli della distinta parte, come nell'albero della distinta.
     let n = 0;
     (it.cycle || []).forEach(row => {
       const rowCost = cycleRowCost(row);
       if (row.kind === 'op') {
-        const wc = db.workCenters.find(w => w.id === row.workCenterId);
+        const wc = getWorkCenter(row.workCenterId);
         const sup = supplierName(row.supplierId);
         rows.push({ level: level + 1, pos: '', code: '', name: '🔧 ' + (wc ? wc.name : '?') + (sup ? ' · ' + sup : ''),
           type: 'Lavorazione', qty: 1, uom: '', unit: rowCost, line: rowCost * factor });
       } else {
         const rowPos = bomPos(pos, n++);
         const ci = getItem(row.itemId); if (!ci) return;
-        rows.push({ level: level + 1, pos: rowPos, code: ci.code, name: ci.name, type: typeLabel(ci.type),
+        rows.push({ level: level + 1, pos: rowPos, itemId: ci.id, code: ci.code, name: ci.name, type: typeLabel(ci.type),
           qty: Number(row.qty) || 0, uom: ci.uom || '', unit: costOf(row.itemId).total, line: rowCost * factor });
       }
     });
-    // Col calcolo "costo unitario + ciclo" anche la quota manuale è una riga,
-    // altrimenti la somma dei figli non tornerebbe col costo della Parte.
-    const manual = Number(it.unitCost) || 0;
-    if (partCostMode(it) === 'sum' && manual) {
-      rows.push({ level: level + 1, pos: bomPos(pos, n), code: '', name: 'Costo unitario (manuale)', type: 'Costo',
-        qty: 1, uom: it.uom || '', unit: manual, line: manual * factor });
-    }
   }
 }
 function renderReport() {
@@ -56,8 +49,9 @@ function renderReport() {
   // sincronizza i due selettori
   if (!reportBomId) reportBomId = currentBomId;
   ensureCurrentBom(); if (!reportBomId) reportBomId = currentBomId;
-  const sel = document.getElementById('report-select');
-  if (document.activeElement !== sel) sel.innerHTML = productOptions(reportBomId);
+  // renderInto salta il ridisegno se il menu è a fuoco: un elenco che si
+  // rimescola sotto il mouse mentre lo si sta usando non si può ripristinare.
+  renderInto('report-select', () => productOptions(reportBomId));
   reportBomId = val('report-select') || reportBomId;
   const it = getItem(reportBomId);
   const wrap = document.getElementById('report-content');
@@ -81,29 +75,90 @@ function renderReport() {
 
   const rows = [];
   flattenBom(it.id, 1, 0, 0, rows, []);
+  // Il costo unitario è per una unità **di quella riga**, e ogni riga ha la sua
+  // unità: un cavo al metro sotto un assieme al pezzo. Il denominatore sta quindi
+  // nella cella, non in testa alla colonna.
   const tableRows = rows.map(r => `<tr>
     <td style="font-family:var(--mono);color:var(--text-dim)">${esc(r.pos)}</td>
-    <td style="font-family:var(--mono);padding-left:${12 + r.level * 18}px">${r.level ? '└ ' : ''}${esc(r.code)}</td>
+    <td style="font-family:var(--mono);padding-left:${12 + r.level * 18}px">${r.level ? '└ ' : ''}${codeLink(r.itemId, r.code)}</td>
     <td>${esc(r.name)}</td>
     <td style="color:var(--text-dim)">${esc(r.type)}</td>
-    <td style="font-family:var(--mono)">${r.qty} ${esc(r.uom)}</td>
-    <td style="font-family:var(--mono)">${fmtN(r.unit)}</td>
+    <td style="font-family:var(--mono)">${fmtUom(r.qty, r.uom)}</td>
+    <td style="font-family:var(--mono)">${fmtPer(r.unit, r.uom)}</td>
     <td style="font-family:var(--mono)">${fmtN(r.line)}</td></tr>`).join('');
 
+  const u = itemUom(it);
   wrap.innerHTML = `
     <div class="cost-summary">
-      ${kpi('Materiale', fmtN(c.material), 'orange')}
-      ${kpi('Commerciali', fmtN(c.purchased), 'accent')}
-      ${kpi('Parti', fmtN(c.parts), 'purple')}
-      ${kpi('Lavorazioni', fmtN(c.labor), 'green')}
-      ${kpi('Spese generali', fmtN(c.overhead), '')}
-      ${kpi('Costo totale', fmtN(c.total), '')}
-      ${kpi('Prezzo vendita', fmtN(price), 'green')}
+      ${kpi('Materiale', fmtPer(c.material, u), 'orange')}
+      ${kpi('Commerciali', fmtPer(c.purchased, u), 'accent')}
+      ${kpi('Parti', fmtPer(c.parts, u), 'purple')}
+      ${kpi('Lavorazioni', fmtPer(c.labor, u), 'green')}
+      ${kpi('Spese generali', fmtPer(c.overhead, u), '')}
+      ${kpi('Costo totale', fmtPer(c.total, u), '')}
+      ${kpi('Prezzo vendita', fmtPer(price, u), 'green')}
     </div>
-    <div class="breakdown-section" style="margin-bottom:20px"><h3 class="sub-title">Incidenza voci di costo</h3>${bars}</div>
+    <div class="breakdown-section" style="margin-bottom:20px"><h3 class="sub-title">Incidenza voci di costo
+      <button class="btn-outline" style="margin-left:10px" onclick="costWhyModal('${it.id}')">🔍 Da dove viene questo costo</button></h3>${bars}</div>
     <div class="breakdown-section"><h3 class="sub-title">Distinta base esplosa</h3>
       <div class="table-wrap"><table><thead><tr><th>Pos.</th><th>Codice</th><th>Articolo</th><th>Tipo</th><th>Q.tà</th><th>Costo un.</th><th>Costo riga</th></tr></thead>
       <tbody>${tableRows}</tbody></table></div></div>`;
+}
+
+// ─── «Da dove viene questo costo» ───
+// I riquadri dicono *quanto* costa e le barre *di che tipo* è la spesa, ma non
+// **chi** la fa. Su una distinta a cinque livelli la domanda vera è sempre la
+// stessa — «perché costa così tanto?» — e la risposta finora andava cercata a
+// mano nella tabella esplosa, riga per riga.
+//
+// Qui si sommano i costi riga per articolo (lo stesso componente in tre rami
+// conta una volta sola, con la somma) e si mostrano i primi in ordine di peso.
+// Nessun calcolo nuovo: è la stessa esplosione della tabella qui sotto, letta
+// per la domanda giusta.
+const COST_WHY_TOP = 10;
+function costContributors(itemId) {
+  const rows = [];
+  flattenBom(itemId, 1, 0, 0, rows, []);
+  const per = new Map();
+  // La radice è la riga 0: è il totale, non un contributo a se stesso.
+  rows.slice(1).forEach(r => {
+    // Le righe di lavorazione (🔧) non portano un articolo: stanno nelle barre
+    // di incidenza, come dice la finestra, non qui.
+    if (!r.itemId) return;
+    // Si risolve e si aggrega per id, non per codice: i codici duplicati
+    // esistono (vedi duplicateCodeGroups) e per codice due articoli distinti
+    // si fonderebbero, o un assieme omonimo di una foglia falserebbe il filtro.
+    const it = getItem(r.itemId);
+    // Solo le foglie: un assieme e i suoi componenti conterebbero due volte la
+    // stessa spesa. Una parte prodotta in casa che esplode il proprio ciclo
+    // conta con le sue righe, non con se stessa — stessa regola.
+    const esplode = it && (isAssembly(it.type)
+      || (it.type === 'parte' && partSourcing(it) !== 'buy' && (it.cycle || []).length));
+    if (esplode) return;
+    const e = per.get(r.itemId) || { id: r.itemId, code: r.code, name: r.name, type: r.type, qty: 0, line: 0 };
+    e.qty += r.qty; e.line += r.line;
+    per.set(r.itemId, e);
+  });
+  return Array.from(per.values()).filter(x => x.line > 0).sort((a, b) => b.line - a.line);
+}
+function costWhyModal(itemId) {
+  const it = getItem(itemId); if (!it) return;
+  const totale = costOf(it.id).total;
+  const tutti = costContributors(it.id);
+  const top = tutti.slice(0, COST_WHY_TOP);
+  const coperto = top.reduce((s, x) => s + x.line, 0);
+  const quota = x => totale > 0 ? (x.line / totale * 100) : 0;
+  const righe = top.map((x, i) => `<div class="breakdown-row">
+      <div class="breakdown-name" title="${esc(x.name)}">${i + 1}. <span style="font-family:var(--mono)">${codeLink(x.id, x.code || '')}</span> ${esc(x.name)}</div>
+      <div class="breakdown-bar"><div class="breakdown-fill" style="width:${totale > 0 ? Math.min(100, x.line / (top[0].line || 1) * 100) : 0}%;background:var(--accent)"></div></div>
+      <div class="breakdown-stats"><span>${fmtN(x.line)}</span><span style="color:var(--text-dim)">${quota(x).toFixed(1)}%</span></div>
+    </div>`).join('');
+  openModal(`<h3>🔍 Da dove viene il costo di ${esc(it.code)}</h3>
+    <p>${esc(it.name)} — costo totale <strong>${fmtPer(totale, itemUom(it))}</strong>.</p>
+    ${tutti.length ? `<p class="empty-text" style="text-align:left;padding:0 0 10px">I ${top.length} articoli che pesano di più, sommati su tutta la distinta: ${totale > 0 ? (coperto / totale * 100).toFixed(0) : 0}% del costo${tutti.length > top.length ? `, su ${tutti.length} voci in tutto` : ''}. Le lavorazioni e le spese generali non compaiono qui: stanno nelle barre di incidenza.</p>
+      ${righe}`
+    : '<div class="empty-text">Nessun componente con un costo: la distinta è vuota, oppure tutto quello che contiene vale zero.</div>'}
+    <div class="modal-actions"><button class="btn-ghost" onclick="closeModal()">Chiudi</button></div>`, true, 'costo');
 }
 
 // ─── EXPORT ───
@@ -112,7 +167,10 @@ function exportBomExcel() {
   const it = getItem(reportBomId || currentBomId); if (!it) { showToast('Seleziona un prodotto', 'error'); return; }
   const c = costOf(it.id);
   const rows = reportRows();
-  const data = [['Pos.', 'Codice', 'Articolo', 'Livello', 'Tipo', 'Quantità', 'U.M.', 'Costo unitario', 'Costo riga']];
+  // Nel foglio i numeri restano numeri (si devono poter sommare): la valuta va
+  // detta in intestazione, che è l'unico posto dove non rompe una formula.
+  const data = [['Pos.', 'Codice', 'Articolo', 'Livello', 'Tipo', 'Quantità', 'U.M.',
+    `Costo unitario (${cur()}/U.M.)`, `Costo riga (${cur()})`]];
   rows.forEach(r => data.push([r.pos, '  '.repeat(r.level) + r.code, r.name, r.level, r.type, r.qty, r.uom, +r.unit.toFixed(4), +r.line.toFixed(4)]));
   data.push([]);
   data.push(['', '', 'Materiale', '', '', '', '', '', +c.material.toFixed(2)]);
@@ -122,6 +180,7 @@ function exportBomExcel() {
   data.push(['', '', 'Spese generali', '', '', '', '', '', +c.overhead.toFixed(2)]);
   data.push(['', '', 'COSTO TOTALE', '', '', '', '', '', +c.total.toFixed(2)]);
   data.push(['', '', 'PREZZO VENDITA', '', '', '', '', '', +sellingPrice(it.id).toFixed(2)]);
+  if (!requireXlsx()) return;
   const ws = XLSX.utils.aoa_to_sheet(data);
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Distinta');
@@ -130,14 +189,15 @@ function exportBomExcel() {
 }
 function exportBomPDF() {
   const it = getItem(reportBomId || currentBomId); if (!it) { showToast('Seleziona un prodotto', 'error'); return; }
-  const { jsPDF } = window.jspdf;
+  const jsPDF = requirePdf(); if (!jsPDF) return;
   const doc = new jsPDF();
   const c = costOf(it.id);
   doc.setFontSize(15); doc.text(`Distinta base — ${it.name}`, 14, 16);
   doc.setFontSize(10); doc.setTextColor(120);
   doc.text(`Codice: ${it.code || '-'}   Data: ${new Date().toLocaleDateString('it-IT')}`, 14, 23);
   // Il rientro sta sul codice, come a video: la descrizione parte sempre dallo stesso margine.
-  const rows = reportRows().map(r => [r.pos, '  '.repeat(r.level) + r.code, r.name, r.type, r.qty + ' ' + r.uom, fmtN(r.unit), fmtN(r.line)]);
+  const rows = reportRows().map(r => [r.pos, '  '.repeat(r.level) + r.code, r.name, r.type,
+    (r.qty + ' ' + r.uom).trim(), fmtN(r.unit) + (r.uom ? '/' + r.uom : ''), fmtN(r.line)]);
   doc.autoTable({
     startY: 28, head: [['Pos.', 'Codice', 'Articolo', 'Tipo', 'Q.tà', 'Costo un.', 'Costo riga']], body: rows,
     styles: { fontSize: 8 }, headStyles: { fillColor: [58, 123, 232] },

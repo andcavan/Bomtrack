@@ -1,0 +1,259 @@
+// Il codice articolo come identificativo.
+//
+// Fino alla 0.22.0 non lo controllava nessuno, ma tutto ciò che cerca un
+// articolo per codice — l'import massivo per primo — dà per scontato che sia
+// unico e risolve sul primo trovato, in silenzio. In cloud diventerà un vincolo
+// del database: questi test fissano il comportamento che il vincolo dovrà
+// trovare già rispettato.
+
+const assert = require('node:assert/strict');
+const { describe, it } = require('./tap.js');
+const { loadApp } = require('./harness.js');
+const { makeDb, mat, acq, parte, asm, comp } = require('./fixtures.js');
+
+function app(db) {
+  const a = loadApp({ silent: true });
+  a.setDb(db || makeDb());
+  a.asRole('admin');
+  return a;
+}
+function conCodice(id, code, o) {
+  return Object.assign(mat(id, 1), { code }, o || {});
+}
+
+describe('Indice per codice', () => {
+  it('trova ignorando maiuscole e spazi ai bordi', () => {
+    const a = app(makeDb({ items: [conCodice('m1', 'MAT-001')] }));
+    assert.equal(a.eval('getItemByCode("mat-001")').id, 'm1');
+    assert.equal(a.eval('getItemByCode("  MAT-001  ")').id, 'm1');
+  });
+
+  it('codice vuoto o sconosciuto: undefined, non il primo che capita', () => {
+    const a = app(makeDb({ items: [conCodice('m1', 'MAT-001')] }));
+    assert.equal(a.eval('getItemByCode("")'), undefined);
+    assert.equal(a.eval('getItemByCode("   ")'), undefined);
+    assert.equal(a.eval('getItemByCode("ZZZ")'), undefined);
+    assert.equal(a.eval('getItemByCode(null)'), undefined);
+  });
+
+  it('con codici duplicati vince il primo, come faceva la scansione', () => {
+    const a = app(makeDb({ items: [conCodice('m1', 'DUP'), conCodice('m2', 'dup')] }));
+    assert.equal(a.eval('getItemByCode("DUP")').id, 'm1',
+      'cambiare questo comportamento sposterebbe di articolo import già fatti');
+  });
+
+  it('gli articoli senza codice non entrano nell\'indice', () => {
+    const a = app(makeDb({ items: [conCodice('m1', ''), conCodice('m2', null)] }));
+    assert.equal(a.eval('codeIndex().size'), 0);
+  });
+
+  it('si ricostruisce dopo una modifica salvata', () => {
+    const a = app(makeDb({ items: [conCodice('m1', 'VECCHIO')] }));
+    a.eval('getItemByCode("VECCHIO")');            // costruisce l'indice
+    a.eval('db.items[0].code = "NUOVO"; saveDB();');
+    assert.equal(a.eval('getItemByCode("NUOVO")').id, 'm1');
+    assert.equal(a.eval('getItemByCode("VECCHIO")'), undefined);
+  });
+
+  it('vede un articolo aggiunto direttamente a db.items', () => {
+    const a = app(makeDb({ items: [conCodice('m1', 'A')] }));
+    a.eval('getItemByCode("A")');
+    a.eval(`db.items.push(${JSON.stringify(conCodice('m2', 'B'))})`);
+    assert.equal(a.eval('getItemByCode("B")').id, 'm2', 'la lunghezza è cambiata: l\'indice si rifà da sé');
+  });
+
+  it('codeIndexAdd registra senza ricostruire tutto', () => {
+    const a = app(makeDb({ items: [conCodice('m1', 'A')] }));
+    a.eval('getItemByCode("A")');
+    a.eval(`const nuovo = ${JSON.stringify(conCodice('m2', 'B'))}; db.items.push(nuovo); codeIndexAdd(nuovo);`);
+    assert.equal(a.eval('getItemByCode("B")').id, 'm2');
+    assert.equal(a.eval('getItemByCode("A")').id, 'm1', 'e non perde quelli già dentro');
+  });
+});
+
+describe('duplicateCodeGroups — il report di Gestione', () => {
+  it('database pulito: nessun gruppo', () => {
+    const a = app(makeDb({ items: [conCodice('m1', 'A'), conCodice('m2', 'B')] }));
+    assert.deepEqual(a.eval('JSON.stringify(duplicateCodeGroups().map(g => g.code))'), '[]');
+  });
+
+  it('raggruppa i duplicati ignorando le maiuscole', () => {
+    const a = app(makeDb({ items: [conCodice('m1', 'DUP'), conCodice('m2', 'dup'), conCodice('m3', 'ALTRO')] }));
+    const g = JSON.parse(a.eval('JSON.stringify(duplicateCodeGroups().map(x => ({ code: x.code, n: x.items.length })))'));
+    assert.equal(g.length, 1);
+    assert.equal(g[0].n, 2);
+  });
+
+  it('un codice ripetuto tre volte è un gruppo solo', () => {
+    const a = app(makeDb({ items: [conCodice('m1', 'X'), conCodice('m2', 'X'), conCodice('m3', 'X')] }));
+    const g = JSON.parse(a.eval('JSON.stringify(duplicateCodeGroups().map(x => x.items.length))'));
+    assert.deepEqual(g, [3]);
+  });
+
+  it('gli articoli senza codice non sono duplicati fra loro', () => {
+    const a = app(makeDb({ items: [conCodice('m1', ''), conCodice('m2', ''), conCodice('m3', null)] }));
+    assert.equal(a.eval('duplicateCodeGroups().length'), 0,
+      'il codice vuoto significa "non ancora assegnato", non "lo stesso codice"');
+  });
+});
+
+describe('validateItemCode — non si introducono nuovi duplicati', () => {
+  const conDue = () => makeDb({ items: [conCodice('m1', 'MAT-001'), conCodice('m2', 'MAT-002')] });
+
+  it('un codice libero passa', () => {
+    const a = app(conDue());
+    assert.equal(a.eval('validateItemCode("MAT-999", null, null)'), null);
+  });
+
+  it('un codice già in uso viene rifiutato, e dice da chi', () => {
+    const a = app(conDue());
+    const err = a.eval('validateItemCode("MAT-001", null, null)');
+    assert.ok(err);
+    assert.match(err, /MAT-001/);
+    assert.match(err, /Materia m1/, 'sapere quale articolo lo occupa evita la caccia al codice');
+  });
+
+  it('il confronto ignora maiuscole e spazi', () => {
+    const a = app(conDue());
+    assert.ok(a.eval('validateItemCode("  mat-001 ", null, null)'));
+  });
+
+  it('codice vuoto: ammesso, ci pensa readItemForm a metterci l\'id', () => {
+    const a = app(conDue());
+    assert.equal(a.eval('validateItemCode("", null, null)'), null);
+    assert.equal(a.eval('validateItemCode("   ", null, null)'), null);
+  });
+
+  it('modificando un articolo, il suo stesso codice non è un duplicato', () => {
+    const a = app(conDue());
+    assert.equal(a.eval('validateItemCode("MAT-001", "m1", "MAT-001")'), null);
+  });
+
+  it('prendere il codice di un ALTRO articolo resta vietato', () => {
+    const a = app(conDue());
+    assert.ok(a.eval('validateItemCode("MAT-002", "m1", "MAT-001")'));
+  });
+
+  // La regola che rende la validazione vivibile su dati già sporchi.
+  it('su un articolo già duplicato si può ancora salvare, se il codice non cambia', () => {
+    const a = app(makeDb({ items: [conCodice('m1', 'DUP'), conCodice('m2', 'DUP')] }));
+    assert.equal(a.eval('validateItemCode("DUP", "m2", "DUP")'), null,
+      'chi sta solo correggendo il nome non deve restare bloccato dal duplicato di ieri');
+  });
+});
+
+describe('Salvataggio della scheda articolo', () => {
+  function apriNuovo(a, tipo, code, nome) {
+    a.el('it-type').value = tipo;
+    a.el('it-code').value = code;
+    a.el('it-name').value = nome;
+    a.el('it-uom').value = 'pz';
+    a.eval('window.__dupSourceId = null');
+  }
+
+  it('un codice duplicato non crea l\'articolo', () => {
+    const a = app(makeDb({ items: [conCodice('m1', 'MAT-001')] }));
+    apriNuovo(a, 'materiale', 'MAT-001', 'Doppione');
+    a.eval('saveNewItem()');
+    assert.equal(a.snapshot().items.length, 1, 'l\'articolo non deve nascere');
+  });
+
+  it('un codice libero crea l\'articolo', () => {
+    const a = app(makeDb({ items: [conCodice('m1', 'MAT-001')] }));
+    apriNuovo(a, 'materiale', 'MAT-050', 'Nuovo');
+    a.eval('saveNewItem()');
+    const items = a.snapshot().items;
+    assert.equal(items.length, 2);
+    assert.equal(items[1].code, 'MAT-050');
+  });
+
+  it('rinominare il codice su un codice occupato non passa', () => {
+    const a = app(makeDb({ items: [conCodice('m1', 'MAT-001'), conCodice('m2', 'MAT-002')] }));
+    a.el('it-code').value = 'MAT-001';
+    a.el('it-name').value = 'Materia m2';
+    a.el('it-uom').value = 'kg';
+    a.eval('saveItemEdit("m2")');
+    assert.equal(a.snapshot().items.find(x => x.id === 'm2').code, 'MAT-002', 'il codice deve restare quello di prima');
+  });
+});
+
+describe('createsCycle — copre anche la distinta parte', () => {
+  it('un articolo dentro se stesso è sempre un ciclo', () => {
+    const a = app(makeDb({ items: [asm('g1', 'gruppo')] }));
+    assert.equal(a.eval('createsCycle("g1", "g1")'), true);
+  });
+
+  it('anello fra assiemi: riconosciuto', () => {
+    const a = app(makeDb({ items: [asm('g1', 'sottogruppo', { components: [comp('g2', 1)] }), asm('g2', 'sottogruppo')] }));
+    assert.equal(a.eval('createsCycle("g2", "g1")'), true);
+    assert.equal(a.eval('createsCycle("g1", "g2")'), false, 'g2 è già figlio: rimetterlo non è un anello');
+  });
+
+  // Il buco chiuso in questa versione: la discesa si fermava sulle parti.
+  it('anello che passa per la distinta parte: riconosciuto', () => {
+    const a = app(makeDb({ items: [
+      asm('g1', 'gruppo', { components: [comp('p1', 1)] }),
+      parte('p1', { cycle: [{ kind: 'item', itemId: 'c1', qty: 1 }] }),
+      acq('c1', 5),
+    ] }));
+    assert.equal(a.eval('createsCycle("c1", "g1")'), true,
+      'g1 → p1 → c1: mettere g1 dentro c1 chiuderebbe l\'anello attraverso il ciclo della parte');
+  });
+
+  it('le lavorazioni del ciclo non sono contenimento', () => {
+    const a = app(makeDb({ items: [
+      parte('p1', { cycle: [{ kind: 'op', workCenterId: 'w1', cost: 10 }] }),
+      asm('g1', 'gruppo'),
+    ] }));
+    assert.equal(a.eval('createsCycle("g1", "p1")'), false, 'una fase di lavorazione non contiene articoli');
+  });
+
+  it('un articolo condiviso da due rami non viene scambiato per un anello', () => {
+    const a = app(makeDb({ items: [
+      asm('g1', 'gruppo', { components: [comp('s1', 1), comp('s2', 1)] }),
+      asm('s1', 'sottogruppo', { components: [comp('m1', 1)] }),
+      asm('s2', 'sottogruppo', { components: [comp('m1', 1)] }),
+      mat('m1', 2),
+    ] }));
+    assert.equal(a.eval('createsCycle("s1", "m1")'), false);
+  });
+
+  it('non entra in ricorsione su dati già ciclici', () => {
+    const a = app(makeDb({ items: [
+      asm('g1', 'sottogruppo', { components: [comp('g2', 1)] }),
+      asm('g2', 'sottogruppo', { components: [comp('g1', 1)] }),
+      mat('m1', 1),
+    ] }));
+    assert.doesNotThrow(() => a.eval('createsCycle("m1", "g1")'),
+      'un anello già in archivio non deve far esplodere il controllo che serve a toglierlo');
+  });
+});
+
+describe('pickCycleItem — le guardie stanno accanto alla scrittura', () => {
+  const conParte = () => makeDb({ items: [parte('p1', { cycle: [] }), acq('c1', 5), asm('g1', 'gruppo')] });
+
+  it('un commerciale entra nella distinta parte', () => {
+    const a = app(conParte());
+    a.eval('currentCycleItemId = "p1"; pickCycleItem("c1")');
+    assert.equal(a.snapshot().items.find(x => x.id === 'p1').cycle.length, 1);
+  });
+
+  it('un assieme no, nemmeno chiamando la funzione a mano', () => {
+    const a = app(conParte());
+    a.eval('currentCycleItemId = "p1"; pickCycleItem("g1")');
+    assert.equal(a.snapshot().items.find(x => x.id === 'p1').cycle.length, 0);
+  });
+
+  it('un articolo inesistente non aggiunge una riga vuota', () => {
+    const a = app(conParte());
+    a.eval('currentCycleItemId = "p1"; pickCycleItem("sparito")');
+    assert.equal(a.snapshot().items.find(x => x.id === 'p1').cycle.length, 0);
+  });
+
+  it('il ruolo lettore non scrive', () => {
+    const a = app(conParte());
+    a.asRole('lettore');
+    a.eval('currentCycleItemId = "p1"; pickCycleItem("c1")');
+    assert.equal(a.snapshot().items.find(x => x.id === 'p1').cycle.length, 0);
+  });
+});

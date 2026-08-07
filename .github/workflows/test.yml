@@ -1,0 +1,26 @@
+# La suite gira senza una sola dipendenza: nessun `npm install`, nessuna cache,
+# solo Node e i file del repo. Serve a impedire che una modifica arrivi su main
+# con i test rossi — finora l'unica verifica era ricordarsi di lanciarli a mano.
+name: test
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'   # il README chiede Node 18+; qui si prova su una versione più recente
+      - name: Suite di test
+        run: node test/run.js
+      - name: Benchmark
+        # Non fa fallire la build: è una misura, non un limite. Il numero resta
+        # nel log per confrontarlo con quello della versione precedente.
+        run: node test/bench.js
+        continue-on-error: true
