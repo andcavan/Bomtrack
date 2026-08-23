@@ -30,6 +30,8 @@ input,select,button,textarea{font-family:var(--font)}
   .panel,.panel-wide{left:8px!important;top:8px!important;width:calc(100vw - 16px);max-height:calc(100vh - 16px);resize:none;padding:20px}
   .panel > h3{cursor:default}
 }
+/* L'icona nativa del calendario è nera: sullo sfondo scuro dei campi sparisce. */
+input[type=date]::-webkit-calendar-picker-indicator,input[type=datetime-local]::-webkit-calendar-picker-indicator{filter:invert(.8)}
 .modal-actions{display:flex;gap:8px;margin-top:20px;justify-content:flex-end;flex-wrap:wrap}
 .modal-field{display:flex;flex-direction:column;gap:4px;margin-bottom:12px}
 .modal-field label{font-size:11px;font-weight:600;color:var(--text-dim);text-transform:uppercase;letter-spacing:.06em}
@@ -350,6 +352,7 @@ textarea.notes-internal{border-style:dashed}
 #print-head{display:none}
 @media print{
   :root{--bg:#fff;--card:#fff;--card-hover:#fff;--border:#bbb;--text:#000;--text-dim:#555}
+  input[type=date]::-webkit-calendar-picker-indicator,input[type=datetime-local]::-webkit-calendar-picker-indicator{filter:none}
   body{background:#fff;color:#000;font-size:11px}
   #app-header,#sub-nav,#toast,#modal-root,#login-screen,#unsaved-badge{display:none!important}
   .catalog-filters,.mgmt-tabs,.doc-lock-banner,.ro-banner,.mgmt-item-actions,.line-actions,

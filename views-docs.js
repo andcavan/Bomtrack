@@ -1073,7 +1073,7 @@ function newOrder() {
   if (!roleGuard('docs')) return;
   const o = Store.insert('orders', { id: gid(), number: nextOrderNumber(), title: '', date: nowISO().slice(0, 10),
     status: 'bozza', supplierId: null, transport: db.settings.transportDefault || '', payment: db.settings.paymentDefault || '',
-    requestedDelivery: '', rfqId: null, planId: null, supplierConfirmation: '', notes: '', notesInternal: '', lines: [], active: true });
+    rfqId: null, planId: null, supplierConfirmation: '', notes: '', notesInternal: '', lines: [], active: true });
   currentOrderId = o.id; orderView = 'edit'; orderDirty = false; renderOrders();
 }
 function orderFromRfq(rfqId) {
@@ -1085,7 +1085,7 @@ function orderFromRfq(rfqId) {
     supplierId: r.supplierId || null,
     transport: r.transport || (sup && sup.defaultTransport) || db.settings.transportDefault || '',
     payment: r.payment || (sup && sup.defaultPayment) || db.settings.paymentDefault || '',
-    requestedDelivery: '', rfqId: r.id, planId: r.planId || null, supplierConfirmation: '', notes: r.notes || '', notesInternal: r.notesInternal || '',
+    rfqId: r.id, planId: r.planId || null, supplierConfirmation: '', notes: r.notes || '', notesInternal: r.notesInternal || '',
     lines: (r.lines || []).map(l => ({ id: gid(), itemId: l.itemId || null, code: l.code || '', description: l.description || '',
       uom: l.uom || defaultUom(), qty: Number(l.qty) || 0, price: (l.price === '' || l.price == null) ? '' : Number(l.price),
       deliveryDate: l.deliveryDate || '', received: 0, note: l.note || '' })),
@@ -1208,7 +1208,6 @@ function renderOrderEdit(id) {
           <datalist id="ord-payment-opts">${(db.settings.paymentOptions || []).map(x => `<option value="${esc(x)}"></option>`).join('')}</datalist></div>
       </div>
       <div class="rfq-head-row">
-        <div class="modal-field"><label>Consegna richiesta</label><input type="date" class="lock-contract" value="${esc(o.requestedDelivery || '')}" onchange="ordSetField('${id}','requestedDelivery',this.value)"></div>
         <div class="modal-field"><label>N° conferma d'ordine fornitore</label><input value="${esc(o.supplierConfirmation || '')}" onchange="ordSetField('${id}','supplierConfirmation',this.value)"></div>
       </div>
       <div class="modal-field"><label>Note</label><textarea rows="2" onchange="ordSetField('${id}','notes',this.value)">${esc(o.notes || '')}</textarea></div>
@@ -1281,7 +1280,6 @@ function exportOrderPDF(id) {
   doc.setTextColor(80); doc.setFontSize(9);
   if (o.transport) { doc.text('Trasporto / Shipping: ' + o.transport, 14, fy); fy += 5; }
   if (o.payment) { doc.text('Pagamento / Payment: ' + o.payment, 14, fy); fy += 5; }
-  if (o.requestedDelivery) { doc.text('Consegna richiesta / Requested delivery: ' + fmtDateIt(o.requestedDelivery), 14, fy); fy += 5; }
   if (o.supplierConfirmation) { doc.text('Conferma fornitore / Order confirmation: ' + o.supplierConfirmation, 14, fy); fy += 5; }
   // Solo o.notes: le note interne (notesInternal) non escono mai sul documento.
   if (o.notes) { doc.text('Note / Notes: ' + o.notes, 14, fy); }
@@ -1300,7 +1298,6 @@ function exportOrderExcel(id) {
   if (o.rfqId && getRfq(o.rfqId)) data.push(['Da richiesta', getRfq(o.rfqId).number]);
   if (o.transport) data.push(['Trasporto / Shipping', o.transport]);
   if (o.payment) data.push(['Pagamento / Payment', o.payment]);
-  if (o.requestedDelivery) data.push(['Consegna richiesta / Requested delivery', fmtDateIt(o.requestedDelivery)]);
   if (o.supplierConfirmation) data.push(['Conferma fornitore / Order confirmation', o.supplierConfirmation]);
   data.push([]);
   data.push(['RICHIEDENTE', '', 'FORNITORE']);

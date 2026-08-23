@@ -438,7 +438,7 @@ function migrateDB() {
   (db.orders || []).forEach(o => {
     if (o.transport == null) o.transport = '';
     if (o.payment == null) o.payment = '';
-    if (o.requestedDelivery == null) o.requestedDelivery = '';
+    delete o.requestedDelivery;   // rimosso: ridondante con la data di consegna per riga, che sola aveva effetto
     if (o.rfqId == null) o.rfqId = null;
     if (o.planId == null) o.planId = null;   // ordine nato da un piano di fabbisogno
     if (o.supplierConfirmation == null) o.supplierConfirmation = '';

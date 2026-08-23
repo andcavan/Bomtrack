@@ -590,7 +590,7 @@ function planNewRfq(p, supplierId, righe) {
 }
 function planNewOrder(p, supplierId, righe) {
   const o = stampNew(Object.assign({ id: gid(), number: nextOrderNumber() }, planDocHead(p, supplierId),
-    { requestedDelivery: '', rfqId: null, supplierConfirmation: '',
+    { rfqId: null, supplierConfirmation: '',
       lines: righe.map(x => Object.assign(planDocLine(x, true), { received: 0 })) }));
   db.orders.push(o);
   return o;

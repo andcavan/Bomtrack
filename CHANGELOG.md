@@ -2,6 +2,21 @@
 
 Le revisioni seguono il versionamento semantico `0.MINOR.PATCH`: **MINOR** per nuove funzionalità, **PATCH** per correzioni. La versione in cima è quella in `APP_VERSION` (`core.js`) e mostrata nell'header dell'app.
 
+### 0.45.3 — 2026-08-23
+
+**Rimosso**
+- Il campo **«Consegna richiesta»** nei dati generali dell'ordine a fornitore. Era una data scritta a mano, senza nessun legame con la logica dell'app: gli avvisi di ritardo, il confronto con la conferma del fornitore e il segnale nel Riepilogo si basano tutti sulla data di consegna **di riga**, articolo per articolo — non su questa. Tenerla accanto generava equivoci: sembrava la data che comandava, e non lo era mai stata. Restano invariate la data di riga e tutto ciò che ne dipende.
+
+### 0.45.2 — 2026-08-23
+
+**Corretto**
+- L'icona del calendario nei campi data era **nera su sfondo nero**: invisibile, perché il tema dell'app è sempre scuro e l'icona nativa del browser non lo sapeva. Ora è invertita in chiaro nei campi a schermo (torna nera in stampa, dove lo sfondo è bianco).
+
+### 0.45.1 — 2026-08-23
+
+**Cambiato**
+- Il pulsante che apre il congelamento della distinta (o del ciclo, per le parti) ora si chiama **📌 Nuova revisione** invece di «Rilascia revisione». Il comportamento non cambia — resta il congelamento della revisione in lavorazione, col costo del giorno, e l'apertura della successiva — ma il nome vecchio suggeriva un'azione verso l'esterno (una pubblicazione, un invio), mentre qui si sta solo aprendo un nuovo capitolo di lavoro sullo stesso articolo.
+
 ### 0.45.0 — 2026-08-06
 
 **Gli elenchi si portano via.** Si esportava un *documento* per volta — una distinta, un piano, una richiesta, un ordine — e nessuna *lista*. Chi filtrava il magazzino su «sotto la scorta minima» vedeva la risposta a schermo e non aveva modo di portarsela in officina o di allegarla a una mail. L'unico export di articoli che esisteva è il template d'import, che è un'altra cosa: tutte le colonne, tutti gli articoli, tre fogli di contorno.

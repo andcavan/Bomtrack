@@ -167,7 +167,7 @@ function renderRevBar(elId, itemId) {
   const it = getItem(itemId);
   if (!it || !hasRevisions(it)) { el.innerHTML = ''; return; }
   el.innerHTML = `${revBadge(it)}
-    <button class="btn-outline" onclick="releaseRevisionModal('${it.id}')">📌 Rilascia revisione</button>
+    <button class="btn-outline" onclick="releaseRevisionModal('${it.id}')">📌 Nuova revisione</button>
     <button class="btn-outline" onclick="revHistoryModal('${it.id}')">🕘 Storico revisioni</button>`;
 }
 function renderBomRevBar() { renderRevBar('bom-rev-bar', currentBomId); }
