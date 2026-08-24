@@ -188,7 +188,10 @@ describe('Il confronto fra quotazioni in unità diverse', () => {
   });
 });
 
-describe('Il fabbisogno parla due lingue', () => {
+describe('Il fabbisogno resta in una lingua sola', () => {
+  // Si ordina e si riceve sempre nell'unità di gestione dell'articolo: quella
+  // del fornitore (a chilo, in questo caso) esiste solo per valorizzare il
+  // prezzo, non per dire quanto sta scritto sulla riga del documento.
   function conPiano(a) {
     a.eval(`Store.insert('plans', { id: 'pl1', number: 'FAB-1', active: true, lines: [{ id: 'l1', itemId: 'mac', qty: 10 }] });`);
     return a;
@@ -197,63 +200,63 @@ describe('Il fabbisogno parla due lingue', () => {
     return JSON.parse(a.eval(`JSON.stringify(mrpBuyRows(getPlan("pl1"), ${net ? 'true' : 'false'}).find(r => r.item.id === "bar"))`));
   }
 
-  it('la quantità di gestione resta in metri, quella del documento va in chili', () => {
+  it('la quantità resta in metri: niente unità del documento diversa da quella di gestione', () => {
     const a = conPiano(app());
     const r = riga(a, false);
     assert.equal(r.qty, 20, '10 macchine × 2 m');
     assert.equal(r.qtyOrder, 20);
-    assert.equal(r.docUom, 'kg');
-    assert.equal(r.qtyDoc, 160, '20 m × 8 kg/m');
-    assert.equal(r.doppiaUom, true);
+    assert.equal(r.uom, 'm');
   });
 
-  it('l\'importo è lo stesso da entrambe le parti', () => {
+  it('il prezzo di riga è il costo convertito, non il prezzo grezzo del fornitore', () => {
     const a = conPiano(app());
     const r = riga(a, false);
     approx(r.amount, 20 * 16);
-    approx(r.qtyDoc * r.priceDoc, r.amount, 'chili × €/kg deve dare lo stesso di metri × €/m');
-    approx(r.priceDoc, 2, 'sul documento va il prezzo al chilo, che è quello che il fornitore ha dato');
+    approx(r.priceDoc, 16, '2 €/kg × 8 kg/m: sulla riga va il prezzo al metro, mai quello al chilo');
+    approx(r.qtyOrder * r.priceDoc, r.amount, 'metri × €/m deve dare lo stesso della costificazione');
   });
 
   it('un articolo senza doppia unità non cambia comportamento', () => {
     const a = conPiano(app());
     a.eval('const it = getItem("mac"); it.components.push({ itemId: "c1", qty: 3, scrapPct: 0 }); touch(it); saveDB();');
     const r = JSON.parse(a.eval('JSON.stringify(mrpBuyRows(getPlan("pl1"), false).find(x => x.item.id === "c1"))'));
-    assert.equal(r.doppiaUom, false);
-    assert.equal(r.docUom, r.uom);
-    assert.equal(r.qtyDoc, r.qtyOrder);
+    assert.equal(r.uom, 'pz');
+    approx(r.price, 5, 'il costo di costificazione resta quello, indipendente dal listino fornitore');
   });
 
-  it('il minimo del fornitore si confronta nella SUA unità', () => {
+  it('il minimo del fornitore si confronta convertito nell\'unità di gestione', () => {
     const a = conPiano(app());
-    // Minimo 200 kg: 160 kg sono sotto, ma 20 (metri) sarebbero sopra 200? no —
-    // il punto è che confrontare 20 con 200 darebbe comunque "sotto", quindi
-    // serve un caso in cui i due confronti danno esito opposto.
+    // Minimo 100 kg = 12,5 m: un fabbisogno di 20 m lo supera. Confrontando
+    // (per errore) 20 direttamente con 100 l'allarme scatterebbe comunque, ma
+    // per il motivo sbagliato — qui si verifica che il numero convertito sia
+    // quello giusto (12,5), non il grezzo (100).
     a.eval(`const it = getItem("bar"); it.priceList[0].minQty = 100; saveDB();`);
     const r = riga(a, false);
-    assert.equal(r.qtyDoc, 160);
-    assert.equal(r.underMin, false,
-      '160 kg superano il minimo di 100 kg; confrontando i 20 metri l\'allarme sarebbe scattato per sbaglio');
+    approx(r.minQty, 12.5, '100 kg ÷ 8 kg/m');
+    assert.equal(r.underMin, false, '20 m superano il minimo di 12,5 m');
   });
 
-  it('e scatta davvero quando la quantità del fornitore è sotto', () => {
+  it('e scatta davvero quando la quantità è sotto il minimo convertito', () => {
     const a = conPiano(app());
+    // 500 kg = 62,5 m: un fabbisogno di 20 m è sotto.
     a.eval(`const it = getItem("bar"); it.priceList[0].minQty = 500; saveDB();`);
-    assert.equal(riga(a, false).underMin, true);
+    const r = riga(a, false);
+    approx(r.minQty, 62.5);
+    assert.equal(r.underMin, true);
   });
 });
 
-describe('I documenti nell\'unità del fornitore', () => {
-  it('la riga d\'ordine nasce in chili, col prezzo al chilo', () => {
+describe('I documenti nell\'unità dell\'articolo', () => {
+  it('la riga d\'ordine nasce in metri, col prezzo già convertito al metro', () => {
     const a = app();
     a.eval(`Store.insert('plans', { id: 'pl1', number: 'FAB-1', active: true, lines: [{ id: 'l1', itemId: 'mac', qty: 10 }] });`);
     const linea = JSON.parse(a.eval(`JSON.stringify((function(){
       const r = mrpBuyRows(getPlan("pl1"), false).find(x => x.item.id === "bar");
-      return Object.assign(planDocLine(r, r.priceDoc), {});
+      return planDocLine(r, true);
     })())`));
-    assert.equal(linea.uom, 'kg');
-    assert.equal(linea.qty, 160);
-    approx(linea.price, 2);
+    assert.equal(linea.uom, 'm');
+    assert.equal(linea.qty, 20);
+    approx(linea.price, 16, '2 €/kg × 8 kg/m');
     approx(linea.qty * linea.price, 320, 'il totale della riga resta quello giusto');
   });
 
@@ -263,7 +266,7 @@ describe('I documenti nell\'unità del fornitore', () => {
       const it = getItem("mac"); it.components.push({ itemId: 'c1', qty: 3, scrapPct: 0 }); touch(it); saveDB();`);
     const linea = JSON.parse(a.eval(`JSON.stringify((function(){
       const r = mrpBuyRows(getPlan("pl1"), false).find(x => x.item.id === "c1");
-      return planDocLine(r, r.priceDoc);
+      return planDocLine(r, true);
     })())`));
     assert.equal(linea.uom, 'pz');
     assert.equal(linea.qty, 30);
@@ -290,6 +293,16 @@ describe('I ricevimenti tornano a casa convertiti', () => {
     const a = conOrdine(app(), { lines: [{ id: 'l1', itemId: 'bar', uom: 'm', qty: 30, price: 16, received: 20 }] });
     assert.equal(a.eval('onHandOf("bar")'), 20);
     assert.equal(a.eval('incomingOf("bar")'), 10);
+  });
+
+  it('è il caso normale ora: una riga generata oggi nasce già in metri, senza bisogno di conversione', () => {
+    const a = app();
+    a.eval(`Store.insert('plans', { id: 'pl1', number: 'FAB-1', active: true, lines: [{ id: 'l1', itemId: 'mac', qty: 10 }] });`);
+    const linea = JSON.parse(a.eval(`JSON.stringify((function(){
+      const r = mrpBuyRows(getPlan("pl1"), false).find(x => x.item.id === "bar");
+      return planDocLine(r, true);
+    })())`));
+    assert.equal(linea.uom, 'm', 'coerente col magazzino: nessuna conversione da fare in ricevimento');
   });
 
   it('una riga senza unità vale come unità di gestione', () => {

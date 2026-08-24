@@ -243,6 +243,32 @@ function docSetLine(k, id, lineId, field, value) {
   if (doc.status !== before) { K.render(); showToast('Stato: ' + (K.STATUS[doc.status] || doc.status)); }
   else if (K.numLineFields.includes(field)) K.render();
 }
+// ─── La riga rispetta il lotto d'acquisto dell'articolo? ───
+// Solo informativo, mai bloccante: chi scrive la riga può avere ragioni che
+// l'app non vede (un resto di magazzino, un accordo particolare). Vale solo
+// per righe da catalogo — una riga manuale non ha un articolo da cui prendere
+// il lotto.
+function lineLotWarn(l) {
+  if (!l.itemId) return '';
+  const it = getItem(l.itemId);
+  const lot = it && lotSizeOf(it);
+  if (!(lot > 0)) return '';
+  const uom = l.uom || itemUom(it);
+  // La quantità di riga può essere nell'unità alternativa (es. kg su un
+  // articolo gestito a metri): il lotto è definito nell'unità di gestione,
+  // quindi il confronto va fatto lì.
+  const qty = uom === altUomOf(it) ? fromAltUom(it, l.qty, uom) : (Number(l.qty) || 0);
+  if (!(qty > 0)) return '';
+  const gUom = it.uom || uom;
+  if (lotModeOf(it) === 'min') {
+    if (qty >= lot - 1e-9) return '';
+    return `<span class="mrp-warn" title="Sotto il minimo ordinabile di ${esc(fmtUom(lot, gUom))} per questo articolo">↑ minimo ${esc(fmtUom(lot, gUom))}</span>`;
+  }
+  const resto = qty % lot;
+  if (resto < 1e-9 || lot - resto < 1e-9) return '';
+  const multiplo = Math.ceil(qty / lot - 1e-9) * lot;
+  return `<span class="mrp-warn" title="Questo articolo si compra solo a multipli di ${esc(fmtUom(lot, gUom))}: il più vicino per eccesso è ${esc(fmtUom(multiplo, gUom))}">↑ lotto ${esc(fmtUom(lot, gUom))}</span>`;
+}
 function docDelLine(k, id, lineId) {
   const K = docKind(k);
   if (!docGuard(k, id, 'contract')) return;
@@ -274,8 +300,10 @@ function docEditLineModal(k, id, lineId) {
   const doc = K.get(id); if (!doc) return;
   const l = (doc.lines || []).find(x => x.id === lineId); if (!l) return;
   const ro = !modeAllows(docMode(k, doc), 'contract');
+  const lotWarn = lineLotWarn(l);
   const qty = `<div class="modal-field"><label id="${p}-qty-label">${docQtyLabel(l.uom || '')}</label>
-    <input id="${p}-qty" type="number" value="${l.qty}" min="0" step="any" ${ro ? 'disabled' : ''}></div>`;
+    <input id="${p}-qty" type="number" value="${l.qty}" min="0" step="any" ${ro ? 'disabled' : ''}>
+    ${lotWarn ? `<span class="empty-text" style="padding:0">${lotWarn}</span>` : ''}</div>`;
   const prezzo = K.hasLinePrice ? `<div class="modal-field"><label id="${p}-price-label">${docPriceLabel(l.uom || '')}</label>
     <input id="${p}-price" type="number" min="0" step="any" value="${l.price === '' || l.price == null ? '' : l.price}" ${ro ? 'disabled' : ''}></div>` : '';
   openModal(`<h3>✏ Modifica riga</h3>
@@ -399,11 +427,13 @@ function docLineFromItem(it, supplierId) {
   const quotato = row && row.price !== '' && row.price != null;
   return {
     id: gid(), itemId: it.id, code: it.code || '', description: it.name || '',
-    // L'unità è quella in cui quel fornitore quota: se vende a chilo, l'ordine è
-    // in chili. Il prezzo è il suo, grezzo — è già espresso in quell'unità, e
-    // convertirlo lo porterebbe in una lingua che lui non parla.
-    uom: (row ? priceUomOf(it, row) : itemUom(it)) || defaultUom(),
-    qty: 1, price: quotato ? Number(row.price) : '', deliveryDate: '', note: '',
+    // La riga è sempre nell'unità di gestione dell'articolo — è quella con cui
+    // si ordina e si riceve davvero, anche quando il fornitore valorizza il
+    // listino in un'altra unità (una barra a metri quotata a chilo). Il
+    // prezzo passa dalla stessa "porta unica" di applyPriceRow: arriva già
+    // convertito, mai il numero grezzo del listino nell'unità sua.
+    uom: itemUom(it) || defaultUom(),
+    qty: 1, price: quotato ? (rowUnitCost(it, row) || 0) : '', deliveryDate: '', note: '',
   };
 }
 // Nei documenti la nota di riga si stampa sotto la descrizione, nella stessa cella.
@@ -728,10 +758,11 @@ function renderRfqEdit(id) {
     const si = rfqLineSupInfo(r, l);
     const siSub = si ? `<div class="rfq-cmp-sub">🏷 ${esc(si.code || '—')}${si.desc ? ' · ' + esc(si.desc) : ''}</div>` : '';
     const noteSub = l.note ? `<div class="line-note">📝 ${esc(l.note)}</div>` : '';
+    const lotWarn = lineLotWarn(l);
     return `<tr>
     <td>${i + 1}</td>
     <td style="font-family:var(--mono)">${codeLink(l.itemId, l.code || '')}</td>
-    <td>${esc(l.description)}${l.itemId ? '' : ' <span class="rfq-manual-tag">manuale</span>'}${siSub}${noteSub}</td>
+    <td>${esc(l.description)}${l.itemId ? '' : ' <span class="rfq-manual-tag">manuale</span>'}${lotWarn ? ' ' + lotWarn : ''}${siSub}${noteSub}</td>
     <td>${esc(l.uom || '')}</td>
     <td><input type="number" class="rfq-qty-input lock-contract" value="${l.qty}" min="0" step="any" onchange="rfqSetLine('${id}','${l.id}','qty',this.value)"></td>
     <td><input type="number" class="rfq-price-input lock-offer" value="${l.price === '' || l.price == null ? '' : l.price}" min="0" step="any" placeholder="—" onchange="rfqSetLine('${id}','${l.id}','price',this.value)"></td>
@@ -1129,21 +1160,26 @@ function ordAddCatalogLines(id, ids) { docAddCatalogLines('order', id, ids); }
 // che porta la quotazione di Rossi su un ordine passato a Bianchi va detta,
 // altrimenti resta un numero sbagliato dall'aria giusta fino alla fattura.
 //
-// Si confronta con la quotazione più recente del fornitore attuale. Niente
-// avviso su una riga manuale (non viene da un listino), né su una riga senza
-// prezzo (l'assenza si vede già da sé).
+// Si confronta con la quotazione più recente del fornitore attuale, nel
+// **costo convertito** nell'unità di gestione — che è quella in cui la riga
+// vive sempre, indipendentemente da come quel fornitore valorizza il
+// listino. Niente avviso su una riga manuale (non viene da un listino), né
+// su una riga senza prezzo (l'assenza si vede già da sé).
 function ordLineListinoWarn(o, l) {
   if (!l.itemId || !o.supplierId) return '';
   const prezzo = (l.price === '' || l.price == null) ? null : Number(l.price);
   if (prezzo == null) return '';
-  const row = supplierPriceRow(getItem(l.itemId), o.supplierId);
+  const it = getItem(l.itemId);
+  const row = supplierPriceRow(it, o.supplierId);
   const sup = supplierName(o.supplierId) || 'questo fornitore';
   if (!row || row.price === '' || row.price == null) {
     return `<span class="mrp-warn" title="${esc(sup)} non ha questo articolo a listino: il prezzo in riga viene da un'altra parte. Verificalo prima di mandare l'ordine.">⚠ non a listino</span>`;
   }
-  const uom = priceUomOf(getItem(l.itemId), row);
-  if (Math.abs(Number(row.price) - prezzo) < 0.00005 && uom === (l.uom || '')) return '';
-  return `<span class="mrp-warn" title="A listino ${esc(sup)} quota ${fmtPer(row.price, uom)}. La riga dice altro: può essere un prezzo concordato, o il listino di un fornitore diverso rimasto da prima.">⚠ ${fmtPer(row.price, uom)} a listino</span>`;
+  const cost = rowUnitCost(it, row) || 0;
+  if (Math.abs(cost - prezzo) < 0.00005) return '';
+  const uom = priceUomOf(it, row);
+  const grezzo = uom !== (it.uom || '') ? ` (a listino ${fmtPer(row.price, uom)})` : '';
+  return `<span class="mrp-warn" title="A listino ${esc(sup)} quota ${fmtPer(cost, itemUom(it))}${grezzo}. La riga dice altro: può essere un prezzo concordato, o il listino di un fornitore diverso rimasto da prima.">⚠ ${fmtPer(cost, itemUom(it))} a listino</span>`;
 }
 
 function renderOrderEdit(id) {
@@ -1152,13 +1188,14 @@ function renderOrderEdit(id) {
     const si = lineSupInfo(o.supplierId, l);
     const siSub = si ? `<div class="rfq-cmp-sub">🏷 ${esc(si.code || '—')}${si.desc ? ' · ' + esc(si.desc) : ''}</div>` : '';
     const warn = ordLineListinoWarn(o, l);
+    const lotWarn = lineLotWarn(l);
     const qty = Number(l.qty) || 0, price = (l.price === '' || l.price == null) ? null : Number(l.price);
     const amount = price != null ? qty * price : null;
     const rec = Number(l.received) || 0, residual = qty - rec;
     return `<tr>
       <td>${i + 1}</td>
       <td style="font-family:var(--mono)">${codeLink(l.itemId, l.code || '')}</td>
-      <td>${esc(l.description)}${l.itemId ? '' : ' <span class="rfq-manual-tag">manuale</span>'}${warn ? ' ' + warn : ''}${siSub}${l.note ? `<div class="line-note">📝 ${esc(l.note)}</div>` : ''}</td>
+      <td>${esc(l.description)}${l.itemId ? '' : ' <span class="rfq-manual-tag">manuale</span>'}${warn ? ' ' + warn : ''}${lotWarn ? ' ' + lotWarn : ''}${siSub}${l.note ? `<div class="line-note">📝 ${esc(l.note)}</div>` : ''}</td>
       <td>${esc(l.uom || '')}</td>
       <td><input type="number" class="rfq-qty-input lock-contract" value="${l.qty}" min="0" step="any" onchange="ordSetLine('${id}','${l.id}','qty',this.value)"></td>
       <td><input type="number" class="rfq-price-input lock-contract" value="${price != null ? price : ''}" min="0" step="any" placeholder="—" onchange="ordSetLine('${id}','${l.id}','price',this.value)"></td>

@@ -308,12 +308,27 @@ tr{border-bottom:1px solid rgba(42,46,59,.4)}
 .price-table input:focus,.price-table select:focus{border-color:var(--accent)}
 .price-table .num{font-family:var(--mono);text-align:right}
 .price-table .pl-flag{width:1%;white-space:nowrap;padding-top:14px}
-.pl-sup{min-width:240px}
+/* width fisso, non solo min-width: con table-layout auto un td senza width
+   proprio si prende parte dello spazio in eccesso della tabella, allargandosi
+   ben oltre il suo contenuto — è quel vuoto fra il menu fornitore e la
+   colonna Prezzo. Un width dichiarato è un vincolo più forte, che il browser
+   rispetta invece di redistribuire lì la larghezza avanzata. */
+.pl-sup{width:330px}
+.pl-sup > select{width:330px}
 .pl-sub{display:flex;align-items:center;gap:8px;margin-top:4px}
-.pl-sub input{font-family:var(--mono);font-size:11px;padding:4px 6px;max-width:150px}
-/* La descrizione presso il fornitore è testo corrente, non un codice */
-.pl-sub input.pl-desc{font-family:inherit;max-width:210px}
-.pl-sub span{color:var(--text-dim);font-size:11px;white-space:nowrap}
+/* Codice e descrizione fornitore hanno una classe propria — non "input dentro
+   .pl-sub" generico — perché .pl-sub è la stessa classe della riga
+   unità/costo convertito nella cella Prezzo (select + span, niente input):
+   una regola larga per "tutti gli input dentro .pl-sub" non la tocca, ma una
+   regola stretta l'aveva già toccata per sbaglio una volta, nascondendo UM e
+   costo calcolato spingendoli fuori dalla colonna. */
+.price-table .pl-code{font-family:var(--mono);font-size:12px;padding:4px 6px;width:130px}
+.price-table .pl-desc{font-family:inherit;font-size:12px;padding:4px 6px;width:170px}
+/* Senza questa regola il select eredita width:100% da .price-table select:
+   dentro il flex di .pl-sub si schiaccia fino a mostrare solo la freccina,
+   col testo dell'unità (es. «kg») invisibile perché non c'è più spazio. */
+.pl-sub select{width:auto;flex:0 0 auto;font-family:var(--mono);font-size:12px;padding:4px 6px}
+.pl-sub span{color:var(--text-dim);font-size:12px;white-space:nowrap}
 .price-table .pl-price{width:88px}
 .price-table .pl-small{width:62px}
 .price-table .pl-date{width:132px}

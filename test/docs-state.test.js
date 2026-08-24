@@ -16,7 +16,7 @@
 const assert = require('node:assert/strict');
 const { describe, it } = require('./tap.js');
 const { loadApp } = require('./harness.js');
-const { makeDb, acq } = require('./fixtures.js');
+const { makeDb, acq, mat } = require('./fixtures.js');
 
 function base(over) {
   return makeDb(Object.assign({
@@ -331,5 +331,95 @@ describe('Dalla richiesta all\'ordine', () => {
     const a = conRfq(app(), 'bozza', [3]);
     a.eval('orderFromRfq("r1")');
     assert.equal(rfq(a).status, 'bozza', 'non era uscita: non c\'è niente da chiudere');
+  });
+});
+
+// ─── lineLotWarn: l'avviso di lotto su una riga di RFQ/Ordine ───
+describe('lineLotWarn — la riga rispetta il lotto d\'acquisto?', () => {
+  function dbLot() {
+    return makeDb({
+      items: [
+        Object.assign(mat('barra', 120), { uom: 'mt', lotSize: 6 }),
+        Object.assign(mat('viti', 1), { uom: 'pz', lotSize: 50, lotMode: 'min' }),
+        Object.assign(mat('peso', 100), { uom: 'mt', lotSize: 6, altUom: 'kg', altFactor: 100 }),
+      ],
+    });
+  }
+  function warn(a, line) { return a.eval(`lineLotWarn(${JSON.stringify(line)})`); }
+  function app() { const a = loadApp({ silent: true }); a.setDb(dbLot()); a.asRole('admin'); return a; }
+
+  it('multiplo esatto (default): quantità non multipla del lotto avvisa', () => {
+    const a = app();
+    assert.match(warn(a, { itemId: 'barra', qty: 13, uom: 'mt' }), /lotto/);
+  });
+  it('multiplo esatto: quantità già multipla non avvisa', () => {
+    const a = app();
+    assert.equal(warn(a, { itemId: 'barra', qty: 12, uom: 'mt' }), '');
+  });
+  it('riga manuale (senza itemId): nessun avviso, non c\'è un articolo da cui prendere il lotto', () => {
+    const a = app();
+    assert.equal(warn(a, { itemId: null, qty: 13, uom: 'mt' }), '');
+  });
+  it('lotto minimo: sotto soglia avvisa', () => {
+    const a = app();
+    assert.match(warn(a, { itemId: 'viti', qty: 30, uom: 'pz' }), /minimo/);
+  });
+  it('lotto minimo: sopra soglia nessun vincolo di multiplo, nessun avviso', () => {
+    const a = app();
+    assert.equal(warn(a, { itemId: 'viti', qty: 55, uom: 'pz' }), '');
+  });
+  it('riga in unità alternativa: la quantità si converte in unità di gestione prima del controllo', () => {
+    const a = app();
+    // 1300 kg / (100 kg per mt) = 13 mt di gestione → non multiplo di 6
+    assert.match(warn(a, { itemId: 'peso', qty: 1300, uom: 'kg' }), /lotto/);
+    // 1200 kg = 12 mt → multiplo, nessun avviso
+    assert.equal(warn(a, { itemId: 'peso', qty: 1200, uom: 'kg' }), '');
+  });
+});
+
+// ─── docLineFromItem / ordLineListinoWarn: la riga parla sempre l'unità dell'articolo ───
+describe('Una riga da catalogo nasce nell\'unità dell\'articolo, mai in quella del listino', () => {
+  function dbBarra() {
+    return makeDb({
+      suppliers: [{ id: 's1', name: 'Rossi Acciai', active: true }],
+      items: [Object.assign(mat('bar', 0), {
+        code: 'BAR', uom: 'm', altUom: 'kg', altFactor: 8,
+        priceList: [{ id: 'pr1', supplierId: 's1', price: 2, date: '2026-01-01', priceUom: 'kg' }],
+        activePriceId: 'pr1', unitCost: 16,
+      })],
+    });
+  }
+  function app() { const a = loadApp({ silent: true }); a.setDb(dbBarra()); a.asRole('admin'); return a; }
+
+  it('docLineFromItem: unità dell\'articolo, prezzo convertito — non il grezzo del listino', () => {
+    const a = app();
+    const l = JSON.parse(a.eval(`JSON.stringify(docLineFromItem(getItem("bar"), "s1"))`));
+    assert.equal(l.uom, 'm', 'mai "kg": si ordina e si riceve in metri, come in distinta e a magazzino');
+    assert.equal(l.price, 16, '2 €/kg × 8 kg/m, non 2');
+  });
+
+  it('senza quotazione di quel fornitore la riga nasce senza prezzo, ma sempre in unità dell\'articolo', () => {
+    const a = app();
+    const l = JSON.parse(a.eval(`JSON.stringify(docLineFromItem(getItem("bar"), "s-altro"))`));
+    assert.equal(l.uom, 'm');
+    assert.equal(l.price, '');
+  });
+
+  it('ordLineListinoWarn: nessun avviso quando il prezzo di riga è il costo convertito corretto', () => {
+    const a = app();
+    a.eval(`Store.insert('orders', { id: 'o1', number: 'ODA-1', status: 'bozza', supplierId: 's1',
+      notes: '', notesInternal: '', active: true, date: '2026-02-01',
+      lines: [{ id: 'ol1', itemId: 'bar', code: 'BAR', description: 'Barra', uom: 'm', qty: 5, price: 16, deliveryDate: '', note: '' }] });`);
+    const warn = a.eval(`ordLineListinoWarn(getOrder("o1"), getOrder("o1").lines[0])`);
+    assert.equal(warn, '');
+  });
+
+  it('ordLineListinoWarn: avvisa se il prezzo di riga non è quello convertito, non per differenza di unità', () => {
+    const a = app();
+    a.eval(`Store.insert('orders', { id: 'o1', number: 'ODA-1', status: 'bozza', supplierId: 's1',
+      notes: '', notesInternal: '', active: true, date: '2026-02-01',
+      lines: [{ id: 'ol1', itemId: 'bar', code: 'BAR', description: 'Barra', uom: 'm', qty: 5, price: 10, deliveryDate: '', note: '' }] });`);
+    const warn = a.eval(`ordLineListinoWarn(getOrder("o1"), getOrder("o1").lines[0])`);
+    assert.match(warn, /16/, 'il costo convertito (16/m), non il prezzo grezzo (2/kg), deve comparire nell\'avviso');
   });
 });

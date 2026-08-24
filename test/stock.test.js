@@ -84,6 +84,19 @@ describe('netRequirement — il conto, senza dati intorno', () => {
     assert.equal(n(app())(40, 25, 0, 0, 0, undefined), 15, 'il parametro nuovo non deve cambiare i vecchi risultati');
     assert.equal(n(app())(40, 25, 0, 0, 0, 'sporco'), 15);
   });
+  it('senza indicare la modalità, il lotto arrotonda a multiplo come sempre', () => {
+    assert.equal(n(app())(40, 25, 0, 0, 10, undefined, undefined), 20, 'il default non deve cambiare i dati esistenti');
+    assert.equal(n(app())(40, 25, 0, 0, 10, undefined, 'sporco'), 20);
+  });
+  it('lotto minimo: sotto soglia si compra la soglia', () => {
+    assert.equal(n(app())(3, 0, 0, 0, 10, undefined, 'min'), 10, '3 mancanti, minimo 10 → si compra 10');
+  });
+  it('lotto minimo: sopra soglia si compra esattamente quanto manca, senza arrotondare a passi', () => {
+    assert.equal(n(app())(40, 27, 0, 0, 10, undefined, 'min'), 13, '13 mancanti, oltre il minimo di 10 → si compra 13, non 20');
+  });
+  it('lotto minimo: un mancante esattamente pari alla soglia non arrotonda oltre', () => {
+    assert.equal(n(app())(40, 30, 0, 0, 10, undefined, 'min'), 10);
+  });
 });
 
 describe('L\'esistente è calcolato, non scritto', () => {

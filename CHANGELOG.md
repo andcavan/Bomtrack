@@ -2,6 +2,62 @@
 
 Le revisioni seguono il versionamento semantico `0.MINOR.PATCH`: **MINOR** per nuove funzionalità, **PATCH** per correzioni. La versione in cima è quella in `APP_VERSION` (`core.js`) e mostrata nell'header dell'app.
 
+### 0.47.10 — 2026-08-24
+
+**Corretto**
+- Codice e descrizione fornitore erano andati a capo (0.47.9) invece di stare sulla stessa riga come prima. Ora colonna e menu fornitore sono un po' più larghi (330px) e codice/descrizione un po' più stretti (130/170px): ci stanno affiancati su una riga sola, senza sforare né lasciare vuoti.
+
+### 0.47.9 — 2026-08-24
+
+**Corretto**
+- Il vuoto fra il menu fornitore e la colonna Prezzo: la colonna Fornitore aveva solo un `min-width`, e con `table-layout` automatico si prendeva parte dello spazio in eccesso della tabella, allargandosi ben oltre il menu al suo interno. Ora ha un `width` fisso (240px) che il browser rispetta; codice e descrizione, insieme più larghi della colonna, vanno a capo su una riga propria invece di sforare.
+
+### 0.47.8 — 2026-08-24
+
+**Corretto**
+- Il tentativo precedente (0.47.7) aveva reso la classe `.pl-sub` — condivisa tra la riga codice/descrizione fornitore e la riga unità/costo convertito della cella Prezzo — bersaglio delle stesse regole di larghezza, nascondendo UM e costo calcolato. Codice e descrizione fornitore hanno ora una classe propria (`pl-code`, `pl-desc`), separata da quella riga: si allargano senza più toccare nulla nella cella Prezzo.
+
+### 0.47.7 — 2026-08-24
+
+**Corretto**
+- Il menu fornitore, più stretto della riga codice+descrizione sotto di lui, lasciava vuoto a destra fino al bordo della colonna (che si allarga sul contenuto più largo). Ora codice e descrizione vanno a capo invece di stare in fila, così non sforano oltre la larghezza del menu, e il vuoto a destra sparisce.
+
+### 0.47.6 — 2026-08-24
+
+**Corretto**
+- Il `min-width` della colonna (0.47.5) non bastava: la tabella si dimensiona sul contenuto più largo, e i campi codice/descrizione sotto sono comunque più larghi di 240px — trascinavano con sé anche il menu fornitore, che eredita `width:100%` dalla cella. Ora il menu ha un tetto proprio (220px), indipendente da quanto si allarga la colonna sotto di lui.
+
+### 0.47.5 — 2026-08-24
+
+**Corretto**
+- Allargare i campi «codice»/«descrizione» fornitore (0.47.4) aveva allargato di riflesso anche il menu del fornitore sopra di loro, condividendo lo stesso `min-width` di colonna. Il menu fornitore torna alla larghezza di prima; i due campi sotto restano larghi.
+
+### 0.47.4 — 2026-08-24
+
+**Corretto**
+- La correzione precedente (0.47.3) non si vedeva: avevo alzato solo il `max-width` dei campi «codice fornitore»/«descrizione fornitore», ma senza una `width` esplicita restavano fermi alla larghezza predefinita del browser — più stretta sia del limite vecchio che di quello nuovo, quindi il tetto più alto non veniva mai raggiunto. Ora hanno una `width` propria (190px e 260px) e si vedono davvero più larghi.
+
+### 0.47.2 — 2026-08-24
+
+**Corretto**
+- Nel listino fornitori, la seconda riga di ogni quotazione (codice fornitore, descrizione, unità di quotazione) era in un carattere più piccolo (11px) di quella sopra (12px). Uniformato: stessa dimensione su entrambe le righe.
+
+### 0.47.1 — 2026-08-24
+
+**Corretto**
+- Nel listino fornitori, il selettore dell'unità di quotazione (accanto al prezzo, quando l'articolo ha una doppia unità) era **invisibile**: si vedeva solo la freccina, senza il testo «m»/«kg». Il `<select>` ereditava `width:100%` dentro la riga flessibile che lo contiene insieme al totale convertito, e si schiacciava fino a non lasciare spazio al testo. Ora ha una larghezza propria, come gli altri campi della stessa riga.
+
+### 0.47.0 — 2026-08-24
+
+**Corretto**
+- Le righe di **Richiesta d'offerta** e **Ordine**, quando nascono da catalogo (a mano o generate da un piano di fabbisogno), ora sono sempre nell'**unità dell'articolo** — quella con cui si ordina e si riceve davvero (mt, m², pz…) — e mai in quella con cui un fornitore valorizza il listino (es. a chilo). Il prezzo di riga è già il costo **convertito** in quell'unità, non il prezzo grezzo del listino: una barra gestita in metri ma quotata a chilo genera una riga in metri, al prezzo al metro. Prima la riga nasceva nell'unità del fornitore col prezzo grezzo, in contraddizione con quanto l'app stessa dichiarava ("U.M. seguono l'anagrafica articolo"). I documenti già emessi non cambiano.
+
+### 0.46.0 — 2026-08-24
+
+**Aggiunto**
+- Il **lotto di riordino** ora sa se è un **multiplo esatto** (una barra da 6 m si compra a 6, 12, 18… — comportamento di sempre, resta il predefinito) oppure una **quantità minima** (es. minimo 50 pezzi, poi liberamente 51, 52…). Si sceglie nella scheda articolo, accanto al lotto. Gli articoli già configurati non cambiano comportamento: senza scelta esplicita restano a multiplo esatto.
+- Le righe di **Richiesta d'offerta** e **Ordine** — anche scritte a mano — segnalano ora quando la quantità non rispetta il lotto dell'articolo (badge «↑ lotto» o «↑ minimo», nella tabella e nella modale di modifica riga). È solo un avviso: non blocca né arrotonda da sola la quantità inserita.
+
 ### 0.45.3 — 2026-08-23
 
 **Rimosso**

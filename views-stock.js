@@ -139,6 +139,11 @@ function freeStockOf(itemId, exceptPlanId) {
 
 function safetyStockOf(it) { return Math.max(0, Number(it && it.safetyStock) || 0); }
 function lotSizeOf(it) { return Math.max(0, Number(it && it.lotSize) || 0); }
+// Come si compra il lotto: a multipli esatti (predefinito, comportamento
+// storico) oppure come semplice soglia minima oltre la quale ogni quantità va
+// bene. Senza scelta esplicita resta 'multiple' — un articolo con `lotSize`
+// già impostato non deve cambiare comportamento in silenzio.
+function lotModeOf(it) { return (it && it.lotMode === 'min') ? 'min' : 'multiple'; }
 
 // ─── Il conto ───
 // netto = quanto manca davvero, arrotondato al lotto del fornitore.
@@ -148,15 +153,18 @@ function lotSizeOf(it) { return Math.max(0, Number(it && it.lotSize) || 0); }
 // dalla parte del magazzino: sono entrambi merce che c'è ma non si può usare.
 // Scriverlo come sottrazione dall'esistente darebbe lo stesso numero e la
 // domanda sbagliata — «quanto ne ho» invece di «quanto me ne serve».
-function netRequirement(lordo, onHand, incoming, safety, lotSize, committed) {
+function netRequirement(lordo, onHand, incoming, safety, lotSize, committed, lotMode) {
   const l = Number(lordo) || 0;
   const mancante = l + (Number(safety) || 0) + (Number(committed) || 0)
     - (Number(onHand) || 0) - (Number(incoming) || 0);
   if (!(mancante > 0)) return 0;
   const lot = Number(lotSize) || 0;
   if (!(lot > 0)) return mancante;
-  // Si arrotonda per eccesso: comprare mezzo lotto non è un'opzione che il
-  // fornitore offre.
+  // Lotto minimo: sotto soglia si compra la soglia, sopra si compra esattamente
+  // quanto manca — nessun passo, solo un pavimento.
+  if (lotMode === 'min') return mancante <= lot ? lot : mancante;
+  // Multiplo esatto: si arrotonda per eccesso, comprare mezzo lotto non è
+  // un'opzione che il fornitore offre.
   return Math.ceil(mancante / lot - 1e-9) * lot;
 }
 // I dati di giacenza di una riga di fabbisogno, pronti da mostrare.
@@ -166,8 +174,8 @@ function stockFor(it, lordo, committed) {
   const s = stockOf(it.id);
   const safety = safetyStockOf(it);
   const imp = Math.max(0, Number(committed) || 0);
-  const net = netRequirement(lordo, s.onHand, s.incoming, safety, lotSizeOf(it), imp);
-  return { onHand: s.onHand, incoming: s.incoming, safety, lotSize: lotSizeOf(it),
+  const net = netRequirement(lordo, s.onHand, s.incoming, safety, lotSizeOf(it), imp, lotModeOf(it));
+  return { onHand: s.onHand, incoming: s.incoming, safety, lotSize: lotSizeOf(it), lotMode: lotModeOf(it),
     committed: imp, libero: s.onHand + s.incoming - imp, net,
     coperto: net === 0 && lordo > 0 };
 }
@@ -359,7 +367,7 @@ function stockState(it) {
     onHand: s.onHand, incoming: s.incoming,
     committed: committedOf(it.id, null),
     libero: freeStockOf(it.id, null),
-    safety, lotSize: lotSizeOf(it),
+    safety, lotSize: lotSizeOf(it), lotMode: lotModeOf(it),
     sotto: safety > 0 && s.onHand < safety,
   };
 }

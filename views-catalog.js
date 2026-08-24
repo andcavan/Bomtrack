@@ -127,7 +127,7 @@ function priceListBody(id) {
       <td class="pl-sup">
         <select ${ro} onchange="priceSetField('${r.id}','supplierId',this.value)">${supplierOptions(r.supplierId || '')}</select>
         <div class="pl-sub">
-          <input value="${esc(r.code || '')}" placeholder="codice fornitore" title="Codice dell'articolo presso il fornitore" ${ro} onchange="priceSetField('${r.id}','code',this.value)">
+          <input class="pl-code" value="${esc(r.code || '')}" placeholder="codice fornitore" title="Codice dell'articolo presso il fornitore" ${ro} onchange="priceSetField('${r.id}','code',this.value)">
           <input class="pl-desc" value="${esc(r.desc || '')}" placeholder="descrizione fornitore" title="Descrizione dell'articolo presso il fornitore" ${ro} onchange="priceSetField('${r.id}','desc',this.value)">
           <span title="Da dove arriva la quotazione">${esc(priceRowOrigin(r))}</span>
         </div>
@@ -741,7 +741,12 @@ function itemModalBody(it, scope) {
         <input type="number" id="it-safety" min="0" step="any" value="${it && it.safetyStock != null ? it.safetyStock : ''}" placeholder="0"></div>
       <div class="modal-field"><label id="it-lot-label">${labelUom('Lotto di riordino', it ? (it.uom || defaultUom()) : defaultUom())}</label>
         <input type="number" id="it-lot" min="0" step="any" value="${it && it.lotSize != null ? it.lotSize : ''}" placeholder="nessuno"></div>
-      <div class="modal-field" style="grid-column:1/-1"><span class="empty-text" style="padding:0">La <strong>scorta minima</strong> è la quantità che il fabbisogno netto vuole lasciare a magazzino dopo aver coperto il piano. Il <strong>lotto di riordino</strong> arrotonda per eccesso quanto si compra: vuoto = nessun arrotondamento.</span></div>
+      <div class="modal-field"><label>Il lotto è</label>
+        <select id="it-lotmode">
+          <option value="multiple" ${(!it || it.lotMode !== 'min') ? 'selected' : ''}>un multiplo esatto (6, 12, 18…)</option>
+          <option value="min" ${(it && it.lotMode === 'min') ? 'selected' : ''}>una quantità minima (poi libera)</option>
+        </select></div>
+      <div class="modal-field" style="grid-column:1/-1"><span class="empty-text" style="padding:0">La <strong>scorta minima</strong> è la quantità che il fabbisogno netto vuole lasciare a magazzino dopo aver coperto il piano. Il <strong>lotto di riordino</strong> arrotonda per eccesso quanto si compra — vuoto: nessun arrotondamento; <strong>multiplo esatto</strong>: si compra solo a passi del lotto, come una barra da 6 m che non si taglia; <strong>quantità minima</strong>: sotto soglia si arrotonda al minimo, sopra si compra esattamente quanto serve.</span></div>
     </div>
     ${it ? stockPanelHtml(it) : ''}
     <div class="modal-field"><label>Note</label><textarea id="it-notes" rows="2">${it ? esc(it.notes || '') : ''}</textarea></div>
@@ -1385,6 +1390,10 @@ function readItemForm(it) {
     const sa = val('it-safety'), lo = val('it-lot');
     it.safetyStock = sa === '' ? null : clampNum(parseFloat(sa), 0);
     it.lotSize = lo === '' ? null : clampNum(parseFloat(lo), 0);
+    // La modalità ha senso solo insieme a un lotto: senza, non deve restare in
+    // giro un valore che non si applica a niente.
+    if (it.lotSize) { if (val('it-lotmode') === 'min') it.lotMode = 'min'; else delete it.lotMode; }
+    else delete it.lotMode;
   }
   // Doppia unità di misura. Le due voci vanno insieme: un'unità senza fattore
   // non converte niente, un fattore senza unità non si applica a niente.
