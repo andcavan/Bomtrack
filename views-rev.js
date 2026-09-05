@@ -167,8 +167,8 @@ function renderRevBar(elId, itemId) {
   const it = getItem(itemId);
   if (!it || !hasRevisions(it)) { el.innerHTML = ''; return; }
   el.innerHTML = `${revBadge(it)}
-    <button class="btn-outline" onclick="releaseRevisionModal('${it.id}')">📌 Nuova revisione</button>
-    <button class="btn-outline" onclick="revHistoryModal('${it.id}')">🕘 Storico revisioni</button>`;
+    <button class="btn-outline" onclick="releaseRevisionModal('${it.id}')">${ico('pin', 'tinted', '')} Nuova revisione</button>
+    <button class="btn-outline" onclick="revHistoryModal('${it.id}')">${ico('clock', 'tinted', '')} Storico revisioni</button>`;
 }
 function renderBomRevBar() { renderRevBar('bom-rev-bar', currentBomId); }
 function renderCyclesRevBar() { renderRevBar('cycles-rev-bar', currentCycleItemId); }
@@ -186,7 +186,7 @@ function releaseRevisionModal(itemId) {
     ? `<p style="color:var(--red)"><strong>Dalla revisione ${esc(ultima.rev)} non è cambiato niente.</strong> Rilasciarla creerebbe una copia identica.</p>` : '';
   const riepilogo = d && !revDiffVuoto(d)
     ? `<p>Rispetto alla ${esc(ultima.rev)}: ${d.aggiunte.length} aggiunte, ${d.rimosse.length} rimosse, ${d.cambiate.length} modificate.</p>` : '';
-  openModal(`<h3>📌 Rilascia revisione ${esc(rev)}</h3>
+  openModal(`<h3>${ico('pin', 'tinted pill', '')} Rilascia revisione ${esc(rev)}</h3>
     <p>La distinta di <strong>${esc(it.code)} — ${esc(it.name)}</strong> viene <strong>congelata così com'è</strong>, col costo di oggi. Da qui in poi si lavora sulla <strong>${esc(nextRev(rev))}</strong>: la ${esc(rev)} resta consultabile e non cambia più.</p>
     ${riepilogo}${avviso}
     <div class="modal-field"><label>Motivo del rilascio</label>
@@ -230,7 +230,7 @@ function revHistoryModal(itemId) {
       ${r.motivo ? `<div style="margin-top:4px">${esc(r.motivo)}</div>` : '<div class="empty-text" style="text-align:left;padding:2px 0 0">nessun motivo indicato</div>'}
     </div>`;
   }).join('') : `<div class="empty-text">Nessuna revisione rilasciata. La distinta attuale è la ${esc(itemRev(it))}.</div>`;
-  openModal(`<h3>🕘 Revisioni — ${esc(it.code)} ${esc(it.name)}</h3>
+  openModal(`<h3>${ico('clock', 'tinted pill', '')} Revisioni — ${esc(it.code)} ${esc(it.name)}</h3>
     <p>In lavorazione: <strong>Rev. ${esc(itemRev(it))}</strong>. Le revisioni qui sotto sono congelate e non cambiano più.</p>
     <div style="display:flex;flex-direction:column;gap:8px">${corpo}</div>
     <div class="modal-actions"><button class="btn-ghost" onclick="closeModal()">Chiudi</button></div>`, true, 'storico');

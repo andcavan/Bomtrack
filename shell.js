@@ -38,7 +38,7 @@ function globalSearchHits(q) {
   return hits.sort((a, b) => a.exact - b.exact || String(a.code).localeCompare(String(b.code))).slice(0, GS_MAX);
 }
 function globalSearchModal() {
-  openModal(`<h3>🔎 Cerca ovunque</h3>
+  openModal(`<h3>${ico('search', 'tinted pill', '')} Cerca ovunque</h3>
     <div class="modal-field">
       <input type="text" id="gs-input" placeholder="Codice, nome, numero di documento..." autocomplete="off"
         oninput="debounced('gs', renderGlobalSearch, 90)" onkeydown="globalSearchKey(event)"></div>
@@ -125,27 +125,27 @@ function printView() { printHeadFill(); window.print(); }
 // Icona ed etichetta restano separate: su schermi stretti l'etichetta del
 // gruppo sparisce e la barra resta su una riga sola (vedi .nav-label).
 const NAV = [
-  { id: 'home', icon: '🏠', label: 'Riepilogo', views: [
+  { id: 'home', icon: 'home', label: 'Riepilogo', views: [
     { id: 'home', label: 'Riepilogo' }] },
-  { id: 'anag', icon: '📇', label: 'Anagrafica', views: [
+  { id: 'anag', icon: 'contacts', label: 'Anagrafica', views: [
     { id: 'buy', label: 'Acquisti' },
     { id: 'design', label: 'Progetto' }] },
   // Il magazzino sta accanto alle anagrafiche perché elenca gli stessi articoli,
   // ma è un gruppo suo: non conosce la divisione fra acquisti e progetto —
   // commerciali, materie prime e parti stanno sullo stesso scaffale.
-  { id: 'stock', icon: '📦', label: 'Magazzino', views: [
+  { id: 'stock', icon: 'package', label: 'Magazzino', views: [
     { id: 'stock', label: 'Magazzino' }] },
-  { id: 'cicli', icon: '🔧', label: 'Cicli di lavorazione', views: [
+  { id: 'cicli', icon: 'wrench', label: 'Cicli di lavorazione', views: [
     { id: 'cycles', label: 'Cicli di lavorazione' }] },
-  { id: 'db', icon: '🌳', label: 'Distinta base', views: [
+  { id: 'db', icon: 'tree', label: 'Distinta base', views: [
     { id: 'bom', label: 'Gestione DB' },
     { id: 'report', label: 'Visualizza DB' }] },
-  { id: 'docs', icon: '📨', label: 'Documenti', views: [
+  { id: 'docs', icon: 'mail', label: 'Documenti', views: [
     { id: 'jobs', label: 'Commesse' },
     { id: 'mrp', label: 'Fabbisogno' },
     { id: 'rfq', label: 'Richieste offerta' },
     { id: 'orders', label: 'Ordini' }] },
-  { id: 'manage', icon: '⚙', label: 'Gestione', views: [
+  { id: 'manage', icon: 'settings', label: 'Gestione', views: [
     { id: 'manage', label: 'Gestione' }] },
 ];
 function navGroups() { return NAV.filter(g => g.id !== 'manage' || isAdmin()); }
@@ -166,7 +166,7 @@ function renderNav() {
   const attivo = groupOfView(activeView);
   document.getElementById('main-nav').innerHTML = navGroups().map(g =>
     `<button class="nav-btn ${attivo && attivo.id === g.id ? 'active' : ''}" onclick="openNavGroup('${g.id}')" title="${esc(g.label)}">
-       <span class="nav-ico">${g.icon}</span><span class="nav-label">${esc(g.label)}</span></button>`).join('');
+       <span class="nav-ico">${ico(g.icon, 'tinted pill')}</span><span class="nav-label">${esc(g.label)}</span></button>`).join('');
   // Seconda riga: le voci del gruppo aperto. Con una voce sola non c'è niente
   // da scegliere e la riga sparisce invece di ripetere il nome del gruppo.
   const sub = document.getElementById('sub-nav');
@@ -232,6 +232,10 @@ function setView(v) {
   else if (v === 'manage') renderManage();
   showReadOnlyBanner(panel, area);
   a11yFields(panel);   // etichette ai campi e nomi ai pulsanti-icona della vista appena disegnata
+  // Il pannello laterale appartiene alla vista che lo ha riempito: cambiando
+  // vista la riga scelta altrove non vuol più dire niente, e i suoi comandi
+  // agirebbero su qualcosa che non si sta più guardando.
+  inspectorClear();
 }
 // Il banner va messo dopo il render: le viste documenti si riscrivono per intero
 function showReadOnlyBanner(panel, area) {

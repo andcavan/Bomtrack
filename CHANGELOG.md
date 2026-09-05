@@ -2,6 +2,195 @@
 
 Le revisioni seguono il versionamento semantico `0.MINOR.PATCH`: **MINOR** per nuove funzionalità, **PATCH** per correzioni. La versione in cima è quella in `APP_VERSION` (`core.js`) e mostrata nell'header dell'app.
 
+### 0.55.0 — 2026-09-05
+
+**Aggiunto**
+- **Mettere una commessa «In produzione» adesso controlla se il materiale c'è.** Prima non controllava niente: si scriveva lo stato e basta, e che mancassero dieci articoli lo si scopriva in officina — quando il lead time era già perso e la data al cliente era già stata data. Ora compare una domanda che nomina i codici mancanti e la data di consegna, con due vie: *Metti in produzione lo stesso* oppure *Non ancora*. **Non blocca**: l'app avvisa e lascia decidere, perché chi ha un'urgenza vera deve poter andare avanti senza barare sui dati — dati falsi, poi, restano.
+- **Sezione «Copertura materiale» nella scheda della commessa**, sempre leggibile, più un KPI in cima. I codici sono le stesse pastiglie del riepilogo, e ognuna porta al piano che genera quella riga: è lì che si emette la richiesta o l'ordine.
+- **In Riepilogo → «Richiede attenzione»**: le commesse **già in produzione** a cui manca materiale da ordinare, gravità alta come una consegna sforata. La conferma la vede una persona sola, una volta; se dopo l'avvio un ordine slitta o un piano cresce, il riepilogo è l'unico posto che rilegge il presente.
+- Il magazzino sa ora anche **quando** arriva la merce ordinata, non solo che arriva: `incomingEntro(itemId, data)` divide ciò che arriva in tempo da ciò che arriva dopo. La data è quella confermata dal fornitore se l'ha data, altrimenti quella che gli abbiamo chiesto — la stessa coppia che legge `orderWorstDelay`.
+- `test/job-coverage.test.js` (25 casi), più i casi su `incomingEntro` e `commitsOn` in `test/stock.test.js` e il nuovo segnale in `test/home.test.js`.
+
+**Note**
+- **Quattro livelli, perché sono quattro telefonate diverse.** *Da ordinare*: non è ordinato, si compra — l'unico che costa un lead time. *In un documento non ancora inviato*: la richiesta o l'ordine esistono già in bozza; dire «ordina» a chi il documento l'ha scritto è falso, gli manca di premere Invia (e una bozza, giustamente, non conta come merce in arrivo). *In arrivo dopo la data in cui serve*: non c'è niente da comprare, c'è un fornitore da sollecitare — confonderlo con «da ordinare» farebbe ricomprare merce già pagata. *Coperto*. Un semaforo rosso solo li appiattirebbe, e un avviso che dice «manca» anche a chi ha già ordinato si impara a chiudere senza leggerlo.
+- **Una commessa senza piani di fabbisogno aperti non è «tutto ok»: è «non lo so»**, e la commessa lo dice così, sia nella scheda sia nella domanda. Una spunta verde lì sarebbe una bugia comoda, detta proprio a chi sta per avviare il lavoro.
+- **La commessa è una domanda sola, non N piani.** Le righe di tutti i suoi piani aperti si sommano prima di guardare il magazzino: due piani della stessa commessa che chiedono 100 pz con 100 a scaffale non devono vedersi scoperti a vicenda. Da qui `commitsOn()` che accetta anche un insieme di piani da escludere — la concorrenza sono gli **altri**, non noi. I piani di altre commesse restano concorrenza, come prima.
+- Nessun calcolo nuovo: si riusano `mrpExplode`, `mrpBuyRow` (con il netto forzato, come fa il riepilogo — il conteggio non deve dipendere dall'interruttore della vista Fabbisogno), `netRequirement` e `planDocumentedItems`. Nessun campo salvato, nessuna prenotazione: la copertura è calcolata, e cambia da sola quando arriva la merce.
+- **Nessun flag «avviso già visto»**: la domanda si fa solo entrando in produzione, e solo se non ci si è già. Un ritocco a una nota non la fa ricomparire, e uscire dalla produzione non chiede niente. Un flag salvato congelerebbe una risposta data ieri e contraddirebbe la sezione Copertura.
+- I piani **chiusi** restano fuori, come già per gli impegni: chiuderli è il modo di dire «questo lavoro non c'è più». Se le distinte contengono un anello, l'esplosione è troncata e la copertura non si dichiara mai «coperta»: sarebbe una promessa che non si può mantenere.
+
+### 0.54.0 — 2026-09-05
+
+**Cambiato**
+- **Le righe di richieste e ordini stanno su due piani.** Una riga d'ordine aveva dodici colonne, e dodici colonne su uno schermo normale vogliono dire testo minuscolo o scorrimento orizzontale — e con lo scorrimento il codice, che è l'identità della riga, esce dallo schermo. Le colonne però non erano dodici cose diverse: erano **sei coppie**, e adesso stanno una sopra l'altra dentro la stessa cella.
+
+  | | sopra | sotto |
+  |---|---|---|
+  | 1 | codice | descrizione |
+  | 2 | quantità | unità di misura |
+  | 3 | prezzo unitario | importo di riga |
+  | 4 | data richiesta | data confermata |
+  | 5 | ricevuto | residuo |
+  | 6 | modifica riga / nota | togli la riga |
+
+  Sopra sta il dato che si compila, sotto quello che lo spiega o ne consegue. Le richieste di offerta hanno le stesse coppie meno quelle che una richiesta non ha: niente ricevuto e niente data confermata.
+- Il vantaggio non è solo lo spazio: **le due metà si leggono insieme**. «10 pz» e «120,00 €» stanno una sotto l'altra invece che a mezzo schermo di distanza, e il residuo sta sotto il ricevuto che lo produce.
+
+**Aggiunto**
+- La richiesta di offerta mostra ora l'**importo di riga** (quantità × prezzo offerto), che prima si vedeva solo nel confronto offerte.
+- `test/doc-rows.test.js`: le colonne dichiarate in testata, le celle di ogni riga e i `colspan` del totale e della riga vuota devono raccontare la stessa tabella — sbagliarne uno solo storce l'intestazione rispetto ai dati. E ogni coppia deve stare nella sua cella, con il campo giusto sopra e il suo esito sotto.
+
+**Note**
+- Una riga di documento resta **un solo `<tr>`**: i due piani sono due righe dentro ogni cella, non due righe di tabella. Così l'ordinamento, il blocco dei campi e la selezione continuano a valere su una riga sola, e nessuno può separarne le metà.
+- Il blocco dei documenti inviati vale come prima su entrambi i piani: quantità e prezzo restano contratto, ricevuto e data confermata restano ricevimento.
+- La riga manuale continua a dichiararsi, e la nota di riga, il codice del fornitore e gli avvisi (lotto, non a listino) restano sotto la descrizione, dove stavano.
+
+### 0.53.0 — 2026-09-05
+
+**Aggiunto**
+- **«Richiede attenzione» dice adesso chi lo ha fatto scattare.** Sotto ogni riga compaiono i codici e i numeri che la riguardano: le commesse in ritardo per numero, gli articoli sotto scorta o senza prezzo per codice, le richieste in attesa e gli ordini confermati tardi per numero di documento. Prima si leggeva «7 articoli sotto la scorta minima» e per sapere **quali** bisognava aprire il magazzino e rifare a mano il filtro — cioè rifare il lavoro che l'avviso aveva già fatto.
+- **Ogni voce porta dove si risolve**, non alla vista in generale: la commessa alla sua commessa, la riga di fabbisogno al piano che la genera (è lì che si emette la richiesta o l'ordine), l'articolo alla sua scheda. La riga di intestazione continua a portare alla vista.
+- Il **suggerimento di ogni voce dice perché è lì**: il cliente e la data della commessa, l'esistente contro la scorta minima, i giorni di ritardo confermati dal fornitore, il piano e la quantità da ordinare.
+- Le voci sono **in ordine di urgenza**: la commessa più vecchia per prima, l'ordine con il ritardo peggiore per primo, le righe di fabbisogno per data entro cui ordinare.
+- Oltre **otto voci** si scrive quante ne restano («+4 altri in Acquisti»): il conteggio in testa resta il totale vero, e l'elenco resta un dettaglio invece di diventare la vista.
+- `test/home.test.js`: ogni avviso deve nominare chi lo ha fatto scattare, ogni voce deve portare dove si risolve, e il conteggio deve restare quello vero anche quando le voci scritte sono meno.
+
+**Note**
+- I **codici duplicati** si nominano ma non si aprono: aprire uno dei due non direbbe quale dei due è quello sbagliato, e si sbrogliano in Gestione. La pastiglia resta testo, con il bordo tratteggiato, e il suggerimento elenca gli articoli che se lo contendono.
+- Le voci stanno **fuori** dal bersaglio della riga: un pulsante dentro un pulsante non si sa più cosa apre, né col mouse né da tastiera.
+- Nessun conteggio è cambiato: gli avvisi sono gli stessi di prima, con la stessa provenienza. Cambia solo che adesso si spiegano.
+
+### 0.52.1 — 2026-09-05
+
+**Corretto**
+- **La pagina si ricentra quando il pannello laterale si chiude.** Lo spazio del pannello veniva preso con un `margin-right` su `#app-main`, che però spegneva l'`auto` responsabile del centraggio: con il sinistro `auto` e il destro fisso, tutto lo spazio libero finiva a sinistra e il contenuto si schiacciava contro il pannello — su uno schermo largo, spostato di centinaia di pixel fuori asse. Restava storto anche a pannello chiuso, per via della striscia da 38px.
+- Ora la scatola si allarga di quanto è largo il pannello e si imbottisce a destra di altrettanto: i margini restano `auto` e il contenuto si centra da sé **in ciò che si vede**, sia a pannello aperto sia a pannello chiuso. La larghezza utile del contenuto non cambia di un pixel rispetto a prima.
+
+### 0.52.0 — 2026-09-05
+
+**Cambiato**
+- **Commesse, Fabbisogno, Richieste di offerta e Ordini hanno la stessa forma**: l'elenco vive in una colonna a destra e non se ne va mai, il documento scelto sta al centro. Prima erano quattro pagine-elenco a tutta larghezza, e aprire un documento faceva sparire l'elenco: per passare al successivo si tornava indietro, si ritrovava la riga, si riapriva. Confrontare due ordini o passare in rassegna dieci richieste voleva dire fare quel giro dieci volte.
+- I **filtri stanno con l'elenco**, impilati nella sua colonna: sono il modo per restringerlo, non un'intestazione della pagina. Gli stessi di prima — testo, stato, fornitore per i documenti; testo per commesse e piani — con il conteggio sotto.
+- La **riga aperta resta marcata** nell'elenco, e i documenti chiusi, annullati o non più attivi si vedono spenti invece di sparire.
+- Il pulsante **← Elenco** è diventato **Chiudi**: l'elenco non è più un altrove in cui tornare.
+
+**Aggiunto**
+- I comandi che stavano nelle righe sono ora nella **testata del documento aperto**, scritti per esteso: *Crea ordine* ed *Elimina* sulla richiesta, *Elimina* sull'ordine, *Duplica* ed *Elimina* sul piano (che già aveva chiudi/riapri). In una colonna da 360px non ci stanno sei icone per riga, e un comando che agisce su un documento ha senso dove quel documento si vede.
+- Con nessun documento scelto, al centro compare **cosa fa quella vista** e il pulsante per creare il primo documento, invece di una pagina bianca.
+- `test/worklist.test.js`: le quattro viste devono disegnare lo stesso telaio, l'elenco deve restare visibile a documento aperto, la riga aperta deve essere una sola e i comandi spostati devono esistere ancora.
+
+**Corretto**
+- **Saltare da un documento all'altro non perde più le modifiche in sospeso.** Il salvataggio differito di richieste e ordini lo faceva l'uscita verso l'elenco; con l'elenco sempre presente quel passaggio non c'era più, e un click sulla riga accanto avrebbe buttato via quel che si era appena scritto. Ora ogni apertura chiude il documento precedente come faceva l'uscita: salva, e lascia decadere l'eventuale sblocco — che vale per un documento solo. Vale anche per i salti da un'altra vista (dalla commessa alla sua richiesta, dal piano ai documenti che ne sono nati).
+- La ricerca di **Commesse** e **Fabbisogno** ridisegna solo l'elenco: prima rifaceva la vista intera e il campo perdeva il focus a ogni lettera.
+
+**Note**
+- Il telaio sta in `worklist.js`, ed è **solo un disegno**: prende dati e restituisce HTML, non tiene stato. Le viste che non lo chiamano non se ne accorgono.
+- Nessuna funzione è stata tolta: stesse guardie di ruolo, stesso blocco dei documenti inviati (i filtri dell'elenco non hanno classi `lock-*` e restano manovrabili anche a documento protetto), stessi export.
+- In stampa esce il documento, non lo strumento per sceglierlo: la colonna dell'elenco non finisce su carta. Sotto i 1100px le due colonne si impilano, con l'elenco sopra.
+
+### 0.51.1 — 2026-09-05
+
+**Corretto**
+- **All’avvio l’app segnalava un errore** («Script error.»). `columns.js` e `inspector.js` erano stati messi **dopo** `import-export.js`, che in fondo contiene `init()`: quando l’avvio disegnava la prima vista quei due file non erano ancora stati letti, e la chiamata a `inspectorClear()` dentro `setView()` trovava il vuoto. La vista si disegnava lo stesso — l’eccezione arriva in coda — ma il pannello non si popolava e partiva l’avviso. I due script ora stanno prima, e `import-export.js` è tornato l’ultimo, com’è scritto nella sua stessa intestazione.
+- Il messaggio era muto («Script error.», senza riga né stack) perché aprendo `index.html` con un doppio click gli script arrivano da `file://`, che per il browser è un’origine opaca: dei propri script non racconta niente. Vale la pena saperlo per la prossima volta: un «Script error.» secco, in locale, è quasi sempre un’eccezione vera in uno degli script dell’app.
+
+**Aggiunto**
+- Tre controlli in `test/scripts.test.js` che rendono impossibile ripeterlo: `import-export.js` deve restare l’ultimo script, la sequenza caricata dalla suite deve essere **identica** a quella di `index.html`, e ogni script dichiarato deve esistere. La suite non se n’era accorta perché nel suo contesto il `document` finto si installa **dopo** il caricamento: `init()` non parte, e l’ordine sbagliato non si vedeva.
+
+### 0.51.0 — 2026-09-05
+
+**Aggiunto**
+- **Selezione multipla e azioni di massa** negli elenchi con il pannello. `Ctrl+click` aggiunge una riga, `Maiusc+click` prende tutto quello che sta in mezzo, `Maiusc+freccia` fa lo stesso da tastiera. Con più righe scelte il pannello cambia mestiere: mostra quanti sono e di che tipo, e offre le azioni che hanno senso su un mucchio di articoli qualsiasi.
+- Le azioni: **segna come non più utilizzabili** (o il contrario), **preferiti**, **esporta la selezione** in Excel e PDF, **elimina**. Marcare obsoleti quaranta codici uno per uno è il lavoro che si rimanda per sempre, e l’anagrafica resta sporca.
+- Il pannello **elenca le righe scelte**: agire su venti articoli senza vederne l’elenco è firmare senza leggere.
+
+**Note**
+- Le regole non cambiano perché il gesto è uno solo: stesse guardie di ruolo, stesso `touch()` sull’autore, stesso cestino. Chi è in sola lettura vede solo gli export.
+- Chi è **usato in una distinta non si elimina**, come da sempre: la conferma dice prima quanti resteranno fuori, invece di lasciarlo scoprire a gesto fatto. E il conto di quanti sono cambiati **davvero** viene detto sempre: chi ne sceglie quaranta e ne vede cambiare trentotto deve sapere che due non si potevano toccare.
+- Il ripristino è uno solo per tutto il gesto: chi si pente si pente dell’intero blocco, non di una riga.
+- L’export della selezione riusa la specifica della vista con la scelta come filtro in più, e lo scrive nell’intestazione del file («Selezione: 12 righe scelte a mano»): fra un mese, chi apre quel foglio deve sapere perché contiene quelle righe e non altre.
+- Un filtro più stretto non butta via la scelta: cadono le righe che spariscono, restano le altre.
+
+### 0.50.0 — 2026-09-05
+
+**Aggiunto**
+- **Colonne a scelta** negli elenchi di Acquisti, Progetto e Magazzino. Il pannello laterale aveva tolto dalle righe i comandi; qui si tolgono le colonne che a una certa persona, in un certo lavoro, non servono — chi compra non guarda il lotto, chi controlla il magazzino non guarda la famiglia. Nascondere non è perdere: l’articolo scelto ha tutto nel pannello, che di spazio ne ha.
+- Il pulsante **Colonne** dice quante ne mancano («Colonne (2 nascoste)»): un elenco a cui manca una colonna, senza che nulla lo dica, sembra un elenco rotto. Dentro la scheda le caselle si spuntano e l’effetto è immediato, senza chiuderla.
+- Codice e nome **non si nascondono**: sono l’identità della riga, e senza di loro l’elenco non è più pulito, è illeggibile. Restano visibili nella scheda, spenti e spiegati, invece di sparire senza motivo.
+- Ogni elenco tiene la **sua** scelta: Acquisti e Progetto disegnano le righe con la stessa funzione, ma sono due elenchi che si guardano per motivi diversi.
+
+**Note**
+- Il meccanismo è deliberatamente stupido: ogni cella porta la classe della sua colonna e nascondere è una regola CSS. Nessun ridisegno, nessun conteggio di `<td>` da tenere allineato con i `<th>` — la stessa classe sta su entrambi.
+- Una preferenza salvata mesi fa non sopravvive a una colonna tolta dal codice o diventata fissa: al caricamento si scarta ciò che non esiste più.
+- **L’export Excel e PDF resta completo**: esporta l’elenco, non la vista. Chi nasconde una colonna per lavorare più comodo non deve ritrovarsi un file monco.
+- I due interruttori del fabbisogno («Fabbisogno netto», «Raggruppa per fornitore») usavano già la classe `active` senza che nessuna regola la disegnasse: ora, come il pulsante Colonne, da accesi si vedono azzurri.
+
+### 0.49.0 — 2026-09-05
+
+**Aggiunto**
+- **Pannello laterale** (Ctrl+I): una colonna a destra, ridimensionabile trascinandone il bordo, che mostra i comandi eseguibili sulla riga scelta e le schede da consultare. Gli elenchi erano arrivati a nove colonne più una di pulsanti — sei icone mute per riga, che rubavano larghezza ai dati e si spiegavano solo passandoci sopra. Ora quei comandi hanno un posto fisso, con l’etichetta scritta per esteso, e l’elenco torna a essere dati.
+- In cima al pannello un **riepilogo** — tipo, costo unitario, giacenza, quanti impieghi diretti — che risponde alle domande veloci senza aprire niente.
+- **Selezione da tastiera**: ↑ e ↓ scorrono le righe, Invio apre la scheda completa, Esc deseleziona. Valgono solo mentre si guarda l’elenco: dentro un campo la freccia resta al cursore.
+- Larghezza (fra 260 e 720px), apertura e scheda attiva **restano fra una sessione e l’altra**, nel browser di chi lavora.
+
+**Cambiato**
+- Con il pannello aperto **la colonna dei pulsanti sparisce** da Acquisti, Progetto e Magazzino: i suoi comandi sono nel pannello. Chiudendo il pannello torna dov’era — nessuna funzione è stata tolta, è cambiato dove si trova.
+
+**Note**
+- Il pannello non aggiunge comandi: sono le stesse chiamate che stavano nelle righe, alle stesse condizioni (il listino solo per ciò che si compra, il ciclo solo per le parti). In sola lettura i comandi che modificano non vengono nemmeno disegnati, come già accade nella vista.
+- Le schede riusano i corpi che esistono già (`itemInfoBody`, `priceListBody`, `usageBody`): due copie della stessa scheda divergerebbero al primo ritocco.
+- Le viste non ancora coperte non hanno pannello e non se ne accorgono. Restano da fare, in ordine: selezione multipla con azioni di massa, scelta delle colonne per vista, selezione nell’indirizzo.
+
+### 0.48.3 — 2026-09-05
+
+**Cambiato**
+- Nelle barre di sezione **Esporta Excel** ed **Esporta PDF** vanno a destra, staccati dal titolo e dai comandi che agiscono sui dati: sono l’uscita, non un’azione di lavoro, e da appaiati al titolo sembravano il gesto principale della pagina. Vale per Acquisti, Progetto, Magazzino, Cicli, Costificazione e la testata di un piano di fabbisogno — tutte le barre `.bom-toolbar`. La barra del documento nelle richieste e negli ordini resta com’era: lì i due pulsanti seguono la loro etichetta.
+
+### 0.48.2 — 2026-09-05
+
+**Cambiato**
+- Le icone arrivano **in tutta l’app**: Documenti, Fabbisogno, Magazzino, Commesse, Revisioni, Riepilogo, scheda articolo, Gestione, import ed export, e i titoli di sezione di `index.html`. Il set è salito a 50 disegni (aggiunti fabbisogno, ordine, bilancia, azienda, cartella, pagamento, pausa). Anche il logo del login viene ora dallo sprite: nel repo non resta più un solo tracciato scritto a mano fuori da `icons.js`.
+
+**Aggiunto**
+- **Ogni icona dice il proprio nome al passaggio del mouse.** Un disegno è muto: chi non lo riconosce non ha modo di scoprire cosa fa se non provandolo, ed è esattamente quello che le emoji non hanno mai offerto. I nomi dicono l’azione e non il disegno — «Elimina», non «cestino» — e dentro un pulsante prendono il testo del pulsante, che è sempre più preciso: «Distinta parte e ciclo di lavorazione» invece di «Lavorazione». Accanto a una parola che già la spiega il suggerimento tace: ripetere lo stesso nome due volte è rumore, non aiuto.
+- I pulsanti a sola icona che non avevano un `title` ora ce l’hanno: senza, `a11yFields` non aveva da dove prendere l’etichetta accessibile.
+
+**Note**
+- Restano emoji una trentina di simboli che **non possono** diventare icone: i messaggi del toast e i titoli delle conferme (passano da `esc()`), i `title` assegnati via JavaScript, il marchio di obsoleto dentro i `<option>`, le etichette che finiscono in PDF ed Excel, e le caselle ☑/☐ dei due interruttori del fabbisogno — da spente un’icona sparirebbe e la riga ballerebbe a ogni click.
+
+### 0.48.1 — 2026-09-05
+
+**Cambiato**
+- Le icone nuove arrivano dove si usano di più: **albero della distinta** (espansione del nodo, dove è usato, ciclo, modifica, elimina, il ⚠ del riferimento ciclico e dell’articolo mancante), **righe delle anagrafiche** (listino, ciclo, dove è usato, modifica, duplica, elimina, i marchi obsoleto e parte acquistata) e **vista Cicli di lavorazione**. Nelle righe la tinta è nuda, senza pastiglia: un pulsante ha già il suo bordo, e la pastiglia dentro sarebbe una scatola in una scatola.
+- I titoli delle schede (aggiungi componente, lavorazione, nuova macchina, listino fornitori, dove è usato, nuovo articolo…) portano l’icona in pastiglia: lì lo spazio c’è e serve a riconoscere la scheda prima di leggerne il titolo.
+- Le frasi che rimandano a una voce di menu («si gestiscono nella vista Cicli di lavorazione») mostrano ora la stessa icona che si vede nella barra, invece di un’emoji che non le somigliava più.
+
+Restano emoji: le viste Documenti, Fabbisogno, Magazzino, Gestione, Riepilogo e la scheda articolo — il giro successivo. Una resta emoji per forza: il marchio di articolo obsoleto dentro i menu a tendina, perché in un `<option>` non entra né HTML né un’icona.
+
+### 0.48.0 — 2026-09-05
+
+**Aggiunto**
+- Un set di icone nostro (`icons.js`): 43 disegni su griglia 24×24, uno sprite SVG unico e `ico(nome)` come solo punto in cui un nome diventa un disegno. Le emoji le disegnava il font di sistema — forma diversa su ogni computer, colore proprio impossibile da cambiare, allineamento a caso; questi sono tracciati, prendono il colore del testo che li circonda e la misura in `em`.
+- Ogni icona ha una **tinta di categoria** presa dalle variabili già esistenti: rosso ciò che cancella, verde ciò che produce o conferma, arancio merce e avvisi, viola lavorazioni e tempo, azzurro navigazione. Il colore è mostrato in **pastiglia**, cioè sul fondo dello stesso colore al 15%: un tratto da 1.8 su sedici pixel è poco da distinguere di sfuggita, il fondo dà alla tinta la superficie per farsi leggere.
+- `icons-preview.html`, la galleria per giudicare il set: ogni icona accanto all’emoji che sostituisce, le misure da 13 a 32px, le tre varianti di colore e la barra di navigazione in posa. Non fa parte dell’app.
+
+**Cambiato**
+- Barra di navigazione, i tre pulsanti dell’header (cerca, stampa, password) e la lente delle dodici caselle di ricerca passano alle icone nuove. Logo e pulsante Esci, che erano già SVG scritti a mano dentro `index.html`, ora vengono dallo sprite come tutti gli altri.
+- La lente non sta più dentro il `placeholder`: un placeholder è testo, e quell’emoji finiva nella traduzione e in ciò che leggono gli screen reader. Ora è un disegno di sfondo, che è quello che è sempre stata.
+- Lo stato batte la categoria: dentro un pulsante che ha già un colore suo — la voce di menu attiva, un `.mini-btn.danger` — l’icona eredita quello. Lì il colore dice *cosa sta succedendo*, e vince su *di che si tratta*.
+
+Le icone dentro le viste (albero distinta, schede, titoli) sono ancora emoji: `ico()` e le emoji convivono, la sostituzione prosegue a scaglioni.
+
+### 0.47.12 — 2026-09-05
+
+**Cambiato**
+- Nei riquadri di costo l'unità di misura appesa al numero (`/pz`) va ora in piccolo, in uno `span` a parte: liberata quella larghezza, la cifra torna grande — anzi un filo più grande di prima (fino a 26px, `clamp(16px, 13cqi, 26px)`).
+
+### 0.47.11 — 2026-09-05
+
+**Corretto**
+- I riquadri di costo (Distinta base e Costificazione) sforavano il loro contenitore: il valore era fisso a 24px e con l'unità appesa (`€8951.50/pz`) su sette riquadri in fila non ci stava. Ora il riquadro è un contenitore di query e il valore scala con la sua larghezza (`clamp(14px, 11cqi, 24px)`), restando su una riga sola; padding orizzontale ridotto a 12px e etichetta troncata con i puntini invece di allargare la card.
+
 ### 0.47.10 — 2026-08-24
 
 **Corretto**

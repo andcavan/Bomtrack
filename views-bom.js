@@ -98,7 +98,7 @@ function renderBom() {
     kpi('Spese generali', fmtPer(c.overhead, u), ''),
     kpi('Costo totale', fmtPer(c.total, u), ''),
     kpi('Prezzo vendita', fmtPer(price, u), 'green'),
-  ].join('') + (c.cycle ? '<div class="empty-text" style="color:var(--red)">⚠ Rilevato riferimento ciclico nella distinta!</div>' : '');
+  ].join('') + (c.cycle ? '<div class="empty-text" style="color:var(--red)">' + ico('warning', 'tinted') + ' Rilevato riferimento ciclico nella distinta!</div>' : '');
 
   // Albero
   const head = `<div class="bom-head"><span>Articolo</span><span class="num">Q.tà</span><span>U.M.</span>
@@ -110,7 +110,11 @@ function renderBom() {
   tree.innerHTML = head + rootRow + (rows || `<div class="empty-text">Nessun componente. Usa "+ Aggiungi componente".</div>`) + opsRow;
 }
 function kpi(label, value, cls) {
-  return `<div class="kpi-card ${cls}"><div class="kpi-value">${value}</div><div class="kpi-label">${label}</div></div>`;
+  // L'unità appesa al numero (`€8951.50/pz`) è informazione di contorno: stampata
+  // grande quanto la cifra ruba larghezza e costringe a rimpicciolire tutto il
+  // riquadro. Va in piccolo, così la cifra — il dato vero — resta leggibile.
+  const v = String(value).replace(/(\/[^<>/\s]+)$/, '<span class="kpi-uom">$1</span>');
+  return `<div class="kpi-card ${cls}"><div class="kpi-value">${v}</div><div class="kpi-label">${label}</div></div>`;
 }
 
 // Posizione gerarchica di una riga: "1", poi "1.2", "1.2.1"… La radice non ha numero,
@@ -120,7 +124,7 @@ function bomPos(parentPos, idx) { return parentPos ? parentPos + '.' + (idx + 1)
 // Render ricorsivo di un nodo (componente). editable = riga di primo livello dell'articolo aperto.
 function renderBomNode(comp, level, parentId, editable, idx, pathPrefix, ancestorIds, pos) {
   const child = getItem(comp.itemId);
-  if (!child) return `<div class="bom-node"><span class="bom-name"><span class="bom-pos">${esc(pos || '')}</span>⚠ articolo mancante</span></div>`;
+  if (!child) return `<div class="bom-node"><span class="bom-name"><span class="bom-pos">${esc(pos || '')}</span>${ico('warning', 'tinted')} articolo mancante</span></div>`;
   const nodeKey = pathPrefix + '>' + comp.itemId + '#' + idx;
   const cyc = ancestorIds.includes(comp.itemId);
   const isProd = isAssembly(child.type);
@@ -136,20 +140,20 @@ function renderBomNode(comp, level, parentId, editable, idx, pathPrefix, ancesto
   const indent = (level - 1) * 18;
   const toggle = expandable
     ? `<span class="bom-toggle" ${clickAttrs(`toggleBom('${nodeKey}')`, (expanded ? 'Richiudi ' : 'Espandi ') + child.code)}
-        aria-expanded="${expanded}">${expanded ? '▼' : '▶'}</span>`
+        aria-expanded="${expanded}">${expanded ? ico('chevronDown') : ico('chevronRight')}</span>`
     : `<span class="bom-toggle leaf">•</span>`;
-  const actions = `<button class="mini-btn" title="Dove è usato e impatto costi" onclick="usageModal('${comp.itemId}')">🔗</button>`
-    + (child.type === 'parte' ? `<button class="mini-btn" title="Distinta parte e ciclo di lavorazione" onclick="openCycleFor('${comp.itemId}')">🔧</button>` : '')
+  const actions = `<button class="mini-btn" title="Dove è usato e impatto costi" onclick="usageModal('${comp.itemId}')">${ico('link', 'tinted', 'Dove è usato e impatto costi')}</button>`
+    + (child.type === 'parte' ? `<button class="mini-btn" title="Distinta parte e ciclo di lavorazione" onclick="openCycleFor('${comp.itemId}')">${ico('wrench', 'tinted', 'Distinta parte e ciclo di lavorazione')}</button>` : '')
     + (editable
-      ? `<button class="mini-btn" title="Modifica" onclick="editComponentModal(${idx})">✏</button>
-         <button class="mini-btn danger" title="Elimina" onclick="delComponent(${idx})">🗑</button>`
+      ? `<button class="mini-btn" title="Modifica" onclick="editComponentModal(${idx})">${ico('edit', 'tinted', 'Modifica')}</button>
+         <button class="mini-btn danger" title="Elimina" onclick="delComponent(${idx})">${ico('trash', 'tinted', 'Elimina')}</button>`
       : '');
 
   let h = `<div class="bom-node" style="padding-left:${18 + indent}px">
     <span class="bom-name"><span class="bom-pos">${esc(pos || '')}</span>${toggle}
       <span class="bom-code">${codeLink(child.id, child.code)}</span>
       <span class="bom-type-tag tt-${child.type}">${typeShort(child.type)}</span>
-      <span class="nm" title="${esc(child.name)}">${esc(child.name)}${cyc ? ' ⚠' : ''}</span>
+      <span class="nm" title="${esc(child.name)}">${esc(child.name)}${cyc ? ' ' + ico('warning', 'tinted') : ''}</span>
     </span>
     <span class="num">${qty}</span>
     <span>${esc(child.uom || '')}</span>
@@ -185,11 +189,11 @@ function renderCycleBomNode(row, level, pos) {
     const wc = getWorkCenter(row.workCenterId);
     const sup = supplierName(row.supplierId);
     name = `<span class="bom-type-tag tt-lav">LAV</span>
-      <span class="nm" title="${esc(wc ? wc.name : '?')}">🔧 ${esc(wc ? wc.name : '?')}${sup ? ' · ' + esc(sup) : ''}</span>`;
+      <span class="nm" title="${esc(wc ? wc.name : '?')}">${ico('wrench', 'tinted')} ${esc(wc ? wc.name : '?')}${sup ? ' · ' + esc(sup) : ''}</span>`;
     qtyCell = '—'; uom = ''; unit = lineCost;
   } else {
     const ci = getItem(row.itemId);
-    if (!ci) return `<div class="bom-node" style="padding-left:${18 + indent}px"><span class="bom-name"><span class="bom-pos">${esc(pos || '')}</span>⚠ articolo mancante</span></div>`;
+    if (!ci) return `<div class="bom-node" style="padding-left:${18 + indent}px"><span class="bom-name"><span class="bom-pos">${esc(pos || '')}</span>${ico('warning', 'tinted')} articolo mancante</span></div>`;
     name = `<span class="bom-code">${codeLink(ci.id, ci.code)}</span>
       <span class="bom-type-tag tt-${ci.type}">${typeShort(ci.type)}</span>
       <span class="nm" title="${esc(ci.name)}">${esc(ci.name)}</span>`;
@@ -234,9 +238,9 @@ function renderOpsBlock(item, editable, padLeft) {
     const wc = getWorkCenter(o.workCenterId);
     const cost = (Number(o.hours) || 0) * (wc ? (Number(wc.hourlyRate) || 0) : 0);
     const nome = wc ? wc.name : 'lavorazione';
-    const del = editable ? ` <span style="cursor:pointer;color:var(--red)" title="Elimina" ${clickAttrs(`delOperation(${i})`, 'Elimina ' + nome)}>✕</span>` : '';
+    const del = editable ? ` <span style="cursor:pointer;color:var(--red)" title="Elimina" ${clickAttrs(`delOperation(${i})`, 'Elimina ' + nome)}>${ico('close')}</span>` : '';
     const ed = editable ? `<span style="cursor:pointer" ${clickAttrs(`editOperationModal(${i})`, 'Modifica ' + nome)}>` : '<span>';
-    return `<span class="bom-op-tag">${ed}🔧 ${esc(wc ? wc.name : '?')} · ${(Number(o.hours) || 0)}h · ${fmtN(cost)}</span>${del}</span>`;
+    return `<span class="bom-op-tag">${ed}${ico('wrench', 'tinted')} ${esc(wc ? wc.name : '?')} · ${(Number(o.hours) || 0)}h · ${fmtN(cost)}</span>${del}</span>`;
   }).join('');
   if (!ops.length && !editable) return '';
   const label = editable ? 'Lavorazioni' : 'Lavorazioni (' + esc(item.name) + ')';
@@ -284,7 +288,7 @@ function itemPickerField(selectedId) {
   const sel = selectedId ? getItem(selectedId) : null;
   return `<div class="modal-field"><label>Articolo</label>
       <input type="hidden" id="cmp-item" value="${selectedId ? esc(selectedId) : ''}">
-      <input type="text" id="cmp-search" class="search" placeholder="🔍 Cerca codice o nome..."
+      <input type="text" id="cmp-search" class="search" placeholder="Cerca codice o nome..."
         value="${sel ? esc(sel.code + ' — ' + sel.name) : ''}" oninput="debounced('picker', renderPickerResults)" autocomplete="off">
       <div id="cmp-results" class="picker-results"></div>
     </div>`;
@@ -332,7 +336,7 @@ function addComponentModal() {
   const it = getItem(currentBomId); if (!it) return;
   window.__pickerCandidates = pickerCandidates(it.type, it.id);
   if (!window.__pickerCandidates.length) { showToast('Nessun articolo dei tipi ammessi. Crealo prima in Anagrafica (Acquisti o Progetto).', 'error'); return; }
-  openModal(`<h3>➕ Aggiungi componente</h3>
+  openModal(`<h3>${ico('plus', 'tinted pill', '')} Aggiungi componente</h3>
     <p class="empty-text" style="text-align:left;padding:0 0 10px">${allowedHint(it.type)}</p>
     ${itemPickerField(null)}
     <div class="modal-grid">
@@ -365,7 +369,7 @@ function editComponentModal(idx) {
   const it = getItem(currentBomId); if (!it) return;
   const comp = it.components[idx]; if (!comp) return;
   window.__pickerCandidates = pickerCandidates(it.type, it.id);
-  openModal(`<h3>✏ Modifica componente</h3>
+  openModal(`<h3>${ico('edit', 'tinted pill', '')} Modifica componente</h3>
     <p class="empty-text" style="text-align:left;padding:0 0 10px">${allowedHint(it.type)}</p>
     ${itemPickerField(comp.itemId)}
     <div class="modal-grid">
@@ -443,7 +447,7 @@ function addOperationModal() {
   if (!roleGuard('bom')) return;
   const it = getItem(currentBomId); if (!it) return;
   if (!db.workCenters.length) { showToast('Aggiungi prima un centro di lavoro in Gestione', 'error'); return; }
-  openModal(`<h3>🔧 Aggiungi lavorazione</h3>
+  openModal(`<h3>${ico('wrench', 'tinted pill', '')} Aggiungi lavorazione</h3>
     <div class="modal-field"><label>Centro di lavoro</label><select id="op-wc">${wcOptions(null)}</select></div>
     <div class="modal-grid">
       <div class="modal-field"><label>Ore (h)</label><input type="number" id="op-hours" min="0" step="0.25" value="1"></div>
@@ -464,7 +468,7 @@ function editOperationModal(idx) {
   if (!roleGuard('bom')) return;
   const it = getItem(currentBomId); if (!it) return;
   const op = it.operations[idx]; if (!op) return;
-  openModal(`<h3>🔧 Modifica lavorazione</h3>
+  openModal(`<h3>${ico('wrench', 'tinted pill', '')} Modifica lavorazione</h3>
     <div class="modal-field"><label>Centro di lavoro</label><select id="op-wc">${wcOptions(op.workCenterId)}</select></div>
     <div class="modal-grid">
       <div class="modal-field"><label>Ore (h)</label><input type="number" id="op-hours" min="0" step="0.25" value="${op.hours}"></div>
@@ -494,7 +498,7 @@ function delOperation(idx) {
 function newMachineModal() {
   if (!roleGuard('bom')) return;
   const sm = machineScheme(null);
-  openModal(`<h3>🛠 Nuova macchina</h3>
+  openModal(`<h3>${ico('tree', 'tinted pill', '')} Nuova macchina</h3>
     <div class="modal-grid">
       <div class="modal-field"><label>Sigla macchina</label>
         <input id="mac-sigla" maxlength="10" placeholder="es. TRN" style="text-transform:uppercase;font-family:var(--mono);font-weight:700"
@@ -547,7 +551,7 @@ function saveNewMachine() {
 function editCurrentItemModal() {
   if (!roleGuard('bom')) return;
   const it = getItem(currentBomId); if (!it) return;
-  openModal(`<h3>✏ Modifica testata — <span style="color:var(--text-dim);font-weight:500">${typeLabel(it.type)}</span></h3>
+  openModal(`<h3>${ico('edit', 'tinted pill', '')} Modifica testata — <span style="color:var(--text-dim);font-weight:500">${typeLabel(it.type)}</span></h3>
     <div class="modal-grid">
       <div class="modal-field"><label>Codice</label><input id="mac-code" value="${esc(it.code)}"></div>
       <div class="modal-field"><label>U.M.</label><select id="mac-uom">${uomOptions(it.uom || defaultUom())}</select></div>

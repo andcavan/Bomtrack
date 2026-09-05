@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Bomtrack — set icone (anteprima)</title>
+<!-- Pagina di sola valutazione: non fa parte dell'app, non la carica e non la
+     tocca. Usa lo stesso foglio di stile per giudicare le icone nei colori veri. -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+<style>
+  /* La regola che finirebbe in style.css se il set venisse approvato. */
+  .ico{width:1em;height:1em;fill:none;stroke:currentColor;stroke-width:1.8;
+       stroke-linecap:round;stroke-linejoin:round;vertical-align:-.125em}
+
+  /* Le tre varianti di colore, per confrontarle sulla stessa pagina.
+     `neutro` spegne le tinte, `pastiglia` mette l'icona su un fondo del suo
+     stesso colore al 15%: la tinta si legge anche quando l'icona è sottile. */
+  body.v-neutro .ico{color:inherit!important;background:none!important;padding:0!important}
+  body.v-pastiglia .ico{box-sizing:content-box;padding:.34em;border-radius:.42em;
+       background:color-mix(in srgb,currentColor 15%,transparent)}
+  /* Il riquadro di confronto mostra le tre varianti insieme, quindi ignora
+     l'interruttore globale: le regole con l'id vincono su quelle sul body. */
+  #varianti .d-neutro .ico{color:inherit!important;background:none!important;padding:0!important}
+  #varianti .d-tinta .ico{color:var(--ic-tint,currentColor)!important;background:none!important;padding:0!important}
+  #varianti .d-pastiglia .ico{color:var(--ic-tint,currentColor)!important;box-sizing:content-box;
+       padding:.34em!important;border-radius:.42em;
+       background:color-mix(in srgb,currentColor 15%,transparent)!important}
+  /* Lo stato batte la categoria: dentro un pulsante che ha già un colore suo
+     l'icona lo eredita, tinta o non tinta. */
+  .mini-btn.danger .ico,.nav-btn.active .ico{color:inherit!important}
+
+  body{padding:28px 32px 80px}
+  body.chiaro{--bg:#fff;--card:#f6f7f9;--card-hover:#eceef2;--border:#c9ccd4;--text:#14161c;--text-dim:#5c6070}
+  body{background:var(--bg);color:var(--text)}
+  h1{font-size:22px;font-weight:800;margin-bottom:4px}
+  h2{font-size:13px;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.06em;margin:32px 0 12px}
+  .sub{color:var(--text-dim);font-size:13px;max-width:70ch;line-height:1.55}
+  .barra{position:sticky;top:0;z-index:5;background:var(--bg);padding:10px 0 14px;display:flex;gap:10px;align-items:center;border-bottom:1px solid var(--border);margin-bottom:8px}
+  .box{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:18px}
+
+  .griglia{display:grid;grid-template-columns:repeat(auto-fill,minmax(168px,1fr));gap:10px}
+  .cella{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:14px 10px;text-align:center}
+  .cella .coppia{display:flex;align-items:center;justify-content:center;gap:14px;font-size:22px;line-height:1}
+  .cella .emo{opacity:.55;font-size:19px}
+  .cella .nome{font-family:var(--mono);font-size:11px;color:var(--text-dim);margin-top:10px;word-break:break-all}
+  .cella .uso{font-size:10px;color:var(--text-dim);opacity:.75;margin-top:2px}
+
+  .misure{display:flex;flex-wrap:wrap;gap:26px;align-items:flex-end}
+  .misura{text-align:center;color:var(--text-dim)}
+  .misura .riga{display:flex;gap:10px;align-items:center;color:var(--text)}
+  .misura .et{font-family:var(--mono);font-size:11px;margin-top:8px}
+
+  .colori{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+  .nav-finta{display:flex;gap:4px;flex-wrap:wrap;background:var(--card);border:1px solid var(--border);border-radius:10px;padding:8px}
+  .nav-finta .nav-btn{font-size:13px}
+  .nav-finta .ico{width:16px;height:16px}
+  .search-demo{position:relative;max-width:340px}
+  .search-demo input{width:100%;background:var(--bg);border:1px solid var(--border);border-radius:8px;
+    padding:9px 12px 9px 32px;color:var(--text);font-size:13px;outline:none}
+  .search-demo .ico{position:absolute;left:10px;top:50%;transform:translateY(-50%);width:14px;height:14px;color:var(--text-dim)}
+  .riga-bom{display:flex;align-items:center;gap:10px;background:var(--card);border:1px solid var(--border);border-radius:10px;padding:10px 14px;font-size:13px}
+  .riga-bom .sp{flex:1}
+</style>
+</head>
+<body>
+
+<div class="barra">
+  <strong style="font-size:13px">Anteprima set icone</strong>
+  <button class="btn-outline" onclick="document.body.classList.toggle('chiaro')">Fondo chiaro / scuro</button>
+  <button class="btn-outline" onclick="document.body.classList.toggle('grosso')">Tratto 1.8 / 2.2</button>
+  <span style="width:1px;height:22px;background:var(--border)"></span>
+  <span class="sub" style="font-weight:600;color:var(--text)">Colore:</span>
+  <button class="btn-outline" onclick="variante('v-neutro')" id="b-v-neutro">Neutro</button>
+  <button class="btn-outline" onclick="variante('v-tinta')" id="b-v-tinta">Tinta</button>
+  <button class="btn-outline" onclick="variante('v-pastiglia')" id="b-v-pastiglia">Pastiglia</button>
+  <span class="sub" id="conta"></span>
+</div>
+
+<h1>Set icone Bomtrack</h1>
+<p class="sub">Passa il mouse su un’icona: ogni disegno ha un nome, ed è quello che compare. Tracciati su griglia 24×24, tratto 1.8, terminazioni tonde. Ogni icona è affiancata
+all'emoji che sostituirebbe. Il criterio non è quale sia più bella da sola, ma quale si riconosce
+a 14px dentro un pulsante alto 24 — e quale prende il colore giusto quando il pulsante è rosso.</p>
+
+<h2>Confronto con le emoji attuali</h2>
+<div class="griglia" id="griglia"></div>
+
+<h2>Tenuta alle varie misure</h2>
+<div class="box misure" id="misure"></div>
+
+<h2>Le tre varianti a confronto</h2>
+<p class="sub" style="margin-bottom:12px">Gli interruttori in alto cambiano tutta la pagina; qui le tre
+varianti stanno una sotto l'altra sulle stesse icone e sulla stessa barra.</p>
+<div class="box" id="varianti" style="display:flex;flex-direction:column;gap:18px"></div>
+
+<h2>Tavolozza per categoria</h2>
+<p class="sub" style="margin-bottom:12px">Una tinta sola per icona, sempre la stessa in tutta l'app, presa
+dalle variabili già in uso. Il colore dice <em>di che si tratta</em>; quando un pulsante ha già un colore
+suo — un <code>.mini-btn.danger</code>, la voce di menu attiva — vince quello, perché lì il colore dice
+<em>che sta succedendo</em>.</p>
+<div class="box" id="tavolozza" style="display:flex;flex-direction:column;gap:14px"></div>
+
+<h2>Colore: quello che le emoji non sanno fare</h2>
+<div class="box">
+  <div class="colori" id="colori"></div>
+  <p class="sub" style="margin-top:14px">A sinistra l'icona, a destra la stessa emoji: l'emoji resta
+  del suo colore qualunque cosa dica il pulsante intorno.</p>
+</div>
+
+<h2>In posa: barra, ricerca, riga di distinta</h2>
+<div class="box" style="display:flex;flex-direction:column;gap:16px">
+  <div class="nav-finta" id="nav-finta"></div>
+  <div class="search-demo" id="search-demo"></div>
+  <div class="riga-bom" id="riga-bom"></div>
+</div>
+
+<script src="icons.js"></script>
+<script>
+// Ogni icona con l'emoji che rimpiazzerebbe e dove si trova oggi nell'app.
+const MAPPA = [
+  ['home', '🏠', 'nav Riepilogo'], ['contacts', '📇', 'nav Anagrafica'],
+  ['package', '📦', 'nav Magazzino'], ['wrench', '🔧', 'nav Cicli · 22×'],
+  ['tree', '🌳', 'nav Distinta base'], ['mail', '📨', 'nav Documenti'],
+  ['settings', '⚙', 'nav Gestione'],
+  ['edit', '✏', 'modifica · 34×'], ['trash', '🗑', 'elimina · 29×'],
+  ['link', '🔗', 'dove è usato · 8×'], ['search', '🔍', 'ricerca · 24×'],
+  ['plus', '➕', 'aggiungi'], ['copy', '📋', 'duplica · 10×'],
+  ['check', '✔', 'conferma'], ['close', '⛔', 'annulla · 6×'],
+  ['chevronRight', '▶', 'nodo chiuso'], ['chevronDown', '▼', 'nodo aperto'],
+  ['refresh', '↩', 'ricalcola'], ['eye', '👁', 'anteprima'],
+  ['warning', '⚠', 'avvisi · 36×'], ['lock', '🔒', 'bloccato · 9×'],
+  ['unlock', '🔓', 'sbloccato · 9×'], ['clock', '🕘', 'storico · 8×'],
+  ['blocked', '⛔', 'non disponibile'], ['pin', '📌', 'nuova revisione'],
+  ['file', '📄', 'PDF · 13×'], ['sheet', '📗', 'Excel · 9×'],
+  ['cart', '🛒', 'acquisti · 4×'], ['euro', '💶', 'prezzi · 8×'],
+  ['truck', '🚚', 'consegne'], ['factory', '🏭', 'produzione · 5×'],
+  ['tag', '🏷', 'codice · 4×'], ['clipboard', '🧾', 'documenti · 10×'],
+  ['chart', '📊', 'report'], ['save', '💾', 'salva · 5×'],
+  ['download', '⬇', 'esporta · 7×'], ['upload', '⬆', 'importa · 6×'],
+  ['users', '👥', 'utenti'], ['ruler', '📏', 'unità di misura'],
+  ['list', '📋', 'fabbisogno'], ['receipt', '🧾', 'ordini'],
+  ['scale', '⚖', 'rettifica giacenza'], ['building', '🏢', 'dati azienda'],
+  ['folder', '🗂', 'famiglie'], ['card', '💳', 'pagamenti'], ['pause', '⏸', 'sospendi utente'],
+  ['printer', '🖨', 'header Stampa'], ['key', '🔑', 'header Password'],
+  ['logout', '↪', 'header Esci'], ['logo', '', 'logo Bomtrack'],
+];
+
+// Nell'anteprima le icone sono sempre `tinted`: è la variante che spegne le
+// tinte, non quella che le accende.
+const I = (n, c) => ico(n, 'tinted' + (c ? ' ' + c : ''));
+
+document.getElementById('conta').textContent =
+  MAPPA.length + ' icone · ' + Object.keys(ICONS).length + ' nello sprite';
+
+function variante(v) {
+  document.body.classList.remove('v-neutro', 'v-tinta', 'v-pastiglia');
+  document.body.classList.add(v);
+  ['v-neutro', 'v-tinta', 'v-pastiglia'].forEach(x => {
+    document.getElementById('b-' + x).style.borderColor = x === v ? 'var(--accent)' : '';
+    document.getElementById('b-' + x).style.color = x === v ? 'var(--accent)' : '';
+  });
+}
+variante('v-tinta');
+
+document.getElementById('griglia').innerHTML = MAPPA.map(([n, e, uso]) => `
+  <div class="cella">
+    <div class="coppia">${I(n)}<span class="emo">${e || '—'}</span></div>
+    <div class="nome">${n}</div><div class="uso">${uso}</div>
+  </div>`).join('');
+
+// Le misure vere in cui compaiono nell'app: 13px nei mini-btn, 16px nella
+// barra, 20px nei titoli di sezione. 32px serve solo a vedere i difetti.
+document.getElementById('misure').innerHTML = [13, 14, 16, 20, 32].map(px => `
+  <div class="misura">
+    <div class="riga" style="font-size:${px}px">
+      ${['trash', 'edit', 'wrench', 'tree', 'warning', 'euro', 'settings', 'package'].map(n => I(n)).join('')}
+    </div><div class="et">${px}px</div>
+  </div>`).join('');
+
+// Le tre varianti sulle stesse icone e sulla stessa barra: la scelta si fa
+// guardando la barra, non la griglia — è lì che il colore lavora tutto il giorno.
+const CAMPIONE = ['tree', 'package', 'euro', 'trash', 'warning', 'sheet', 'lock', 'wrench'];
+const NAV_CAMPIONE = [['home', 'Riepilogo'], ['contacts', 'Anagrafica'], ['package', 'Magazzino'],
+  ['tree', 'Distinta base'], ['mail', 'Documenti']];
+document.getElementById('varianti').innerHTML = [
+  ['v-neutro', 'Neutro', 'Tutte del colore del testo. Sobrio e silenzioso: le icone accompagnano, non chiamano.'],
+  ['v-tinta', 'Tinta', 'Una tinta per icona. Il cestino si trova senza leggere, ma su una riga con quattro pulsanti sono quattro colori vicini.'],
+  ['v-pastiglia', 'Pastiglia', 'Tinta su fondo dello stesso colore al 15%. Si legge da lontano ed è la più moderna, ma occupa più spazio: adatta alla barra e ai titoli, pesante sulle righe fitte.'],
+].map(([v, nome, nota]) => `
+  <div class="d-${v.slice(2)}" style="border-bottom:1px solid var(--border);padding-bottom:16px">
+    <div style="font-weight:700;margin-bottom:6px">${nome}</div>
+    <div class="sub" style="margin-bottom:10px">${nota}</div>
+    <div style="display:flex;gap:16px;font-size:20px;align-items:center;flex-wrap:wrap">
+      ${CAMPIONE.map(n => I(n)).join('')}
+    </div>
+    <div class="nav-finta" style="margin-top:12px">${NAV_CAMPIONE.map(([n, l], i) =>
+      `<button class="nav-btn${i === 3 ? ' active' : ''}">${I(n)}<span>${l}</span></button>`).join('')}</div>
+  </div>`).join('');
+
+// Le stesse tinte raggruppate: serve a vedere se la logica regge — tutto ciò
+// che si esporta è verde, tutto ciò che cancella è rosso, e così via.
+const GRUPPI = {};
+MAPPA.forEach(([n]) => { const t = ICON_TINT[n] || 'text-dim'; (GRUPPI[t] = GRUPPI[t] || []).push(n); });
+document.getElementById('tavolozza').innerHTML = Object.keys(GRUPPI).map(t => `
+  <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">
+    <code style="font-family:var(--mono);font-size:11px;color:var(--${t});min-width:78px">--${t}</code>
+    <span style="display:flex;gap:12px;font-size:19px;flex-wrap:wrap">${GRUPPI[t].map(n => I(n)).join('')}</span>
+  </div>`).join('');
+
+document.getElementById('colori').innerHTML = [
+  ['', 'normale', 'var(--text-dim)'], ['', 'attivo', 'var(--accent)'],
+  ['', 'pericolo', 'var(--red)'], ['', 'ok', 'var(--green)'], ['', 'attenzione', 'var(--orange)'],
+].map(([, et, col]) => `
+  <span class="mini-btn" style="color:${col};font-size:13px;gap:6px">
+    ${ico('trash')} <span style="font-size:11px">${et}</span> <span style="opacity:.7">🗑</span>
+  </span>`).join('');
+
+const NAV_DEMO = [['home', 'Riepilogo'], ['contacts', 'Anagrafica'], ['package', 'Magazzino'],
+  ['wrench', 'Cicli di lavorazione'], ['tree', 'Distinta base'], ['mail', 'Documenti'], ['settings', 'Gestione']];
+document.getElementById('nav-finta').innerHTML = NAV_DEMO.map(([n, l], i) =>
+  `<button class="nav-btn${i === 4 ? ' active' : ''}">${I(n)}<span>${l}</span></button>`).join('');
+
+document.getElementById('search-demo').innerHTML =
+  I('search') + '<input type="text" placeholder="Cerca codice o nome distinta...">';
+
+document.getElementById('riga-bom').innerHTML = `
+  ${I('chevronRight')}
+  <span style="font-family:var(--mono);color:var(--accent)">GRP-001</span>
+  <span>Gruppo telaio</span><span class="sp"></span>
+  <button class="mini-btn">${I('link')}</button>
+  <button class="mini-btn">${I('wrench')}</button>
+  <button class="mini-btn">${I('edit')}</button>
+  <button class="mini-btn danger">${I('trash')}</button>`;
+
+// Il tratto più grosso è l'unica variante che vale la pena provare: sotto 1.6
+// le icone sbiadiscono, sopra 2.2 si impastano a 13px.
+const stile = document.createElement('style');
+stile.textContent = 'body.grosso .ico{stroke-width:2.2}';
+document.head.appendChild(stile);
+</script>
+</body>
+</html>

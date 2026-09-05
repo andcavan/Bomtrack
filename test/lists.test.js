@@ -98,8 +98,9 @@ describe('catalogo — disegno a blocchi', () => {
     app.setDb(makeDb({ items }));
     return app;
   }
-  // Le righe articolo portano sempre l'attributo class; `<tr>` secco è l'intestazione.
-  const conta = html => (html.match(/<tr class=/g) || []).length;
+  // Ogni riga articolo dichiara il proprio id in `data-sel` — è l'attributo con
+  // cui il pannello laterale la ritrova; l'intestazione non ce l'ha.
+  const conta = html => (html.match(/<tr data-sel=/g) || []).length;
 
   it('al primo disegno mostra solo il primo blocco', () => {
     const app = conArticoli(500);

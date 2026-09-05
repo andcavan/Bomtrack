@@ -111,8 +111,8 @@ function urgenzaOrdine(orderBy) {
   return orderBy <= addDays(oggi, URGENCY_WARN_DAYS) ? 'urgente' : 'ok';
 }
 const URGENZA_LABEL = {
-  ritardo: { txt: '⚠ in ritardo', cls: 'mrp-warn', desc: 'La data entro cui ordinare è già passata' },
-  urgente: { txt: '⏱ da ordinare', cls: 'mrp-warn', desc: 'Meno di ' + URGENCY_WARN_DAYS + ' giorni di margine' },
+  ritardo: { txt: ico('warning', 'tinted', '') + ' in ritardo', cls: 'mrp-warn', desc: 'La data entro cui ordinare è già passata' },
+  urgente: { txt: ico('clock', 'tinted', '') + ' da ordinare', cls: 'mrp-warn', desc: 'Meno di ' + URGENCY_WARN_DAYS + ' giorni di margine' },
   ok: { txt: '', cls: '', desc: '' },
 };
 
@@ -266,7 +266,15 @@ function planToggleActive(id) {
   showToast(`Piano ${p.number} ${p.active ? 'riaperto: torna a impegnare materiale' : 'chiuso: il materiale che impegnava torna libero'}`);
 }
 function planBackToList() { mrpView = 'list'; currentPlanId = null; renderMrp(); }
-function planSearchInput() { debounced('mrp', renderMrp); }
+function planSearchInput() {
+  // Solo l'elenco: ridisegnare la colonna intera farebbe perdere il focus al
+  // campo di ricerca a ogni lettera.
+  debounced('mrp', () => {
+    renderInto('plan-list', planListRows);
+    const c = document.getElementById('plan-count');
+    if (c) c.textContent = planCountText();
+  });
+}
 function planSetField(id, field, value) {
   if (!roleGuard('docs')) { renderMrp(); return; }
   const p = getPlan(id); if (!p) return;
@@ -386,7 +394,7 @@ function planDocsModal(id, kind) {
   }
   window.__planDocsId = id;
   window.__planDocsKind = k;
-  openModal(`<h3>${k === 'rfq' ? '📨 Genera richieste di offerta' : '🧾 Genera ordini a fornitore'} — ${esc(p.number)}</h3>
+  openModal(`<h3>${k === 'rfq' ? ico('mail', 'tinted pill', '') + ' Genera richieste di offerta' : ico('receipt', 'tinted pill', '') + ' Genera ordini a fornitore'} — ${esc(p.number)}</h3>
     <p class="empty-text" style="text-align:left;padding:0 0 8px">Quantità <strong>${mrpNet ? 'nette' : 'lorde'}</strong>${mrpNet ? ' — tolti esistente e in arrivo, e tolto quello che gli altri piani aperti hanno già impegnato' : ' — l\'intero fabbisogno del piano'}. Si cambia col pulsante <em>Fabbisogno netto</em> nell\'elenco.</p>
     <p class="empty-text" style="text-align:left;padding:0 0 12px">${planDocsHint(k)}</p>
     <div id="plandoc-body">${planDocsBody(gruppi, id, k)}</div>
@@ -440,15 +448,15 @@ function planDocsBody(gruppi, planId, kind) {
       const seg = [];
       if (bloccata.length) {
         seg.push(`<span class="mrp-warn" title="Già inserito in ${esc(bloccata.map(docRefLabel).join(', '))}: per cambiarne la quantità si modifica quel documento">
-          🔒 già in ${esc(bloccata.map(x => x.number).join(', '))}</span>`);
+          ${ico('lock', 'tinted', '')} già in ${esc(bloccata.map(x => x.number).join(', '))}</span>`);
       } else {
         const a = altri(r);
         if (a.length) seg.push(`<span class="price-best" title="Esiste già ${esc(a.map(docRefLabel).join(', '))}, di tipo diverso: questa riga resta selezionabile">📄 ${esc(a.map(x => x.number).join(', '))}</span>`);
-        if (r.underMin) seg.push(`<span class="mrp-warn" title="Quantità minima del fornitore: ${fmtUom(r.minQty, r.uom)}">⚠ sotto il minimo di ${fmtUom(r.minQty, r.uom)}</span>`);
+        if (r.underMin) seg.push(`<span class="mrp-warn" title="Quantità minima del fornitore: ${fmtUom(r.minQty, r.uom)}">${ico('warning', 'tinted', '')} sotto il minimo di ${fmtUom(r.minQty, r.uom)}</span>`);
         // Due assenze diverse, e la seconda è quella che manda fuori un ordine
         // sbagliato: l'articolo un prezzo ce l'ha, ma non da questo fornitore.
         if (r.noDocPrice) seg.push(`<span class="mrp-warn" title="${esc(supplierName(r.supplierId) || 'Questo fornitore')} non ha questo articolo a listino: la riga nascerà senza prezzo, da compilare a mano. Il prezzo di un altro fornitore non si applica.">⚠ non a listino</span>`);
-        else if (r.noPrice) seg.push('<span class="mrp-warn" title="Senza prezzo la riga vale zero">⚠ senza prezzo</span>');
+        else if (r.noPrice) seg.push('<span class="mrp-warn" title="Senza prezzo la riga vale zero">' + ico('warning', 'tinted', '') + ' senza prezzo</span>');
         // Il listino applicabile non è quello con cui è stato costificato: il
         // documento seguirà il listino, e il totale qui sopra viene dal costo.
         else if (r.listinoDiverso) seg.push(`<span class="mrp-warn" title="Costificato a ${fmtPer(r.price, r.uom)}, ma ${esc(supplierName(r.supplierId) || 'il fornitore')} oggi quota ${fmtPer(r.docInGestione, r.uom)}. Sul documento va il listino.">⇄ a listino ${fmtPer(r.priceDoc, r.uom)}</span>`);
@@ -467,9 +475,9 @@ function planDocsBody(gruppi, planId, kind) {
     return `<div class="plandoc-group">
       <label class="plandoc-head">
         <input type="checkbox" class="plandoc-sup" data-sup="${esc(key)}" ${disponibili.length ? 'checked' : 'disabled'} onchange="planDocsToggleGroup(this)">
-        🏭 <strong>${esc(g.name)}</strong>
+        ${ico('factory', 'tinted', '')} <strong>${esc(g.name)}</strong>
         <span class="plandoc-qty">${disponibili.length ? `${disponibili.length} ${disponibili.length === 1 ? 'riga' : 'righe'} · ${fmtN(totDisp)}` : 'tutto già documentato'}${disponibili.length < g.rows.length ? ` <span style="opacity:.6">(${g.rows.length - disponibili.length} già ${kind === 'rfq' ? 'in richiesta' : 'in ordine'})</span>` : ''}</span>
-        ${g.supplierId ? '' : '<span class="mrp-warn" title="Nessun fornitore: il documento nasce da intestare">⚠ da assegnare</span>'}
+        ${g.supplierId ? '' : '<span class="mrp-warn" title="Nessun fornitore: il documento nasce da intestare">' + ico('warning', 'tinted', '') + ' da assegnare</span>'}
       </label>
       ${righe}</div>`;
   }).join('');
@@ -535,8 +543,9 @@ function planCreateDocs() {
   // Un documento solo: si apre. Più d'uno: si va all'elenco, non c'è una scelta
   // sensata su quale aprire per primo.
   if (creati.length === 1) {
-    if (kind === 'rfq') { currentRfqId = creati[0].id; rfqView = 'edit'; rfqDirty = false; rfqUnlockedId = null; }
-    else { currentOrderId = creati[0].id; orderView = 'edit'; orderDirty = false; orderUnlockedId = null; }
+    docLeave(kind === 'rfq' ? 'rfq' : 'order');
+    if (kind === 'rfq') { currentRfqId = creati[0].id; rfqView = 'edit'; }
+    else { currentOrderId = creati[0].id; orderView = 'edit'; }
   } else if (kind === 'rfq') { rfqView = 'list'; currentRfqId = null; }
   else { orderView = 'list'; currentOrderId = null; }
   setView(kind === 'rfq' ? 'rfq' : 'orders');
@@ -606,20 +615,20 @@ function planDocsList(planId) {
   if (!d.rfqs.length && !d.orders.length) return '';
   const riga = (x, apri, icona) => `<span class="plandoc-link" ${clickAttrs(apri, 'Apri ' + x.number)}><span style="font-family:var(--mono)">${icona} ${esc(x.number)}</span> · ${esc(supplierName(x.supplierId) || 'da assegnare')}</span>`;
   return `<div class="mrp-section">
-    <div class="cycle-section-head"><h3>📄 Documenti generati</h3></div>
+    <div class="cycle-section-head"><h3>${ico('clipboard', 'tinted pill', '')} Documenti generati</h3></div>
     <div class="plandoc-links">
-      ${d.rfqs.map(r => riga(r, `openRfqFromPlan('${r.id}')`, '📨')).join('')}
-      ${d.orders.map(o => riga(o, `openOrderFromPlan('${o.id}')`, '🧾')).join('')}
+      ${d.rfqs.map(r => riga(r, `openRfqFromPlan('${r.id}')`, ico('mail', 'tinted', 'Richiesta di offerta'))).join('')}
+      ${d.orders.map(o => riga(o, `openOrderFromPlan('${o.id}')`, ico('receipt', 'tinted', 'Ordine a fornitore'))).join('')}
     </div></div>`;
 }
 // Stato prima, vista dopo: setView disegna già, chiamare open*Edit prima
 // significherebbe disegnare due volte la stessa scheda.
 function openRfqFromPlan(id) {
-  currentRfqId = id; rfqView = 'edit'; rfqDirty = false; rfqUnlockedId = null;
+  docLeave('rfq'); currentRfqId = id; rfqView = 'edit';
   setView('rfq');
 }
 function openOrderFromPlan(id) {
-  currentOrderId = id; orderView = 'edit'; orderDirty = false; orderUnlockedId = null;
+  docLeave('order'); currentOrderId = id; orderView = 'edit';
   setView('orders');
 }
 
@@ -627,9 +636,26 @@ function openOrderFromPlan(id) {
 function renderMrp() {
   invalidateCaches();
   const host = document.getElementById('view-mrp');
-  if (mrpView === 'edit' && getPlan(currentPlanId)) host.innerHTML = renderPlanEdit(currentPlanId);
-  else { mrpView = 'list'; host.innerHTML = renderPlanList(); }
+  if (mrpView === 'edit' && !getPlan(currentPlanId)) { mrpView = 'list'; currentPlanId = null; }
+  host.innerHTML = worklistHtml({
+    titolo: 'Fabbisogno materiali', icona: 'list', listaId: 'plan-list',
+    comandi: `<button class="add-btn-sm" onclick="newPlan()">+ Nuovo piano</button>
+      ${listExportButtons('planListExportSpec')}`,
+    filtri: `<input type="text" class="search" id="plan-search" value="${esc(val('plan-search'))}" placeholder="Numero o titolo..." oninput="planSearchInput()">
+      <span class="doc-filter-count" id="plan-count">${planCountText()}</span>`,
+    righe: planListRows(),
+    doc: mrpView === 'edit' ? renderPlanEdit(currentPlanId) : '',
+    nota: `Un piano <strong>aperto</strong> impegna il materiale che gli serve: gli altri piani lo vedono come non disponibile e non se lo contano. Chiuderlo — dalla testata del piano — restituisce quella quota, senza cancellare niente.`,
+    vuoto: {
+      titolo: 'Nessun piano aperto qui',
+      testo: 'Scegli un piano dall\'elenco a destra: al centro compaiono cosa produrre, cosa comprare — al lordo o al netto di magazzino, ordinato e impegnato — e cosa fabbricare in casa.',
+      comandi: '<button class="add-btn-sm" onclick="newPlan()">+ Nuovo piano</button>',
+    },
+  });
   a11yFields(host);
+}
+function planCountText() {
+  return worklistCount(planFilteredList().length, (db.plans || []).length, 'piano', 'piani');
 }
 // I piani che l'elenco mostra. Estratta dal disegno perché la usa l'export.
 function planFilteredList() {
@@ -658,36 +684,25 @@ function planListExportSpec() {
     }],
   };
 }
-function renderPlanList() {
+function planListRows() {
   const tutti = db.plans || [];
   const list = planFilteredList();
-  const rows = list.map(p => {
+  return list.map(p => {
     const n = (p.lines || []).length;
     const chiuso = p.active === false;
-    return `<div class="mgmt-item"${chiuso ? ' style="opacity:.6"' : ''}>
-      <span class="mgmt-item-name"><span style="font-family:var(--mono)">${esc(p.number)}</span> — ${esc(p.title || '(senza titolo)')}
-        ${chiuso ? '<span class="mrp-warn" title="Chiuso: non impegna più materiale a magazzino">🔓 chiuso</span>' : ''}</span>
-      <span class="mgmt-item-meta">${n} ${n === 1 ? 'articolo a piano' : 'articoli a piano'}${p.date ? ' · ' + fmtDateIt(p.date) : ''}</span>
-      <div class="mgmt-item-actions">
-        <button class="mini-btn" onclick="openPlanEdit('${p.id}')" title="Apri">✏</button>
-        <button class="mini-btn" onclick="planToggleActive('${p.id}')" title="${chiuso ? 'Riapri: tornerà a impegnare il materiale che gli serve' : 'Chiudi: il materiale che impegna torna disponibile agli altri piani'}">${chiuso ? '🔒' : '🔓'}</button>
-        <button class="mini-btn" onclick="duplicatePlan('${p.id}')" title="Duplica">📋</button>
-        <button class="mini-btn danger" onclick="delPlan('${p.id}')" title="Elimina">🗑</button>
-      </div></div>`;
+    return worklistRow({
+      numero: p.number,
+      badge: `<span class="doc-badge ${chiuso ? 'st-chiusa' : 'st-aperta'}" title="${chiuso ? 'Chiuso: non impegna più materiale a magazzino' : 'Aperto: impegna a magazzino il materiale che gli serve'}">${chiuso ? 'chiuso' : 'aperto'}</span>`,
+      titolo: p.title || '',
+      meta: `${n} ${n === 1 ? 'articolo a piano' : 'articoli a piano'}${p.date ? ' · ' + esc(fmtDateIt(p.date)) : ''}`,
+      sel: mrpView === 'edit' && currentPlanId === p.id,
+      spenta: chiuso,
+      azione: `openPlanEdit('${p.id}')`,
+      etichetta: `Apri il piano ${p.number}`,
+    });
   }).join('') || `<div class="empty-text">${tutti.length
     ? 'Nessun piano con questa ricerca.'
     : 'Nessun piano di produzione. Creane uno per sapere cosa comprare per costruire N macchine.'}</div>`;
-  return `<div class="manage-wrap">
-    <div class="bom-toolbar">
-      <h2 class="section-title">📋 Fabbisogno materiali</h2>
-      <button class="add-btn-sm" onclick="newPlan()">+ Nuovo piano</button>
-      ${listExportButtons('planListExportSpec')}
-    </div>
-    <div class="catalog-filters">
-      <input type="text" class="search" id="plan-search" value="${esc(val('plan-search'))}" placeholder="🔍 Numero o titolo..." oninput="planSearchInput()">
-    </div>
-    <div class="mgmt-list">${rows}</div>
-    <p class="empty-text" style="text-align:left">Un piano <strong>aperto</strong> impegna il materiale che gli serve: gli altri piani lo vedono come non disponibile e non se lo contano. 🔓 lo <strong>chiude</strong> quando non serve più — niente si cancella, ma la sua quota di magazzino torna libera.</p></div>`;
 }
 function renderPlanEdit(id) {
   const p = getPlan(id);
@@ -704,8 +719,8 @@ function renderPlanEdit(id) {
 
   const planRows = (p.lines || []).map(l => {
     const it = getItem(l.itemId);
-    if (!it) return `<tr><td colspan="4" class="empty-text">⚠ articolo mancante</td>
-      <td class="line-actions"><button class="mini-btn danger" onclick="planDelLine('${id}','${l.id}')">🗑</button></td></tr>`;
+    if (!it) return `<tr><td colspan="4" class="empty-text">${ico('warning', 'tinted', '')} articolo mancante</td>
+      <td class="line-actions"><button class="mini-btn danger" onclick="planDelLine('${id}','${l.id}')" title="Togli dal piano">${ico('trash', 'tinted', 'Togli dal piano')}</button></td></tr>`;
     return `<tr>
       <td style="font-family:var(--mono)">${codeLink(it.id, it.code)}</td>
       <td>${esc(it.name)}<span class="bom-type-tag tt-${it.type}" style="margin-left:6px">${typeShort(it.type)}</span></td>
@@ -714,20 +729,22 @@ function renderPlanEdit(id) {
         onchange="planSetLineQty('${id}','${l.id}',this.value)"></td>
       <td><input type="date" value="${esc(l.dueDate || '')}" title="Quando serve pronto: da qui nascono le date d'ordine di tutto ciò che ci va dentro"
         onchange="planSetLineDue('${id}','${l.id}',this.value)"></td>
-      <td class="line-actions"><button class="mini-btn danger" onclick="planDelLine('${id}','${l.id}')" title="Togli dal piano">🗑</button></td></tr>`;
+      <td class="line-actions"><button class="mini-btn danger" onclick="planDelLine('${id}','${l.id}')" title="Togli dal piano">${ico('trash', 'tinted', 'Togli dal piano')}</button></td></tr>`;
   }).join('') || `<tr><td colspan="6" class="empty-text">Nessun articolo a piano. Usa "+ Aggiungi al piano".</td></tr>`;
 
   return `<div class="manage-wrap">
     <div class="bom-toolbar">
-      <button class="btn-outline" onclick="planBackToList()">← Elenco</button>
-      <h2 class="section-title" style="margin:0">📋 ${esc(p.number)}</h2>
+      ${worklistCloseBtn('planBackToList()', 'il piano')}
+      <h2 class="section-title" style="margin:0">${ico('list', 'tinted pill', 'Piano di fabbisogno')} ${esc(p.number)}</h2>
       <button class="btn-outline" onclick="planToggleActive('${id}')" title="${p.active === false
         ? 'Chiuso: non impegna materiale. Riaprendolo tornerà a riservarsi quello che gli serve.'
-        : 'Aperto: impegna a magazzino il materiale che gli serve, e gli altri piani non se lo contano. Chiudendolo quella quota torna libera.'}">${p.active === false ? '🔓 Chiuso — riapri' : '🔒 Aperto — chiudi'}</button>
-      ${planDocButton(p, 'rfq', '📨 Genera richieste')}
-      ${planDocButton(p, 'order', '🧾 Genera ordini')}
-      <button class="export-btn-xls" onclick="exportMrpExcel('${id}')">📗 Esporta Excel</button>
-      <button class="export-btn-pdf" onclick="exportMrpPDF('${id}')">📄 Esporta PDF</button>
+        : 'Aperto: impegna a magazzino il materiale che gli serve, e gli altri piani non se lo contano. Chiudendolo quella quota torna libera.'}">${p.active === false ? ico('unlock', 'tinted', '') + ' Chiuso — riapri' : ico('lock', 'tinted', '') + ' Aperto — chiudi'}</button>
+      ${planDocButton(p, 'rfq', ico('mail', 'tinted', '') + ' Genera richieste')}
+      ${planDocButton(p, 'order', ico('receipt', 'tinted', '') + ' Genera ordini')}
+      <button class="btn-outline" onclick="duplicatePlan('${id}')" title="Duplica il piano">${ico('copy', 'tinted', '')} Duplica</button>
+      <button class="btn-outline" style="color:var(--red);border-color:var(--red)" onclick="delPlan('${id}')" title="Elimina il piano">${ico('trash', 'tinted', '')} Elimina</button>
+      <button class="export-btn-xls" onclick="exportMrpExcel('${id}')">${ico('sheet', 'tinted', '')} Esporta Excel</button>
+      <button class="export-btn-pdf" onclick="exportMrpPDF('${id}')">${ico('file', 'tinted', '')} Esporta PDF</button>
     </div>
     <div class="modal-grid">
       <div class="modal-field"><label>Titolo</label>
@@ -745,7 +762,7 @@ function renderPlanEdit(id) {
 
     <div class="mrp-section">
       <div class="cycle-section-head">
-        <h3>🏗 Da produrre</h3>
+        <h3>${ico('wrench', 'tinted pill', '')} Da produrre</h3>
         <button class="add-btn-sm" onclick="planAddModal('${id}')">+ Aggiungi al piano</button>
       </div>
       <div class="table-wrap"><table>
@@ -760,22 +777,22 @@ function renderPlanEdit(id) {
       ${kpi('Fornitori coinvolti', String(fornitori), '')}
       ${kpi('Parti da fabbricare', String(exp.make.length), 'purple')}
     </div>
-    ${exp.cycle ? '<div class="empty-text" style="color:var(--red)">⚠ Rilevato riferimento ciclico nelle distinte: il fabbisogno è troncato su quel ramo.</div>' : ''}
+    ${exp.cycle ? '<div class="empty-text" style="color:var(--red)">' + ico('warning', 'tinted', '') + ' Rilevato riferimento ciclico nelle distinte: il fabbisogno è troncato su quel ramo.</div>' : ''}
     ${risparmio > 0 ? `<div class="empty-text" style="text-align:left">↓ Scegliendo ovunque la quotazione più bassa a listino il totale scenderebbe di <strong>${fmtN(risparmio)}</strong>. Il prezzo in uso si cambia dal listino dell'articolo.</div>` : ''}
 
     <div class="mrp-section">
       <div class="cycle-section-head">
-        <h3>📦 Da acquistare</h3>
+        <h3>${ico('cart', 'tinted pill', '')} Da acquistare</h3>
         <button class="btn-outline${mrpNet ? ' active' : ''}" onclick="toggleMrpNet()" title="Toglie dal fabbisogno quello che è già a magazzino, quello già ordinato e quello già impegnato da altri piani aperti">${mrpNet ? '☑' : '☐'} Fabbisogno netto</button>
         <button class="btn-outline${mrpGrouped ? ' active' : ''}" onclick="toggleMrpGroup()">${mrpGrouped ? '☑' : '☐'} Raggruppa per fornitore</button>
       </div>
       ${mrpNet ? `<p class="empty-text" style="text-align:left;padding:0 0 8px">Netto = <strong>lordo + scorta minima + impegnato − esistente − in arrivo</strong>, arrotondato al lotto di riordino. L'esistente è calcolato da ricevimenti e movimenti; l'in arrivo è ciò che è stato ordinato e non è ancora entrato; l'<strong>impegnato</strong> è quanto gli <em>altri piani aperti</em> hanno già promesso — senza toglierlo, due piani sugli stessi articoli si direbbero coperti entrambi con la stessa merce. Il lordo resta in colonna: serve a capire il prodotto, il netto a capire cosa comprare.</p>
-      ${nImpegnate ? `<p class="empty-text" style="text-align:left;padding:0 0 8px">🔒 ${nImpegnate} ${nImpegnate === 1 ? 'riga contende' : 'righe contendono'} materiale con altri piani aperti. Un piano che non serve più si chiude dall'elenco: la sua quota torna libera.</p>` : ''}` : ''}
+      ${nImpegnate ? `<p class="empty-text" style="text-align:left;padding:0 0 8px">${ico('lock', 'tinted', '')} ${nImpegnate} ${nImpegnate === 1 ? 'riga contende' : 'righe contendono'} materiale con altri piani aperti. Un piano che non serve più si chiude dall'elenco: la sua quota torna libera.</p>` : ''}` : ''}
       ${mrpBuyTable(buy)}
     </div>
 
     <div class="mrp-section">
-      <div class="cycle-section-head"><h3>🏭 Da fabbricare</h3></div>
+      <div class="cycle-section-head"><h3>${ico('factory', 'tinted pill', '')} Da fabbricare</h3></div>
       ${mrpMakeTable(exp.make)}
     </div>
     ${planDocsList(id)}</div>`;
@@ -786,8 +803,8 @@ function renderPlanEdit(id) {
 function mrpBuyLineHtml(r) {
   const seg = [];
   if (r.bestPrice != null && r.saving > 0) seg.push(`<span class="price-best" title="A listino c'è ${fmtPer(r.bestPrice, r.uom)}: risparmio ${fmtPer(r.saving, r.uom)}">↓ ${fmtN(r.saving)}</span>`);
-  if (r.underMin) seg.push(`<span class="mrp-warn" title="Quantità minima del fornitore: ${fmtUom(r.minQty, r.uom)}">⚠ sotto il minimo</span>`);
-  if (r.noPrice) seg.push(`<span class="mrp-warn" title="Nessun prezzo in uso: la riga varrebbe zero in un ordine">⚠ senza prezzo</span>`);
+  if (r.underMin) seg.push(`<span class="mrp-warn" title="Quantità minima del fornitore: ${fmtUom(r.minQty, r.uom)}">${ico('warning', 'tinted', '')} sotto il minimo</span>`);
+  if (r.noPrice) seg.push(`<span class="mrp-warn" title="Nessun prezzo in uso: la riga varrebbe zero in un ordine">${ico('warning', 'tinted', '')} senza prezzo</span>`);
   if (mrpNet && r.lotSize > 0 && r.net > 0) seg.push(r.lotMode === 'min'
     ? `<span class="mrp-warn" title="Portato al minimo ordinabile di ${fmtUom(r.lotSize, r.uom)}">↑ minimo ${fmtUom(r.lotSize, r.uom)}</span>`
     : `<span class="mrp-warn" title="Arrotondato al lotto di riordino di ${fmtUom(r.lotSize, r.uom)}">↑ lotto ${fmtUom(r.lotSize, r.uom)}</span>`);
@@ -848,7 +865,7 @@ function mrpBuyTable(rows) {
   let body;
   if (mrpGrouped) {
     body = mrpGroupBySupplier(rows).map(g => `
-      <tr class="mrp-group"><td colspan="${nCol - 1}">🏭 ${esc(g.name)} — ${g.rows.length} ${g.rows.length === 1 ? 'articolo' : 'articoli'}</td>
+      <tr class="mrp-group"><td colspan="${nCol - 1}">${ico('factory', 'tinted', '')} ${esc(g.name)} — ${g.rows.length} ${g.rows.length === 1 ? 'articolo' : 'articoli'}</td>
         <td style="font-family:var(--mono);text-align:right">${fmtN(g.total)}</td></tr>
       ${g.rows.map(mrpBuyLineHtml).join('')}`).join('');
   } else {

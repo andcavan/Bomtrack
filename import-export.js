@@ -14,16 +14,16 @@ function catalogImportBlock(scope) {
   const buy = scope === 'buy';
   const id = 'imp-cat-' + scope;
   return `<div>
-      <strong>${buy ? '🛒 Articoli — Acquisti' : '🏗 Articoli — Progetto'}</strong>
+      <strong>${buy ? ico('cart', 'tinted', '') + ' Articoli — Acquisti' : ico('tree', 'tinted', '') + ' Articoli — Progetto'}</strong>
       <p>${buy
     ? 'Commerciali e materie prime, <b>un foglio per tipo</b>: <span style="font-family:var(--mono)">Commerciali, Materie prime, Listino</span>. Fornitore e prezzo entrano come <b>quotazione nel listino</b> dell\'articolo e diventano il prezzo in uso.'
     : 'Macchine, gruppi, sottogruppi e parti, <b>un foglio per tipo</b>. I fogli si applicano in ordine, così un gruppo può puntare a una macchina definita nello stesso file: si caricano sigle, appartenenze e schema di codifica. <b>La distinta base non è in questo file</b>: si carica qui sotto.'}</p>
       <p>Il file esportato <b>è anche il template</b>. Contiene un foglio <b>Liste</b> con tutti i valori ammessi e un foglio <b>Istruzioni</b>. Il <b>Codice</b> è la chiave: se esiste l'articolo viene aggiornato, se è vuoto viene generato. L'import non elimina mai niente.</p>
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
-        <button class="btn-outline" onclick="exportCatalogXlsx('${scope}')">⬇ Esporta ${buy ? 'Acquisti' : 'Progetto'}</button>
-        <button class="btn-outline" onclick="document.getElementById('${id}-check').click()">🔍 Verifica un file</button>
+        <button class="btn-outline" onclick="exportCatalogXlsx('${scope}')">${ico('download', 'tinted', '')} Esporta ${buy ? 'Acquisti' : 'Progetto'}</button>
+        <button class="btn-outline" onclick="document.getElementById('${id}-check').click()">${ico('search', 'tinted', '')} Verifica un file</button>
         <input type="file" id="${id}-check" accept=".xlsx,.xls" style="display:none" onchange="onCatalogFile(event,'${scope}',true)">
-        <button class="add-btn-sm" onclick="document.getElementById('${id}-file').click()">⬆ Carica ${buy ? 'Acquisti' : 'Progetto'}</button>
+        <button class="add-btn-sm" onclick="document.getElementById('${id}-file').click()">${ico('upload', 'tinted', '')} Carica ${buy ? 'Acquisti' : 'Progetto'}</button>
         <input type="file" id="${id}-file" accept=".xlsx,.xls" style="display:none" onchange="onCatalogFile(event,'${scope}',false)">
       </div>
     </div>`;
@@ -35,21 +35,21 @@ function renderImport() {
       ${catalogImportBlock('design')}
     </div>
     <div style="border-top:1px solid var(--border, #2a2a2a);padding-top:16px">
-      <strong>🌳 Import Distinte</strong>
+      <strong>${ico('tree', 'tinted', '')} Import Distinte</strong>
       <p>Carica un foglio Excel con le relazioni <b>padre-figlio</b> per costruire le distinte. Gli articoli (padri e figli) devono già esistere in catalogo — importali prima con i due file qui sopra. Per ogni padre presente nel file i componenti vengono <b>sostituiti</b> (reimport idempotente); le lavorazioni non vengono toccate. Colonne: <span style="font-family:var(--mono)">CodicePadre, CodiceFiglio, Qta, Scarto%</span>.</p>
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
-        <button class="btn-outline" onclick="downloadBomTemplate()">⬇ Scarica template Distinte</button>
-        <button class="add-btn-sm" onclick="document.getElementById('imp-bom-file').click()">⬆ Carica file Distinte</button>
+        <button class="btn-outline" onclick="downloadBomTemplate()">${ico('download', 'tinted', '')} Scarica template Distinte</button>
+        <button class="add-btn-sm" onclick="document.getElementById('imp-bom-file').click()">${ico('upload', 'tinted', '')} Carica file Distinte</button>
         <input type="file" id="imp-bom-file" accept=".xlsx,.xls,.csv" style="display:none" onchange="onImportBom(event)">
       </div>
     </div>
     <div style="border-top:1px solid var(--border, #2a2a2a);padding-top:16px">
-      <strong>⚙ Impostazioni di Gestione</strong>
+      <strong>${ico('settings', 'tinted', '')} Impostazioni di Gestione</strong>
       <p>Porta via e rimetti tutto ciò che si configura qui dentro, in <b>un foglio per scheda</b>: <span style="font-family:var(--mono)">Azienda, Utenti, Fornitori, Condizioni offerta, Famiglie commerciali, Famiglie materie prime, Famiglie parti, Concetti, Centri di lavoro, Unità di misura, Impostazioni</span>. Il file esportato <b>è anche il template</b>: si esporta, si modifica, si ricarica — comodo per allestire una postazione nuova senza rifare le anagrafiche a mano.</p>
       <p>L'import è <b>additivo</b>: aggiorna ciò che riconosce, crea ciò che manca, <b>non cancella niente</b>. Un foglio assente viene saltato, quindi si può caricare anche una sola scheda. Le <b>password non sono nel file</b>: un utente creato dall'import nasce senza, e non accede finché non gliene imposti una.</p>
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
-        <button class="btn-outline" onclick="exportSettingsXlsx()">⬇ Esporta impostazioni</button>
-        <button class="add-btn-sm" onclick="document.getElementById('imp-settings-file').click()">⬆ Carica impostazioni</button>
+        <button class="btn-outline" onclick="exportSettingsXlsx()">${ico('download', 'tinted', '')} Esporta impostazioni</button>
+        <button class="add-btn-sm" onclick="document.getElementById('imp-settings-file').click()">${ico('upload', 'tinted', '')} Carica impostazioni</button>
         <input type="file" id="imp-settings-file" accept=".xlsx,.xls" style="display:none" onchange="onImportSettings(event)">
       </div>
     </div></div>`;
@@ -726,8 +726,8 @@ function showSettingsReport(rep) {
   const errBlock = rep.errors.length
     ? `<div style="margin-top:12px"><strong style="color:var(--red)">Righe con problemi (${rep.errors.length}):</strong>
         <div class="picker-results" style="max-height:240px;margin-top:6px">${rep.errors.map(e => `<div class="picker-row">${e}</div>`).join('')}</div></div>`
-    : `<p class="empty-text" style="padding:8px 0">Nessun errore. ✔</p>`;
-  openModal(`<h3>⚙ Esito import Impostazioni</h3>
+    : `<p class="empty-text" style="padding:8px 0">Nessun errore. ${ico('check', 'tinted', '')}</p>`;
+  openModal(`<h3>${ico('settings', 'tinted pill', '')} Esito import Impostazioni</h3>
     <div class="cost-summary">${cards}</div>
     <div class="mgmt-list" style="margin-top:12px">${righe}</div>${mancanti}${errBlock}
     <div class="modal-actions"><button class="add-btn-sm" onclick="closeSettingsReport()">Chiudi</button></div>`);
@@ -754,8 +754,8 @@ function showImportReport(r) {
   const errBlock = r.errors.length
     ? `<div style="margin-top:12px"><strong style="color:var(--red)">Righe con problemi (${r.errors.length}):</strong>
         <div class="picker-results" style="max-height:240px;margin-top:6px">${r.errors.map(e => `<div class="picker-row">${e}</div>`).join('')}</div></div>`
-    : `<p class="empty-text" style="padding:8px 0">Nessun errore. ✔</p>`;
-  openModal(`<h3>📋 Esito import Distinte</h3>
+    : `<p class="empty-text" style="padding:8px 0">Nessun errore. ${ico('check', 'tinted', '')}</p>`;
+  openModal(`<h3>${ico('list', 'tinted pill', '')} Esito import Distinte</h3>
     <div class="cost-summary">${cards}</div>${errBlock}
     <div class="modal-actions"><button class="add-btn-sm" onclick="closeImportReport()">Chiudi</button></div>`);
 }
@@ -778,12 +778,12 @@ function dbSizeLine() {
 function renderBackup() {
   return `<div class="cloud-section">
     <div style="flex:1">
-      <strong>💾 Backup locale</strong>
+      <strong>${ico('save', 'tinted', '')} Backup locale</strong>
       <p>I dati sono salvati nel browser (localStorage). Esporta un file JSON per conservare un backup o trasferire i dati su un altro PC. L'import sovrascrive i dati attuali.</p>
       ${dbSizeLine()}
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
-        <button class="add-btn-sm" onclick="exportBackup()">⬇ Esporta JSON</button>
-        <button class="btn-outline" onclick="document.getElementById('import-file').click()">⬆ Importa JSON</button>
+        <button class="add-btn-sm" onclick="exportBackup()">${ico('download', 'tinted', '')} Esporta JSON</button>
+        <button class="btn-outline" onclick="document.getElementById('import-file').click()">${ico('upload', 'tinted', '')} Importa JSON</button>
         <input type="file" id="import-file" accept="application/json,.json" style="display:none" onchange="importBackup(event)">
         <button class="btn-outline" style="color:var(--red);border-color:var(--red)" onclick="resetDB()">↺ Ripristina dati esempio</button>
       </div>
@@ -792,19 +792,19 @@ function renderBackup() {
   ${renderDuplicateCodes()}
   <div class="cloud-section" style="margin-top:16px">
     <div style="flex:1">
-      <strong>🐞 Registro errori</strong>
+      <strong>${ico('warning', 'tinted', '')} Registro errori</strong>
       <p>Gli errori non previsti di questa sessione (al massimo gli ultimi ${ERROR_LOG_MAX}). Serve a chi ripara: si azzera ricaricando la pagina, quindi va scaricato prima.
         ${appErrorLog().length ? `<strong style="color:var(--red)">${appErrorLog().length} errori registrati.</strong>` : 'Nessun errore finora.'}</p>
       <div style="margin-top:8px">
-        <button class="btn-outline" onclick="downloadErrorLog()">⬇ Scarica registro errori</button>
+        <button class="btn-outline" onclick="downloadErrorLog()">${ico('download', 'tinted', '')} Scarica registro errori</button>
       </div>
     </div></div>
   <div class="cloud-section" style="border-color:var(--red);margin-top:16px">
     <div style="flex:1">
-      <strong style="color:var(--red)">🗑 Azzera tutto</strong>
+      <strong style="color:var(--red)">${ico('trash', 'tinted', '')} Azzera tutto</strong>
       <p>Svuota completamente il database: articoli, distinte, richieste, ordini, fornitori, famiglie, centri di lavoro, unità di misura, dati azienda e impostazioni. Non restano nemmeno i dati di esempio. <strong>L'operazione è irreversibile</strong>: esporta prima un backup JSON.</p>
       <div style="margin-top:8px">
-        <button class="btn-outline" style="color:var(--red);border-color:var(--red)" onclick="wipeAll()">🗑 AZZERA TUTTO</button>
+        <button class="btn-outline" style="color:var(--red);border-color:var(--red)" onclick="wipeAll()">${ico('trash', 'tinted', '')} AZZERA TUTTO</button>
       </div>
     </div></div>`;
 }
@@ -824,7 +824,7 @@ function renderTrash() {
   if (!voci.length) {
     return `<div class="cloud-section" style="margin-top:16px">
       <div style="flex:1">
-        <strong>🗑 Cestino</strong>
+        <strong>${ico('trash', 'tinted', '')} Cestino</strong>
         <p>Vuoto. Ciò che elimini resta qui <strong>${TRASH_DAYS} giorni</strong> e si può rimettere a posto; passati quelli sparisce da solo.</p>
       </div></div>`;
   }
@@ -833,11 +833,11 @@ function renderTrash() {
       <span style="flex:1;font-family:var(--mono)">${esc(trashDescr(t))}</span>
       <span class="empty-text" style="padding:0">${esc(String(t.deletedAt || '').slice(0, 10))}${t.deletedBy ? ' · ' + esc(actorName(t.deletedBy)) : ''}</span>
       <button class="btn-ghost" onclick="restoreFromTrash('${t.id}')">↶ Ripristina</button>
-      <button class="mini-btn danger" title="Elimina definitivamente" onclick="purgeFromTrash('${t.id}')">🗑</button>
+      <button class="mini-btn danger" title="Elimina definitivamente" onclick="purgeFromTrash('${t.id}')">${ico('trash', 'tinted', 'Elimina definitivamente')}</button>
     </div>`).join('');
   return `<div class="cloud-section" style="margin-top:16px">
     <div style="flex:1">
-      <strong>🗑 Cestino — ${voci.length} ${voci.length === 1 ? 'elemento' : 'elementi'}</strong>
+      <strong>${ico('trash', 'tinted', '')} Cestino — ${voci.length} ${voci.length === 1 ? 'elemento' : 'elementi'}</strong>
       <p>Eliminazioni degli ultimi <strong>${TRASH_DAYS} giorni</strong>, recuperabili. Passata quella finestra spariscono da sole al caricamento successivo: il cestino non deve diventare il posto dove il database cresce senza che nessuno guardi.</p>
       <div style="display:flex;flex-direction:column;gap:6px;margin-top:8px">${righe}</div>
       <div style="margin-top:10px"><button class="btn-outline" style="color:var(--red);border-color:var(--red)" onclick="emptyTrashConfirm()">Svuota il cestino</button></div>
@@ -875,7 +875,7 @@ function renderDuplicateCodes() {
   if (!gruppi.length) {
     return `<div class="cloud-section" style="margin-top:16px">
       <div style="flex:1">
-        <strong>🔍 Controllo dati</strong>
+        <strong>${ico('search', 'tinted', '')} Controllo dati</strong>
         <p>Nessun codice articolo duplicato. È la condizione che l'import massivo dà per scontata: cercando un codice risolve sempre sul primo articolo trovato.</p>
       </div></div>`;
   }
@@ -885,12 +885,12 @@ function renderDuplicateCodes() {
       ${g.items.map(i => `<div style="display:flex;align-items:center;gap:8px;margin-top:4px">
           <span class="picker-type">${typeLabel(i.type)}</span>
           <span style="flex:1">${esc(i.name || '(senza nome)')}</span>
-          <button class="btn-ghost" onclick="editItemModal('${i.id}')">✏ Apri</button>
+          <button class="btn-ghost" onclick="editItemModal('${i.id}')">${ico('edit', 'tinted', '')} Apri</button>
         </div>`).join('')}
     </div>`).join('');
   return `<div class="cloud-section" style="border-color:${bordo};margin-top:16px">
     <div style="flex:1">
-      <strong style="color:var(--red)">🔍 Controllo dati — ${gruppi.length} codici duplicati</strong>
+      <strong style="color:var(--red)">${ico('search', 'tinted', '')} Controllo dati — ${gruppi.length} codici duplicati</strong>
       <p><strong>${quanti} articoli condividono ${gruppi.length} codici.</strong> L'import massivo cerca gli articoli per codice e risolve sempre sul primo trovato: reimportando un foglio, le righe di questi codici finiscono tutte sullo stesso articolo e le altre restano indietro, senza segnalazione.</p>
       <p>Vanno sciolti a mano: apri ciascun articolo e dagli un codice suo. L'app non li rinomina da sola — quel codice sta su disegni e ordini già emessi, e sceglierne uno al posto tuo sarebbe peggio del problema.</p>
       <div style="margin-top:10px;display:flex;flex-direction:column;gap:10px">${righe}</div>
@@ -968,7 +968,7 @@ function reconcileSession() {
 function wipeAll() {
   if (!roleGuard('manage')) return;
   const size = Store.sizeInfo();
-  openModal(`<h3>🧨 Azzera tutto</h3>
+  openModal(`<h3>${ico('warning', 'tinted pill', '')} Azzera tutto</h3>
     <p class="confirm-text">Il database verrà svuotato <strong>completamente</strong> e in modo <strong>irreversibile</strong>:
       ${db.items.length} articoli, ${db.rfqs.length} richieste, ${db.orders.length} ordini, ${(db.plans || []).length} piani
       (${size.mb} MB). Resti dentro come amministratore, tutto il resto sparisce.</p>
@@ -977,7 +977,7 @@ function wipeAll() {
       style="text-transform:uppercase;font-family:var(--mono);font-weight:700"></div>
     <div class="modal-actions">
       <button class="btn-ghost" onclick="closeModal()">Annulla</button>
-      <button class="btn-outline" onclick="exportBackup()">💾 Esporta backup ora</button>
+      <button class="btn-outline" onclick="exportBackup()">${ico('save', 'tinted', '')} Esporta backup ora</button>
       <button class="add-btn-sm btn-danger" onclick="wipeAllConfirm()">Azzera tutto</button>
     </div>`, false, 'confirm');
 }

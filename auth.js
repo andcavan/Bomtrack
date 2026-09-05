@@ -137,6 +137,9 @@ function logout() {
   stopClock();
   document.getElementById('app-header').style.display = 'none';
   document.getElementById('app-main').style.display = 'none';
+  // Il pannello sta fuori da #app-main: se non lo si spegne qui resta appeso
+  // sopra la schermata di accesso.
+  document.body.classList.remove('insp-on', 'insp-rail');
   document.getElementById('sub-nav').innerHTML = '';   // la seconda riga se ne va con l'intestazione
   document.getElementById('login-screen').style.display = 'flex';
   setVal('login-password', '');
@@ -178,7 +181,7 @@ function safeColor(c) { return /^#[0-9A-Fa-f]{6}$/.test(String(c || '')) ? c : '
 // Cambio password del proprio account
 function changePassword() {
   if (!currentUser) return;
-  openModal(`<h3>🔑 Cambia password</h3>
+  openModal(`<h3>${ico('key', 'tinted pill', '')} Cambia password</h3>
     <div class="modal-field"><label>Password attuale</label><input type="password" id="cp-old"></div>
     <div class="modal-field"><label>Nuova password</label><input type="password" id="cp-new"></div>
     <div class="modal-field"><label>Ripeti nuova password</label><input type="password" id="cp-new2"></div>

@@ -13,7 +13,7 @@
 // Revisione in esecuzione, mostrata accanto al logo. Va tenuta allineata alla
 // voce in cima a CHANGELOG.md (l'app si copia a mano tra PC: sapere
 // quale revisione sta girando su una postazione è l'unico modo per capirlo).
-const APP_VERSION = '0.47.10';
+const APP_VERSION = '0.55.0';
 
 let currentUser = null;      // utente della sessione (null = schermata di accesso)
 let currentBomId = null;     // articolo prodotto attualmente aperto nelle Distinte
@@ -627,10 +627,10 @@ function showPersistErrorModal(kind, info) {
          <p><strong>Le modifiche non vengono salvate.</strong> Esporta un backup e segnala il problema.</p>`;
   // Il backup contiene gli utenti: il pulsante compare solo a chi può esportarlo.
   const btnBackup = canWrite('manage')
-    ? `<button class="add-btn-sm" onclick="closeModal(); exportBackup()">⬇ Esporta backup JSON ora</button>` : '';
+    ? `<button class="add-btn-sm" onclick="closeModal(); exportBackup()">${ico('download', 'tinted', '')} Esporta backup JSON ora</button>` : '';
   // Chiave propria: l'avviso si affianca a quello che è aperto invece di
   // buttar via un form a metà compilazione.
-  openModal(`<h3>⚠ Salvataggio non riuscito</h3>${testo}
+  openModal(`<h3>${ico('warning', 'tinted pill', '')} Salvataggio non riuscito</h3>${testo}
     <div class="modal-actions"><button class="btn-ghost" onclick="closeModal()">Ho capito</button>${btnBackup}</div>`, false, 'avviso');
 }
 // Indicatore fisso nell'header finché c'è divergenza tra memoria e persistito.
@@ -683,13 +683,13 @@ function onAppError(kind, msg, err) {
   return rec;
 }
 function showAppErrorModal(rec) {
-  openModal(`<h3>⚠ Errore non previsto</h3>
+  openModal(`<h3>${ico('warning', 'tinted pill', '')} Errore non previsto</h3>
     <p>Qualcosa è andato storto mentre l'app disegnava la pagina: <strong>quello che vedi a schermo potrebbe essere incompleto</strong>. I dati salvati non sono stati toccati.</p>
     <p>Ricarica la pagina per tornare a uno stato pulito. Se l'errore si ripete, scarica il registro e allegalo alla segnalazione.</p>
     <p class="muted" style="font-family:var(--mono,monospace);font-size:12px">${esc(rec.msg)}</p>
     <div class="modal-actions">
       <button class="btn-ghost" onclick="closeModal()">Ho capito</button>
-      <button class="btn-ghost" onclick="downloadErrorLog()">⬇ Scarica registro errori</button>
+      <button class="btn-ghost" onclick="downloadErrorLog()">${ico('download', 'tinted', '')} Scarica registro errori</button>
       <button class="add-btn-sm" onclick="location.reload()">↻ Ricarica la pagina</button>
     </div>`, false, 'avviso');
 }
@@ -896,7 +896,7 @@ function stampLine(rec) {
   if (rec.createdAt) parts.push(`Creato${rec.createdBy ? ' da ' + esc(actorName(rec.createdBy)) : ''} il ${esc(fmtStamp(rec.createdAt))}`);
   if (rec.updatedAt && rec.updatedAt !== rec.createdAt) parts.push(`aggiornato${rec.updatedBy ? ' da ' + esc(actorName(rec.updatedBy)) : ''} il ${esc(fmtStamp(rec.updatedAt))}`);
   if (!parts.length) return '';
-  return `<p class="stamp-line">🕓 ${parts.join(' · ')}</p>`;
+  return `<p class="stamp-line">${ico('clock', 'tinted', '')} ${parts.join(' · ')}</p>`;
 }
 function confirmYes() {
   const fn = _confirmFn; _confirmFn = null;
@@ -938,6 +938,15 @@ if (typeof document !== 'undefined') {
     else if ((e.ctrlKey || e.metaKey) && (e.key === 'k' || e.key === 'K') && currentUser) {
       globalSearchModal(); e.preventDefault();
     }
+    // Ctrl+I: apre e chiude il pannello laterale, senza andare a cercare il
+    // pulsante ogni volta che serve un po' di larghezza in più.
+    else if ((e.ctrlKey || e.metaKey) && (e.key === 'i' || e.key === 'I') && currentUser) {
+      inspectorToggle(); e.preventDefault();
+    }
+    // Frecce, Invio ed Esc sull'elenco: li gestisce il pannello, che sa se c'è
+    // una riga scelta e se il fuoco è dentro un campo. Se non se ne occupa lui,
+    // i tasti restano al browser.
+    else if (currentUser && typeof inspectorKey === 'function' && inspectorKey(e)) e.preventDefault();
   });
   // Il Ctrl+P del browser deve trovare l'intestazione già compilata.
   // Riferimento differito: printHeadFill sta in uno script caricato dopo questo.

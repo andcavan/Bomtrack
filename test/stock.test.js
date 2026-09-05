@@ -492,7 +492,7 @@ describe('Documenti generati dal fabbisogno netto', () => {
 // La vista Magazzino non calcola niente di suo: mette in tabella stockIndex e
 // commitIndex. Quello che questi test proteggono è il **taglio** — chi entra
 // nell'elenco e chi no, e che il filtro «sotto scorta» dica la stessa cosa del
-// ⚠ sulla riga. Un filtro che seleziona righe diverse da quelle segnalate è
+// dall’icona di avviso sulla riga. Un filtro che seleziona righe diverse da quelle segnalate è
 // peggio di nessun filtro: fa credere di aver guardato.
 describe('Vista Magazzino', () => {
   function conParte() {
@@ -537,10 +537,10 @@ describe('Vista Magazzino', () => {
     assert.deepEqual(codici(disegna(a, { search: 'commerciale' })), ['C1']);
   });
 
-  it('«sotto la scorta minima» isola le stesse righe che portano il ⚠', () => {
+  it('«sotto la scorta minima» isola le stesse righe che portano l\x27avviso', () => {
     const a = app(conParte());
     const tutto = disegna(a);
-    assert.equal((tutto.match(/⚠/g) || []).length, 1, 'solo M2 ha una scorta minima non raggiunta');
+    assert.equal((tutto.match(/#ic-warning/g) || []).length, 1, 'solo M2 ha una scorta minima non raggiunta');
     assert.deepEqual(codici(disegna(a, { state: 'sotto' })), ['M2']);
   });
 
@@ -549,7 +549,7 @@ describe('Vista Magazzino', () => {
     a.eval('addMovement("m2", "carico", 50, "")');
     assert.deepEqual(codici(disegna(a, { state: 'sotto' })), [],
       'la scorta minima è raggiunta: non c\'è più niente da segnalare');
-    assert.ok(disegna(a, {}).indexOf('⚠') === -1);
+    assert.ok(disegna(a, {}).indexOf('#ic-warning') === -1);
   });
 
   it('«giacenza a zero» e «con giacenza» dividono l\'elenco in due', () => {
@@ -630,6 +630,80 @@ describe('Vista Magazzino', () => {
     a.el('mv-qty').value = '50';
     a.eval('saveStockAdjust("m1")');
     assert.equal((a.snapshot().movements || []).length, 0);
+  });
+});
+
+describe('Quando arriva, non solo che arriva', () => {
+  // L'in arrivo da solo non basta a nessuno che debba promettere una data: dire
+  // «c'è, arriva» a chi consegna il 30 giugno, quando il fornitore ha confermato
+  // per settembre, è la stessa cosa che non dirgli niente.
+  it('la merce attesa porta con sé la data confermata dal fornitore', () => {
+    const a = app();
+    ordine(a, { lines: [Object.assign(riga('c1', 10), { deliveryDate: '2026-08-20', confirmedDate: '2026-09-15' })] });
+    const arr = JSON.parse(a.eval('JSON.stringify(incomingEntro("c1", "2026-08-31"))'));
+    assert.equal(arr.inTempo, 0);
+    assert.equal(arr.tardivi.length, 1);
+    assert.equal(arr.tardivi[0].eta, '2026-09-15', 'vale la confermata, non quella che avevamo chiesto');
+    assert.equal(arr.tardivi[0].qty, 10);
+  });
+
+  it('senza conferma vale la data che abbiamo chiesto', () => {
+    const a = app();
+    ordine(a, { lines: [Object.assign(riga('c1', 10), { deliveryDate: '2026-08-20' })] });
+    assert.equal(a.eval('incomingEntro("c1", "2026-08-31").inTempo'), 10);
+  });
+
+  it('un arrivo senza data non è un ritardo: è un\'incognita, e si conta in tempo', () => {
+    const a = app();
+    ordine(a, { lines: [riga('c1', 10)] });
+    const arr = JSON.parse(a.eval('JSON.stringify(incomingEntro("c1", "2026-08-31"))'));
+    assert.equal(arr.inTempo, 10, 'contarlo tardivo farebbe rumore su ogni base dati senza date');
+    assert.deepEqual(arr.tardivi, []);
+  });
+
+  it('due ordini sullo stesso articolo si dividono fra in tempo e tardivi', () => {
+    const a = app();
+    ordine(a, { number: 'ODA-1', lines: [Object.assign(riga('c1', 4), { deliveryDate: '2026-08-01' })] });
+    ordine(a, { number: 'ODA-2', lines: [Object.assign(riga('c1', 6), { deliveryDate: '2026-12-01' })] });
+    const arr = JSON.parse(a.eval('JSON.stringify(incomingEntro("c1", "2026-08-31"))'));
+    assert.equal(arr.inTempo, 4);
+    assert.deepEqual(arr.tardivi.map(x => x.number), ['ODA-2']);
+    assert.equal(a.eval('incomingOf("c1")'), 10, 'la somma resta quella di sempre');
+  });
+
+  it('il ricevuto non è più atteso: sparisce dagli arrivi', () => {
+    const a = app();
+    ordine(a, { lines: [Object.assign(riga('c1', 10, 10), { deliveryDate: '2026-12-01' })] });
+    assert.deepEqual(JSON.parse(a.eval('JSON.stringify(incomingEntro("c1", "2026-08-31").tardivi)')), []);
+  });
+
+  it('senza data di riferimento tutto è in tempo', () => {
+    const a = app();
+    ordine(a, { lines: [Object.assign(riga('c1', 10), { deliveryDate: '2030-01-01' })] });
+    assert.equal(a.eval('incomingEntro("c1", "").inTempo'), 10, 'senza una data da rispettare non si è in ritardo');
+  });
+});
+
+describe('Chi impegna, e chi si guarda da fuori', () => {
+  function conDuePiani() {
+    const a = app();
+    a.eval(`db.plans = [
+      { id: 'pl1', number: 'PRD-1', lines: [{ id: 'a', itemId: 'c1', qty: 30 }], active: true },
+      { id: 'pl2', number: 'PRD-2', lines: [{ id: 'b', itemId: 'c1', qty: 20 }], active: true }]; saveDB();`);
+    return a;
+  }
+
+  it('un piano non fa concorrenza a sé stesso', () => {
+    const a = conDuePiani();
+    assert.equal(a.eval('committedOf("c1", "pl1")'), 20, 'resta solo quello che chiede l\'altro');
+    assert.equal(a.eval('committedOf("c1", null)'), 50);
+  });
+
+  it('e nemmeno un insieme di piani: due fogli della stessa domanda', () => {
+    const a = conDuePiani();
+    // È il caso della commessa: guarda dai suoi piani, tutti insieme.
+    assert.equal(a.eval('commitsOn("c1", new Set(["pl1","pl2"])).length'), 0);
+    assert.equal(a.eval('commitsOn("c1", ["pl1"]).length'), 1, 'anche una lista, non solo un Set');
   });
 });
 

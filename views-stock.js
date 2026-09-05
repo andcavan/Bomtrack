@@ -53,7 +53,7 @@ function stockIndex() {
   const idx = new Map();
   const tocca = id => {
     let e = idx.get(id);
-    if (!e) { e = { onHand: 0, incoming: 0 }; idx.set(id, e); }
+    if (!e) { e = { onHand: 0, incoming: 0, arrivi: [] }; idx.set(id, e); }
     return e;
   };
   (db.orders || []).forEach(o => {
@@ -70,7 +70,18 @@ function stockIndex() {
       if (ric) tocca(l.itemId).onHand += inGestione(ric);
       if (!attesa) return;
       const manca = (Number(l.qty) || 0) - ric;
-      if (manca > 0) tocca(l.itemId).incoming += inGestione(manca);
+      if (manca > 0) {
+        const e = tocca(l.itemId);
+        e.incoming += inGestione(manca);
+        // Non basta sapere CHE arriva: per dire a una commessa se il materiale
+        // c'è in tempo bisogna sapere QUANDO. La data è quella confermata dal
+        // fornitore se l'ha data, altrimenti quella che gli abbiamo chiesto: la
+        // stessa coppia che legge orderWorstDelay(). La quantità passa dalla
+        // stessa conversione dell'in arrivo, o si confronterebbero unità
+        // diverse e il ritardo scatterebbe a caso.
+        e.arrivi.push({ orderId: o.id, number: o.number || '', qty: inGestione(manca),
+          eta: l.confirmedDate || l.deliveryDate || '' });
+      }
     });
   });
   (db.movements || []).forEach(m => {
@@ -81,9 +92,28 @@ function stockIndex() {
   return idx;
 }
 function invalidateStock() { _stockIdx = null; _commitIdx = null; }
-function stockOf(itemId) { return stockIndex().get(itemId) || { onHand: 0, incoming: 0 }; }
+function stockOf(itemId) { return stockIndex().get(itemId) || { onHand: 0, incoming: 0, arrivi: [] }; }
 function onHandOf(itemId) { return stockOf(itemId).onHand; }
 function incomingOf(itemId) { return stockOf(itemId).incoming; }
+// Quanto di ciò che è in arrivo arriva ENTRO una data, e cosa arriva dopo.
+// Serve a distinguere due situazioni che il netto confonde: «non c'è e va
+// comprato» e «c'è, ma arriva dopo che serviva». La prima costa un lead time,
+// la seconda una telefonata al fornitore.
+//
+// Un arrivo senza data non è un ritardo: è un'incognita, e si conta in tempo.
+// Trattarlo come tardivo farebbe rumore su ogni base dati in cui le date degli
+// ordini non si compilano — stessa scelta di leadDaysOfRow(), che senza il dato
+// non inventa un anticipo.
+function incomingEntro(itemId, data) {
+  let inTempo = 0;
+  const tardivi = [];
+  (stockOf(itemId).arrivi || []).forEach(a => {
+    if (!data || !a.eta || a.eta <= data) inTempo += a.qty;
+    else tardivi.push(a);
+  });
+  tardivi.sort((a, b) => String(a.eta).localeCompare(String(b.eta)));
+  return { inTempo, tardivi };
+}
 
 // ─── Indice degli impegni ───
 // L'esistente da solo risponde alla domanda sbagliata. «Ce ne sono 100» non
@@ -123,8 +153,15 @@ function commitIndex() {
 // Chi impegna questo articolo, **escluso** il piano da cui si sta guardando:
 // un piano non fa concorrenza a sé stesso, e sottrargli il proprio fabbisogno
 // gli farebbe comprare tutto due volte.
-function commitsOn(itemId, exceptPlanId) {
-  return (commitIndex().get(itemId) || []).filter(c => c.planId !== exceptPlanId);
+// L'esclusione è un piano solo quando a guardare è una riga di fabbisogno (dal
+// suo piano), ma è un **insieme** quando a guardare è una commessa: due piani
+// della stessa commessa non si fanno concorrenza, sono la stessa domanda scritta
+// su due fogli. Senza questo, con 100 pz a magazzino e due piani che ne chiedono
+// 100 a testa, ognuno dei due si vedrebbe scoperto per colpa dell'altro.
+function commitsOn(itemId, except) {
+  const escl = except instanceof Set ? except
+    : new Set(Array.isArray(except) ? except : (except ? [except] : []));
+  return (commitIndex().get(itemId) || []).filter(c => !escl.has(c.planId));
 }
 function committedOf(itemId, exceptPlanId) {
   return commitsOn(itemId, exceptPlanId).reduce((s, c) => s + c.qty, 0);
@@ -218,7 +255,7 @@ function stockPanelHtml(it) {
   const elencoImp = imp.map(c => `${c.number}${c.title ? ' (' + c.title + ')' : ''}: ${fmtUom(c.qty, u)}`).join(' · ');
   return `<div class="cloud-section" style="margin-top:12px${sotto ? ';border-color:var(--red)' : ''}">
     <div style="flex:1">
-      <strong>📦 Magazzino</strong>
+      <strong>${ico('package', 'tinted', '')} Magazzino</strong>
       <div class="cost-summary" style="margin:8px 0">
         ${kpi('Esistente', fmtUom(s.onHand, u), sotto ? 'orange' : '')}
         ${kpi('In arrivo', fmtUom(s.incoming, u), 'accent')}
@@ -226,13 +263,13 @@ function stockPanelHtml(it) {
         ${kpi('Libero', fmtUom(libero, u), libero < 0 ? 'red' : '')}
         ${kpi('Scorta minima', fmtUom(safetyStockOf(it), u), '')}
       </div>
-      ${sotto ? '<p style="color:var(--red);margin:0 0 8px">⚠ Sotto la scorta minima.</p>' : ''}
-      ${libero < 0 ? '<p style="color:var(--red);margin:0 0 8px">⚠ I piani aperti ne hanno promesso più di quanto ne esista o ne sia in arrivo.</p>' : ''}
+      ${sotto ? '<p style="color:var(--red);margin:0 0 8px">' + ico('warning', 'tinted', '') + ' Sotto la scorta minima.</p>' : ''}
+      ${libero < 0 ? '<p style="color:var(--red);margin:0 0 8px">' + ico('warning', 'tinted', '') + ' I piani aperti ne hanno promesso più di quanto ne esista o ne sia in arrivo.</p>' : ''}
       <p class="empty-text" style="text-align:left;padding:0 0 8px">L'esistente è calcolato: <strong>ricevuto sugli ordini + movimenti</strong>. Non si scrive a mano — si registra una rettifica, così resta scritto anche perché è cambiato.</p>
       ${impQty > 0 ? `<p class="empty-text" style="text-align:left;padding:0 0 8px">Impegnato dai piani di fabbisogno <strong>aperti</strong>: ${esc(elencoImp)}. <em>Libero = esistente + in arrivo − impegnato</em>: è quanto se ne può ancora promettere. Chiudere un piano libera la sua quota.</p>` : ''}
       <div style="display:flex;gap:8px;flex-wrap:wrap">
-        <button class="btn-outline" onclick="stockAdjustModal('${it.id}')">✏ Rettifica giacenza</button>
-        <button class="btn-outline" onclick="stockMovementsModal('${it.id}')">🕘 Movimenti (${movementsOf(it.id).length})</button>
+        <button class="btn-outline" onclick="stockAdjustModal('${it.id}')">${ico('scale', 'tinted', '')} Rettifica giacenza</button>
+        <button class="btn-outline" onclick="stockMovementsModal('${it.id}')">${ico('clock', 'tinted', '')} Movimenti (${movementsOf(it.id).length})</button>
       </div>
     </div></div>`;
 }
@@ -241,7 +278,7 @@ function stockAdjustModal(itemId) {
   if (!roleGuard('catalog')) return;
   const it = getItem(itemId); if (!it || !hasStock(it)) return;
   const attuale = onHandOf(it.id);
-  openModal(`<h3>✏ Rettifica giacenza — ${esc(it.code)}</h3>
+  openModal(`<h3>${ico('scale', 'tinted pill', '')} Rettifica giacenza — ${esc(it.code)}</h3>
     <p>Esistente calcolato adesso: <strong>${fmtUom(attuale, itemUom(it))}</strong>.</p>
     <div class="modal-grid">
       <div class="modal-field"><label>Tipo</label><select id="mv-kind">
@@ -298,7 +335,7 @@ function stockMovementsModal(itemId) {
       <span class="empty-text" style="padding:0;width:90px">${esc(String(m.date || '').slice(0, 10))}</span>
       <span style="flex:1">${esc(m.note || '')}</span>
       <span style="font-family:var(--mono);color:${m.qty < 0 ? 'var(--red)' : 'var(--green)'}">${m.qty > 0 ? '+' : ''}${fmtUom(m.qty, u)}</span>
-      <button class="mini-btn danger" onclick="delMovement('${m.id}','${it.id}')" title="Elimina movimento">🗑</button>
+      <button class="mini-btn danger" onclick="delMovement('${m.id}','${it.id}')" title="Elimina movimento">${ico('trash', 'tinted', 'Elimina movimento')}</button>
     </div>`).join('');
   const righeOrd = ordini.map(o => {
     const q = (o.lines || []).filter(l => l.itemId === it.id).reduce((s, l) => s + (Number(l.received) || 0), 0);
@@ -310,7 +347,7 @@ function stockMovementsModal(itemId) {
       <span style="width:28px"></span>
     </div>`;
   }).join('');
-  openModal(`<h3>🕘 Movimenti — ${esc(it.code)} ${esc(it.name)}</h3>
+  openModal(`<h3>${ico('clock', 'tinted pill', '')} Movimenti — ${esc(it.code)} ${esc(it.name)}</h3>
     <p>Esistente: <strong>${fmtUom(onHandOf(it.id), u)}</strong>, in arrivo <strong>${fmtUom(incomingOf(it.id), u)}</strong>.</p>
     ${righeOrd ? `<h4 class="settings-group-title">Dai ricevimenti d'ordine</h4><div style="display:flex;flex-direction:column;gap:6px">${righeOrd}</div>
       <p class="empty-text" style="text-align:left;padding:6px 0 0">Queste righe si correggono sull'ordine, dove è registrato il ricevimento.</p>` : ''}
@@ -387,35 +424,35 @@ const STOCK_STATE_LABELS = {
 function stockRow(it) {
   const st = stockState(it);
   const u = itemUom(it);
-  const flags = `${it.favorite ? '<span class="pick-fav" title="Preferito">★</span>' : ''}${it.obsolete ? '<span class="obs-mark" title="Obsoleto">⛔</span>' : ''}`
-    + (st.sotto ? '<span title="Sotto la scorta minima">⚠</span>' : '');
-  const num = (v, colore) => `<td style="font-family:var(--mono);text-align:right${colore ? ';color:' + colore : ''}">${fmtQty(v)}</td>`;
+  const flags = `${it.favorite ? '<span class="pick-fav" title="Preferito">★</span>' : ''}${it.obsolete ? `<span class="obs-mark" title="Obsoleto">${ico('blocked', 'tinted', '')}</span>` : ''}`
+    + (st.sotto ? '<span title="Sotto la scorta minima">' + ico('warning', 'tinted', '') + '</span>' : '');
+  const num = (v, colore, col) => `<td class="col-${col}" style="font-family:var(--mono);text-align:right${colore ? ';color:' + colore : ''}">${fmtQty(v)}</td>`;
   const nMov = movementsOf(it.id).length;
-  return `<tr class="${it.obsolete ? 'row-obsolete' : ''}">
-    <td style="width:1%;white-space:nowrap">${flags}</td>
-    <td style="font-family:var(--mono)">${codeLink(it.id, it.code)}</td>
-    <td>${esc(it.name)}</td>
-    <td><span class="bom-type-tag tt-${it.type}">${typeShort(it.type)}</span> ${typeLabel(it.type)}</td>
-    <td style="color:var(--text-dim)">${esc(codingLabel(it) || familyLabel(it))}</td>
-    <td>${esc(u)}</td>
-    ${num(st.onHand, st.sotto ? 'var(--orange, #d90)' : '')}
-    ${num(st.incoming, st.incoming > 0 ? 'var(--accent)' : 'var(--text-dim)')}
-    ${num(st.committed, st.committed > 0 ? 'var(--orange, #d90)' : 'var(--text-dim)')}
-    ${num(st.libero, st.libero < 0 ? 'var(--red)' : '')}
-    ${num(st.safety, st.safety > 0 ? '' : 'var(--text-dim)')}
-    ${num(st.lotSize, st.lotSize > 0 ? '' : 'var(--text-dim)')}
-    <td style="text-align:right;white-space:nowrap">
-      <button class="mini-btn" title="Rettifica giacenza" onclick="stockAdjustModal('${it.id}')">⚖</button>
-      <button class="mini-btn" title="Movimenti (${nMov})" onclick="stockMovementsModal('${it.id}')">🕘</button>
-      <button class="mini-btn" title="Dove è usato e impatto costi" onclick="usageModal('${it.id}')">🔗</button>
-      <button class="mini-btn" onclick="editItemModal('${it.id}')">✏</button>
+  return `<tr data-sel="${it.id}" class="${it.obsolete ? 'row-obsolete' : ''}">
+    <td class="col-flags" style="width:1%;white-space:nowrap">${flags}</td>
+    <td class="col-code" style="font-family:var(--mono)">${codeLink(it.id, it.code)}</td>
+    <td class="col-name">${esc(it.name)}</td>
+    <td class="col-type"><span class="bom-type-tag tt-${it.type}">${typeShort(it.type)}</span> ${typeLabel(it.type)}</td>
+    <td class="col-family" style="color:var(--text-dim)">${esc(codingLabel(it) || familyLabel(it))}</td>
+    <td class="col-uom">${esc(u)}</td>
+    ${num(st.onHand, st.sotto ? 'var(--orange, #d90)' : '', 'onhand')}
+    ${num(st.incoming, st.incoming > 0 ? 'var(--accent)' : 'var(--text-dim)', 'incoming')}
+    ${num(st.committed, st.committed > 0 ? 'var(--orange, #d90)' : 'var(--text-dim)', 'committed')}
+    ${num(st.libero, st.libero < 0 ? 'var(--red)' : '', 'free')}
+    ${num(st.safety, st.safety > 0 ? '' : 'var(--text-dim)', 'safety')}
+    ${num(st.lotSize, st.lotSize > 0 ? '' : 'var(--text-dim)', 'lot')}
+    <td class="row-actions" style="text-align:right;white-space:nowrap">
+      <button class="mini-btn" title="Rettifica giacenza" onclick="stockAdjustModal('${it.id}')">${ico('scale', 'tinted', 'Rettifica giacenza')}</button>
+      <button class="mini-btn" title="Movimenti (${nMov})" onclick="stockMovementsModal('${it.id}')">${ico('clock', 'tinted', 'Movimenti di magazzino')}</button>
+      <button class="mini-btn" title="Dove è usato e impatto costi" onclick="usageModal('${it.id}')">${ico('link', 'tinted', 'Dove è usato e impatto costi')}</button>
+      <button class="mini-btn" title="Modifica articolo" onclick="editItemModal('${it.id}')">${ico('edit', 'tinted', 'Modifica articolo')}</button>
     </td></tr>`;
 }
 
 // Le righe che la vista mostra, filtrate e ordinate. Sta fuori dal disegno
 // perché la serve anche l'export: se il filtro fosse scritto due volte, prima o
 // poi il file esportato conterrebbe righe diverse da quelle guardate.
-function stockFilteredRows() {
+function stockFilteredRows(soloIds) {
   const leggi = k => (document.getElementById(STOCK_PFX + '-' + k) || {}).value || '';
   const q = leggi('search').toLowerCase();
   const ft = leggi('type'), ff = leggi('family'), fsf = leggi('subfamily'), fs = leggi('state');
@@ -428,6 +465,10 @@ function stockFilteredRows() {
   if (q) rows = rows.filter(i => (i.code + ' ' + i.name).toLowerCase().includes(q));
   const statoOk = STOCK_STATE_FILTERS[fs];
   if (statoOk) rows = rows.filter(i => statoOk(stockState(i)));
+  // La scelta fatta a mano vale come un filtro, e si applica per ultima:
+  // esportare la selezione deve dare le righe scelte, non quelle scelte più
+  // quelle che il filtro avrebbe aggiunto.
+  if (soloIds && soloIds.length) rows = rows.filter(i => soloIds.includes(i.id));
   return rows.sort((a, b) => (a.code || '').localeCompare(b.code || ''));
 }
 
@@ -456,12 +497,14 @@ function renderStock() {
   ].join('');
 
   const { groups, keys } = catalogGroups(rows);
-  const head = `<thead><tr><th></th><th>Codice</th><th>Nome</th><th>Tipo</th><th>Famiglia</th><th>U.M.</th>
-    <th style="text-align:right" title="Ricevuto sugli ordini più i movimenti">Esistente</th>
-    <th style="text-align:right" title="Atteso da ordini inviati, confermati o parziali">In arrivo</th>
-    <th style="text-align:right" title="Promesso dai piani di fabbisogno aperti">Impegnato</th>
-    <th style="text-align:right" title="Esistente + in arrivo − impegnato: quanto se ne può ancora promettere">Libero</th>
-    <th style="text-align:right">Scorta min.</th><th style="text-align:right">Lotto</th><th></th></tr></thead>`;
+  const head = `<thead><tr><th class="col-flags"></th><th class="col-code">Codice</th><th class="col-name">Nome</th>
+    <th class="col-type">Tipo</th><th class="col-family">Famiglia</th><th class="col-uom">U.M.</th>
+    <th class="col-onhand" style="text-align:right" title="Ricevuto sugli ordini più i movimenti">Esistente</th>
+    <th class="col-incoming" style="text-align:right" title="Atteso da ordini inviati, confermati o parziali">In arrivo</th>
+    <th class="col-committed" style="text-align:right" title="Promesso dai piani di fabbisogno aperti">Impegnato</th>
+    <th class="col-free" style="text-align:right" title="Esistente + in arrivo − impegnato: quanto se ne può ancora promettere">Libero</th>
+    <th class="col-safety" style="text-align:right">Scorta min.</th><th class="col-lot" style="text-align:right">Lotto</th>
+    <th class="row-actions"></th></tr></thead>`;
   // Stessa paginazione dell'anagrafica, e stessa regola sul titolo: dice quanti
   // articoli contiene il gruppo per intero anche quando ne disegna solo i primi.
   let restanti = stockLimit;
@@ -486,16 +529,21 @@ function renderStock() {
   tabella.innerHTML = rows.length ? html + piu
     : `<div class="empty-text">${tutti.length ? 'Nessun articolo con questi filtri.' : 'Nessun articolo a magazzino: qui compaiono commerciali, materie prime e parti.'}</div>`;
   a11yFields(tabella);
+  colsMountButton('stock');
+  colsApply();
+  // La tabella si riscrive per intero a ogni filtro: il pannello rimette
+  // l’evidenza sulla riga scelta, e la lascia cadere se quella riga non c’è più.
+  inspectorSync();
 }
 
 // ─── Export ───
 // Le stesse righe e le stesse colonne che si stanno guardando. Il limite di
 // disegno (`stockLimit`) non entra qui: difende il ridisegno, non il contenuto.
-function stockExportSpec() {
+function stockExportSpec(soloIds) {
   const leggi = k => (document.getElementById(STOCK_PFX + '-' + k) || {}).value || '';
   const fam = getFamily(leggi('family'));
   const sub = (fam && (fam.subs || []).find(s => s.id === leggi('subfamily'))) || null;
-  const righe = stockFilteredRows().map(it => {
+  const righe = stockFilteredRows(soloIds).map(it => {
     const st = stockState(it);
     return [it.code || '', it.name || '', typeLabel(it.type), codingLabel(it) || familyLabel(it),
       itemUom(it), st.onHand, st.incoming, st.committed, st.libero, st.safety, st.lotSize];
@@ -509,6 +557,7 @@ function stockExportSpec() {
       ['Famiglia', fam ? fam.name : ''],
       ['Sottofamiglia', sub ? sub.name : ''],
       ['Stato', STOCK_STATE_LABELS[leggi('state')] || ''],
+      ['Selezione', soloIds && soloIds.length ? soloIds.length + ' righe scelte a mano' : ''],
     ],
     sezioni: [{
       nome: 'Magazzino',

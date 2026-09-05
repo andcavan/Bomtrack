@@ -98,7 +98,7 @@ function priceListModal(id) {
   const it = getItem(id); if (!it) return;
   if (!hasPriceList(it)) { showToast('Il listino vale solo per commerciali e materie prime', 'error'); return; }
   window.__priceItemId = id;
-  openModal(`<h3>💶 Listino fornitori — ${esc(it.code)}</h3>
+  openModal(`<h3>${ico('euro', 'tinted pill', '')} Listino fornitori — ${esc(it.code)}</h3>
     <p style="color:var(--text-dim);margin-bottom:14px">${esc(it.name)} · ${typeLabel(it.type)}</p>
     <div id="pricelist-body">${priceListBody(id)}</div>
     <div class="modal-actions"><button class="btn-ghost" onclick="closeModal()">Chiudi</button></div>`, true, 'listino');
@@ -140,7 +140,7 @@ function priceListBody(id) {
       <td><input type="date" class="pl-date" value="${esc(r.date || '')}" ${ro} onchange="priceSetField('${r.id}','date',this.value)"></td>
       <td class="pl-act">
         ${attiva ? '' : `<button class="mini-btn" title="Usa questo prezzo nella costificazione" onclick="priceUseRow('${r.id}')">✓ Usa</button>`}
-        <button class="mini-btn danger" title="Elimina la voce" onclick="priceDelRow('${r.id}')">🗑</button>
+        <button class="mini-btn danger" title="Elimina la voce" onclick="priceDelRow('${r.id}')">${ico('trash', 'tinted', 'Elimina la voce')}</button>
       </td></tr>`;
   }).join('');
 
@@ -308,7 +308,7 @@ function rfqRecordPrices(id) {
 function usageModal(id) {
   const it = getItem(id); if (!it) return;
   window.__usageItemId = id;
-  openModal(`<h3>🔗 Dove è usato — ${esc(it.code)}</h3>
+  openModal(`<h3>${ico('link', 'tinted pill', '')} Dove è usato — ${esc(it.code)}</h3>
     <p style="color:var(--text-dim);margin-bottom:14px">${esc(it.name)} · ${typeLabel(it.type)}</p>
     ${usageWhatIfField(it)}
     <div id="usage-body">${usageBody(id)}</div>
@@ -351,7 +351,7 @@ function usageBody(id) {
       <td>${esc(r.item.name)}</td>
       <td><span class="bom-type-tag tt-${r.item.type}">${typeShort(r.item.type)}</span> ${typeLabel(r.item.type)}</td>
       <td style="text-align:right;font-family:var(--mono)">${fmtQty(r.qty)}</td>
-      <td style="text-align:right"><button class="mini-btn" title="Apri qui" onclick="usageModal('${r.item.id}')">🔗</button></td>
+      <td style="text-align:right"><button class="mini-btn" title="Apri qui" onclick="usageModal('${r.item.id}')">${ico('link', 'tinted', 'Apri qui')}</button></td>
     </tr>`).join('')}</tbody></table>`;
 
   if (!cime.length) return tabDiretti;
@@ -459,9 +459,10 @@ function toggleFavFilter() {
 function itemBadges(i) {
   if (!i) return '';
   return (i.favorite ? ' <span class="pick-fav" title="Preferito">★</span>' : '')
-    + (i.obsolete ? ' <span class="obs-mark" title="Articolo obsoleto">⛔</span>' : '');
+    + (i.obsolete ? ' <span class="obs-mark" title="Articolo obsoleto">' + ico('blocked', 'tinted') + '</span>' : '');
 }
-// Variante testuale per i menu a tendina (<option> non ammette HTML).
+// Variante testuale per i menu a tendina: dentro un <option> non entra né HTML
+// né un’icona, quindi qui il simbolo resta un carattere.
 function itemBadgesTxt(i) {
   if (!i) return '';
   return (i.favorite ? '★ ' : '') + (i.obsolete ? '⛔ ' : '');
@@ -497,24 +498,24 @@ function catalogRow(i) {
   const unit = itemUnitCost(i);
   const meta = catalogMeta(i);
   // Indicatori a sinistra, di sola visione (i flag si impostano nella scheda articolo)
-  const flags = `${i.favorite ? '<span class="pick-fav" title="Preferito">★</span>' : ''}${i.obsolete ? '<span class="obs-mark" title="Obsoleto">⛔</span>' : ''}`
-    + (i.type === 'parte' && partSourcing(i) === 'buy' ? '<span class="buy-mark" title="Parte acquistata da fornitore">🛒</span>' : '');
-  return `<tr class="${i.obsolete ? 'row-obsolete' : ''}">
-    <td style="width:1%;white-space:nowrap">${flags}</td>
-    <td style="font-family:var(--mono)">${codeLink(i.id, i.code)}</td>
-    <td>${esc(i.name)}</td>
-    <td><span class="bom-type-tag tt-${i.type}">${typeShort(i.type)}</span> ${typeLabel(i.type)}</td>
-    <td style="color:var(--text-dim)">${esc(codingLabel(i) || familyLabel(i))}</td>
-    <td>${esc(i.uom || '')}</td>
-    <td style="font-family:var(--mono)">${fmtN(unit)}</td>
-    <td style="color:var(--text-dim)">${esc(meta)}</td>
-    <td style="text-align:right;white-space:nowrap">
-      ${hasPriceList(i) ? `<button class="mini-btn" title="Listino fornitori e storico prezzi" onclick="priceListModal('${i.id}')">💶</button>` : ''}
-      ${i.type === 'parte' ? `<button class="mini-btn" title="Distinta parte e ciclo di lavorazione" onclick="openCycleFor('${i.id}')">🔧</button>` : ''}
-      <button class="mini-btn" title="Dove è usato e impatto costi" onclick="usageModal('${i.id}')">🔗</button>
-      <button class="mini-btn" onclick="editItemModal('${i.id}')">✏</button>
-      <button class="mini-btn" title="Duplica" onclick="duplicateItemModal('${i.id}')">📋</button>
-      <button class="mini-btn danger" onclick="delItem('${i.id}')">🗑</button>
+  const flags = `${i.favorite ? '<span class="pick-fav" title="Preferito">★</span>' : ''}${i.obsolete ? `<span class="obs-mark" title="Obsoleto">${ico('blocked', 'tinted')}</span>` : ''}`
+    + (i.type === 'parte' && partSourcing(i) === 'buy' ? `<span class="buy-mark" title="Parte acquistata da fornitore">${ico('cart', 'tinted')}</span>` : '');
+  return `<tr data-sel="${i.id}" class="${i.obsolete ? 'row-obsolete' : ''}">
+    <td class="col-flags" style="width:1%;white-space:nowrap">${flags}</td>
+    <td class="col-code" style="font-family:var(--mono)">${codeLink(i.id, i.code)}</td>
+    <td class="col-name">${esc(i.name)}</td>
+    <td class="col-type"><span class="bom-type-tag tt-${i.type}">${typeShort(i.type)}</span> ${typeLabel(i.type)}</td>
+    <td class="col-family" style="color:var(--text-dim)">${esc(codingLabel(i) || familyLabel(i))}</td>
+    <td class="col-uom">${esc(i.uom || '')}</td>
+    <td class="col-cost" style="font-family:var(--mono)">${fmtN(unit)}</td>
+    <td class="col-meta" style="color:var(--text-dim)">${esc(meta)}</td>
+    <td class="row-actions" style="text-align:right;white-space:nowrap">
+      ${hasPriceList(i) ? `<button class="mini-btn" title="Listino fornitori e storico prezzi" onclick="priceListModal('${i.id}')">${ico('euro', 'tinted', 'Listino fornitori e storico prezzi')}</button>` : ''}
+      ${i.type === 'parte' ? `<button class="mini-btn" title="Distinta parte e ciclo di lavorazione" onclick="openCycleFor('${i.id}')">${ico('wrench', 'tinted', 'Distinta parte e ciclo di lavorazione')}</button>` : ''}
+      <button class="mini-btn" title="Dove è usato e impatto costi" onclick="usageModal('${i.id}')">${ico('link', 'tinted', 'Dove è usato e impatto costi')}</button>
+      <button class="mini-btn" title="Modifica articolo" onclick="editItemModal('${i.id}')">${ico('edit', 'tinted', 'Modifica articolo')}</button>
+      <button class="mini-btn" title="Duplica" onclick="duplicateItemModal('${i.id}')">${ico('copy', 'tinted', 'Duplica')}</button>
+      <button class="mini-btn danger" title="Elimina articolo" onclick="delItem('${i.id}')">${ico('trash', 'tinted', 'Elimina articolo')}</button>
     </td></tr>`;
 }
 // ─── Quante righe disegnare per volta ───
@@ -556,7 +557,7 @@ function catalogGroups(rows) {
 // Gli articoli che la vista mostra, filtrati e ordinati. Come per il magazzino
 // sta fuori dal disegno: l'export deve dare esattamente queste righe, e un
 // filtro scritto due volte prima o poi dice due cose diverse.
-function catalogFilteredRows(scope) {
+function catalogFilteredRows(scope, soloIds) {
   const sc = CATALOG_SCOPES[scope]; if (!sc) return [];
   const leggi = k => (document.getElementById(sc.pfx + '-' + k) || {}).value || '';
   const q = leggi('search').toLowerCase();
@@ -567,6 +568,10 @@ function catalogFilteredRows(scope) {
   if (ff) rows = rows.filter(i => usesFamily(i.type) && i.familyId === ff);
   if (fsf) rows = rows.filter(i => i.subFamilyId === fsf);
   if (q) rows = rows.filter(i => (i.code + ' ' + i.name).toLowerCase().includes(q));
+  // La scelta fatta a mano è un filtro come gli altri, ma applicato per ultimo:
+  // esportare la selezione deve dare le righe scelte, non le righe scelte più
+  // quelle che il filtro avrebbe aggiunto.
+  if (soloIds && soloIds.length) rows = rows.filter(i => soloIds.includes(i.id));
   return rows.sort((a, b) => (a.code || '').localeCompare(b.code || ''));
 }
 function renderCatalog(scope) {
@@ -580,8 +585,10 @@ function renderCatalog(scope) {
 
   // «Costo un.» è per una unità dell'articolo, cioè nella U.M. della colonna
   // accanto: si dice in intestazione, una volta, invece che su ogni riga.
-  const head = `<thead><tr><th></th><th>Codice</th><th>Nome</th><th>Tipo</th><th>Famiglia</th><th>U.M.</th>
-    <th title="Costo di una unità, nella U.M. della colonna accanto">Costo un. (${esc(cur())}/U.M.)</th><th>Dettaglio</th><th></th></tr></thead>`;
+  const head = `<thead><tr><th class="col-flags"></th><th class="col-code">Codice</th><th class="col-name">Nome</th>
+    <th class="col-type">Tipo</th><th class="col-family">Famiglia</th><th class="col-uom">U.M.</th>
+    <th class="col-cost" title="Costo di una unità, nella U.M. della colonna accanto">Costo un. (${esc(cur())}/U.M.)</th>
+    <th class="col-meta">Dettaglio</th><th class="row-actions"></th></tr></thead>`;
   // Si riempiono i gruppi nell'ordine di visualizzazione finché c'è spazio.
   // Il titolo dice sempre quanti articoli contiene il gruppo per intero, anche
   // quando ne sono disegnati solo i primi: il conteggio non deve mentire.
@@ -606,18 +613,23 @@ function renderCatalog(scope) {
   const tabella = document.getElementById(pfx + '-table');
   tabella.innerHTML = rows.length ? html + piu : '<div class="empty-text">Nessun articolo trovato.</div>';
   a11yFields(tabella);
+  colsMountButton(scope);
+  colsApply();
+  // La tabella si riscrive per intero a ogni filtro: il pannello rimette
+  // l’evidenza sulla riga scelta, e la lascia cadere se quella riga non c’è più.
+  inspectorSync();
 }
 // ─── Export dell'anagrafica ───
 // È l'elenco che si sta guardando, non il template d'import: quello resta
 // `exportCatalogXlsx` in Gestione, con tutte le colonne e i fogli di contorno.
 // Sono due cose diverse e vanno tenute diverse — chi esporta da qui vuole le
 // righe che ha davanti, non un file da ricaricare.
-function catalogExportSpec(scope) {
+function catalogExportSpec(scope, soloIds) {
   const sc = CATALOG_SCOPES[scope] || CATALOG_SCOPES.buy;
   const leggi = k => (document.getElementById(sc.pfx + '-' + k) || {}).value || '';
   const fam = getFamily(leggi('family'));
   const sub = (fam && (fam.subs || []).find(s => s.id === leggi('subfamily'))) || null;
-  const righe = catalogFilteredRows(scope).map(i => [
+  const righe = catalogFilteredRows(scope, soloIds).map(i => [
     i.code || '', i.name || '', typeLabel(i.type), codingLabel(i) || familyLabel(i),
     i.uom || '', +(itemUnitCost(i) || 0).toFixed(4), catalogMeta(i),
   ]);
@@ -630,6 +642,7 @@ function catalogExportSpec(scope) {
       ['Famiglia', fam ? fam.name : ''],
       ['Sottofamiglia', sub ? sub.name : ''],
       ['Preferiti', scope === 'buy' && favOnly ? 'solo i preferiti' : ''],
+      ['Selezione', soloIds && soloIds.length ? soloIds.length + ' righe scelte a mano' : ''],
     ],
     sezioni: [{
       nome: scope === 'buy' ? 'Acquisti' : 'Progetto',
@@ -655,7 +668,7 @@ const TYPE_OPTION_LABELS = {
 // porte sullo stesso dato lo storico dei prezzi resterebbe pieno di buchi.
 function itemPricingSummary(it) {
   const apri = it
-    ? `<button class="btn-outline" style="margin-left:8px" onclick="closeModal();priceListModal('${it.id}')">💶 Apri il listino</button>`
+    ? `<button class="btn-outline" style="margin-left:8px" onclick="closeModal();priceListModal('${it.id}')">${ico('euro', 'tinted', '')} Apri il listino</button>`
     : '';
   if (!it) return `<span class="empty-text" style="padding:0">Fornitore e prezzo si inseriscono nel <strong>listino fornitori</strong>, che si apre da solo appena l'articolo è creato.</span>`;
   const campo = costField(it);
@@ -678,7 +691,7 @@ function itemModalBody(it, scope) {
   const t = it ? it.type : sc.types[0];
   const sourcePicker = it ? '' : `
     <div class="modal-field"><label>Parti da (opzionale)</label>
-      <input type="text" id="src-search" class="search" placeholder="🔍 Duplica da un articolo esistente..." oninput="debounced('src', renderSourceResults)" autocomplete="off">
+      <input type="text" id="src-search" class="search" placeholder="Duplica da un articolo esistente..." oninput="debounced('src', renderSourceResults)" autocomplete="off">
       <div id="src-results" class="picker-results"></div>
     </div>`;
   // In modifica il tipo è bloccato: resta l'unica voce dell'articolo, qualunque sia lo scope
@@ -719,15 +732,15 @@ function itemModalBody(it, scope) {
     <div class="modal-field" id="fld-cycle">
       <label>Distinta parte e ciclo di lavorazione</label>
       <span class="empty-text" style="padding:0">${it
-        ? `${cycleCountLabel(it)} — si gestiscono nella vista <strong>🔧 Cicli di lavorazione</strong>.
-           <button class="btn-outline" style="margin-left:8px" onclick="closeModal();openCycleFor('${it.id}')">🔧 Apri il ciclo</button>`
-        : 'Si gestiscono nella vista <strong>🔧 Cicli di lavorazione</strong>, dopo aver creato l\'articolo.'}</span>
+        ? `${cycleCountLabel(it)} — si gestiscono nella vista <strong>${ico('wrench', 'tinted')} Cicli di lavorazione</strong>.
+           <button class="btn-outline" style="margin-left:8px" onclick="closeModal();openCycleFor('${it.id}')">${ico('wrench', 'tinted', '')} Apri il ciclo</button>`
+        : `Si gestiscono nella vista <strong>${ico('wrench', 'tinted')} Cicli di lavorazione</strong>, dopo aver creato l'articolo.`}</span>
     </div>
     <div class="modal-grid" id="fld-flags">
       <div class="modal-field" id="fld-flag-fav"><label>Preferito</label>
         <label class="flag-check"><input type="checkbox" id="it-favorite" ${it && it.favorite ? 'checked' : ''}> ★ Segna come preferito</label></div>
       <div class="modal-field" id="fld-flag-obs"><label>Obsoleto</label>
-        <label class="flag-check"><input type="checkbox" id="it-obsolete" ${it && it.obsolete ? 'checked' : ''}> ⛔ Articolo obsoleto (non più utilizzabile)</label></div>
+        <label class="flag-check"><input type="checkbox" id="it-obsolete" ${it && it.obsolete ? 'checked' : ''}> ${ico('blocked', 'tinted')} Articolo obsoleto (non più utilizzabile)</label></div>
     </div>
     <div class="modal-grid" id="fld-altuom">
       <div class="modal-field"><label>U.M. d'acquisto (se diversa)</label>
@@ -948,10 +961,10 @@ function cycleRowLabel(row) {
   if (row.kind === 'op') {
     const wc = getWorkCenter(row.workCenterId);
     // Nella tabella delle fasi il tipo è già dato dalla sezione: basta il centro di lavoro
-    return `🔧 ${esc(wc ? wc.name : '?')}`;
+    return `${ico('wrench', 'tinted')} ${esc(wc ? wc.name : '?')}`;
   }
   const it = getItem(row.itemId);
-  if (!it) return '⚠ articolo mancante';
+  if (!it) return ico('warning', 'tinted') + ' articolo mancante';
   return `<span class="bom-type-tag tt-${it.type}">${typeShort(it.type)}</span>
     <span class="cycle-code">${codeLink(it.id, it.code)}</span> ${esc(it.name)}${itemBadges(it)}`;
 }
@@ -1008,15 +1021,15 @@ function currentCycleItem() {
 // costruisce il ciclo — e vedere le righe senza sapere se contano sarebbe
 // fuorviante. La scelta si fa nella scheda articolo, non qui: un solo posto.
 function cycleSourcingNote(it) {
-  const apri = `<button class="mini-btn" style="margin-left:8px" onclick="editItemModal('${it.id}')">✏ Scheda articolo</button>`;
+  const apri = `<button class="mini-btn" style="margin-left:8px" onclick="editItemModal('${it.id}')">${ico('edit', 'tinted', '')} Scheda articolo</button>`;
   if (partSourcing(it) === 'buy') {
     const forn = supplierName(it.supplierId);
-    return `<div class="cycle-note">🛒 <strong>Parte acquistata</strong>${forn ? ' da ' + esc(forn) : ' (nessun fornitore a listino)'}:
+    return `<div class="cycle-note">${ico('cart', 'tinted')} <strong>Parte acquistata</strong>${forn ? ' da ' + esc(forn) : ' (nessun fornitore a listino)'}:
       il costo è il prezzo scelto nel listino. Distinta e ciclo qui sotto restano documentali — non concorrono al costo e nel
       fabbisogno non vengono esplosi.${apri}</div>`;
   }
   const vuoto = !(it.cycle || []).length;
-  return `<div class="cycle-note">🏭 <strong>Parte prodotta in casa</strong>: il costo lo determinano la distinta parte e il ciclo
+  return `<div class="cycle-note">${ico('factory', 'tinted')} <strong>Parte prodotta in casa</strong>: il costo lo determinano la distinta parte e il ciclo
     qui sotto.${vuoto ? ' Finché sono vuoti vale il prezzo a listino.' : ''}${apri}</div>`;
 }
 
@@ -1038,7 +1051,7 @@ function renderCycles() {
     document.getElementById('cyc-summary').innerHTML = '';
     body.innerHTML = `<div class="empty-text">${partItems().length
       ? 'Nessuna parte con questi filtri.'
-      : 'Nessuna parte a catalogo. Creane una in <strong>📇 Anagrafica → Progetto → + Nuovo articolo</strong>.'}</div>`;
+      : `Nessuna parte a catalogo. Creane una in <strong>${ico('contacts', 'tinted')} Anagrafica → Progetto → + Nuovo articolo</strong>.`}</div>`;
     return;
   }
   renderCycleSummary(it);
@@ -1049,7 +1062,7 @@ function renderCycles() {
     ${cycleSourcingNote(it)}
     <div class="cycle-section">
       <div class="cycle-section-head">
-        <h3>📦 Distinta parte <span class="cycle-dim">${bomRows.length} ${bomRows.length === 1 ? 'articolo' : 'articoli'}</span></h3>
+        <h3>${ico('package', 'tinted pill', '')} Distinta parte <span class="cycle-dim">${bomRows.length} ${bomRows.length === 1 ? 'articolo' : 'articoli'}</span></h3>
         <button class="add-btn-sm" onclick="addCycleItemRow()">+ Articolo</button>
       </div>
       <div class="cycle-box">${cycleBomTable(bomRows)}</div>
@@ -1057,7 +1070,7 @@ function renderCycles() {
     </div>
     <div class="cycle-section">
       <div class="cycle-section-head">
-        <h3>🔧 Ciclo di lavorazione <span class="cycle-dim">${opRows.length} ${opRows.length === 1 ? 'fase' : 'fasi'}</span></h3>
+        <h3>${ico('wrench', 'tinted pill', '')} Ciclo di lavorazione <span class="cycle-dim">${opRows.length} ${opRows.length === 1 ? 'fase' : 'fasi'}</span></h3>
         <button class="add-btn-sm" onclick="addCycleOpRow()">+ Lavorazione</button>
       </div>
       <div class="cycle-box">${cycleOpsTable(opRows)}</div>
@@ -1078,7 +1091,7 @@ function renderCycleSummary(it) {
     kpi('Lavorazioni', fmtPer(opsTot, u), 'green'),
     kpi('Costo unitario a mano', fmtPer(Number(it.unitCost) || 0, u), 'purple'),
     kpi('Costo parte', fmtPer(c.total, u), ''),
-  ].join('') + (c.cycle ? '<div class="empty-text" style="color:var(--red)">⚠ Rilevato riferimento ciclico: una riga risale a questa stessa parte.</div>' : '');
+  ].join('') + (c.cycle ? '<div class="empty-text" style="color:var(--red)">' + ico('warning', 'tinted') + ' Rilevato riferimento ciclico: una riga risale a questa stessa parte.</div>' : '');
 }
 function cycleBomTable(bomRows) {
   if (!bomRows.length) return '<div class="empty-text" style="padding:8px 0">Nessun articolo. Usa "+ Articolo" per aggiungere commerciali e materie prime.</div>';
@@ -1098,7 +1111,7 @@ function cycleBomTable(bomRows) {
         placeholder="${cycleRowComputed(r).toFixed(2)}" title="Lascia vuoto per usare il costo calcolato"
         onchange="updateCycleRow(${i})" id="cyc-ovr-${i}">
       <span class="num cost" id="cyc-cost-${i}">${fmtN(cycleRowCost(r))}</span>
-      <button class="mini-btn danger" title="Elimina" onclick="delCycleRow(${i})">🗑</button>
+      <button class="mini-btn danger" title="Elimina" onclick="delCycleRow(${i})">${ico('trash', 'tinted', 'Elimina')}</button>
     </div>`;
   }).join('');
 }
@@ -1119,7 +1132,7 @@ function cycleOpsTable(opRows) {
         <button class="mini-btn" title="Sposta su" onclick="moveCycleOp(${k},-1)" ${k === 0 ? 'disabled' : ''}>↑</button>
         <button class="mini-btn" title="Sposta giù" onclick="moveCycleOp(${k},1)" ${k === last ? 'disabled' : ''}>↓</button>
       </span>
-      <button class="mini-btn danger" title="Elimina" onclick="delCycleRow(${i})">🗑</button>
+      <button class="mini-btn danger" title="Elimina" onclick="delCycleRow(${i})">${ico('trash', 'tinted', 'Elimina')}</button>
     </div>`).join('');
 }
 // ─── Export del ciclo aperto ───
@@ -1240,7 +1253,7 @@ function addCycleItemRow() {
     showToast('Nessun commerciale o materia prima a catalogo.', 'error'); return;
   }
   box.innerHTML = `<div class="cycle-picker-box">
-    <input type="text" id="cycpick-search" class="search" placeholder="🔍 Cerca codice o nome..." oninput="debounced('cycpick', renderCyclePickerResults)" autocomplete="off">
+    <input type="text" id="cycpick-search" class="search" placeholder="Cerca codice o nome..." oninput="debounced('cycpick', renderCyclePickerResults)" autocomplete="off">
     <div id="cycpick-results" class="picker-results"></div>
     <div class="cycle-actions"><button class="btn-ghost" onclick="closeCyclePicker()">Annulla</button></div>
   </div>`;
@@ -1313,7 +1326,7 @@ function newItemModal(scope) {
   window.__dupSourceId = null;
   window.__editingItemId = null;
   window.__itemScope = scope;
-  openModal(`<h3>${scope === 'buy' ? '📦' : '🏗'} Nuovo articolo — ${esc(CATALOG_SCOPES[scope].title)}</h3>${itemModalBody(null, scope)}
+  openModal(`<h3>${ico(scope === 'buy' ? 'package' : 'tree', 'tinted pill', '')} Nuovo articolo — ${esc(CATALOG_SCOPES[scope].title)}</h3>${itemModalBody(null, scope)}
     <div class="modal-actions"><button class="btn-ghost" onclick="closeModal()">Annulla</button>
       <button class="add-btn-sm" onclick="saveNewItem()">Crea</button></div>`, true);
   toggleItemFields();
@@ -1532,7 +1545,7 @@ function editItemModal(id) {
   itemCodeAuto = false; // in modifica non si rigenera mai il codice esistente
   window.__editingItemId = id;
   window.__itemScope = scopeOf(it.type);
-  openModal(`<h3>✏ Modifica articolo</h3>${itemModalBody(it, window.__itemScope)}
+  openModal(`<h3>${ico('edit', 'tinted pill', '')} Modifica articolo</h3>${itemModalBody(it, window.__itemScope)}
     <div class="modal-actions"><button class="btn-ghost" onclick="closeModal()">Annulla</button>
       <button class="add-btn-sm" onclick="saveItemEdit('${id}')">Salva</button></div>`, true);
   toggleItemFields();
@@ -1560,5 +1573,71 @@ function delItem(id) {
   askConfirm(`Eliminare "${it.name}"?`, () => {
     if (currentBomId === id) currentBomId = null;
     removeConUndo('items', id, `"${it.name}" eliminato`, renderCatalogs);
+  });
+}
+
+// ─── Azioni su più articoli insieme ───
+// Marcare obsoleti quaranta codici uno per uno è il genere di lavoro che si fa
+// una volta e poi non si fa più: si rimanda, e l'anagrafica resta sporca. Qui
+// il gesto è uno solo, ma le regole non cambiano — stesse guardie di ruolo,
+// stesso `touch()` sull'autore, stesso cestino con il ripristino.
+//
+// Il conto di **quanti** sono cambiati davvero viene detto sempre, e non è un
+// dettaglio: chi ne sceglie quaranta e ne vede cambiare trentotto deve sapere
+// che due non si potevano toccare, invece di scoprirlo fra un mese.
+function bulkSetFlag(ids, campo, valore, ammesso) {
+  if (!roleGuard('catalog')) return 0;
+  let n = 0;
+  (ids || []).forEach(id => {
+    const it = getItem(id);
+    if (!it || (ammesso && !ammesso(it)) || !!it[campo] === !!valore) return;
+    it[campo] = !!valore;
+    touch(it);
+    n++;
+  });
+  if (n) { saveDB(); renderCatalogs(); }
+  return n;
+}
+function bulkObsolete(ids, valore) {
+  const n = bulkSetFlag(ids, 'obsolete', valore);
+  const tot = (ids || []).length;
+  if (!n) { showToast('Nessun articolo da cambiare: erano già tutti così', 'error'); return; }
+  showToast(`${n} ${n === 1 ? 'articolo segnato' : 'articoli segnati'} ${valore ? 'come non più utilizzabili' : 'di nuovo utilizzabili'}${n < tot ? ` (${tot - n} erano già così)` : ''}`);
+}
+function bulkFavorite(ids, valore) {
+  // Il preferito vale solo su ciò che si acquista: sugli altri non è che
+  // fallisce, è che non esiste.
+  const n = bulkSetFlag(ids, 'favorite', valore, it => canFavorite(it.type));
+  if (!n) { showToast('Il preferito vale solo su commerciali e materie prime', 'error'); return; }
+  showToast(`${n} ${n === 1 ? 'articolo' : 'articoli'} ${valore ? 'segnati come preferiti' : 'tolti dai preferiti'}`);
+}
+// Eliminare in blocco è l'azione che più merita una rete. Chi è usato in una
+// distinta non si tocca — è la stessa regola di `delItem`, e la conferma dice
+// prima quanti ne resteranno fuori, invece di lasciarlo scoprire dopo.
+function bulkDelete(ids) {
+  if (!roleGuard('catalog')) return;
+  const items = (ids || []).map(getItem).filter(Boolean);
+  const usati = items.filter(it => usedBy(it.id).length);
+  const liberi = items.filter(it => !usedBy(it.id).length);
+  if (!liberi.length) {
+    showToast(`${usati.length === 1 ? 'L\'articolo è usato' : 'Sono tutti usati'} in una distinta: rimuovili prima.`, 'error');
+    return;
+  }
+  const avviso = usati.length
+    ? `\n\n${usati.length} ${usati.length === 1 ? 'articolo resta' : 'articoli restano'} dov'${usati.length === 1 ? 'è' : 'erano'}: ${usati.length === 1 ? 'è usato' : 'sono usati'} in una distinta.`
+    : '';
+  askConfirm(`Eliminare ${liberi.length} ${liberi.length === 1 ? 'articolo' : 'articoli'}?${avviso}`, () => {
+    const cestinati = [];
+    liberi.forEach(it => {
+      if (currentBomId === it.id) currentBomId = null;
+      if (Store.remove('items', it.id)) cestinati.push(Store.lastRemoved());
+    });
+    renderCatalogs();
+    // Un ripristino solo per tutti: chi si è pentito si è pentito dell'intero
+    // gesto, non di una riga.
+    showToast(`${cestinati.length} ${cestinati.length === 1 ? 'articolo eliminato' : 'articoli eliminati'}`, 'success', {
+      label: '↶ Annulla',
+      fn: () => { cestinati.forEach(v => Store.restore(v)); renderCatalogs(); showToast('Ripristinati'); },
+    });
   });
 }

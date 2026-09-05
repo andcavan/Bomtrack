@@ -30,7 +30,7 @@
 <div id="login-screen">
   <div class="login-card">
     <div class="login-logo">
-      <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7l9-4 9 4-9 4-9-4z"/><path d="M3 7v10l9 4 9-4V7"/><path d="M12 11v10"/></svg>
+      <svg class="ico ic-logo" aria-hidden="true"><use href="#ic-logo"></use></svg>
     </div>
     <h1 class="login-title">Bomtrack<sup class="app-version" id="app-version-login" title="Revisione in esecuzione"></sup></h1>
     <p class="login-sub" id="login-sub">Distinte base &amp; Costificazione</p>
@@ -57,7 +57,7 @@
 <header id="app-header" style="display:none">
   <div style="display:flex;align-items:center;gap:10px">
     <span class="logo">
-      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7l9-4 9 4-9 4-9-4z"/><path d="M3 7v10l9 4 9-4V7"/><path d="M12 11v10"/></svg>
+      <svg class="ico ic-logo" aria-hidden="true"><use href="#ic-logo"></use></svg>
       Bomtrack
     </span>
     <span class="app-version" id="app-version" title="Revisione in esecuzione"></span>
@@ -67,11 +67,11 @@
     <span class="unsaved-badge" id="unsaved-badge" style="display:none"></span>
     <span class="header-clock" id="header-clock"></span>
     <span class="user-pill" id="user-pill"></span>
-    <button class="btn-outline btn-icon btn-emoji" onclick="globalSearchModal()" title="Cerca ovunque (Ctrl+K)" aria-label="Cerca ovunque">🔎</button>
-    <button class="btn-outline btn-icon btn-emoji" onclick="printView()" title="Stampa questa vista (Ctrl+P)" aria-label="Stampa">🖨</button>
-    <button class="btn-outline btn-icon btn-emoji" onclick="changePassword()" title="Cambia password" aria-label="Cambia password">🔑</button>
+    <button class="btn-outline btn-icon" onclick="globalSearchModal()" title="Cerca ovunque (Ctrl+K)" aria-label="Cerca ovunque"><svg class="ico tinted ic-search" aria-hidden="true"><use href="#ic-search"></use></svg></button>
+    <button class="btn-outline btn-icon" onclick="printView()" title="Stampa questa vista (Ctrl+P)" aria-label="Stampa"><svg class="ico tinted ic-printer" aria-hidden="true"><use href="#ic-printer"></use></svg></button>
+    <button class="btn-outline btn-icon" onclick="changePassword()" title="Cambia password" aria-label="Cambia password"><svg class="ico tinted ic-key" aria-hidden="true"><use href="#ic-key"></use></svg></button>
     <button class="btn-outline btn-icon" onclick="logout()" title="Esci" aria-label="Esci">
-      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+      <svg class="ico tinted ic-logout" aria-hidden="true"><use href="#ic-logout"></use></svg>
     </button>
   </div>
 </header>
@@ -90,14 +90,14 @@
   <!-- DISTINTE BASE -->
   <div id="view-bom" class="view-panel active">
     <div class="bom-toolbar">
-      <h2 class="section-title">🌳 Distinta Base &amp; Costificazione</h2>
+      <h2 class="section-title"><svg class="ico ic-tree tinted pill" aria-hidden="true"><use href="#ic-tree"></use></svg> Distinta Base &amp; Costificazione</h2>
       <button class="add-btn-sm" onclick="newMachineModal()">+ Nuova macchina</button>
-      <button class="btn-outline" id="bom-edit-btn" onclick="editCurrentItemModal()">✏ Modifica testata</button>
-      <button class="btn-outline" id="bom-del-btn" onclick="deleteCurrentMachine()">🗑 Elimina</button>
+      <button class="btn-outline" id="bom-edit-btn" onclick="editCurrentItemModal()"><svg class="ico ic-edit tinted" aria-hidden="true"><use href="#ic-edit"></use></svg> Modifica testata</button>
+      <button class="btn-outline" id="bom-del-btn" onclick="deleteCurrentMachine()"><svg class="ico ic-trash tinted" aria-hidden="true"><use href="#ic-trash"></use></svg> Elimina</button>
     </div>
 
     <div class="catalog-filters">
-      <input type="text" class="search" id="bom-search" placeholder="🔍 Cerca codice o nome distinta..." oninput="bomSearchInput()">
+      <input type="text" class="search" id="bom-search" placeholder="Cerca codice o nome distinta..." oninput="bomSearchInput()">
       <select id="bom-type" onchange="onBomFilterChange()">
         <option value="">Tutti i livelli</option>
         <option value="macchina">Macchine</option>
@@ -129,12 +129,12 @@
   <!-- ARTICOLI D'ACQUISTO (commerciali e materie prime) -->
   <div id="view-buy" class="view-panel">
     <div class="bom-toolbar">
-      <h2 class="section-title">📦 Commerciali &amp; Materie prime</h2>
-      <button class="export-btn-xls" onclick="exportListXlsx(catalogExportSpec('buy'))">📗 Esporta Excel</button>
-      <button class="export-btn-pdf" onclick="exportListPdf(catalogExportSpec('buy'))">📄 Esporta PDF</button>
+      <h2 class="section-title"><svg class="ico ic-cart tinted pill" aria-hidden="true"><use href="#ic-cart"></use></svg> Commerciali &amp; Materie prime</h2>
+      <button class="export-btn-xls" onclick="exportListXlsx(catalogExportSpec('buy'))"><svg class="ico ic-sheet tinted" aria-hidden="true"><use href="#ic-sheet"></use></svg> Esporta Excel</button>
+      <button class="export-btn-pdf" onclick="exportListPdf(catalogExportSpec('buy'))"><svg class="ico ic-file tinted" aria-hidden="true"><use href="#ic-file"></use></svg> Esporta PDF</button>
     </div>
     <div class="catalog-filters">
-      <input type="text" class="search" id="buy-search" placeholder="🔍 Cerca codice o nome..." oninput="catalogSearchInput('buy')">
+      <input type="text" class="search" id="buy-search" placeholder="Cerca codice o nome..." oninput="catalogSearchInput('buy')">
       <select id="buy-type" onchange="onCatTypeChange('buy')">
         <option value="">Tutti i tipi</option>
         <option value="acquistato">Componente commerciale</option>
@@ -147,6 +147,7 @@
         <option value="">Tutte le sottofamiglie</option>
       </select>
       <button class="btn-outline fav-filter" id="buy-fav" title="Mostra solo i preferiti" onclick="toggleFavFilter()">★ Solo preferiti</button>
+      <span id="cols-btn-buy"></span>
       <button class="add-btn-sm" onclick="newItemModal('buy')">+ Nuovo articolo</button>
     </div>
     <div class="table-wrap" id="buy-table"></div>
@@ -155,12 +156,12 @@
   <!-- ARTICOLI DI PROGETTO (macchine, gruppi, sottogruppi, parti) -->
   <div id="view-design" class="view-panel">
     <div class="bom-toolbar">
-      <h2 class="section-title">🏗 Macchine, Gruppi &amp; Parti</h2>
-      <button class="export-btn-xls" onclick="exportListXlsx(catalogExportSpec('design'))">📗 Esporta Excel</button>
-      <button class="export-btn-pdf" onclick="exportListPdf(catalogExportSpec('design'))">📄 Esporta PDF</button>
+      <h2 class="section-title"><svg class="ico ic-tree tinted pill" aria-hidden="true"><use href="#ic-tree"></use></svg> Macchine, Gruppi &amp; Parti</h2>
+      <button class="export-btn-xls" onclick="exportListXlsx(catalogExportSpec('design'))"><svg class="ico ic-sheet tinted" aria-hidden="true"><use href="#ic-sheet"></use></svg> Esporta Excel</button>
+      <button class="export-btn-pdf" onclick="exportListPdf(catalogExportSpec('design'))"><svg class="ico ic-file tinted" aria-hidden="true"><use href="#ic-file"></use></svg> Esporta PDF</button>
     </div>
     <div class="catalog-filters">
-      <input type="text" class="search" id="des-search" placeholder="🔍 Cerca codice o nome..." oninput="catalogSearchInput('design')">
+      <input type="text" class="search" id="des-search" placeholder="Cerca codice o nome..." oninput="catalogSearchInput('design')">
       <select id="des-type" onchange="onCatTypeChange('design')">
         <option value="">Tutti i tipi</option>
         <option value="macchina">Macchina</option>
@@ -174,6 +175,7 @@
       <select id="des-subfamily" onchange="catalogFilterChange('design')">
         <option value="">Tutte le sottofamiglie</option>
       </select>
+      <span id="cols-btn-design"></span>
       <button class="add-btn-sm" onclick="newItemModal('design')">+ Nuovo articolo</button>
     </div>
     <div class="table-wrap" id="des-table"></div>
@@ -182,12 +184,12 @@
   <!-- MAGAZZINO — commerciali, materie prime e parti nella stessa lista -->
   <div id="view-stock" class="view-panel">
     <div class="bom-toolbar">
-      <h2 class="section-title">📦 Magazzino</h2>
-      <button class="export-btn-xls" onclick="exportListXlsx(stockExportSpec())">📗 Esporta Excel</button>
-      <button class="export-btn-pdf" onclick="exportListPdf(stockExportSpec())">📄 Esporta PDF</button>
+      <h2 class="section-title"><svg class="ico ic-package tinted pill" aria-hidden="true"><use href="#ic-package"></use></svg> Magazzino</h2>
+      <button class="export-btn-xls" onclick="exportListXlsx(stockExportSpec())"><svg class="ico ic-sheet tinted" aria-hidden="true"><use href="#ic-sheet"></use></svg> Esporta Excel</button>
+      <button class="export-btn-pdf" onclick="exportListPdf(stockExportSpec())"><svg class="ico ic-file tinted" aria-hidden="true"><use href="#ic-file"></use></svg> Esporta PDF</button>
     </div>
     <div class="catalog-filters">
-      <input type="text" class="search" id="stk-search" placeholder="🔍 Cerca codice o nome..." oninput="stockSearchInput()">
+      <input type="text" class="search" id="stk-search" placeholder="Cerca codice o nome..." oninput="stockSearchInput()">
       <select id="stk-type" onchange="onStockTypeChange()">
         <option value="">Tutti i tipi</option>
         <option value="acquistato">Componente commerciale</option>
@@ -207,6 +209,7 @@
         <option value="con">Con giacenza</option>
         <option value="negativo">Libero negativo</option>
       </select>
+      <span id="cols-btn-stock"></span>
     </div>
     <div id="stk-kpi" class="cost-summary"></div>
     <div class="table-wrap" id="stk-table"></div>
@@ -215,12 +218,12 @@
   <!-- CICLI DI LAVORAZIONE (distinta parte + fasi di una Parte) -->
   <div id="view-cycles" class="view-panel">
     <div class="bom-toolbar">
-      <h2 class="section-title">🔧 Cicli di lavorazione</h2>
-      <button class="export-btn-xls" onclick="exportListXlsx(cycleExportSpec())">📗 Esporta Excel</button>
-      <button class="export-btn-pdf" onclick="exportListPdf(cycleExportSpec())">📄 Esporta PDF</button>
+      <h2 class="section-title"><svg class="ico ic-wrench tinted pill" aria-hidden="true"><use href="#ic-wrench"></use></svg> Cicli di lavorazione</h2>
+      <button class="export-btn-xls" onclick="exportListXlsx(cycleExportSpec())"><svg class="ico ic-sheet tinted" aria-hidden="true"><use href="#ic-sheet"></use></svg> Esporta Excel</button>
+      <button class="export-btn-pdf" onclick="exportListPdf(cycleExportSpec())"><svg class="ico ic-file tinted" aria-hidden="true"><use href="#ic-file"></use></svg> Esporta PDF</button>
     </div>
     <div class="catalog-filters">
-      <input type="text" class="search" id="cyc-search" placeholder="🔍 Cerca codice o nome..." oninput="cycleSearchInput()">
+      <input type="text" class="search" id="cyc-search" placeholder="Cerca codice o nome..." oninput="cycleSearchInput()">
       <select id="cyc-family" onchange="onCycleFilterChange()">
         <option value="">Tutte le famiglie</option>
       </select>
@@ -237,14 +240,14 @@
 
   <!-- COSTIFICAZIONE & REPORT -->
   <div id="view-report" class="view-panel">
-    <h2 class="section-title">💶 Costificazione &amp; Report</h2>
+    <h2 class="section-title"><svg class="ico ic-euro tinted pill" aria-hidden="true"><use href="#ic-euro"></use></svg> Costificazione &amp; Report</h2>
     <div class="bom-toolbar">
       <div class="field-group" style="position:relative">
         <label>Macchina / Prodotto</label>
         <select id="report-select" onchange="renderReport()"></select>
       </div>
-      <button class="export-btn-xls" onclick="exportBomExcel()">📗 Esporta Excel</button>
-      <button class="export-btn-pdf" onclick="exportBomPDF()">📄 Esporta PDF</button>
+      <button class="export-btn-xls" onclick="exportBomExcel()"><svg class="ico ic-sheet tinted" aria-hidden="true"><use href="#ic-sheet"></use></svg> Esporta Excel</button>
+      <button class="export-btn-pdf" onclick="exportBomPDF()"><svg class="ico ic-file tinted" aria-hidden="true"><use href="#ic-file"></use></svg> Esporta PDF</button>
     </div>
     <div id="report-content"></div>
   </div>
@@ -264,7 +267,7 @@
   <!-- GESTIONE -->
   <div id="view-manage" class="view-panel">
     <div class="manage-wrap">
-      <h2 class="section-title">⚙ Gestione</h2>
+      <h2 class="section-title"><svg class="ico ic-settings tinted pill" aria-hidden="true"><use href="#ic-settings"></use></svg> Gestione</h2>
       <div class="mgmt-tabs" id="mgmt-tabs"></div>
       <div id="mgmt-content"></div>
     </div>
@@ -272,9 +275,17 @@
 
 </div>
 
+<!-- Il pannello laterale: comandi e schede dell'elemento scelto nell'elenco.
+     Sta fuori da #app-main perché non appartiene a una vista sola — lo riempie
+     inspector.js secondo la vista aperta, e resta chiuso dove non serve. -->
+<div class="insp-resizer" title="Trascina per cambiare la larghezza del pannello" aria-hidden="true"></div>
+<aside id="inspector" aria-label="Pannello dei comandi"></aside>
+
 <!-- Classic script in sequenza, scope globale condiviso: nessun modulo e nessun
      build, così la pagina si apre anche con un doppio click (file://).
      L'ordine conta solo per l'avvio, che sta in fondo all'ultimo file. -->
+<!-- Le icone: sprite e tinte. Va per primo, ico() serve gia al primo disegno. -->
+<script src="icons.js"></script>
 <script src="store.js"></script>
 <!-- Traduzione annidato ↔ normalizzato: legge SCHEMA da store.js, non dipende
      da altro. Nessun codice di rete: l'app resta locale. -->
@@ -283,6 +294,10 @@
 <script src="auth.js"></script>
 <script src="costing.js"></script>
 <script src="shell.js"></script>
+<!-- Il telaio comune delle viste a documento (commesse, fabbisogno, richieste,
+     ordini): elenco a destra, documento al centro. Va prima di loro perche' e'
+     quello che disegnano. -->
+<script src="worklist.js"></script>
 <script src="views-bom.js"></script>
 <script src="views-rev.js"></script>
 <script src="views-stock.js"></script>
@@ -298,6 +313,13 @@
      quindi va dopo di loro. -->
 <script src="export-lists.js"></script>
 <script src="import-catalog.js"></script>
+<!-- Scelta delle colonne degli elenchi: la chiamano le viste che le disegnano. -->
+<script src="columns.js"></script>
+<!-- Il pannello laterale legge lo stato delle viste: va dopo di loro. -->
+<script src="inspector.js"></script>
+<!-- ULTIMO, sempre: in fondo a questo file c'è init(), che avvia l'app. Uno
+     script messo dopo non esiste ancora quando l'avvio disegna la prima vista,
+     e la prima chiamata lo scopre con un errore. -->
 <script src="import-export.js"></script>
 </body>
 </html>

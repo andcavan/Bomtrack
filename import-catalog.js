@@ -899,9 +899,9 @@ function showCatalogReport(rep) {
     : '';
   const azioni = rep.dryRun
     ? `<button class="btn-ghost" onclick="closeModal()">Chiudi</button>
-       <button class="add-btn-sm" onclick="catRunImport(false)">⬆ Importa davvero</button>`
+       <button class="add-btn-sm" onclick="catRunImport(false)">${ico('upload', 'tinted', '')} Importa davvero</button>`
     : `<button class="add-btn-sm" onclick="closeCatalogReport()">Chiudi</button>`;
-  openModal(`<h3>${rep.dryRun ? '🔍 Verifica' : '📋 Esito import'} — Articoli ${esc(CAT_SCOPE_LABEL[rep.scope])}</h3>
+  openModal(`<h3>${rep.dryRun ? ico('search', 'tinted pill', '') + ' Verifica' : ico('list', 'tinted pill', '') + ' Esito import'} — Articoli ${esc(CAT_SCOPE_LABEL[rep.scope])}</h3>
     ${rep.dryRun ? '<p class="empty-text" style="text-align:left;padding:0 0 10px"><strong>Nessun dato è stato modificato.</strong> Questa è una prova: correggi il foglio e riprova, oppure procedi.</p>' : ''}
     <div class="cost-summary">${cards}</div>
     <div class="mgmt-list" style="margin-top:12px">${righe}</div>
@@ -909,7 +909,7 @@ function showCatalogReport(rep) {
     ${anteprima}
     ${blocco('Righe con problemi', rep.errors, 'var(--red)')}
     ${blocco('Avvisi', rep.warnings, 'var(--orange, #d98a3a)')}
-    ${!rep.errors.length && !rep.warnings.length ? '<p class="empty-text" style="padding:8px 0">Nessun errore. ✔</p>' : ''}
+    ${!rep.errors.length && !rep.warnings.length ? `<p class="empty-text" style="padding:8px 0">Nessun errore. ${ico('check', 'tinted', '')}</p>` : ''}
     <div class="modal-actions">${azioni}</div>`);
 }
 function closeCatalogReport() {

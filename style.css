@@ -89,13 +89,40 @@ input[type=date]::-webkit-calendar-picker-indicator,input[type=datetime-local]::
 .header-right{display:flex;align-items:center;gap:8px;flex:0 0 auto}
 /* Header compatto: pulsanti a sola icona e orologio con data per esteso */
 .btn-icon{padding:6px 8px;line-height:0;display:inline-flex;align-items:center}
-.btn-emoji{font-size:14px;line-height:1}
+.btn-icon .ico{width:15px;height:15px}
+.logo .ico{width:22px;height:22px}
+.login-logo .ico{width:40px;height:40px}
+
+/* Icone
+   Disegni nostri, non emoji di sistema: `icons.js` monta lo sprite e genera le
+   tinte, qui c’è solo la forma. La misura è in `em` e il colore è
+   `currentColor`, così l’icona segue il testo che la circonda invece di
+   pretendere una regola per ogni posto in cui compare. */
+.ico{width:1em;height:1em;flex:none;fill:none;stroke:currentColor;stroke-width:1.8;
+  stroke-linecap:round;stroke-linejoin:round;vertical-align:-.125em}
+/* Il guscio che porta il suggerimento al passaggio del mouse: non ha testo
+   proprio, quindi non cambia né il calcolo dell’etichetta accessibile né la
+   spaziatura di chi lo contiene. */
+.ico-w{display:inline-flex;align-items:center;flex:none}
+/* La pastiglia: l'icona sul suo stesso colore al 15%. Un tratto da 1.8 su
+   sedici pixel è poca cosa da distinguere di sfuggita — il fondo colorato dà
+   alla tinta la superficie che le serve per farsi leggere. */
+.ico.pill{box-sizing:content-box;padding:.34em;border-radius:.42em;
+  background:color-mix(in srgb,currentColor 15%,transparent)}
+/* Lo stato batte la categoria: dentro un pulsante che ha già un colore suo —
+   la voce di menu attiva, un `.mini-btn.danger` — l'icona eredita quello.
+   Lì il colore dice *cosa sta succedendo*, e vince su *di che si tratta*. */
+.nav-btn.active .ico,.mini-btn.danger .ico,.btn-danger .ico{color:inherit}
+/* Su carta il colore non c’è: le pastiglie diventerebbero rettangoli grigi. */
+@media print{.ico{color:inherit!important}.ico.pill{background:none;padding:0}}
 /* Divergenza tra dati in memoria e dati salvati: deve restare visibile finché dura */
 .unsaved-badge{padding:4px 10px;border-radius:20px;background:var(--red);color:#fff;font-size:12px;font-weight:600;white-space:nowrap;cursor:help}
 .header-clock{display:flex;flex-direction:column;align-items:center;line-height:1.2;white-space:nowrap}
 .clock-date{font-size:11px;color:var(--text-dim)}
 .clock-time{font-family:var(--mono);font-size:14px;font-weight:700}
-.nav-ico{font-size:13px;line-height:1}
+/* L’icona di gruppo è il segnale più a portata di colpo d’occhio della barra,
+   e sotto i 1330px — dove l’etichetta sparisce — resta l’unico. */
+.nav-ico{display:inline-flex;align-items:center;font-size:15px;line-height:1}
 /* Seconda riga: le voci del gruppo aperto. Vuota (gruppo a voce singola, o
    nessuna sessione) sparisce da sé senza lasciare una striscia vuota. */
 .subnav{display:flex;gap:2px;justify-content:center;flex-wrap:wrap;padding:6px 16px;background:var(--card);border-bottom:1px solid var(--border)}
@@ -107,7 +134,7 @@ input[type=date]::-webkit-calendar-picker-indicator,input[type=datetime-local]::
    il ruolo nella pill, le etichette del nav e solo per ultima la data. */
 @media(max-width:1420px){.user-role{display:none}}
 /* Senza etichetta la vista attiva va marcata di più: la sola tinta non basta */
-@media(max-width:1330px){.nav-label{display:none}.nav-btn{padding:7px 9px}.nav-ico{font-size:15px}
+@media(max-width:1330px){.nav-label{display:none}.nav-btn{padding:7px 9px}.nav-ico{font-size:16px}
   .nav-btn.active{background:rgba(58,123,232,.16);box-shadow:inset 0 -2px 0 var(--accent)}}
 @media(max-width:780px){.clock-date{display:none}}
 @media(max-width:620px){.header-clock{display:none}}
@@ -136,13 +163,18 @@ input[type=date]::-webkit-calendar-picker-indicator,input[type=datetime-local]::
 .btn-outline:hover{color:var(--text);border-color:var(--text-dim)}
 .mini-btn{background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:3px 7px;cursor:pointer;color:var(--text-dim);display:inline-flex;align-items:center;font-size:12px}
 .mini-btn:hover{color:var(--text);border-color:var(--text-dim)}
+/* Nelle righe fitte l’icona prende il posto di un carattere: un filo più
+   grande del testo, o si perde fra i numeri della riga. */
+.mini-btn .ico{width:13px;height:13px}
+.bom-toggle .ico{width:9px;height:9px}
 .mini-btn.danger{color:var(--red)}.mini-btn.danger:hover{color:#ff7755}
 
 /* KPI */
 .kpi-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}
-.kpi-card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:20px 18px;text-align:center}
-.kpi-value{font-size:24px;font-weight:800;font-family:var(--mono);letter-spacing:-.02em}
-.kpi-label{font-size:12px;color:var(--text-dim);margin-top:6px;font-weight:500}
+.kpi-card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:20px 12px;text-align:center;min-width:0;overflow:hidden;container-type:inline-size}
+.kpi-value{font-size:clamp(16px,13cqi,26px);font-weight:800;font-family:var(--mono);letter-spacing:-.02em;white-space:nowrap}
+.kpi-uom{font-size:.62em;font-weight:600;opacity:.75;letter-spacing:0}
+.kpi-label{font-size:12px;color:var(--text-dim);margin-top:6px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .kpi-card.accent .kpi-value{color:var(--accent)}
 .kpi-card.green .kpi-value{color:var(--green)}
 .kpi-card.orange .kpi-value{color:var(--orange)}
@@ -348,6 +380,18 @@ tr{border-bottom:1px solid rgba(42,46,59,.4)}
 .flag-check{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:400;color:var(--text);text-transform:none;letter-spacing:normal;cursor:pointer;padding:9px 0}
 .flag-check input{width:16px;height:16px;cursor:pointer}
 .fav-filter.active{color:var(--orange);border-color:var(--orange)}
+/* Scelta delle colonne: l’elenco delle caselle sta su due colonne, perché il
+   Magazzino ne ha dodici e una lista lunga costringe a scorrere per capire
+   quante ne sono rimaste accese. */
+#col-picker{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:0 16px;margin-bottom:6px}
+#col-picker .flag-check{padding:6px 0}
+/* Le due colonne che non si spengono restano visibili ma spente: dicono che
+   esistono e che non sono in discussione, invece di sparire senza spiegazione. */
+.col-pick-fissa{opacity:.55;cursor:default}
+.col-pick-fissa input{cursor:default}
+/* Il pulsante conta le colonne nascoste: un elenco a cui ne manca una, senza
+   che nulla lo dica, sembra un elenco rotto. */
+.btn-outline.active{color:var(--accent);border-color:var(--accent)}
 /* Note interne dei documenti: non finiscono su PDF/Excel, si distinguono a colpo d'occhio */
 textarea.notes-internal{border-style:dashed}
 /* Conteggio dei documenti mostrati dai filtri di richieste e ordini */
@@ -395,6 +439,11 @@ textarea.notes-internal{border-style:dashed}
 .export-btn-pdf:hover{opacity:.85}
 .export-btn-xls{background:#217346;border:none;color:#fff;padding:10px 20px;border-radius:8px;cursor:pointer;font-size:13px;font-weight:600;display:inline-flex;align-items:center;gap:6px;transition:opacity .15s}
 .export-btn-xls:hover{opacity:.85}
+/* Nella barra di sezione i due export vanno a destra, staccati dal titolo e
+   dai comandi che agiscono sui dati: sono l’uscita, non un’azione di lavoro.
+   Basta spingere il primo dei due, il secondo gli resta attaccato. */
+.bom-toolbar .export-btn-xls,.bom-toolbar .export-btn-pdf{margin-left:auto}
+.bom-toolbar .export-btn-xls + .export-btn-pdf{margin-left:0}
 
 /* Richieste di offerta (RFQ) */
 .rfq-head{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:16px 18px;margin:12px 0 18px;display:flex;flex-direction:column;gap:12px}
@@ -415,6 +464,9 @@ textarea.notes-internal{border-style:dashed}
 .doc-badge.st-parziale{color:var(--orange)}
 .doc-badge.st-chiusa,.doc-badge.st-evaso{color:var(--green)}
 .doc-badge.st-annullato{color:var(--red)}
+.doc-badge.st-aperta{color:var(--accent)}
+.doc-badge.st-produzione{color:var(--orange)}
+.doc-badge.st-annullata{color:var(--red)}
 .doc-badge.st-attivo{color:var(--green)}
 .doc-badge.st-sospeso{color:var(--red)}
 
@@ -441,9 +493,30 @@ button:disabled{opacity:.4;cursor:not-allowed}
 .terms-default{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:var(--green);border:1px solid var(--green);border-radius:4px;padding:1px 5px;margin-left:6px}
 /* Ordini */
 .ord-ref{font-size:13px;color:var(--text-dim);margin:10px 0}
-.ord-amount{font-family:var(--mono);text-align:right;white-space:nowrap}
-.ord-residual{font-family:var(--mono);text-align:right;color:var(--text-dim)}
-.ord-residual.pos{color:var(--orange);font-weight:600}
+/* ─── Righe di documento a due piani ───
+   Sopra il dato che si compila, sotto quello che lo spiega o ne consegue:
+   codice/descrizione, q.tà/U.M., prezzo/importo, richiesta/confermata,
+   ricevuto/residuo, modifica/elimina. Dodici colonne diventano sei coppie, e le
+   due metà si leggono insieme invece che a mezzo schermo di distanza.
+   Il piano di sopra ha l'altezza di un campo anche dove porta solo testo: è
+   quello che tiene allineate fra loro le righe di tutta la tabella. */
+.rfq-table-2 td{vertical-align:top}
+.rfq-table-2 .ln-a{min-height:30px;display:flex;align-items:center;flex-wrap:wrap;gap:4px}
+.rfq-table-2 .ln-b{min-height:22px;display:flex;align-items:center;flex-wrap:wrap;gap:4px;
+  font-size:12px;color:var(--text-dim);margin-top:3px}
+.rfq-table-2 th .ln-a{min-height:0}
+.rfq-table-2 th .ln-b{min-height:0;margin-top:2px;text-transform:none;letter-spacing:0;opacity:.75}
+.rfq-table-2 th{vertical-align:top;white-space:normal}
+.rfq-table-2 .ln-idx{width:34px;color:var(--text-dim);font-family:var(--mono);font-size:12px}
+.ln-code{font-family:var(--mono)}
+.ln-amount{font-family:var(--mono);white-space:nowrap;color:var(--text)}
+.ln-residual{font-family:var(--mono);white-space:nowrap}
+.ln-residual.pos{color:var(--orange);font-weight:600}
+/* La nota e i riferimenti del fornitore stanno sotto la descrizione, cioè nel
+   piano di sotto: non devono allargare la colonna oltre il leggibile. */
+.rfq-table-2 .ln-b .line-note,.rfq-table-2 .ln-b .rfq-cmp-sub{margin-top:0;flex-basis:100%}
+/* I due pulsanti stanno uno sopra l'altro come le altre coppie. */
+.rfq-table-2 .line-actions .ln-a,.rfq-table-2 .line-actions .ln-b{justify-content:flex-end}
 .rfq-table tfoot .rfq-cmp-total td{border-top:2px solid var(--border);font-weight:700;font-family:var(--mono);color:var(--text)}
 .rfq-export-bar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:18px;padding-top:16px;border-top:1px solid var(--border)}
 .rfq-export-bar label{font-size:12px;color:var(--text-dim);font-weight:600}
@@ -494,3 +567,193 @@ button:disabled{opacity:.4;cursor:not-allowed}
 /* Sola lettura per ruolo: la UI nasconde creazione ed eliminazione, le guardie bloccano comunque */
 .view-readonly .add-btn-sm,.view-readonly .add-btn,.view-readonly .mini-btn.danger{display:none}
 .ro-banner{background:rgba(232,163,58,.1);border:1px solid var(--orange);color:var(--orange);border-radius:10px;padding:10px 14px;font-size:13px;margin-bottom:14px}
+
+/* La lente delle caselle di ricerca. Stava dentro il placeholder come emoji —
+   ma un placeholder è testo: quella lente finiva nella traduzione, nella
+   ricerca del browser e nel valore letto dagli screen reader. Qui è un disegno,
+   che è quello che è sempre stata. La regola sta in fondo al foglio perché le
+   barre filtri ridichiarano `background` per intero: se venisse prima,
+   quella scorciatoia le spegnerebbe l’immagine. */
+input.search,.modal-field .search,.cycle-picker-box .search{
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%238B8FA3' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='10.6' cy='10.6' r='6.6'/%3E%3Cpath d='m15.4 15.4 5.1 5.1'/%3E%3C/svg%3E");
+  background-repeat:no-repeat;background-position:11px 50%;background-size:14px 14px;
+  padding-left:32px}
+
+/* ─── Pannello laterale ───
+   Una colonna fissa a destra, larga quanto si vuole, che tiene i comandi e le
+   schede dell'elemento scelto nell'elenco. Non è dentro #app-main: sta sopra la
+   pagina in posizione fissa, così scorrere l'elenco non se lo porta via e il
+   contenuto principale si limita a farsi da parte con un margine. */
+#inspector{position:fixed;top:56px;right:0;bottom:0;width:var(--insp-w,340px);z-index:40;
+  background:var(--card);border-left:1px solid var(--border);overflow-y:auto;overflow-x:hidden;
+  padding:14px 16px 28px;display:none}
+body.insp-on #inspector{display:block}
+/* Lo spazio del pannello si toglie **allargando la scatola e imbottendola a
+   destra**, non con un margine destro. Il margine avrebbe spento
+   l'`auto` che centra la pagina: con `margin-left:auto` e un destro fisso,
+   tutto lo spazio libero finisce a sinistra e il contenuto si schiaccia contro
+   il pannello, fuori asse rispetto a ciò che si vede. Allargando invece il
+   massimo di altrettanto e imbottendo a destra, i margini restano `auto` e il
+   contenuto si ricentra da solo nella parte visibile — sia con il pannello
+   aperto sia quando è chiuso e resta la sola striscia.
+   Vale solo quando la classe c'è: le viste senza pannello non se ne accorgono. */
+body.insp-on #app-main{max-width:calc(1200px + var(--insp-w,340px));
+  padding-right:calc(16px + var(--insp-w,340px))}
+/* Chiuso, resta una striscia con il pulsante per riaprire: un comando che
+   sparisce del tutto è un comando che nessuno ritrova. */
+body.insp-rail #inspector{display:block;width:38px;padding:10px 5px;overflow:hidden}
+body.insp-rail #app-main{max-width:1238px;padding-right:54px}
+/* La seconda riga della barra è larga quanto la finestra e passerebbe sotto al
+   pannello: le si dice di finire prima. */
+body.insp-on .subnav{padding-right:calc(var(--insp-w,340px) + 16px)}
+body.insp-rail .subnav{padding-right:54px}
+.insp-rail-btn{background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--text-dim);
+  width:28px;height:28px;display:flex;align-items:center;justify-content:center;cursor:pointer}
+.insp-rail-btn:hover{color:var(--accent);border-color:var(--accent)}
+/* Il bordo da trascinare. Sei pixel sono pochi da centrare col mouse: l'area
+   sensibile è larga il doppio, spostata a cavallo del bordo. */
+.insp-resizer{display:none;position:fixed;top:56px;bottom:0;right:var(--insp-w,340px);
+  width:12px;margin-right:-6px;z-index:41;cursor:col-resize}
+body.insp-on .insp-resizer{display:block}
+.insp-resizer:hover{background:linear-gradient(90deg,transparent,rgba(58,123,232,.35),transparent)}
+/* Mentre si trascina, il testo non si deve selezionare e il cursore non deve
+   cambiare passando sopra le righe. */
+body.insp-resizing{user-select:none;cursor:col-resize}
+body.insp-resizing #inspector{pointer-events:none}
+
+.insp-head{display:flex;align-items:center;gap:8px;margin-bottom:12px}
+.insp-title{font-size:15px;font-weight:800;font-family:var(--mono);letter-spacing:-.02em;flex:1;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.insp-empty{color:var(--text-dim);font-size:13px;line-height:1.6}
+.insp-empty p{margin-bottom:10px}
+.insp-hint{font-size:12px;opacity:.85}
+
+/* Riepilogo: le domande veloci — cos'è, quanto costa, quanto ce n'è, chi lo usa
+   — con la risposta accanto, senza aprire niente. */
+.insp-sum{background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin-bottom:12px}
+.insp-sum-row{display:flex;gap:10px;align-items:baseline;padding:3px 0;font-size:12px}
+.insp-sum-k{color:var(--text-dim);flex:0 0 96px}
+.insp-sum-v{flex:1;min-width:0;overflow-wrap:anywhere}
+
+/* I comandi, uno per riga e con l'etichetta scritta: è lo spazio che la riga
+   della tabella non aveva, ed è il motivo per cui il pannello esiste. */
+.insp-cmds{display:flex;flex-direction:column;gap:6px;margin-bottom:16px}
+.insp-cmd{display:flex;align-items:center;gap:8px;width:100%;text-align:left;
+  background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:8px 12px;
+  color:var(--text);font-size:13px;font-weight:500;cursor:pointer;transition:all .12s}
+.insp-cmd:hover{border-color:var(--text-dim);background:var(--card-hover)}
+.insp-cmd.danger{color:var(--red)}
+.insp-cmd.danger:hover{border-color:var(--red)}
+/* In sola lettura i comandi che modificano non vengono nemmeno disegnati; la
+   regola resta come rete, per un comando aggiunto domani senza pensarci. */
+.insp-readonly .insp-cmd.danger{display:none}
+
+.insp-tabs{display:flex;gap:4px;border-bottom:1px solid var(--border);margin-bottom:12px;flex-wrap:wrap}
+.insp-tab{background:transparent;border:none;color:var(--text-dim);padding:7px 10px;font-size:12px;
+  font-weight:600;cursor:pointer;border-radius:8px 8px 0 0;border-bottom:2px solid transparent}
+.insp-tab:hover{color:var(--text)}
+.insp-tab.active{color:var(--accent);border-bottom-color:var(--accent)}
+.insp-body{font-size:13px}
+/* Con più righe scelte il pannello elenca quali sono: agire su venti articoli
+   senza vederne l’elenco è firmare senza leggere. */
+.insp-multi-list{max-height:220px;overflow:auto;border:1px solid var(--border);border-radius:8px;
+  background:var(--bg);padding:6px 8px;margin-bottom:12px;font-size:12px}
+.insp-multi-row{display:flex;gap:8px;padding:3px 0;align-items:baseline}
+.insp-multi-row span{color:var(--text-dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* Le schede riusano i corpi delle finestre, pensati per 860px: qui la colonna è
+   stretta e le griglie etichetta/valore vanno mandate a capo. */
+.insp-body .info-grid{grid-template-columns:1fr}
+.insp-body .info-row{flex-wrap:wrap}
+.insp-body table{font-size:12px}
+.insp-body .table-wrap{overflow-x:auto}
+
+/* La riga scelta. La barretta a sinistra regge anche dove il fondo tenue si
+   perde, cioè sulle righe alternate e su quelle degli articoli obsoleti. */
+tr.row-selected>td{background:rgba(58,123,232,.10)}
+tr.row-selected>td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
+tbody tr[data-sel]{cursor:pointer}
+/* Con il pannello aperto la colonna dei pulsanti sparisce: i suoi comandi sono
+   nel pannello, per esteso. Chiudendolo torna dov'era. */
+body.insp-on .row-actions{display:none}
+
+/* Sotto i 1100px non ci sono due colonne: il pannello si sovrappone come un
+   cassetto e l'elenco resta largo quanto la finestra. */
+@media(max-width:1100px){
+  body.insp-on #app-main{max-width:1200px;padding-right:16px}
+  #inspector{box-shadow:-14px 0 40px rgba(0,0,0,.45);width:min(var(--insp-w,340px),92vw)}
+  .insp-resizer{display:none!important}
+}
+/* Su carta non esiste niente da cliccare: il pannello sparisce e la pagina si
+   riprende tutta la larghezza. */
+@media print{
+  #inspector,.insp-resizer{display:none!important}
+  body.insp-on #app-main,body.insp-rail #app-main{max-width:none!important;padding:0!important}
+  tr.row-selected>td{background:none}
+  body.insp-on .row-actions{display:none!important}
+}
+
+/* ─── Riepilogo: chi ha fatto scattare l'avviso ───
+   Sotto ogni riga di «Richiede attenzione» stanno i codici e i numeri che la
+   riguardano. Sono pastiglie separate, ognuna con il suo bersaglio: la riga
+   sopra porta alla vista, queste al singolo documento o alla scheda. */
+.home-sig{display:flex;flex-direction:column;gap:0}
+.home-voci{display:flex;flex-wrap:wrap;gap:5px;padding:6px 0 10px 74px}
+.home-chip{background:var(--bg);border:1px solid var(--border);border-radius:6px;
+  padding:2px 8px;font-family:var(--mono);font-size:11px;font-weight:600;color:var(--text);cursor:pointer}
+.home-chip:hover{border-color:var(--accent);color:var(--accent)}
+.home-chip:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+/* Un codice duplicato non si apre: si sbroglia in Gestione. Niente cursore a
+   mano su qualcosa che non porta da nessuna parte. */
+.home-chip.muta{cursor:default;color:var(--text-dim);border-style:dashed}
+.home-chip.muta:hover{border-color:var(--border);color:var(--text-dim)}
+.home-voci-resto{font-size:11px;color:var(--text-dim);align-self:center}
+@media(max-width:640px){.home-voci{padding-left:0}}
+
+/* ─── Elenco a destra, documento al centro ───
+   Il telaio comune di commesse, fabbisogno, richieste e ordini (worklist.js).
+   L'elenco è una colonna appiccicata in alto che non scorre via con il
+   documento: si cambia riga senza perdere il posto. Sotto i 1100px le due
+   colonne si impilano, con l'elenco sopra — su uno schermo stretto la scelta
+   viene prima del contenuto. */
+.wl{display:grid;grid-template-columns:minmax(0,1fr) var(--wl-w,360px);gap:20px;align-items:start}
+.wl-main{min-width:0}
+.wl-side{position:sticky;top:14px;max-height:calc(100vh - 92px);display:flex;flex-direction:column;gap:12px;
+  background:var(--card);border:1px solid var(--border);border-radius:14px;padding:16px}
+.wl-side-head{display:flex;align-items:center;gap:8px}
+.wl-side-title{font-size:15px;font-weight:700;margin:0;display:flex;align-items:center;gap:8px;letter-spacing:-.01em}
+.wl-cmds{display:flex;flex-wrap:wrap;gap:8px}
+.wl-cmds button{font-size:12px}
+/* I filtri stanno in colonna: in 360px tre menu affiancati diventerebbero tre
+   fessure illeggibili. Il conteggio chiude il gruppo, come una didascalia. */
+.wl-filters{display:flex;flex-direction:column;gap:8px}
+.wl-filters input,.wl-filters select{width:100%;background:var(--bg);border:1px solid var(--border);border-radius:8px;
+  padding:9px 12px;color:var(--text);font-size:13px;outline:none}
+.wl-filters input:focus,.wl-filters select:focus{border-color:var(--accent)}
+.wl-filters .doc-filter-count{align-self:flex-start}
+.wl-filters button{align-self:flex-start;font-size:12px}
+.wl-list{flex:1;min-height:0;overflow-y:auto;display:flex;flex-direction:column;gap:6px;margin:0 -4px;padding:0 4px}
+.wl-row{background:var(--bg);border:1px solid var(--border);border-left:3px solid transparent;border-radius:8px;
+  padding:8px 11px;cursor:pointer;display:flex;flex-direction:column;gap:3px}
+.wl-row:hover{background:var(--card-hover);border-color:var(--border);border-left-color:var(--text-dim)}
+.wl-row:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.wl-row.sel{background:var(--card-hover);border-left-color:var(--accent)}
+.wl-row.spenta{opacity:.55}
+.wl-row-top{display:flex;align-items:center;gap:8px}
+.wl-num{font-family:var(--mono);font-weight:700;font-size:12px;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.wl-row-title{font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.wl-row-meta{font-size:11px;color:var(--text-dim);font-family:var(--mono);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.wl-note{font-size:11px;color:var(--text-dim);line-height:1.5;margin:0}
+/* L'invito al centro: c'è un elenco a destra, ma non è stato scelto niente. */
+.wl-empty{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:44px 32px;text-align:center;color:var(--text-dim)}
+.wl-empty h2{font-size:17px;font-weight:700;color:var(--text);margin:10px 0 8px}
+.wl-empty p{font-size:13px;line-height:1.65;max-width:52ch;margin:0 auto}
+.wl-empty-cmds{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin-top:18px}
+@media(max-width:1100px){
+  .wl{grid-template-columns:1fr}
+  .wl-side{position:static;max-height:none;order:-1}
+  .wl-list{max-height:320px}
+  .wl-filters{flex-direction:row;flex-wrap:wrap}
+  .wl-filters input,.wl-filters select{width:auto;flex:1;min-width:180px}
+}
+/* In stampa esce il documento, non lo strumento per sceglierlo. */
+@media print{.wl{display:block}.wl-side{display:none!important}}

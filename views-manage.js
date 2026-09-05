@@ -10,19 +10,19 @@
 //  VISTA: GESTIONE
 // ═══════════════════════════════════════════════════════════
 const MGMT_TABS = [
-  { id: 'users', label: '👥 Utenti' },
-  { id: 'company', label: '🏢 Dati azienda' },
-  { id: 'suppliers', label: '🏭 Fornitori' },
-  { id: 'terms', label: '🚚 Condizioni offerta' },
-  { id: 'fam-acquistato', label: '🛒 Famiglie commerciali' },
-  { id: 'fam-materiale', label: '🧱 Famiglie materie prime' },
-  { id: 'fam-parte', label: '⚙️ Famiglie parti' },
-  { id: 'concepts', label: '🏷 Concetti' },
-  { id: 'workcenters', label: '🔧 Centri di lavoro' },
-  { id: 'uoms', label: '📏 Unità di misura' },
-  { id: 'settings', label: '📐 Impostazioni' },
-  { id: 'import', label: '⬆ Import' },
-  { id: 'backup', label: '💾 Backup' },
+  { id: 'users', label: ico('users', 'tinted', '') + ' Utenti' },
+  { id: 'company', label: ico('building', 'tinted', '') + ' Dati azienda' },
+  { id: 'suppliers', label: ico('factory', 'tinted', '') + ' Fornitori' },
+  { id: 'terms', label: ico('truck', 'tinted', '') + ' Condizioni offerta' },
+  { id: 'fam-acquistato', label: ico('cart', 'tinted', '') + ' Famiglie commerciali' },
+  { id: 'fam-materiale', label: ico('package', 'tinted', '') + ' Famiglie materie prime' },
+  { id: 'fam-parte', label: ico('wrench', 'tinted', '') + ' Famiglie parti' },
+  { id: 'concepts', label: ico('tag', 'tinted', '') + ' Concetti' },
+  { id: 'workcenters', label: ico('wrench', 'tinted', '') + ' Centri di lavoro' },
+  { id: 'uoms', label: ico('ruler', 'tinted', '') + ' Unità di misura' },
+  { id: 'settings', label: ico('settings', 'tinted', '') + ' Impostazioni' },
+  { id: 'import', label: ico('upload', 'tinted', '') + ' Import' },
+  { id: 'backup', label: ico('save', 'tinted', '') + ' Backup' },
 ];
 function renderManage() {
   document.getElementById('mgmt-tabs').innerHTML = MGMT_TABS.map(t =>
@@ -61,10 +61,10 @@ function renderUsers() {
       <span class="doc-badge">${esc(roleLabel(u.role))}</span>
       <span class="doc-badge ${susp ? 'st-sospeso' : 'st-attivo'}">${susp ? 'Sospeso' : 'Attivo'}</span>
       <div class="mgmt-item-actions">
-        <button class="mini-btn" onclick="editUserModal('${u.id}')" title="Modifica">✏</button>
-        <button class="mini-btn" onclick="resetUserPasswordModal('${u.id}')" title="Imposta password">🔑</button>
-        <button class="mini-btn" onclick="toggleUserActive('${u.id}')" title="${susp ? 'Riattiva' : 'Sospendi'}">${susp ? '✓' : '⏸'}</button>
-        <button class="mini-btn danger" onclick="delUser('${u.id}')" title="Elimina">🗑</button>
+        <button class="mini-btn" onclick="editUserModal('${u.id}')" title="Modifica">${ico('edit', 'tinted', 'Modifica')}</button>
+        <button class="mini-btn" onclick="resetUserPasswordModal('${u.id}')" title="Imposta password">${ico('key', 'tinted', 'Imposta password')}</button>
+        <button class="mini-btn" onclick="toggleUserActive('${u.id}')" title="${susp ? 'Riattiva' : 'Sospendi'}">${susp ? ico('check', 'tinted', 'Riattiva') : ico('pause', 'tinted', 'Sospendi')}</button>
+        <button class="mini-btn danger" onclick="delUser('${u.id}')" title="Elimina">${ico('trash', 'tinted', 'Elimina')}</button>
       </div></div>`;
   }).join('') || '<div class="empty-text">Nessun utente.</div>';
   return `<div class="mgmt-panel"><div class="mgmt-list">${list}</div>
@@ -81,7 +81,7 @@ function renderUsers() {
       <strong>Ufficio acquisti</strong>: richieste e ordini ·
       <strong>Progettazione</strong>: articoli e distinte ·
       <strong>Lettore</strong>: sola lettura.<br>
-      ⚠ Con i dati nel browser questi ruoli separano le responsabilità, non proteggono i dati: la protezione vera arriverà con l'accesso Supabase.</p></div>`;
+      ${ico('warning', 'tinted', '')} Con i dati nel browser questi ruoli separano le responsabilità, non proteggono i dati: la protezione vera arriverà con l'accesso Supabase.</p></div>`;
 }
 function addUser() {
   if (!roleGuard('manage')) return;
@@ -100,7 +100,7 @@ function addUser() {
 function editUserModal(id) {
   if (!roleGuard('manage')) return;
   const u = getUser(id); if (!u) return;
-  openModal(`<h3>✏ Modifica utente</h3>
+  openModal(`<h3>${ico('edit', 'tinted pill', '')} Modifica utente</h3>
     <div class="modal-field"><label>Nome e cognome</label><input id="eu-name" value="${esc(u.name)}"></div>
     <div class="modal-grid">
       <div class="modal-field"><label>Email</label><input id="eu-email" value="${esc(u.email || '')}"></div>
@@ -131,7 +131,7 @@ function saveUserEdit(id) {
 function resetUserPasswordModal(id) {
   if (!roleGuard('manage')) return;
   const u = getUser(id); if (!u) return;
-  openModal(`<h3>🔑 Password di ${esc(u.name)}</h3>
+  openModal(`<h3>${ico('key', 'tinted pill', '')} Password di ${esc(u.name)}</h3>
     <div class="modal-field"><label>Nuova password</label><input type="password" id="ru-pwd"></div>
     <div class="modal-actions"><button class="btn-ghost" onclick="closeModal()">Annulla</button>
       <button class="add-btn-sm" onclick="saveUserPassword('${id}')">Imposta</button></div>`);
@@ -173,7 +173,7 @@ function renderTerms() {
       <span class="mgmt-item-name">${esc(o)}${o === def ? ' <span class="terms-default">predefinito</span>' : ''}</span>
       <div class="mgmt-item-actions">
         <button class="mini-btn" onclick="termsSetDefault('${kind}',${i})" title="Imposta/rimuovi predefinito">${o === def ? '★' : '☆'}</button>
-        <button class="mini-btn danger" onclick="termsDel('${kind}',${i})">🗑</button>
+        <button class="mini-btn danger" onclick="termsDel('${kind}',${i})" title="Elimina">${ico('trash', 'tinted', 'Elimina')}</button>
       </div></div>`).join('') || '<div class="empty-text">Nessuna voce.</div>';
     return `<h3 class="settings-group-title">${title}</h3>
       <div class="mgmt-list">${list}</div>
@@ -181,8 +181,8 @@ function renderTerms() {
   };
   return `<div class="mgmt-panel">
     <p class="empty-text" style="text-align:left;padding:4px 0 12px">Gestisci le voci selezionabili per Trasporto e Pagamento nelle richieste di offerta. La voce con ★ precompila automaticamente le nuove richieste.</p>
-    ${sect('transport', '🚚 Tipi di trasporto / resa', s.transportDefault)}
-    ${sect('payment', '💳 Tipi di pagamento', s.paymentDefault)}</div>`;
+    ${sect('transport', ico('truck', 'tinted', '') + ' Tipi di trasporto / resa', s.transportDefault)}
+    ${sect('payment', ico('card', 'tinted', '') + ' Tipi di pagamento', s.paymentDefault)}</div>`;
 }
 function termsAdd(kind) {
   if (!roleGuard('manage')) return;
@@ -212,7 +212,7 @@ function termsSetDefault(kind, i) {
 function renderCompany() {
   const co = db.settings.company || {};
   return `<div class="mgmt-panel">
-    <h3 class="settings-group-title">🏢 Dati azienda (richiedente)</h3>
+    <h3 class="settings-group-title">${ico('building', 'tinted', '')} Dati azienda (richiedente)</h3>
     <p class="empty-text" style="text-align:left;padding:4px 0 12px">Questi dati identificano la tua azienda e vengono stampati come intestazione del richiedente sui documenti di richiesta di offerta.</p>
     <div class="modal-grid">
       <div class="modal-field"><label>Ragione sociale</label><input id="co-name" value="${esc(co.name || '')}"></div>
@@ -240,8 +240,8 @@ function renderSuppliers() {
     <span class="mgmt-item-name">${esc(s.name)}</span>
     <span class="mgmt-item-meta">${esc(s.referente || '')} ${s.email ? '· ' + esc(s.email) : ''} ${s.phone ? '· ' + esc(s.phone) : ''} ${loc ? '· ' + esc(loc) : ''}</span>
     <div class="mgmt-item-actions">
-      <button class="mini-btn" onclick="editSupplierModal('${s.id}')">✏</button>
-      <button class="mini-btn danger" onclick="delSupplier('${s.id}')">🗑</button></div></div>`;
+      <button class="mini-btn" onclick="editSupplierModal('${s.id}')" title="Modifica fornitore">${ico('edit', 'tinted', 'Modifica fornitore')}</button>
+      <button class="mini-btn danger" onclick="delSupplier('${s.id}')" title="Elimina fornitore">${ico('trash', 'tinted', 'Elimina fornitore')}</button></div></div>`;
   }).join('') || '<div class="empty-text">Nessun fornitore.</div>';
   return `<div class="mgmt-panel"><div class="mgmt-list">${list}</div>
     <div class="mgmt-form">
@@ -250,7 +250,7 @@ function renderSuppliers() {
       <input id="sup-email" placeholder="Email">
       <input id="sup-phone" placeholder="Telefono">
       <button class="add-btn-sm" onclick="addSupplier()">+ Aggiungi</button></div>
-    <p class="empty-text" style="text-align:left;padding:6px 0 0">Indirizzo completo e P.IVA si inseriscono con ✏ Modifica.</p></div>`;
+    <p class="empty-text" style="text-align:left;padding:6px 0 0">Indirizzo completo e P.IVA si inseriscono con ${ico('edit', 'tinted', '')} Modifica.</p></div>`;
 }
 function addSupplier() {
   if (!roleGuard('manage')) return;
@@ -275,7 +275,7 @@ function readAddressFields(pfx) {
 }
 function editSupplierModal(id) {
   const s = db.suppliers.find(x => x.id === id); if (!s) return;
-  openModal(`<h3>✏ Modifica fornitore</h3>
+  openModal(`<h3>${ico('edit', 'tinted pill', '')} Modifica fornitore</h3>
     <div class="modal-grid">
       <div class="modal-field"><label>Nome</label><input id="es-name" value="${esc(s.name)}"></div>
       <div class="modal-field"><label>Referente</label><input id="es-ref" value="${esc(s.referente || '')}"></div>
@@ -335,15 +335,15 @@ function familyPanelHtml(f) {
   const subs = (f.subs || []).map(s => `<div class="mgmt-item" style="padding:6px 12px">
       <span class="mgmt-item-name" style="font-size:13px;font-weight:500">${esc(s.name)} <span style="font-family:var(--mono);color:var(--text-dim);font-size:11px">[${esc(s.sigla || siglaFromName(s.name))}]</span></span>
       <div class="mgmt-item-actions">
-        <button class="mini-btn" onclick="editSubFamilyModal('${f.id}','${s.id}')">✏</button>
-        <button class="mini-btn danger" onclick="delSubFamily('${f.id}','${s.id}')">🗑</button></div></div>`).join('')
+        <button class="mini-btn" onclick="editSubFamilyModal('${f.id}','${s.id}')" title="Modifica sottofamiglia">${ico('edit', 'tinted', 'Modifica sottofamiglia')}</button>
+        <button class="mini-btn danger" onclick="delSubFamily('${f.id}','${s.id}')" title="Elimina sottofamiglia">${ico('trash', 'tinted', 'Elimina sottofamiglia')}</button></div></div>`).join('')
     || '<div class="empty-text" style="padding:6px 0">Nessuna sottofamiglia.</div>';
   return `<div class="mgmt-panel" style="margin-bottom:12px">
       <div class="mgmt-item" style="background:transparent;border:none;padding:0 0 10px">
-        <span class="mgmt-item-name" style="font-size:15px;color:var(--accent)">🗂 ${esc(f.name)} <span style="font-family:var(--mono);color:var(--text-dim);font-size:12px">[${esc(f.sigla || siglaFromName(f.name))}]</span></span>
+        <span class="mgmt-item-name" style="font-size:15px;color:var(--accent)">${ico('folder', 'tinted', '')} ${esc(f.name)} <span style="font-family:var(--mono);color:var(--text-dim);font-size:12px">[${esc(f.sigla || siglaFromName(f.name))}]</span></span>
         <div class="mgmt-item-actions">
-          <button class="mini-btn" onclick="editFamilyModal('${f.id}')">✏</button>
-          <button class="mini-btn danger" onclick="delFamily('${f.id}')">🗑</button></div></div>
+          <button class="mini-btn" onclick="editFamilyModal('${f.id}')" title="Modifica macrofamiglia">${ico('edit', 'tinted', 'Modifica macrofamiglia')}</button>
+          <button class="mini-btn danger" onclick="delFamily('${f.id}')" title="Elimina macrofamiglia">${ico('trash', 'tinted', 'Elimina macrofamiglia')}</button></div></div>
       <div class="mgmt-list" style="margin-bottom:10px">${subs}</div>
       <div class="mgmt-form">
         <input id="sub-name-${f.id}" placeholder="Nuova sottofamiglia">
@@ -374,7 +374,7 @@ function addFamily(kind) {
 }
 function editFamilyModal(id) {
   const f = getFamily(id); if (!f) return;
-  openModal(`<h3>✏ Modifica macrofamiglia</h3>
+  openModal(`<h3>${ico('edit', 'tinted pill', '')} Modifica macrofamiglia</h3>
     <div class="modal-grid">
       <div class="modal-field"><label>Nome</label><input id="ef-name" value="${esc(f.name)}"></div>
       <div class="modal-field"><label>Sigla (per codifica)</label><input id="ef-sigla" value="${esc(f.sigla || siglaFromName(f.name))}" maxlength="6"></div>
@@ -410,7 +410,7 @@ function addSubFamily(familyId) {
 }
 function editSubFamilyModal(familyId, subId) {
   const f = getFamily(familyId); const s = f && (f.subs || []).find(x => x.id === subId); if (!s) return;
-  openModal(`<h3>✏ Modifica sottofamiglia</h3>
+  openModal(`<h3>${ico('edit', 'tinted pill', '')} Modifica sottofamiglia</h3>
     <div class="modal-grid">
       <div class="modal-field"><label>Nome (in ${esc(f.name)})</label><input id="esf-name" value="${esc(s.name)}"></div>
       <div class="modal-field"><label>Sigla (per codifica)</label><input id="esf-sigla" value="${esc(s.sigla || siglaFromName(s.name))}" maxlength="6"></div>
@@ -442,8 +442,8 @@ function renderWorkCenters() {
     <span class="mgmt-item-name">${esc(w.name)}</span>
     <span class="mgmt-item-meta">${fmtN(w.hourlyRate)}/h</span>
     <div class="mgmt-item-actions">
-      <button class="mini-btn" onclick="editWcModal('${w.id}')">✏</button>
-      <button class="mini-btn danger" onclick="delWc('${w.id}')">🗑</button></div></div>`).join('') || '<div class="empty-text">Nessun centro di lavoro.</div>';
+      <button class="mini-btn" onclick="editWcModal('${w.id}')" title="Modifica centro di lavoro">${ico('edit', 'tinted', 'Modifica centro di lavoro')}</button>
+      <button class="mini-btn danger" onclick="delWc('${w.id}')" title="Elimina centro di lavoro">${ico('trash', 'tinted', 'Elimina centro di lavoro')}</button></div></div>`).join('') || '<div class="empty-text">Nessun centro di lavoro.</div>';
   return `<div class="mgmt-panel"><div class="mgmt-list">${list}</div>
     <div class="mgmt-form">
       <input id="wc-name" placeholder="Nome (es. Tornitura)">
@@ -459,7 +459,7 @@ function addWc() {
 }
 function editWcModal(id) {
   const w = db.workCenters.find(x => x.id === id); if (!w) return;
-  openModal(`<h3>✏ Modifica centro di lavoro</h3>
+  openModal(`<h3>${ico('edit', 'tinted pill', '')} Modifica centro di lavoro</h3>
     <div class="modal-field"><label>Nome</label><input id="ew-name" value="${esc(w.name)}"></div>
     <div class="modal-field"><label>Tariffa (${cur()}/h)</label><input id="ew-rate" type="number" min="0" step="0.5" value="${w.hourlyRate}"></div>
     <div class="modal-actions"><button class="btn-ghost" onclick="closeModal()">Annulla</button>
@@ -495,8 +495,8 @@ function renderConcepts() {
       <span class="mgmt-item-name">${esc(c.name)}</span>
       <span class="mgmt-item-meta">${used ? 'usato ' + used + '×' : 'non usato'}</span>
       <div class="mgmt-item-actions">
-        <button class="mini-btn" onclick="editConceptModal(${i})">✏</button>
-        <button class="mini-btn danger" onclick="delConcept(${i})">🗑</button>
+        <button class="mini-btn" onclick="editConceptModal(${i})" title="Modifica concetto">${ico('edit', 'tinted', 'Modifica concetto')}</button>
+        <button class="mini-btn danger" onclick="delConcept(${i})" title="Elimina concetto">${ico('trash', 'tinted', 'Elimina concetto')}</button>
       </div></div>`;
   }).join('') || '<div class="empty-text">Nessun concetto.</div>';
   return `<div class="mgmt-panel">
@@ -516,7 +516,7 @@ function addConcept() {
 function editConceptModal(i) {
   if (!roleGuard('manage')) return;
   const c = conceptList()[i]; if (!c) return;
-  openModal(`<h3>✏ Modifica concetto</h3>
+  openModal(`<h3>${ico('edit', 'tinted pill', '')} Modifica concetto</h3>
     <div class="modal-field"><label>Concetto</label><input id="ec-name" value="${esc(c.name)}" style="text-transform:uppercase" oninput="this.value=this.value.toUpperCase()"></div>
     <div class="modal-actions"><button class="btn-ghost" onclick="closeModal()">Annulla</button>
       <button class="add-btn-sm" onclick="saveConcept(${i})">Salva</button></div>`);
@@ -560,8 +560,8 @@ function renderUoms() {
       <span class="mgmt-item-meta">${esc(u.name || '—')}${used ? ' · usata ' + used + '×' : ''}</span>
       <div class="mgmt-item-actions">
         <button class="mini-btn" onclick="uomSetDefault(${i})" title="Imposta come predefinita">${u.code === def ? '★' : '☆'}</button>
-        <button class="mini-btn" onclick="editUomModal(${i})">✏</button>
-        <button class="mini-btn danger" onclick="delUom(${i})">🗑</button>
+        <button class="mini-btn" onclick="editUomModal(${i})" title="Modifica unità di misura">${ico('edit', 'tinted', 'Modifica unità di misura')}</button>
+        <button class="mini-btn danger" onclick="delUom(${i})" title="Elimina unità di misura">${ico('trash', 'tinted', 'Elimina unità di misura')}</button>
       </div></div>`;
   }).join('') || '<div class="empty-text">Nessuna unità di misura.</div>';
   return `<div class="mgmt-panel">
@@ -581,7 +581,7 @@ function addUom() {
 }
 function editUomModal(i) {
   const u = uomList()[i]; if (!u) return;
-  openModal(`<h3>✏ Modifica unità di misura</h3>
+  openModal(`<h3>${ico('edit', 'tinted pill', '')} Modifica unità di misura</h3>
     <div class="modal-field"><label>Codice</label><input id="eu-code" maxlength="10" value="${esc(u.code)}"></div>
     <div class="modal-field"><label>Descrizione</label><input id="eu-name" value="${esc(u.name || '')}"></div>
     <div class="modal-actions"><button class="btn-ghost" onclick="closeModal()">Annulla</button>
@@ -624,7 +624,7 @@ function uomSetDefault(i) {
 function renderSettings() {
   const s = db.settings;
   return `<div class="mgmt-panel">
-    <h3 class="settings-group-title">💶 Costi e margini</h3>
+    <h3 class="settings-group-title">${ico('euro', 'tinted', '')} Costi e margini</h3>
     <div class="modal-grid">
       <div class="modal-field"><label>Spese generali / overhead (%)</label><input type="number" id="set-ov" min="0" max="1000" step="0.1" value="${s.overheadPct}"></div>
       <div class="modal-field"><label>Margine / markup (%)</label><input type="number" id="set-mg" min="0" max="1000" step="0.1" value="${s.marginPct}"></div>
@@ -633,7 +633,7 @@ function renderSettings() {
     </div>
     <p class="empty-text" style="text-align:left;padding:4px 0 12px">Le percentuali sono i valori di default applicati a tutti i prodotti. Si possono sovrascrivere per singola macchina dalla "Modifica testata".<br>L'approvvigionamento è quello proposto alle <strong>nuove</strong> parti, e da esso dipende anche da dove viene il costo: dal ciclo se prodotta in casa, dal listino se acquistata. Su ciascuna parte resta modificabile nella sua scheda; quelle già a catalogo non si toccano.</p>
 
-    <h3 class="settings-group-title">🏷 Codifica automatica articoli</h3>
+    <h3 class="settings-group-title">${ico('tag', 'tinted', '')} Codifica automatica articoli</h3>
     <div class="modal-grid">
       <div class="modal-field"><label>Cifre parte incrementale codice</label><input type="number" id="set-digits" min="1" max="10" step="1" value="${codeDigits()}"></div>
       <div class="modal-field"><label>Prefisso codice — Commerciali</label><input id="set-pfx-acq" maxlength="10" value="${esc(s.codePrefixAcquistato || 'CMM')}" placeholder="CMM"></div>
@@ -642,7 +642,7 @@ function renderSettings() {
     </div>
     <p class="empty-text" style="text-align:left;padding:4px 0 12px">Le cifre della parte incrementale determinano lo zero-padding del progressivo (es. 3 → <span style="font-family:var(--mono)">${esc(s.codePrefixMateriale || 'MAT')}-ACC-LAM-001</span>). Il prefisso codice è la sigla iniziale usata nei codici automatici per commerciali, materie prime e parti.<br>Macchine, gruppi, sottogruppi e le parti legate a una macchina usano invece la <strong>codifica gerarchica</strong> (es. <span style="font-family:var(--mono)">TRN-BAS-001</span>), il cui schema si configura sulla singola macchina.</p>
 
-    <h3 class="settings-group-title">🔒 Accesso</h3>
+    <h3 class="settings-group-title">${ico('lock', 'tinted', '')} Accesso</h3>
     <div class="modal-grid">
       <div class="modal-field"><label>Durata della sessione salvata (giorni)</label><input type="number" id="set-session" min="0" max="365" step="1" value="${sessionMaxDays()}"></div>
     </div>

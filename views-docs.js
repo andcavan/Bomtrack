@@ -32,8 +32,8 @@ function docLockBanner(mode, kind, docKind, id) {
   // dal chiamante: nessun template deve poter iniettare codice in un onclick.
   const fn = docKind === 'order' ? 'ordUnlock' : 'rfqUnlock';
   return `<div class="doc-lock-banner">
-    <span>🔒 ${esc(kind)} — i dati sono protetti dalle modifiche accidentali. ${what}; note e stato restano sempre modificabili.</span>
-    <button class="btn-outline" onclick="${fn}('${esc(id)}')">🔓 Sblocca per modifica</button></div>`;
+    <span>${ico('lock', 'tinted', '')} ${esc(kind)} — i dati sono protetti dalle modifiche accidentali. ${what}; note e stato restano sempre modificabili.</span>
+    <button class="btn-outline" onclick="${fn}('${esc(id)}')">${ico('unlock', 'tinted', '')} Sblocca per modifica</button></div>`;
 }
 // Disabilita in un passaggio gli input marcati, invece di condizionare ogni template.
 function applyDocLock(mode, host) {
@@ -306,7 +306,7 @@ function docEditLineModal(k, id, lineId) {
     ${lotWarn ? `<span class="empty-text" style="padding:0">${lotWarn}</span>` : ''}</div>`;
   const prezzo = K.hasLinePrice ? `<div class="modal-field"><label id="${p}-price-label">${docPriceLabel(l.uom || '')}</label>
     <input id="${p}-price" type="number" min="0" step="any" value="${l.price === '' || l.price == null ? '' : l.price}" ${ro ? 'disabled' : ''}></div>` : '';
-  openModal(`<h3>✏ Modifica riga</h3>
+  openModal(`<h3>${ico('edit', 'tinted pill', '')} Modifica riga</h3>
     ${lineIdentityFields(p, l, ro)}
     ${prezzo ? `<div class="modal-grid">${qty}${prezzo}</div>` : qty}
     <div class="modal-field"><label>Nota (stampata sul documento)</label><textarea id="${p}-note" rows="2">${esc(l.note || '')}</textarea></div>
@@ -367,10 +367,17 @@ function docDel(k, id, before, extraWarn) {
     removeConUndo(K.coll, id, `${K.nome} ${doc.number} eliminat${K.suffisso}`, () => K.render());
   });
 }
-function docBackToList(k) {
+// Lasciare il documento aperto: quel che era in sospeso si salva, e lo sblocco
+// decade. Vale sia chiudendolo sia passando direttamente a un altro documento
+// dall'elenco a destra, che e' la stessa uscita senza il giro dall'elenco.
+function docLeave(k) {
   const K = docKind(k);
   if (K.dirty()) { saveDB(); K.dirty(false); }
   K.setUnlocked(null);
+}
+function docBackToList(k) {
+  const K = docKind(k);
+  docLeave(k);
   if (k === 'order') { orderView = 'list'; currentOrderId = null; }
   else { rfqView = 'list'; currentRfqId = null; }
   K.render();
@@ -442,9 +449,9 @@ function lineDescDoc(l) { return l.note ? (l.description || '') + '\n' + l.note 
 // fabbisogno. Serve a ritrovare il perché di un ordine mesi dopo averlo fatto.
 function docOriginRef(d) {
   const parti = [];
-  if (d.rfqId && getRfq(d.rfqId)) parti.push(`📨 Generato dalla richiesta <strong>${esc(getRfq(d.rfqId).number)}</strong>`);
+  if (d.rfqId && getRfq(d.rfqId)) parti.push(`${ico('mail', 'tinted', '')} Generato dalla richiesta <strong>${esc(getRfq(d.rfqId).number)}</strong>`);
   const p = d.planId && (db.plans || []).find(x => x.id === d.planId);
-  if (p) parti.push(`📋 Dal fabbisogno <strong>${esc(p.number)}</strong>`);
+  if (p) parti.push(`${ico('list', 'tinted', '')} Dal fabbisogno <strong>${esc(p.number)}</strong>`);
   return parti.length ? `<div class="ord-ref">${parti.join(' · ')}</div>` : '';
 }
 
@@ -456,11 +463,13 @@ const docFilters = {
   rfq: { q: '', status: '', supplierId: '' },
   order: { q: '', status: '', supplierId: '' },
 };
+// I campi di filtro dell'elenco, senza contenitore: li incolonna `wl-filters`
+// del telaio (worklist.js). In una colonna da 360px tre menu affiancati
+// sarebbero tre fessure — qui vanno uno sotto l'altro, larghi quanto la colonna.
 function docFilterBar(kind, statusMap, shown, total) {
   const f = docFilters[kind];
   const sups = db.suppliers.slice().sort((a, b) => (a.name || '').localeCompare(b.name || ''));
-  return `<div class="catalog-filters">
-    <input type="text" class="search" id="${kind}f-q" value="${esc(f.q)}" placeholder="🔍 Cerca numero, oggetto, fornitore o riga..." oninput="docFilterInput('${kind}')">
+  return `<input type="text" class="search" id="${kind}f-q" value="${esc(f.q)}" placeholder="Cerca numero, oggetto, fornitore o riga..." oninput="docFilterInput('${kind}')">
     <select id="${kind}f-status" onchange="docFilterChange('${kind}')">
       <option value="">Tutti gli stati</option>
       ${Object.entries(statusMap).map(([k, v]) => `<option value="${k}" ${f.status === k ? 'selected' : ''}>${v}</option>`).join('')}
@@ -471,10 +480,9 @@ function docFilterBar(kind, statusMap, shown, total) {
       ${sups.map(s => `<option value="${s.id}" ${f.supplierId === s.id ? 'selected' : ''}>${esc(s.name)}</option>`).join('')}
     </select>
     <span class="doc-filter-count" id="${kind}f-count">${docFilterCountText(shown, total)}</span>
-    ${docFilterActive(kind) ? `<button class="btn-outline" onclick="docFilterReset('${kind}')">✕ Azzera filtri</button>` : ''}
-  </div>`;
+    ${docFilterActive(kind) ? `<button class="btn-outline" onclick="docFilterReset('${kind}')">✕ Azzera filtri</button>` : ''}`;
 }
-function docFilterCountText(shown, total) { return shown === total ? `${total} documenti` : `${shown} di ${total}`; }
+function docFilterCountText(shown, total) { return worklistCount(shown, total, 'documento', 'documenti'); }
 function docFilterActive(kind) { const f = docFilters[kind]; return !!(f.q || f.status || f.supplierId); }
 // Digitazione nel campo di ricerca: si aspetta la pausa. I menu a tendina
 // restano immediati — un click è già un'intenzione conclusa.
@@ -564,12 +572,25 @@ function orderListExportSpec() { return docListExportSpec('order'); }
 
 function renderRfq() {
   const host = document.getElementById('view-rfq');
-  if (rfqView === 'edit' && getRfq(currentRfqId)) {
-    host.innerHTML = renderRfqEdit(currentRfqId);
-    applyDocLock(rfqMode(getRfq(currentRfqId)), host);
-  }
-  else if (rfqView === 'compare') host.innerHTML = renderRfqCompare();
-  else { rfqView = 'list'; host.innerHTML = renderRfqList(); }
+  if (rfqView === 'edit' && !getRfq(currentRfqId)) { rfqView = 'list'; currentRfqId = null; }
+  const r = rfqView === 'edit' ? getRfq(currentRfqId) : null;
+  const nuove = `<button class="add-btn-sm" onclick="newRfq()">+ Nuova richiesta</button>
+      <button class="btn-outline" onclick="openRfqCompare()">${ico('chart', 'tinted', '')} Confronta offerte</button>`;
+  host.innerHTML = worklistHtml({
+    titolo: 'Richieste di offerta', icona: 'mail', listaId: 'rfq-list',
+    comandi: nuove + listExportButtons('rfqListExportSpec'),
+    filtri: docFilterBar('rfq', RFQ_STATUS, docFilterApply('rfq', db.rfqs).length, db.rfqs.length),
+    righe: rfqListRows(),
+    doc: r ? renderRfqEdit(currentRfqId) : (rfqView === 'compare' ? renderRfqCompare() : ''),
+    vuoto: {
+      titolo: 'Nessuna richiesta aperta qui',
+      testo: 'Scegli una richiesta dall\'elenco a destra: al centro compaiono il fornitore, le righe da quotare e i prezzi tornati con l\'offerta, pronti da registrare a listino.',
+      comandi: nuove,
+    },
+  });
+  // Il blocco vale per il documento al centro: i filtri dell'elenco non hanno
+  // classi `lock-*` e restano manovrabili anche a documento protetto.
+  if (r) applyDocLock(rfqMode(r), host);
   a11yFields(host);
 }
 
@@ -586,38 +607,29 @@ function rfqListRows() {
   return list.map(r => {
     const nl = (r.lines || []).length;
     const sup = r.supplierId ? supplierName(r.supplierId) : '— nessun fornitore —';
-    return `<div class="mgmt-item">
-      <span class="mgmt-item-name"><span style="font-family:var(--mono)">${esc(r.number)}</span> — ${esc(r.title || '(senza titolo)')}</span>
-      <span class="mgmt-item-meta">${esc(sup)} · ${nl} righe${r.date ? ' · ' + fmtDateIt(r.date) : ''}</span>
-      ${statusBadge(RFQ_STATUS, r.status)}
-      <div class="mgmt-item-actions">
-        <button class="mini-btn" onclick="openRfqEdit('${r.id}')" title="Modifica">✏</button>
-        <button class="mini-btn" onclick="orderFromRfq('${r.id}')" title="Crea ordine da questa richiesta">🧾</button>
-        <button class="mini-btn danger" onclick="delRfq('${r.id}')" title="Elimina">🗑</button>
-      </div></div>`;
+    return worklistRow({
+      numero: r.number,
+      badge: statusBadge(RFQ_STATUS, r.status),
+      titolo: r.title || '',
+      meta: `${esc(sup)} · ${nl} ${nl === 1 ? 'riga' : 'righe'}${r.date ? ' · ' + esc(fmtDateIt(r.date)) : ''}`,
+      sel: rfqView === 'edit' && currentRfqId === r.id,
+      azione: `openRfqEdit('${r.id}')`,
+      etichetta: `Apri la richiesta ${r.number}`,
+    });
   }).join('') || `<div class="empty-text">${db.rfqs.length ? 'Nessuna richiesta con questi filtri.' : 'Nessuna richiesta di offerta. Creane una per chiedere prezzi a un fornitore.'}</div>`;
 }
-function renderRfqList() {
-  return `<div class="manage-wrap">
-    <div class="bom-toolbar">
-      <h2 class="section-title">📨 Richieste di offerta</h2>
-      <button class="add-btn-sm" onclick="newRfq()">+ Nuova richiesta</button>
-      <button class="btn-outline" onclick="openRfqCompare()">📊 Confronta offerte</button>
-      ${listExportButtons('rfqListExportSpec')}
-    </div>
-    ${docFilterBar('rfq', RFQ_STATUS, docFilterApply('rfq', db.rfqs).length, db.rfqs.length)}
-    <div class="mgmt-list" id="rfq-list">${rfqListRows()}</div></div>`;
-}
-
 function newRfq() {
   if (!roleGuard('docs')) return;
   const r = Store.insert('rfqs', { id: gid(), number: nextRfqNumber(), title: '', date: nowISO().slice(0, 10),
     status: 'bozza', notes: '', notesInternal: '', supplierId: null, planId: null,
     transport: db.settings.transportDefault || '', payment: db.settings.paymentDefault || '',
     lines: [], active: true });
-  currentRfqId = r.id; rfqView = 'edit'; rfqDirty = false; renderRfq();
+  docLeave('rfq'); currentRfqId = r.id; rfqView = 'edit'; renderRfq();
 }
-function openRfqEdit(id) { currentRfqId = id; rfqView = 'edit'; rfqDirty = false; rfqUnlockedId = null; renderRfq(); }
+// Aprire un documento chiude quello di prima: `docLeave` salva cio' che era in
+// sospeso, come faceva l'uscita verso l'elenco. Senza, saltare da una riga
+// all'altra perderebbe le modifiche non salvate senza dire niente.
+function openRfqEdit(id) { docLeave('rfq'); currentRfqId = id; rfqView = 'edit'; renderRfq(); }
 function openRfqCompare() { rfqView = 'compare'; renderRfq(); }
 function rfqBackToList() { docBackToList('rfq'); }
 function rfqMarkDirty() { docMarkDirty('rfq'); }
@@ -666,7 +678,7 @@ function lineIdentityFields(pfx, l, locked) {
   if (locked) {
     return `<div class="modal-field"><label>Riga manuale</label>
       <input value="${esc((l.code || '') + (l.code ? ' — ' : '') + (l.description || '') + ' · ' + (l.qty || 0) + ' ' + (l.uom || ''))}" disabled></div>
-      <p class="empty-text" style="text-align:left;padding:0 0 8px">Documento bloccato dallo stato: modificabile la sola nota. Usa <strong>🔓 Sblocca per modifica</strong> per correggere il resto.</p>`;
+      <p class="empty-text" style="text-align:left;padding:0 0 8px">Documento bloccato dallo stato: modificabile la sola nota. Usa <strong>${ico('unlock', 'tinted', '')} Sblocca per modifica</strong> per correggere il resto.</p>`;
   }
   return `<div class="modal-field"><label>Descrizione</label><input id="${pfx}-desc" value="${esc(l.description || '')}"></div>
     <div class="modal-field"><label>Codice (opzionale)</label><input id="${pfx}-code" value="${esc(l.code || '')}"></div>
@@ -709,7 +721,7 @@ function catalogPickerModal(onAddIds) {
   const famOpts = (db.families || []).map(f => `<option value="${f.id}">${esc(f.name)}</option>`).join('');
   openModal(`<h3>+ Aggiungi da catalogo</h3>
     <div class="rfq-pick-filters">
-      <input class="search" id="pick-search" placeholder="🔍 Codice o nome..." oninput="debounced('pick', pickFilter)">
+      <input class="search" id="pick-search" placeholder="Codice o nome..." oninput="debounced('pick', pickFilter)">
       <select id="pick-type" onchange="pickFilter()"><option value="">Tutti i tipi</option>${typeOpts}</select>
       <select id="pick-fam" onchange="pickFamilyChange()"><option value="">Tutte le famiglie</option>${famOpts}</select>
       <select id="pick-sub" onchange="pickFilter()"><option value="">Tutte le sottofamiglie</option></select>
@@ -752,36 +764,62 @@ function pickConfirm() {
 function rfqAddCatalogModal(id) { if (!rfqGuard(id, 'contract')) return; catalogPickerModal(ids => rfqAddCatalogLines(id, ids)); }
 function rfqAddCatalogLines(id, ids) { docAddCatalogLines('rfq', id, ids); }
 
+// ─── Righe di documento a due piani ───
+// Una riga d'ordine ha dodici colonne, e dodici colonne su uno schermo normale
+// vogliono dire o testo minuscolo o scorrimento orizzontale — e con lo
+// scorrimento il codice, che è l'identità della riga, esce dallo schermo.
+//
+// Le colonne però non erano dodici cose diverse: erano sei coppie. Il codice e
+// la sua descrizione, la quantità e la sua unità, il prezzo unitario e
+// l'importo che ne discende, la data chiesta e quella confermata, il ricevuto e
+// il residuo che ne resta, la modifica e l'eliminazione. Sopra sta il dato che
+// si compila, sotto quello che lo spiega o ne consegue.
+//
+// Il vantaggio non è solo lo spazio: le due metà si leggono insieme. «10 pz» e
+// «120,00 €» stanno una sotto l'altra invece che a mezzo schermo di distanza.
+function cell2(sopra, sotto, cls) {
+  return `<td${cls ? ` class="${cls}"` : ''}><div class="ln-a">${sopra}</div><div class="ln-b">${sotto == null ? '' : sotto}</div></td>`;
+}
+function th2(sopra, sotto, titolo) {
+  return `<th${titolo ? ` title="${esc(titolo)}"` : ''}><div class="ln-a">${sopra}</div><div class="ln-b">${sotto || ''}</div></th>`;
+}
+
 function renderRfqEdit(id) {
-  const r = getRfq(id); if (!r) { rfqView = 'list'; return renderRfqList(); }
+  const r = getRfq(id); if (!r) { rfqView = 'list'; return ''; }
   const lines = (r.lines || []).map((l, i) => {
     const si = rfqLineSupInfo(r, l);
-    const siSub = si ? `<div class="rfq-cmp-sub">🏷 ${esc(si.code || '—')}${si.desc ? ' · ' + esc(si.desc) : ''}</div>` : '';
-    const noteSub = l.note ? `<div class="line-note">📝 ${esc(l.note)}</div>` : '';
+    const siSub = si ? `<div class="rfq-cmp-sub">${ico('tag', 'tinted', 'Codice presso il fornitore')} ${esc(si.code || '—')}${si.desc ? ' · ' + esc(si.desc) : ''}</div>` : '';
+    const noteSub = l.note ? `<div class="line-note">${ico('edit', 'tinted', 'Nota di riga')} ${esc(l.note)}</div>` : '';
     const lotWarn = lineLotWarn(l);
+    const qty = Number(l.qty) || 0;
+    const price = (l.price === '' || l.price == null) ? null : Number(l.price);
     return `<tr>
-    <td>${i + 1}</td>
-    <td style="font-family:var(--mono)">${codeLink(l.itemId, l.code || '')}</td>
-    <td>${esc(l.description)}${l.itemId ? '' : ' <span class="rfq-manual-tag">manuale</span>'}${lotWarn ? ' ' + lotWarn : ''}${siSub}${noteSub}</td>
-    <td>${esc(l.uom || '')}</td>
-    <td><input type="number" class="rfq-qty-input lock-contract" value="${l.qty}" min="0" step="any" onchange="rfqSetLine('${id}','${l.id}','qty',this.value)"></td>
-    <td><input type="number" class="rfq-price-input lock-offer" value="${l.price === '' || l.price == null ? '' : l.price}" min="0" step="any" placeholder="—" onchange="rfqSetLine('${id}','${l.id}','price',this.value)"></td>
-    <td><input type="date" class="rfq-date-input lock-offer" value="${esc(l.deliveryDate || '')}" onchange="rfqSetLine('${id}','${l.id}','deliveryDate',this.value)"></td>
-    <td class="line-actions"><button class="mini-btn" onclick="rfqEditLineModal('${id}','${l.id}')" title="Modifica riga / nota">✏</button>
-      <button class="mini-btn danger lock-contract" onclick="rfqDelLine('${id}','${l.id}')">🗑</button></td></tr>`;
+      ${cell2(i + 1, '', 'ln-idx')}
+      ${cell2(`<span class="ln-code">${codeLink(l.itemId, l.code || '')}</span>`,
+    `${esc(l.description)}${l.itemId ? '' : ' <span class="rfq-manual-tag">manuale</span>'}${lotWarn ? ' ' + lotWarn : ''}${siSub}${noteSub}`)}
+      ${cell2(`<input type="number" class="rfq-qty-input lock-contract" value="${l.qty}" min="0" step="any" title="Quantità" onchange="rfqSetLine('${id}','${l.id}','qty',this.value)">`,
+    esc(l.uom || ''))}
+      ${cell2(`<input type="number" class="rfq-price-input lock-offer" value="${price == null ? '' : price}" min="0" step="any" placeholder="—" title="Prezzo unitario" onchange="rfqSetLine('${id}','${l.id}','price',this.value)">`,
+    `<span class="ln-amount">${price != null ? fmtN(qty * price) : '—'}</span>`)}
+      ${cell2(`<input type="date" class="rfq-date-input lock-offer" value="${esc(l.deliveryDate || '')}" title="Data di consegna richiesta" onchange="rfqSetLine('${id}','${l.id}','deliveryDate',this.value)">`, '')}
+      ${cell2(`<button class="mini-btn" onclick="rfqEditLineModal('${id}','${l.id}')" title="Modifica riga / nota">${ico('edit', 'tinted', 'Modifica riga / nota')}</button>`,
+    `<button class="mini-btn danger lock-contract" onclick="rfqDelLine('${id}','${l.id}')" title="Togli la riga">${ico('trash', 'tinted', 'Togli la riga')}</button>`, 'line-actions')}
+    </tr>`;
   }).join('')
-    || `<tr><td colspan="8" class="empty-text">Nessuna riga. Aggiungi articoli dal catalogo o manualmente.</td></tr>`;
+    || `<tr><td colspan="6" class="empty-text">Nessuna riga. Aggiungi articoli dal catalogo o manualmente.</td></tr>`;
   const co = db.settings.company || {};
-  const coWarn = co.name ? '' : `<div class="rfq-warn">⚠ Dati azienda non impostati: compilali in <strong>Gestione › Dati azienda</strong> per stamparli sul documento.</div>`;
+  const coWarn = co.name ? '' : `<div class="rfq-warn">${ico('warning', 'tinted', '')} Dati azienda non impostati: compilali in <strong>Gestione › Dati azienda</strong> per stamparli sul documento.</div>`;
   const dis = rfqDirty ? 'disabled title="Salva la richiesta prima di generare il documento"' : '';
   const mode = rfqMode(r);
   const lockBanner = docLockBanner(mode, 'Richiesta ' + (RFQ_STATUS[r.status] || r.status).toLowerCase(), 'rfq', id);
   return `<div class="manage-wrap">
     <div class="bom-toolbar">
-      <button class="btn-outline" onclick="rfqBackToList()">← Elenco</button>
+      ${worklistCloseBtn('rfqBackToList()', 'la richiesta')}
       <h2 class="section-title" style="font-family:var(--mono)">${esc(r.number)}</h2>
       ${statusBadge(RFQ_STATUS, r.status)}
-      <button class="add-btn-sm rfq-save-btn ${rfqDirty ? 'dirty' : ''}" id="rfq-save-btn" onclick="rfqSave('${id}')">💾 Salva</button>
+      <button class="add-btn-sm rfq-save-btn ${rfqDirty ? 'dirty' : ''}" id="rfq-save-btn" onclick="rfqSave('${id}')">${ico('save', 'tinted', '')} Salva</button>
+      <button class="btn-outline" onclick="orderFromRfq('${id}')" title="Crea un ordine a fornitore da questa richiesta">${ico('receipt', 'tinted', '')} Crea ordine</button>
+      <button class="btn-outline" style="color:var(--red);border-color:var(--red)" onclick="delRfq('${id}')" title="Elimina la richiesta">${ico('trash', 'tinted', '')} Elimina</button>
     </div>
     ${coWarn}${lockBanner}${docOriginRef(r)}${stampLine(r)}
     <div class="rfq-head">
@@ -802,7 +840,7 @@ function renderRfqEdit(id) {
           <datalist id="rfq-payment-opts">${(db.settings.paymentOptions || []).map(o => `<option value="${esc(o)}"></option>`).join('')}</datalist></div>
       </div>
       <div class="modal-field"><label>Note per il fornitore</label><textarea rows="2" onchange="rfqSetField('${id}','notes',this.value)">${esc(r.notes || '')}</textarea></div>
-      <div class="modal-field"><label>🔒 Note interne (non stampate sui documenti)</label><textarea rows="2" class="notes-internal" onchange="rfqSetField('${id}','notesInternal',this.value)">${esc(r.notesInternal || '')}</textarea></div>
+      <div class="modal-field"><label>${ico('lock', 'tinted', '')} Note interne (non stampate sui documenti)</label><textarea rows="2" class="notes-internal" onchange="rfqSetField('${id}','notesInternal',this.value)">${esc(r.notesInternal || '')}</textarea></div>
     </div>
     <h3 class="rfq-subhead">Righe richiesta
       <span class="rfq-head-actions">
@@ -810,14 +848,19 @@ function renderRfqEdit(id) {
         <button class="btn-outline lock-contract" onclick="rfqAddManualLineModal('${id}')">+ Riga manuale</button>
       </span></h3>
     <p class="empty-text" style="text-align:left;padding:0 0 8px">Prezzo unitario e data consegna si lasciano vuoti nel documento inviato e si compilano al ritorno dell'offerta.</p>
-    <div class="table-wrap"><table class="rfq-table">
-      <thead><tr><th>#</th><th>Codice</th><th>Descrizione</th><th>U.M.</th><th>Q.tà</th>
-        <th title="Prezzo di una unità, nella U.M. della riga">Prezzo unit. (${esc(cur())}/U.M.)</th><th>Data consegna</th><th></th></tr></thead>
+    <div class="table-wrap"><table class="rfq-table rfq-table-2">
+      <thead><tr>
+        <th class="ln-idx">#</th>
+        ${th2('Codice', 'Descrizione')}
+        ${th2('Q.tà', 'U.M.')}
+        ${th2(`Prezzo unit. (${esc(cur())}/U.M.)`, `Importo (${esc(cur())})`, 'Prezzo di una unità, nella U.M. della riga; sotto, quanto fa per la quantità di riga')}
+        ${th2('Data consegna', '')}
+        <th></th></tr></thead>
       <tbody>${lines}</tbody></table></div>
     <div class="rfq-export-bar">
       <label>Documento di richiesta:</label>
-      <button class="export-btn-pdf rfq-export-btn" onclick="exportRfqPDF('${id}')" ${dis}>📄 PDF</button>
-      <button class="export-btn-xls rfq-export-btn" onclick="exportRfqExcel('${id}')" ${dis}>📗 Excel</button>
+      <button class="export-btn-pdf rfq-export-btn" onclick="exportRfqPDF('${id}')" ${dis}>${ico('file', 'tinted', '')} PDF</button>
+      <button class="export-btn-xls rfq-export-btn" onclick="exportRfqExcel('${id}')" ${dis}>${ico('sheet', 'tinted', '')} Excel</button>
       ${rfqDirty ? '<span class="rfq-dirty-hint">Salva per abilitare la generazione del documento</span>' : ''}
     </div>
     ${rfqPriceBar(r)}
@@ -836,7 +879,7 @@ function rfqPriceBar(r) {
   if (!nuove && !già) return '';
   return `<div class="rfq-export-bar">
     <label>Prezzi d'offerta:</label>
-    <button class="btn-outline" onclick="rfqRecordPrices('${r.id}')" ${nuove ? '' : 'disabled'}>💶 Registra a listino${nuove ? ' (' + nuove + ')' : ''}</button>
+    <button class="btn-outline" onclick="rfqRecordPrices('${r.id}')" ${nuove ? '' : 'disabled'}>${ico('euro', 'tinted', '')} Registra a listino${nuove ? ' (' + nuove + ')' : ''}</button>
     <span class="rfq-dirty-hint" style="color:var(--text-dim)">${già ? già + ' già registrati. ' : ''}Le quotazioni restano nel listino dell'articolo; il costo in uso si sceglie da lì.</span>
   </div>`;
 }
@@ -939,8 +982,8 @@ function rfqToggleCompare(rid, on) {
 function renderRfqCompare() {
   rfqCompareSel = rfqCompareSel.filter(id => getRfq(id));
   const head = `<div class="bom-toolbar">
-      <button class="btn-outline" onclick="rfqBackToList()">← Elenco</button>
-      <h2 class="section-title">📊 Confronto offerte tra richieste</h2></div>`;
+      ${worklistCloseBtn('rfqBackToList()', 'il confronto')}
+      <h2 class="section-title">${ico('chart', 'tinted pill', '')} Confronto offerte tra richieste</h2></div>`;
   const picker = db.rfqs.slice().sort((a, b) => (b.number || '').localeCompare(a.number || '')).map(r => {
     const on = rfqCompareSel.includes(r.id);
     return `<label class="rfq-sup-chk"><input type="checkbox" ${on ? 'checked' : ''} onchange="rfqToggleCompare('${r.id}',this.checked)">
@@ -1065,11 +1108,22 @@ function nextOrderNumber() {
 
 function renderOrders() {
   const host = document.getElementById('view-orders');
-  if (orderView === 'edit' && getOrder(currentOrderId)) {
-    host.innerHTML = renderOrderEdit(currentOrderId);
-    applyDocLock(ordMode(getOrder(currentOrderId)), host);
-  }
-  else { orderView = 'list'; host.innerHTML = renderOrderList(); }
+  if (orderView === 'edit' && !getOrder(currentOrderId)) { orderView = 'list'; currentOrderId = null; }
+  const o = orderView === 'edit' ? getOrder(currentOrderId) : null;
+  host.innerHTML = worklistHtml({
+    titolo: 'Ordini a fornitore', icona: 'receipt', listaId: 'order-list',
+    comandi: `<button class="add-btn-sm" onclick="newOrder()">+ Nuovo ordine</button>
+      ${listExportButtons('orderListExportSpec')}`,
+    filtri: docFilterBar('order', ORDER_STATUS, docFilterApply('order', db.orders).length, db.orders.length),
+    righe: orderListRows(),
+    doc: o ? renderOrderEdit(currentOrderId) : '',
+    vuoto: {
+      titolo: 'Nessun ordine aperto qui',
+      testo: 'Scegli un ordine dall\'elenco a destra: al centro compaiono le righe con il prezzo, la data confermata dal fornitore e la colonna dei ricevimenti, che e\' quella che alimenta il magazzino.',
+      comandi: '<button class="add-btn-sm" onclick="newOrder()">+ Nuovo ordine</button>',
+    },
+  });
+  if (o) applyDocLock(ordMode(o), host);
   a11yFields(host);
 }
 
@@ -1079,33 +1133,24 @@ function orderListRows() {
     const sup = o.supplierId ? supplierName(o.supplierId) : '— nessun fornitore —';
     const rec = orderReception(o);
     const recTxt = rec.ordered ? `ric. ${fmtQty(rec.received)}/${fmtQty(rec.ordered)}` : '';
-    return `<div class="mgmt-item">
-      <span class="mgmt-item-name"><span style="font-family:var(--mono)">${esc(o.number)}</span> — ${esc(o.title || '(senza titolo)')}</span>
-      <span class="mgmt-item-meta">${esc(sup)} · ${fmtN(orderTotal(o))}${recTxt ? ' · ' + recTxt : ''}${o.date ? ' · ' + fmtDateIt(o.date) : ''}</span>
-      ${statusBadge(ORDER_STATUS, o.status)}
-      <div class="mgmt-item-actions">
-        <button class="mini-btn" onclick="openOrderEdit('${o.id}')" title="Modifica">✏</button>
-        <button class="mini-btn danger" onclick="delOrder('${o.id}')" title="Elimina">🗑</button>
-      </div></div>`;
+    return worklistRow({
+      numero: o.number,
+      badge: statusBadge(ORDER_STATUS, o.status),
+      titolo: o.title || '',
+      meta: `${esc(sup)} · ${fmtN(orderTotal(o))}${recTxt ? ' · ' + recTxt : ''}${o.date ? ' · ' + esc(fmtDateIt(o.date)) : ''}`,
+      sel: orderView === 'edit' && currentOrderId === o.id,
+      spenta: o.status === 'annullato',
+      azione: `openOrderEdit('${o.id}')`,
+      etichetta: `Apri l'ordine ${o.number}`,
+    });
   }).join('') || `<div class="empty-text">${db.orders.length ? 'Nessun ordine con questi filtri.' : 'Nessun ordine. Creane uno o generane uno da una richiesta di offerta.'}</div>`;
 }
-function renderOrderList() {
-  return `<div class="manage-wrap">
-    <div class="bom-toolbar">
-      <h2 class="section-title">🧾 Ordini a fornitore</h2>
-      <button class="add-btn-sm" onclick="newOrder()">+ Nuovo ordine</button>
-      ${listExportButtons('orderListExportSpec')}
-    </div>
-    ${docFilterBar('order', ORDER_STATUS, docFilterApply('order', db.orders).length, db.orders.length)}
-    <div class="mgmt-list" id="order-list">${orderListRows()}</div></div>`;
-}
-
 function newOrder() {
   if (!roleGuard('docs')) return;
   const o = Store.insert('orders', { id: gid(), number: nextOrderNumber(), title: '', date: nowISO().slice(0, 10),
     status: 'bozza', supplierId: null, transport: db.settings.transportDefault || '', payment: db.settings.paymentDefault || '',
     rfqId: null, planId: null, supplierConfirmation: '', notes: '', notesInternal: '', lines: [], active: true });
-  currentOrderId = o.id; orderView = 'edit'; orderDirty = false; renderOrders();
+  docLeave('order'); currentOrderId = o.id; orderView = 'edit'; renderOrders();
 }
 function orderFromRfq(rfqId) {
   if (!roleGuard('docs')) return;
@@ -1127,11 +1172,11 @@ function orderFromRfq(rfqId) {
   let closed = false;
   if (r.status === 'inviata' || r.status === 'ricevuta') { r.status = 'chiusa'; touch(r); closed = true; }
   saveDB();
-  currentOrderId = o.id; orderView = 'edit'; orderDirty = false; orderUnlockedId = null;
+  docLeave('order'); currentOrderId = o.id; orderView = 'edit';
   setView('orders');
   showToast(`Ordine ${o.number} creato dalla richiesta${closed ? ' · ' + r.number + ' chiusa' : ''}`);
 }
-function openOrderEdit(id) { currentOrderId = id; orderView = 'edit'; orderDirty = false; orderUnlockedId = null; renderOrders(); }
+function openOrderEdit(id) { docLeave('order'); currentOrderId = id; orderView = 'edit'; renderOrders(); }
 function orderBackToList() { docBackToList('order'); }
 function orderMarkDirty() { docMarkDirty('order'); }
 function ordSave(id) { docSave('order', id); }
@@ -1183,48 +1228,49 @@ function ordLineListinoWarn(o, l) {
 }
 
 function renderOrderEdit(id) {
-  const o = getOrder(id); if (!o) { orderView = 'list'; return renderOrderList(); }
+  const o = getOrder(id); if (!o) { orderView = 'list'; return ''; }
   const lines = (o.lines || []).map((l, i) => {
     const si = lineSupInfo(o.supplierId, l);
-    const siSub = si ? `<div class="rfq-cmp-sub">🏷 ${esc(si.code || '—')}${si.desc ? ' · ' + esc(si.desc) : ''}</div>` : '';
+    const siSub = si ? `<div class="rfq-cmp-sub">${ico('tag', 'tinted', 'Codice presso il fornitore')} ${esc(si.code || '—')}${si.desc ? ' · ' + esc(si.desc) : ''}</div>` : '';
     const warn = ordLineListinoWarn(o, l);
     const lotWarn = lineLotWarn(l);
     const qty = Number(l.qty) || 0, price = (l.price === '' || l.price == null) ? null : Number(l.price);
     const amount = price != null ? qty * price : null;
     const rec = Number(l.received) || 0, residual = qty - rec;
     return `<tr>
-      <td>${i + 1}</td>
-      <td style="font-family:var(--mono)">${codeLink(l.itemId, l.code || '')}</td>
-      <td>${esc(l.description)}${l.itemId ? '' : ' <span class="rfq-manual-tag">manuale</span>'}${warn ? ' ' + warn : ''}${lotWarn ? ' ' + lotWarn : ''}${siSub}${l.note ? `<div class="line-note">📝 ${esc(l.note)}</div>` : ''}</td>
-      <td>${esc(l.uom || '')}</td>
-      <td><input type="number" class="rfq-qty-input lock-contract" value="${l.qty}" min="0" step="any" onchange="ordSetLine('${id}','${l.id}','qty',this.value)"></td>
-      <td><input type="number" class="rfq-price-input lock-contract" value="${price != null ? price : ''}" min="0" step="any" placeholder="—" onchange="ordSetLine('${id}','${l.id}','price',this.value)"></td>
-      <td class="ord-amount">${amount != null ? fmtN(amount) : '—'}</td>
-      <td><input type="date" class="rfq-date-input lock-contract" value="${esc(l.deliveryDate || '')}" onchange="ordSetLine('${id}','${l.id}','deliveryDate',this.value)"></td>
-      <td><input type="date" class="rfq-date-input lock-reception" value="${esc(l.confirmedDate || '')}" title="Data che il fornitore ha confermato" onchange="ordSetLine('${id}','${l.id}','confirmedDate',this.value)">
-        ${ordLineDelayHtml(l)}</td>
-      <td><input type="number" class="rfq-qty-input lock-reception" value="${rec}" min="0" step="any" onchange="ordSetLine('${id}','${l.id}','received',this.value)"></td>
-      <td class="ord-residual ${residual > 0 ? 'pos' : ''}">${fmtQty(residual)}</td>
-      <td class="line-actions"><button class="mini-btn" onclick="ordEditLineModal('${id}','${l.id}')" title="Modifica riga / nota">✏</button>
-        <button class="mini-btn danger lock-contract" onclick="ordDelLine('${id}','${l.id}')">🗑</button></td></tr>`;
-  }).join('') || `<tr><td colspan="12" class="empty-text">Nessuna riga. Aggiungi articoli dal catalogo o manualmente.</td></tr>`;
+      ${cell2(i + 1, '', 'ln-idx')}
+      ${cell2(`<span class="ln-code">${codeLink(l.itemId, l.code || '')}</span>`,
+    `${esc(l.description)}${l.itemId ? '' : ' <span class="rfq-manual-tag">manuale</span>'}${warn ? ' ' + warn : ''}${lotWarn ? ' ' + lotWarn : ''}${siSub}${l.note ? `<div class="line-note">${ico('edit', 'tinted', 'Nota di riga')} ${esc(l.note)}</div>` : ''}`)}
+      ${cell2(`<input type="number" class="rfq-qty-input lock-contract" value="${l.qty}" min="0" step="any" title="Quantità ordinata" onchange="ordSetLine('${id}','${l.id}','qty',this.value)">`,
+    esc(l.uom || ''))}
+      ${cell2(`<input type="number" class="rfq-price-input lock-contract" value="${price != null ? price : ''}" min="0" step="any" placeholder="—" title="Prezzo unitario" onchange="ordSetLine('${id}','${l.id}','price',this.value)">`,
+    `<span class="ln-amount">${amount != null ? fmtN(amount) : '—'}</span>`)}
+      ${cell2(`<input type="date" class="rfq-date-input lock-contract" value="${esc(l.deliveryDate || '')}" title="Data che abbiamo chiesto" onchange="ordSetLine('${id}','${l.id}','deliveryDate',this.value)">`,
+    `<input type="date" class="rfq-date-input lock-reception" value="${esc(l.confirmedDate || '')}" title="Data che il fornitore ha confermato" onchange="ordSetLine('${id}','${l.id}','confirmedDate',this.value)">${ordLineDelayHtml(l)}`)}
+      ${cell2(`<input type="number" class="rfq-qty-input lock-reception" value="${rec}" min="0" step="any" title="Quantità ricevuta" onchange="ordSetLine('${id}','${l.id}','received',this.value)">`,
+    `<span class="ln-residual ${residual > 0 ? 'pos' : ''}" title="Residuo da ricevere">${fmtQty(residual)}</span>`)}
+      ${cell2(`<button class="mini-btn" onclick="ordEditLineModal('${id}','${l.id}')" title="Modifica riga / nota">${ico('edit', 'tinted', 'Modifica riga / nota')}</button>`,
+    `<button class="mini-btn danger lock-contract" onclick="ordDelLine('${id}','${l.id}')" title="Togli la riga">${ico('trash', 'tinted', 'Togli la riga')}</button>`, 'line-actions')}
+    </tr>`;
+  }).join('') || `<tr><td colspan="7" class="empty-text">Nessuna riga. Aggiungi articoli dal catalogo o manualmente.</td></tr>`;
   const total = orderTotal(o);
   // Se il fornitore ha confermato più tardi di quanto chiesto, si dice subito e
   // in testata: è l'informazione che fa decidere se la commessa slitta, e non
   // deve stare nascosta in una colonna in fondo.
   const ritardo = orderWorstDelay(o);
   const co = db.settings.company || {};
-  const coWarn = co.name ? '' : `<div class="rfq-warn">⚠ Dati azienda non impostati: compilali in <strong>Gestione › Dati azienda</strong> per stamparli sul documento.</div>`;
+  const coWarn = co.name ? '' : `<div class="rfq-warn">${ico('warning', 'tinted', '')} Dati azienda non impostati: compilali in <strong>Gestione › Dati azienda</strong> per stamparli sul documento.</div>`;
   const rfqRef = docOriginRef(o);
   const dis = orderDirty ? 'disabled title="Salva l\'ordine prima di generare il documento"' : '';
   const mode = ordMode(o);
   const lockBanner = docLockBanner(mode, 'Ordine ' + (ORDER_STATUS[o.status] || o.status).toLowerCase(), 'order', id);
   return `<div class="manage-wrap">
     <div class="bom-toolbar">
-      <button class="btn-outline" onclick="orderBackToList()">← Elenco</button>
+      ${worklistCloseBtn('orderBackToList()', "l'ordine")}
       <h2 class="section-title" style="font-family:var(--mono)">${esc(o.number)}</h2>
       ${statusBadge(ORDER_STATUS, o.status)}
-      <button class="add-btn-sm rfq-save-btn ${orderDirty ? 'dirty' : ''}" id="order-save-btn" onclick="ordSave('${id}')">💾 Salva</button>
+      <button class="add-btn-sm rfq-save-btn ${orderDirty ? 'dirty' : ''}" id="order-save-btn" onclick="ordSave('${id}')">${ico('save', 'tinted', '')} Salva</button>
+      <button class="btn-outline" style="color:var(--red);border-color:var(--red)" onclick="delOrder('${id}')" title="Elimina l'ordine">${ico('trash', 'tinted', '')} Elimina</button>
     </div>
     ${coWarn}${rfqRef}${lockBanner}${stampLine(o)}
     <div class="rfq-head">
@@ -1248,28 +1294,31 @@ function renderOrderEdit(id) {
         <div class="modal-field"><label>N° conferma d'ordine fornitore</label><input value="${esc(o.supplierConfirmation || '')}" onchange="ordSetField('${id}','supplierConfirmation',this.value)"></div>
       </div>
       <div class="modal-field"><label>Note</label><textarea rows="2" onchange="ordSetField('${id}','notes',this.value)">${esc(o.notes || '')}</textarea></div>
-      <div class="modal-field"><label>🔒 Note interne (non stampate sui documenti)</label><textarea rows="2" class="notes-internal" onchange="ordSetField('${id}','notesInternal',this.value)">${esc(o.notesInternal || '')}</textarea></div>
+      <div class="modal-field"><label>${ico('lock', 'tinted', '')} Note interne (non stampate sui documenti)</label><textarea rows="2" class="notes-internal" onchange="ordSetField('${id}','notesInternal',this.value)">${esc(o.notesInternal || '')}</textarea></div>
     </div>
-    ${ritardo != null ? `<div class="rfq-warn">⏱ Il fornitore ha confermato con <strong>${ritardo} ${ritardo === 1 ? 'giorno' : 'giorni'}</strong> di ritardo sulla data richiesta. Se questo materiale è a commessa, la consegna al cliente va verificata.</div>` : ''}
+    ${ritardo != null ? `<div class="rfq-warn">${ico('clock', 'tinted', '')} Il fornitore ha confermato con <strong>${ritardo} ${ritardo === 1 ? 'giorno' : 'giorni'}</strong> di ritardo sulla data richiesta. Se questo materiale è a commessa, la consegna al cliente va verificata.</div>` : ''}
     <h3 class="rfq-subhead">Righe ordine
       <span class="rfq-head-actions">
         <button class="add-btn-sm lock-contract" onclick="ordAddCatalogModal('${id}')">+ Da catalogo</button>
         <button class="btn-outline lock-contract" onclick="ordAddManualLineModal('${id}')">+ Riga manuale</button>
         <button class="btn-outline lock-reception" onclick="ordMarkAllReceived('${id}')">✓ Segna tutto ricevuto</button>
       </span></h3>
-    <div class="table-wrap"><table class="rfq-table">
-      <thead><tr><th>#</th><th>Codice</th><th>Descrizione</th><th>U.M.</th><th>Q.tà</th>
-        <th title="Prezzo di una unità, nella U.M. della riga">Prezzo unit. (${esc(cur())}/U.M.)</th><th>Importo (${esc(cur())})</th>
-        <th title="Data che abbiamo chiesto">Richiesta</th>
-        <th title="Data che il fornitore ha confermato">Confermata</th>
-        <th>Ricevuto</th><th>Residuo</th><th></th></tr></thead>
+    <div class="table-wrap"><table class="rfq-table rfq-table-2">
+      <thead><tr>
+        <th class="ln-idx">#</th>
+        ${th2('Codice', 'Descrizione')}
+        ${th2('Q.tà', 'U.M.')}
+        ${th2(`Prezzo unit. (${esc(cur())}/U.M.)`, `Importo (${esc(cur())})`, 'Prezzo di una unità, nella U.M. della riga; sotto, quanto fa per la quantità di riga')}
+        ${th2('Richiesta', 'Confermata', 'Sopra la data che abbiamo chiesto, sotto quella che il fornitore ha confermato')}
+        ${th2('Ricevuto', 'Residuo', 'Sopra quanto è arrivato, sotto quanto manca')}
+        <th></th></tr></thead>
       <tbody>${lines}</tbody>
-      <tfoot><tr class="rfq-cmp-total"><td colspan="6" style="text-align:right">Totale imponibile</td><td>${fmtN(total)}</td><td colspan="5"></td></tr></tfoot>
+      <tfoot><tr class="rfq-cmp-total"><td colspan="3" style="text-align:right">Totale imponibile</td><td>${fmtN(total)}</td><td colspan="3"></td></tr></tfoot>
     </table></div>
     <div class="rfq-export-bar">
       <label>Documento d'ordine:</label>
-      <button class="export-btn-pdf order-export-btn" onclick="exportOrderPDF('${id}')" ${dis}>📄 PDF</button>
-      <button class="export-btn-xls order-export-btn" onclick="exportOrderExcel('${id}')" ${dis}>📗 Excel</button>
+      <button class="export-btn-pdf order-export-btn" onclick="exportOrderPDF('${id}')" ${dis}>${ico('file', 'tinted', '')} PDF</button>
+      <button class="export-btn-xls order-export-btn" onclick="exportOrderExcel('${id}')" ${dis}>${ico('sheet', 'tinted', '')} Excel</button>
       ${orderDirty ? '<span class="rfq-dirty-hint">Salva per abilitare la generazione del documento</span>' : ''}
     </div>
   </div>`;

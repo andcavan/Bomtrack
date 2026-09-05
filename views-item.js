@@ -71,16 +71,12 @@ function itemInfoBack() {
 // sarebbe più sorprendente che utile.
 function itemInfoClose() { _itemInfoStack = []; window.__itemInfoId = null; closeModal(); }
 
-function itemInfoHtml(it) {
-  const back = _itemInfoStack.length
-    ? `<button class="btn-outline" onclick="itemInfoBack()" title="Torna a ${esc(getItem(_itemInfoStack[_itemInfoStack.length - 1]) ? getItem(_itemInfoStack[_itemInfoStack.length - 1]).code : '')}">← Indietro</button>`
-    : '';
-  return `<h3>🔎 ${esc(it.code)} — ${esc(it.name)}${itemBadges(it)}</h3>
-    <p style="color:var(--text-dim);margin-bottom:4px">
-      <span class="bom-type-tag tt-${it.type}">${typeShort(it.type)}</span> ${esc(typeLabel(it.type))}
-      · U.M. <strong>${esc(it.uom || '—')}</strong>${hasRevisions(it) ? ` · revisione in lavorazione <strong>${esc(itemRev(it))}</strong>` : ''}</p>
-    <p class="empty-text" style="text-align:left;padding:0 0 12px">Scheda di <strong>sola lettura</strong>: qui non si modifica niente, e per questo si può aprire in mezzo a qualunque lavoro. Le modifiche si fanno dall'anagrafica, dal listino e dalla distinta.</p>
-    ${itemInfoAnagrafica(it)}
+// Le sezioni della scheda, senza intestazione né pulsanti. Stanno per conto
+// loro perché la stessa scheda si legge in due posti: la finestra flottante,
+// che ha bisogno di titolo e «Chiudi», e il pannello laterale, che il titolo lo
+// ha già suo. Il corpo è lo stesso — due copie divergerebbero al primo ritocco.
+function itemInfoBody(it) {
+  return `${itemInfoAnagrafica(it)}
     ${itemInfoAcquisto(it)}
     ${itemInfoCosto(it)}
     ${itemInfoMagazzino(it)}
@@ -88,7 +84,19 @@ function itemInfoHtml(it) {
     ${itemInfoImpieghi(it)}
     ${itemInfoDocumenti(it)}
     ${itemInfoRevisioni(it)}
-    ${stampLine(it)}
+    ${stampLine(it)}`;
+}
+
+function itemInfoHtml(it) {
+  const back = _itemInfoStack.length
+    ? `<button class="btn-outline" onclick="itemInfoBack()" title="Torna a ${esc(getItem(_itemInfoStack[_itemInfoStack.length - 1]) ? getItem(_itemInfoStack[_itemInfoStack.length - 1]).code : '')}">← Indietro</button>`
+    : '';
+  return `<h3>${ico('eye', 'tinted pill', 'Scheda di sola lettura')} ${esc(it.code)} — ${esc(it.name)}${itemBadges(it)}</h3>
+    <p style="color:var(--text-dim);margin-bottom:4px">
+      <span class="bom-type-tag tt-${it.type}">${typeShort(it.type)}</span> ${esc(typeLabel(it.type))}
+      · U.M. <strong>${esc(it.uom || '—')}</strong>${hasRevisions(it) ? ` · revisione in lavorazione <strong>${esc(itemRev(it))}</strong>` : ''}</p>
+    <p class="empty-text" style="text-align:left;padding:0 0 12px">Scheda di <strong>sola lettura</strong>: qui non si modifica niente, e per questo si può aprire in mezzo a qualunque lavoro. Le modifiche si fanno dall'anagrafica, dal listino e dalla distinta.</p>
+    ${itemInfoBody(it)}
     <div class="modal-actions">
       ${back}
       <button class="btn-ghost" onclick="itemInfoClose()">Chiudi</button>
@@ -134,7 +142,7 @@ function itemInfoAnagrafica(it) {
     mac ? ['Macchina', rawHtml(codeLink(mac.id, mac.code) + ' — ' + esc(mac.name))] : null,
     grp ? ['Gruppo', rawHtml(codeLink(grp.id, grp.code) + ' — ' + esc(grp.name))] : null,
     it.favorite ? ['Preferito', '★ sì'] : null,
-    it.obsolete ? ['Obsoleto', rawHtml('<span style="color:var(--red)">⛔ non più utilizzabile</span>')] : null,
+    it.obsolete ? ['Obsoleto', rawHtml('<span style="color:var(--red)">' + ico('blocked', 'tinted', '') + ' non più utilizzabile</span>')] : null,
     it.notes ? ['Note', it.notes] : null,
   ]));
 }
@@ -161,7 +169,7 @@ function itemInfoAcquisto(it) {
     ['Fornitore', nomeForn || '— nessuno'],
     attiva && attiva.code ? ['Codice' + presso, rawHtml(_mono(attiva.code))] : null,
     attiva && attiva.desc ? ['Descrizione' + presso, attiva.desc] : null,
-    inUso != null ? ['Costo in uso', rawHtml(`<strong>${fmtPer(inUso, itemUom(it))}</strong>${inUso > 0 ? '' : ' <span style="color:var(--red)">⚠ nessun prezzo</span>'}`)] : null,
+    inUso != null ? ['Costo in uso', rawHtml(`<strong>${fmtPer(inUso, itemUom(it))}</strong>${inUso > 0 ? '' : ' <span style="color:var(--red)">' + ico('warning', 'tinted', '') + ' nessun prezzo</span>'}`)] : null,
     attiva ? ['Quotazione in uso', rawHtml(`${fmtPer(attiva.price, priceUomOf(it, attiva))}${attiva.date ? ' · ' + esc(fmtDateIt(attiva.date)) : ''}`)] : null,
     attiva && attiva.leadDays ? ['Giorni di consegna', String(attiva.leadDays) + ' gg'] : null,
     attiva && attiva.minQty ? ['Quantità minima', fmtUom(attiva.minQty, priceUomOf(it, attiva))] : null,
@@ -189,7 +197,7 @@ function itemInfoAcquisto(it) {
         <td>${r.id === it.activePriceId ? '<span class="price-best">✓ in uso</span>' : ''}</td></tr>`;
     }).join('')}</tbody></table></div>` : '<div class="empty-text">Nessuna quotazione a listino.</div>';
 
-  return itemInfoSection('💶 Acquisto e listino', testa + tabella);
+  return itemInfoSection(ico('euro', 'tinted', '') + ' Acquisto e listino', testa + tabella);
 }
 
 // La ripartizione del costo, con le sole voci che pesano. Il totale c'è sempre,
@@ -206,9 +214,9 @@ function itemInfoCosto(it) {
   const corpo = itemInfoRows(voci.map(([k, v]) => [k, rawHtml(`<span style="font-family:var(--mono)">${fmtPer(v, u)}</span>`)]).concat([
     ['Costo industriale', rawHtml(`<strong style="font-family:var(--mono)">${fmtPer(c.total, u)}</strong>`)],
     ['Prezzo di vendita', rawHtml(`<span style="font-family:var(--mono)">${fmtPer(sellingPrice(it.id), u)}</span>`)],
-    c.cycle ? ['⚠ Attenzione', rawHtml('<span style="color:var(--red)">Riferimento ciclico nella distinta: il costo è troncato su quel ramo.</span>')] : null,
+    c.cycle ? ['Attenzione', rawHtml('<span style="color:var(--red)">' + ico('warning', 'tinted', '') + ' Riferimento ciclico nella distinta: il costo è troncato su quel ramo.</span>')] : null,
   ]));
-  return itemInfoSection('💰 Costo unitario', corpo);
+  return itemInfoSection(ico('euro', 'tinted', '') + ' Costo unitario', corpo);
 }
 
 // Magazzino in sola lettura: gli stessi numeri della scheda del catalogo, senza
@@ -223,7 +231,7 @@ function itemInfoMagazzino(it) {
   const dettaglio = imp.length
     ? `<div class="empty-text" style="text-align:left;padding:0 0 8px">Impegnato dai piani aperti: ${imp.map(x => `${esc(x.number)}${x.title ? ' (' + esc(x.title) + ')' : ''} ${fmtUom(x.qty, u)}`).join(' · ')}.</div>`
     : '';
-  return itemInfoSection('📦 Magazzino', itemInfoRows([
+  return itemInfoSection(ico('package', 'tinted', '') + ' Magazzino', itemInfoRows([
     ['Esistente', rawHtml(`<span style="font-family:var(--mono)">${fmtUom(s.onHand, u)}</span>`)],
     ['In arrivo', rawHtml(`<span style="font-family:var(--mono)">${fmtUom(s.incoming, u)}</span>`)],
     ['Impegnato', rawHtml(`<span style="font-family:var(--mono)">${fmtUom(impQty, u)}</span>`)],
@@ -241,10 +249,10 @@ function itemInfoComposizione(it) {
   if (isAssembly(it.type)) {
     const comps = it.components || [];
     const ops = it.operations || [];
-    if (!comps.length && !ops.length) return itemInfoSection('🌳 Composizione', '<div class="empty-text">Distinta vuota.</div>');
+    if (!comps.length && !ops.length) return itemInfoSection(ico('tree', 'tinted', '') + ' Composizione', '<div class="empty-text">Distinta vuota.</div>');
     const righe = comps.map(c => {
       const ci = getItem(c.itemId);
-      if (!ci) return `<tr><td colspan="5" class="empty-text">⚠ componente mancante</td></tr>`;
+      if (!ci) return `<tr><td colspan="5" class="empty-text">${ico('warning', 'tinted', '')} componente mancante</td></tr>`;
       return `<tr>
         <td>${codeLink(ci.id, ci.code)}</td>
         <td><span class="bom-type-tag tt-${ci.type}">${typeShort(ci.type)}</span> ${esc(ci.name)}${itemBadges(ci)}</td>
@@ -254,11 +262,11 @@ function itemInfoComposizione(it) {
     }).join('');
     const righeOp = ops.map(o => {
       const wc = getWorkCenter(o.workCenterId);
-      return `<tr><td>🔧</td><td>${esc(wc ? wc.name : '?')}</td>
+      return `<tr><td>${ico('wrench', 'tinted')}</td><td>${esc(wc ? wc.name : '?')}</td>
         <td style="font-family:var(--mono);text-align:right">${fmtUom(o.hours, 'h')}</td><td>—</td>
         <td style="font-family:var(--mono);text-align:right">${fmtN((Number(o.hours) || 0) * (wc ? (Number(wc.hourlyRate) || 0) : 0))}</td></tr>`;
     }).join('');
-    return itemInfoSection(`🌳 Composizione (${comps.length} ${comps.length === 1 ? 'componente' : 'componenti'}${ops.length ? ' · ' + ops.length + (ops.length === 1 ? ' lavorazione' : ' lavorazioni') : ''})`,
+    return itemInfoSection(`${ico('tree', 'tinted', '')} Composizione (${comps.length} ${comps.length === 1 ? 'componente' : 'componenti'}${ops.length ? ' · ' + ops.length + (ops.length === 1 ? ' lavorazione' : ' lavorazioni') : ''})`,
       `<div class="table-wrap"><table>
         <thead><tr><th>Codice</th><th>Componente</th><th style="text-align:right">Q.tà</th>
           <th style="text-align:right">Scarto</th><th style="text-align:right">Costo riga</th></tr></thead>
@@ -267,19 +275,19 @@ function itemInfoComposizione(it) {
 
   if (it.type !== 'parte') return '';
   const rows = it.cycle || [];
-  if (!rows.length) return itemInfoSection('🔧 Distinta parte e ciclo', '<div class="empty-text">Distinta parte e ciclo vuoti.</div>');
+  if (!rows.length) return itemInfoSection(ico('wrench', 'tinted', '') + ' Distinta parte e ciclo', '<div class="empty-text">Distinta parte e ciclo vuoti.</div>');
   let fase = 0;
   const righe = rows.map(r => {
     if (r.kind === 'op') {
       fase++;
       const wc = getWorkCenter(r.workCenterId);
       return `<tr><td style="font-family:var(--mono)">${cyclePhaseNumber(fase - 1)}</td>
-        <td>🔧 ${esc(wc ? wc.name : '?')}${r.note ? ' — ' + esc(r.note) : ''}</td>
+        <td>${ico('wrench', 'tinted')} ${esc(wc ? wc.name : '?')}${r.note ? ' — ' + esc(r.note) : ''}</td>
         <td style="text-align:right">—</td>
         <td style="font-family:var(--mono);text-align:right">${fmtN(r.cost)}</td></tr>`;
     }
     const ci = getItem(r.itemId);
-    if (!ci) return `<tr><td colspan="4" class="empty-text">⚠ articolo mancante</td></tr>`;
+    if (!ci) return `<tr><td colspan="4" class="empty-text">${ico('warning', 'tinted', '')} articolo mancante</td></tr>`;
     return `<tr><td>${codeLink(ci.id, ci.code)}</td>
       <td><span class="bom-type-tag tt-${ci.type}">${typeShort(ci.type)}</span> ${esc(ci.name)}${itemBadges(ci)}</td>
       <td style="font-family:var(--mono);text-align:right">${fmtUom(r.qty, itemUom(ci))}</td>
@@ -291,7 +299,7 @@ function itemInfoComposizione(it) {
   const nota = partSourcing(it) === 'buy'
     ? '<p class="empty-text" style="text-align:left;padding:6px 0 0">Questa parte si <strong>acquista</strong>: il suo costo è il prezzo a listino, non la somma di queste righe. Distinta e ciclo restano salvati e tornano a contare se l\'approvvigionamento passa a produzione interna.</p>'
     : '';
-  return itemInfoSection(`🔧 Distinta parte e ciclo — ${esc(cycleCountLabel(it))}`,
+  return itemInfoSection(`${ico('wrench', 'tinted', '')} Distinta parte e ciclo — ${esc(cycleCountLabel(it))}`,
     `<div class="table-wrap"><table>
       <thead><tr><th>Codice / Fase</th><th>Riga</th><th style="text-align:right">Q.tà</th><th style="text-align:right">Costo</th></tr></thead>
       <tbody>${righe}</tbody></table></div>${nota}`);
@@ -302,7 +310,7 @@ function itemInfoComposizione(it) {
 // risposta.
 function itemInfoImpieghi(it) {
   const diretti = directUses(it.id);
-  if (!diretti.length) return itemInfoSection('🔗 Dove è usato', '<div class="empty-text">Non è usato da nessuna parte.</div>');
+  if (!diretti.length) return itemInfoSection(ico('link', 'tinted', '') + ' Dove è usato', '<div class="empty-text">Non è usato da nessuna parte.</div>');
   const cime = impactedTops(it.id);
   // La quantità in colonna è quella di **questo** articolo dentro il padre, non
   // del padre: l'unità che le va accanto è la sua, e va detta una volta in testa.
@@ -315,7 +323,7 @@ function itemInfoImpieghi(it) {
         <td><span class="bom-type-tag tt-${r.item.type}">${typeShort(r.item.type)}</span> ${esc(r.item.name)}</td>
         <td style="font-family:var(--mono);text-align:right">${fmtQty(r.qty)}</td></tr>`).join('')}</tbody></table></div>`;
   const etichetta = cime.some(c => c.item.type === 'macchina') ? 'Macchine impattate' : 'Assiemi di testa impattati';
-  return itemInfoSection('🔗 Dove è usato',
+  return itemInfoSection(ico('link', 'tinted', '') + ' Dove è usato',
     tab(`Impieghi diretti (${diretti.length})`, diretti)
     + (cime.length ? tab(`${etichetta} (${cime.length}) — q.tà per una unità, scarto compreso`, cime) : ''));
 }
@@ -364,18 +372,18 @@ function itemInfoDocumenti(it) {
     <span class="mgmt-item-meta">${extra}</span></div>`;
   const u = itemUom(it);
   const corpo = [
-    ...rfqs.map(d => voce('📨', d, `${esc(d.status || '')} · ${fmtUom(qtaIn(d), u)}`)),
-    ...ordini.map(d => voce('🧾', d, `${esc(d.status || '')} · ${fmtUom(qtaIn(d), u)} · ricevuto ${fmtUom((d.lines || []).filter(l => l.itemId === it.id).reduce((s, l) => s + (Number(l.received) || 0), 0), u)}`)),
-    ...piani.map(p => voce('📋', p, p.active === false ? 'piano chiuso' : 'piano aperto')),
+    ...rfqs.map(d => voce(ico('mail', 'tinted', 'Richiesta di offerta'), d, `${esc(d.status || '')} · ${fmtUom(qtaIn(d), u)}`)),
+    ...ordini.map(d => voce(ico('receipt', 'tinted', 'Ordine a fornitore'), d, `${esc(d.status || '')} · ${fmtUom(qtaIn(d), u)} · ricevuto ${fmtUom((d.lines || []).filter(l => l.itemId === it.id).reduce((s, l) => s + (Number(l.received) || 0), 0), u)}`)),
+    ...piani.map(p => voce(ico('list', 'tinted', 'Piano di fabbisogno'), p, p.active === false ? 'piano chiuso' : 'piano aperto')),
   ].join('');
-  return itemInfoSection('📄 Documenti e piani in cui compare', `<div class="mgmt-list">${corpo}</div>`);
+  return itemInfoSection(ico('clipboard', 'tinted', '') + ' Documenti e piani in cui compare', `<div class="mgmt-list">${corpo}</div>`);
 }
 
 function itemInfoRevisioni(it) {
   if (!hasRevisions(it)) return '';
   const revs = revisionsOf(it.id);
-  if (!revs.length) return itemInfoSection('🕘 Revisioni', `<div class="empty-text">Nessun rilascio: si sta lavorando sulla <strong>${esc(itemRev(it))}</strong>, la prima.</div>`);
-  return itemInfoSection('🕘 Revisioni', `<div class="mgmt-list">${revs.map(r => {
+  if (!revs.length) return itemInfoSection(ico('clock', 'tinted', '') + ' Revisioni', `<div class="empty-text">Nessun rilascio: si sta lavorando sulla <strong>${esc(itemRev(it))}</strong>, la prima.</div>`);
+  return itemInfoSection(ico('clock', 'tinted', '') + ' Revisioni', `<div class="mgmt-list">${revs.map(r => {
       const tot = r.snapshot && r.snapshot.cost ? r.snapshot.cost.total : null;
       return `<div class="mgmt-item">
         <span class="mgmt-item-name"><strong>${esc(r.rev || '')}</strong>${r.motivo ? ' — ' + esc(r.motivo) : ''}</span>

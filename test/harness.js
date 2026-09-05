@@ -13,9 +13,9 @@ const path = require('node:path');
 const ROOT = path.join(__dirname, '..');
 // Stessa sequenza di index.html: i file si caricano nello stesso contesto e
 // condividono lo scope globale, esattamente come i <script> della pagina.
-const SRC = ['store.js', 'cloud-map.js', 'core.js', 'auth.js', 'costing.js', 'shell.js',
+const SRC = ['icons.js', 'store.js', 'cloud-map.js', 'core.js', 'auth.js', 'costing.js', 'shell.js', 'worklist.js',
   'views-bom.js', 'views-rev.js', 'views-stock.js', 'views-catalog.js', 'views-report.js', 'views-jobs.js', 'views-home.js', 'views-mrp.js', 'views-item.js',
-  'views-docs.js', 'views-manage.js', 'export-lists.js', 'import-catalog.js', 'import-export.js'];
+  'views-docs.js', 'views-manage.js', 'export-lists.js', 'import-catalog.js', 'columns.js', 'inspector.js', 'import-export.js'];
 
 // localStorage finto. `quotaBytes` opzionale: oltre soglia lancia lo stesso
 // errore dei browser, per poter testare la gestione dello spazio esaurito.

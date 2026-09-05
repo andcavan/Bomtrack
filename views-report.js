@@ -99,7 +99,7 @@ function renderReport() {
       ${kpi('Prezzo vendita', fmtPer(price, u), 'green')}
     </div>
     <div class="breakdown-section" style="margin-bottom:20px"><h3 class="sub-title">Incidenza voci di costo
-      <button class="btn-outline" style="margin-left:10px" onclick="costWhyModal('${it.id}')">🔍 Da dove viene questo costo</button></h3>${bars}</div>
+      <button class="btn-outline" style="margin-left:10px" onclick="costWhyModal('${it.id}')">${ico('search', 'tinted', '')} Da dove viene questo costo</button></h3>${bars}</div>
     <div class="breakdown-section"><h3 class="sub-title">Distinta base esplosa</h3>
       <div class="table-wrap"><table><thead><tr><th>Pos.</th><th>Codice</th><th>Articolo</th><th>Tipo</th><th>Q.tà</th><th>Costo un.</th><th>Costo riga</th></tr></thead>
       <tbody>${tableRows}</tbody></table></div></div>`;
@@ -153,7 +153,7 @@ function costWhyModal(itemId) {
       <div class="breakdown-bar"><div class="breakdown-fill" style="width:${totale > 0 ? Math.min(100, x.line / (top[0].line || 1) * 100) : 0}%;background:var(--accent)"></div></div>
       <div class="breakdown-stats"><span>${fmtN(x.line)}</span><span style="color:var(--text-dim)">${quota(x).toFixed(1)}%</span></div>
     </div>`).join('');
-  openModal(`<h3>🔍 Da dove viene il costo di ${esc(it.code)}</h3>
+  openModal(`<h3>${ico('search', 'tinted pill', '')} Da dove viene il costo di ${esc(it.code)}</h3>
     <p>${esc(it.name)} — costo totale <strong>${fmtPer(totale, itemUom(it))}</strong>.</p>
     ${tutti.length ? `<p class="empty-text" style="text-align:left;padding:0 0 10px">I ${top.length} articoli che pesano di più, sommati su tutta la distinta: ${totale > 0 ? (coperto / totale * 100).toFixed(0) : 0}% del costo${tutti.length > top.length ? `, su ${tutti.length} voci in tutto` : ''}. Le lavorazioni e le spese generali non compaiono qui: stanno nelle barre di incidenza.</p>
       ${righe}`
