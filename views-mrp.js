@@ -272,7 +272,7 @@ function planSearchInput() {
 function planSetField(id, field, value) {
   if (!roleGuard('docs')) { renderMrp(); return; }
   const p = getPlan(id); if (!p) return;
-  p[field] = value;
+  p[field] = campoTesto(value);
   touch(p); saveDB();
 }
 function planAddModal(id) {

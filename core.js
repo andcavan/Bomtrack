@@ -13,7 +13,7 @@
 // Revisione in esecuzione, mostrata accanto al logo. Va tenuta allineata alla
 // voce in cima a CHANGELOG.md (l'app si copia a mano tra PC: sapere
 // quale revisione sta girando su una postazione è l'unico modo per capirlo).
-const APP_VERSION = '0.64.0';
+const APP_VERSION = '0.64.1';
 
 let currentUser = null;      // utente della sessione (null = schermata di accesso)
 let currentBomId = null;     // articolo prodotto attualmente aperto nelle Distinte
@@ -1242,6 +1242,19 @@ if (typeof document !== 'undefined') {
     onAppError('promessa', r && r.message ? r.message : String(r), r instanceof Error ? r : null);
   });
 }
+// Il valore di un campo scritto a mano, ripulito ai bordi. I form passano da
+// val(), che il trim lo fa da sempre; i campi di richieste, ordini, piani e
+// commesse scrivono invece `this.value` grezzo dentro il loro setter, e gli
+// spazi restavano nel dato.
+//
+// Sul Cliente di una commessa non è cosmesi: quel testo **è la chiave** verso
+// l'anagrafica, e « Rossi Srl » con gli spazi si porta dietro un valore che
+// coincide con il cliente solo perché ogni confronto, altrove, ricorda di
+// togliere gli spazi. Basta che uno se ne dimentichi.
+//
+// Vale sui campi commessi con onchange — cioè quando si esce dal campo, non
+// mentre si scrive — quindi il cursore non ne risente.
+function campoTesto(v) { return typeof v === 'string' ? v.trim() : v; }
 // ─── Le chiavi dell'archivio locale ───
 // Tutte con l'underscore: `bomtrack_v1`, `bomtrack_session`, `bomtrack_theme`.
 // Due preferenze usavano il punto (`bomtrack.columns`, `bomtrack.inspector`) e

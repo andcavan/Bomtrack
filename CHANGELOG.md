@@ -2,6 +2,15 @@
 
 Le revisioni seguono il versionamento semantico `0.MINOR.PATCH`: **MINOR** per nuove funzionalità, **PATCH** per correzioni. La versione in cima è quella in `APP_VERSION` (`core.js`) e mostrata nell'header dell'app.
 
+### 0.64.1 — 2026-09-06
+
+**Corretto**
+- **Gli spazi digitati per sbaglio nei campi di commesse, richieste, ordini e piani finivano nel dato.** I form passano da `val()`, che li toglie da sempre; i campi di questi quattro documenti scrivevano invece il valore grezzo dentro il proprio setter. Su una descrizione è cosmesi; sul **Cliente di una commessa** no, perché quel testo **è la chiave** verso l'anagrafica: « Rossi Srl » con gli spazi coincide con il cliente registrato solo perché ogni confronto, altrove, si ricorda di ripulirlo — e basta che uno se ne dimentichi. La pulizia avviene all'uscita dal campo, non mentre si scrive, quindi il cursore non ne risente.
+
+**Note**
+- **25 casi nuovi in `test/customers.test.js`** sul giro completo del campo Cliente: l'elenco che si propone in ordine alfabetico, il cliente sospeso che sparisce dai suggerimenti, il nome fuori anagrafica che si scrive lo stesso (suggerire non è vincolare), la rinomina che allinea le commesse anche quando erano state scritte con altre maiuscole, il cliente citato che non si elimina, la ricerca e l'export dell'elenco.
+- Verificato anche **in un browser vero**, che è l'unica cosa che la suite non può fare: il `datalist` viene davvero associato al campo, il browser offre le quattro voci attive delle cinque registrate, e il nome di un cliente scritto come un tag resta un **valore di testo** — zero elementi `script` finiti nella pagina. La suite passa da 1381 a 1399.
+
 ### 0.64.0 — 2026-09-06
 
 Coda del controllo generale: le cose rimaste aperte, chiuse. Niente di quello che c'è qui si vede usando l'app — è tutta manutenzione, e serve a far durare quello che c'è.

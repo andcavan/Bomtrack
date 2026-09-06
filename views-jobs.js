@@ -455,7 +455,7 @@ function jobSetField(id, field, value) {
 // esegue la conferma quando arriva il sì.
 function jobApplyField(id, field, value) {
   const j = getJob(id); if (!j) return;
-  j[field] = value;
+  j[field] = campoTesto(value);
   touch(j); saveDB();
   // Lo stato e le date cambiano l'intestazione, l'avviso di ritardo e la
   // copertura: si ridisegna. Gli altri campi no, per non far saltare il cursore.

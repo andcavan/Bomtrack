@@ -227,3 +227,179 @@ describe('Clienti — foglio Excel delle impostazioni', () => {
     assert.match(rep.errors[0], /Clienti, riga 2/);
   });
 });
+
+// ═══════════════════════════════════════════════════════════
+//  Il campo Cliente della commessa, dall'anagrafica al documento
+// ═══════════════════════════════════════════════════════════
+// L'anagrafica non vincola la commessa: **suggerisce**. È la scelta che regge
+// tutto il resto — un cliente nuovo si scrive comunque e si registra dopo — e
+// proprio per questo il legame è il nome, non un riferimento. Qui si prova il
+// giro intero: creare, suggerire, scegliere, rinominare, sospendere.
+function conAnagrafica() {
+  const a = loadApp({ silent: true });
+  a.asRole('admin');
+  a.setDb(makeDb({
+    customers: [
+      { id: 'c1', name: 'Rossi Srl', active: true },
+      { id: 'c2', name: 'Bianchi Spa', active: true },
+      { id: 'c3', name: 'Verdi & C.', active: true },
+    ],
+    jobs: [{ id: 'j1', number: 'COM-001', customer: '', title: 'Linea', status: 'aperta',
+      date: '2026-09-01', lines: [], active: true }],
+  }));
+  return a;
+}
+const proposti = a => JSON.parse(a.eval('JSON.stringify(customerNames())'));
+const opzioni = html => (html.match(/<datalist id="job-customer-opts">([\s\S]*?)<\/datalist>/) || ['', ''])[1]
+  .match(/value="[^"]*"/g) || [];
+
+describe('Il campo Cliente propone l-anagrafica', () => {
+  it('la scheda della commessa aggancia il campo al suo elenco', () => {
+    const a = conAnagrafica();
+    const h = a.eval('renderJobEdit("j1")');
+    assert.match(h, /list="job-customer-opts"/);
+    assert.match(h, /<datalist id="job-customer-opts">/);
+  });
+
+  it('propone i clienti in ordine alfabetico', () => {
+    assert.deepEqual(proposti(conAnagrafica()), ['Bianchi Spa', 'Rossi Srl', 'Verdi & C.']);
+  });
+
+  it('i nomi finiscono nel datalist, escapati', () => {
+    const a = conAnagrafica();
+    a.eval('db.customers.push({ id: "c4", name: "D\'Angelo & Figli <Srl>", active: true })');
+    const o = opzioni(a.eval('renderJobEdit("j1")'));
+    assert.equal(o.length, 4);
+    assert.ok(o.some(x => /D&#39;Angelo &amp; Figli &lt;Srl&gt;/.test(x)),
+      'il nome viene dall-anagrafica, ma finisce dentro un attributo');
+  });
+
+  it('un cliente sospeso non si propone più', () => {
+    const a = conAnagrafica();
+    a.eval('toggleActive("customers", "c2", "Cliente")');
+    assert.deepEqual(proposti(a), ['Rossi Srl', 'Verdi & C.']);
+    assert.equal(opzioni(a.eval('renderJobEdit("j1")')).length, 2);
+  });
+
+  it('un cliente senza nome non lascia una voce vuota nell-elenco', () => {
+    const a = conAnagrafica();
+    a.eval('db.customers.push({ id: "c9", name: "", active: true })');
+    assert.deepEqual(proposti(a), ['Bianchi Spa', 'Rossi Srl', 'Verdi & C.']);
+  });
+
+  it('con l-anagrafica vuota l-elenco c-è ma è vuoto, e il campo resta scrivibile', () => {
+    const a = conAnagrafica();
+    a.eval('db.customers = []');
+    const h = a.eval('renderJobEdit("j1")');
+    assert.match(h, /<datalist id="job-customer-opts"><\/datalist>/);
+    assert.match(h, /list="job-customer-opts"/, 'suggerire non è vincolare');
+  });
+});
+
+describe('Il campo Cliente accetta quello che si scrive', () => {
+  it('un nome scelto dall-elenco si scrive tale e quale', () => {
+    const a = conAnagrafica();
+    a.eval('jobSetField("j1", "customer", "Rossi Srl")');
+    assert.equal(a.eval('getJob("j1").customer'), 'Rossi Srl');
+  });
+
+  it('un cliente che in anagrafica non c-è si scrive lo stesso', () => {
+    const a = conAnagrafica();
+    a.eval('jobSetField("j1", "customer", "Cliente Mai Visto")');
+    assert.equal(a.eval('getJob("j1").customer'), 'Cliente Mai Visto');
+    assert.equal(a.eval('db.customers.length'), 3, 'e non lo si registra di nascosto');
+  });
+
+  it('gli spazi ai bordi non entrano nel dato', () => {
+    const a = conAnagrafica();
+    a.eval('jobSetField("j1", "customer", "  Rossi Srl  ")');
+    assert.equal(a.eval('getJob("j1").customer'), 'Rossi Srl',
+      'quel testo è la chiave verso l-anagrafica: coinciderebbe solo perché ogni confronto ricorda di ripulirlo');
+  });
+});
+
+describe('Rinominare un cliente allinea le commesse', () => {
+  it('la commessa segue il nome nuovo', () => {
+    const a = conAnagrafica();
+    a.eval('jobSetField("j1", "customer", "Rossi Srl")');
+    a.eval('editCustomerModal("c1")');
+    a.el('ec-name').value = 'Rossi S.r.l.';
+    a.eval('saveCustomer("c1")');
+    assert.equal(a.eval('db.customers.find(c => c.id === "c1").name'), 'Rossi S.r.l.');
+    assert.equal(a.eval('getJob("j1").customer'), 'Rossi S.r.l.',
+      'altrimenti resterebbe appesa a un nome che in anagrafica non esiste più');
+  });
+
+  it('allinea anche chi l-aveva scritto con altre maiuscole', () => {
+    const a = conAnagrafica();
+    a.eval('jobSetField("j1", "customer", "ROSSI SRL")');
+    a.eval('editCustomerModal("c1")');
+    a.el('ec-name').value = 'Rossi S.r.l.';
+    a.eval('saveCustomer("c1")');
+    assert.equal(a.eval('getJob("j1").customer'), 'Rossi S.r.l.');
+  });
+
+  it('le commesse di altri clienti non si toccano', () => {
+    const a = conAnagrafica();
+    a.eval('db.jobs.push({ id: "j2", number: "COM-002", customer: "Bianchi Spa", title: "Y", status: "aperta", date: "2026-09-02", lines: [], active: true })');
+    a.eval('jobSetField("j1", "customer", "Rossi Srl")');
+    a.eval('editCustomerModal("c1")');
+    a.el('ec-name').value = 'Rossi S.r.l.';
+    a.eval('saveCustomer("c1")');
+    assert.equal(a.eval('getJob("j2").customer'), 'Bianchi Spa');
+  });
+
+  it('due clienti non possono chiamarsi uguale, nemmeno cambiando le maiuscole', () => {
+    const a = conAnagrafica();
+    a.eval('editCustomerModal("c1")');
+    a.el('ec-name').value = 'bianchi spa';
+    a.eval('saveCustomer("c1")');
+    assert.equal(a.eval('db.customers.find(c => c.id === "c1").name'), 'Rossi Srl',
+      'due omonimi renderebbero ambigua la citazione della commessa');
+  });
+});
+
+describe('Un cliente citato da una commessa non si elimina', () => {
+  it('con una commessa che lo cita, resta', () => {
+    const a = conAnagrafica();
+    a.eval('jobSetField("j1", "customer", "Rossi Srl")');
+    a.eval('delCustomer("c1")');
+    a.eval('try { confirmYes(); } catch (e) {}');
+    assert.ok(a.eval('!!db.customers.find(c => c.id === "c1")'));
+  });
+
+  it('vale anche se la commessa lo scrive con altre maiuscole o spazi', () => {
+    const a = conAnagrafica();
+    a.eval('db.jobs[0].customer = "  rossi srl "');
+    a.eval('delCustomer("c1")');
+    a.eval('try { confirmYes(); } catch (e) {}');
+    assert.ok(a.eval('!!db.customers.find(c => c.id === "c1")'));
+  });
+
+  it('chi non è citato da nessuno si elimina', () => {
+    const a = conAnagrafica();
+    a.eval('delCustomer("c3")');
+    a.eval('confirmYes()');
+    assert.equal(a.eval('!!db.customers.find(c => c.id === "c3")'), false);
+  });
+});
+
+describe('Il cliente nella vita della commessa', () => {
+  it('la ricerca dell-elenco lo trova', () => {
+    const a = conAnagrafica();
+    a.eval('jobSetField("j1", "customer", "Rossi Srl")');
+    a.eval('jobView = "list"; renderJobs();');
+    a.el('job-search').value = 'rossi';
+    assert.equal(a.eval('jobFilteredList().length'), 1);
+    a.el('job-search').value = 'bianchi';
+    assert.equal(a.eval('jobFilteredList().length'), 0);
+  });
+
+  it('ed esce nell-export dell-elenco', () => {
+    const a = conAnagrafica();
+    a.eval('jobSetField("j1", "customer", "Rossi Srl")');
+    a.eval('jobView = "list"; renderJobs();');
+    const righe = a.eval('JSON.stringify(jobsExportSpec().sezioni[0].righe)');
+    assert.match(righe, /Rossi Srl/);
+  });
+});

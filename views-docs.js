@@ -204,7 +204,7 @@ function docSetField(k, id, field, value) {
   if (!docGuard(k, id, lockKind)) { K.render(); return; }
   const doc = K.get(id); if (!doc) return;
   const before = doc.status;
-  doc[field] = value || (field === 'supplierId' ? null : '');
+  doc[field] = campoTesto(value) || (field === 'supplierId' ? null : '');
   if (K.afterSetField) K.afterSetField(doc, field, value);
   touch(doc); docMarkDirty(k);
   // Il cambio di stato cambia anche il livello di blocco: la vista va rifatta.
