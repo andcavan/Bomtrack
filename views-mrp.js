@@ -733,7 +733,7 @@ function renderPlanEdit(id) {
       <td>${esc(it.uom || '')}</td>
       <td><input type="number" class="rfq-qty-input" min="0" step="any" value="${Number(l.qty) || 0}"
         onchange="planSetLineQty('${id}','${l.id}',this.value)"></td>
-      <td><input type="date" value="${esc(l.dueDate || '')}" title="Quando serve pronto: da qui nascono le date d'ordine di tutto ciò che ci va dentro"
+      <td><input type="date" class="rfq-date-input" value="${esc(l.dueDate || '')}" title="Quando serve pronto: da qui nascono le date d'ordine di tutto ciò che ci va dentro"
         onchange="planSetLineDue('${id}','${l.id}',this.value)"></td>
       <td class="line-actions"><button class="mini-btn danger" onclick="planDelLine('${id}','${l.id}')" title="Togli dal piano">${ico('trash', 'tinted', 'Togli dal piano')}</button></td></tr>`;
   }).join('') || `<tr><td colspan="6" class="empty-text">Nessun articolo a piano. Usa "+ Aggiungi al piano".</td></tr>`;

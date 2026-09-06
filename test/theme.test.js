@@ -257,3 +257,67 @@ describe('Ogni variabile di colore ha un valore, non se stessa', () => {
     assert.match(primoRoot, /--shadow-soft:\s*rgba\(/, '--shadow-soft');
   });
 });
+
+// ═══════════════════════════════════════════════════════════
+//  Ogni campo data deve poter essere raggiunto dal foglio di stile
+// ═══════════════════════════════════════════════════════════
+// Un `<input type="date">` senza una classe, dentro un `<td>` nudo, non lo
+// raggiunge nessuna regola: esce col fondo bianco e gli spigoli vivi del
+// browser, in mezzo a campi disegnati. È capitato alla data delle righe del
+// piano di fabbisogno, dove la quantità nella cella accanto era invece a posto.
+//
+// Il controllo è sul sorgente e non sul disegno, perché è lì che il difetto
+// nasce: un campo aggiunto domani in una cella si dimentica la classe, non il
+// colore. Le vie legittime sono due — una classe che il foglio di stile
+// conosce, oppure il contenitore `.modal-field`, che i suoi campi li veste tutti.
+describe('I campi data sono tutti vestiti', () => {
+  const FILES = ['views-catalog.js', 'views-docs.js', 'views-jobs.js', 'views-mrp.js',
+    'views-stock.js', 'views-bom.js', 'views-item.js', 'worklist.js', 'index.html'];
+  // Le classi che il foglio di stile disegna davvero, ricavate da style.css e
+  // non elencate a mano: se una sparisce dal CSS, il campo che la usa risulta
+  // scoperto qui invece che a schermo.
+  const VESTITE = ['rfq-date-input', 'pl-date', 'search']
+    .filter(c => new RegExp('\\.' + c + '[^{]*\\{|\\.' + c + ',').test(CSS));
+
+  it('le classi su cui questo controllo si appoggia esistono nel foglio di stile', () => {
+    assert.ok(VESTITE.includes('rfq-date-input'), 'rfq-date-input non è più disegnata');
+    assert.ok(VESTITE.includes('pl-date'), 'pl-date non è più disegnata');
+    assert.match(CSS, /\.modal-field input/, 'il contenitore che veste i suoi campi');
+    assert.match(CSS, /\.wl-filters input/, 'i filtri degli elenchi');
+  });
+
+  it('nessun campo data resta senza una regola che lo raggiunga', () => {
+    const nudi = [];
+    let trovati = 0;
+    FILES.forEach(f => {
+      const s = fs.readFileSync(path.join(__dirname, '..', f), 'utf8');
+      const re = /<input[^>]*type="date"[^>]*>/g;
+      let m;
+      while ((m = re.exec(s)) !== null) {
+        trovati++;
+        const tag = m[0];
+        const classi = (tag.match(/class="([^"]*)"/) || ['', ''])[1].split(/\s+/);
+        if (VESTITE.some(c => classi.includes(c))) continue;
+        // Il contenitore: si guarda indietro fino all'apertura del campo.
+        const prima = s.slice(Math.max(0, m.index - 220), m.index);
+        if (/class="modal-field[^"]*"[^<]*(<label[^>]*>[^<]*<\/label>)?\s*$/.test(prima)) continue;
+        // La barra dei filtri veste i suoi campi (.wl-filters input). Il secondo
+        // dei due estremi dista di piu: fra i due c'e l'altro campo e la freccia.
+        if (/class="wl-filter-dates"/.test(s.slice(Math.max(0, m.index - 700), m.index))) continue;
+        const riga = s.slice(0, m.index).split(/\r?\n/).length;
+        nudi.push(f + ':' + riga + '  ' + tag.slice(0, 70));
+      }
+    });
+    assert.ok(trovati >= 10, 'il controllo deve trovarli davvero, i campi data: ne ha visti ' + trovati);
+    assert.deepEqual(nudi, [], 'campi data che nessuna regola raggiunge');
+  });
+
+  it('l-icona del calendario segue il tema, in tutti e tre gli stati', () => {
+    // Su fondo scuro l-icona di serie è nera e sparisce: si inverte. Sul chiaro
+    // no. I tre stati sono scuro (:root), «come il sistema» (media query) e
+    // chiaro esplicito, e devono dirlo tutti e tre.
+    assert.match(CSS, /:root[^{]*\{[\s\S]*?\}|input\[type=date\]::-webkit-calendar-picker-indicator[^}]*\{filter:invert/);
+    assert.match(CSS, /:root:not\(\[data-theme=dark\]\) input\[type=date\]::-webkit-calendar-picker-indicator/);
+    assert.match(CSS, /:root\[data-theme=light\] input\[type=date\]::-webkit-calendar-picker-indicator/);
+  });
+});

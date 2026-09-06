@@ -2,6 +2,16 @@
 
 Le revisioni seguono il versionamento semantico `0.MINOR.PATCH`: **MINOR** per nuove funzionalità, **PATCH** per correzioni. La versione in cima è quella in `APP_VERSION` (`core.js`) e mostrata nell'header dell'app.
 
+### 0.64.2 — 2026-09-06
+
+**Corretto**
+- **La data «Serve per» nelle righe del piano di fabbisogno era l'unico campo data disegnato dal browser invece che dall'app**: fondo bianco, spigoli vivi, fuori tema — e proprio accanto alla quantità della cella di fianco, che invece era a posto. Era l'unico `<input type="date">` senza una classe, dentro una cella nuda, e nessuna regola del foglio di stile lo raggiungeva. Ora usa `rfq-date-input`, la stessa classe che le righe di richieste e ordini adoperano per lo stesso campo.
+
+**Note**
+- Controllati **tutti e dodici i campi data dell'app**, uno per uno e nei loro cinque contesti — testata documento, righe di richiesta e ordine, listino fornitori, filtro per periodo, righe di piano — a schermo e nei due temi. Gli altri undici erano a posto: stanno dentro `.modal-field`, che veste i suoi campi, oppure portano già una classe che il foglio di stile conosce.
+- **Un controllo nuovo impedisce che ricapiti** (`test/theme.test.js`): ogni campo data deve avere una classe che il foglio di stile disegna davvero — l'elenco si ricava da `style.css`, non è scritto a mano — oppure stare in un contenitore che li veste. Verificato che il controllo riconosca il difetto rimettendolo per un attimo: un campo aggiunto domani in una cella si dimentica la classe, non il colore, ed è lì che va fermato.
+- Verificato anche che l'icona del calendario segua il tema in tutti e tre gli stati (scuro, chiaro, «come il sistema»): su fondo scuro quella di serie è nera e sparirebbe.
+
 ### 0.64.1 — 2026-09-06
 
 **Corretto**
