@@ -69,16 +69,6 @@ function bestPriceRow(it) {
     return (r.date || '') > (best.date || '') ? r : best;
   });
 }
-// Unità in cui si parla col fornitore: quella della quotazione in uso. È la
-// lingua in cui vanno scritti richieste e ordini — «15 m» a chi vende a chilo
-// è un ordine da rifare.
-// L'unità in cui si parla a un fornitore preciso: quella della sua quotazione
-// applicabile. Senza quotazioni sue si ricade sull'unità di gestione — non
-// sull'unità di un altro fornitore, che sarebbe una lingua inventata.
-function docUomFor(it, supplierId) {
-  const row = supplierPriceRow(it, supplierId);
-  return (row && priceUomOf(it, row)) || itemUom(it);
-}
 // Porta una quotazione nei campi dell'articolo: da qui in poi è quella che costa.
 // È la porta unica in cui avviene la conversione, ed è il motivo per cui il
 // motore di costo non sa niente di unità di misura: riceve già tutto nell'unità
@@ -94,6 +84,10 @@ function applyPriceRow(it, row) {
   it.activePriceId = row.id;
 }
 
+// La scheda listino ricorda su quale articolo sta lavorando in una variabile
+// globale: chiusa la scheda, la variabile va spenta, o un ridisegno arrivato da
+// altrove continuerebbe a scrivere sull'articolo di prima.
+onPanelClose('listino', () => { window.__priceItemId = null; });
 function priceListModal(id) {
   const it = getItem(id); if (!it) return;
   if (!hasPriceList(it)) { showToast('Il listino vale solo per commerciali e materie prime', 'error'); return; }
@@ -154,8 +148,8 @@ function priceListBody(id) {
   const uQuot = doppia ? 'U.M. quotazione' : (itemUom(it) || 'U.M.');
   return `${attuale}
     <div class="table-wrap"><table class="price-table">
-      <thead><tr><th></th><th>Fornitore</th><th>Prezzo (${esc(cur())}/${esc(uQuot)})</th><th>Q.tà min (${esc(uQuot)})</th>
-        <th title="Giorni di consegna">GG</th><th>Data</th><th></th></tr></thead>
+      <thead><tr><th scope="col"></th><th scope="col">Fornitore</th><th scope="col">Prezzo (${esc(cur())}/${esc(uQuot)})</th><th scope="col">Q.tà min (${esc(uQuot)})</th>
+        <th scope="col" title="Giorni di consegna">GG</th><th scope="col">Data</th><th scope="col"></th></tr></thead>
       <tbody>${corpo || vuoto}</tbody></table></div>
     <div style="margin-top:10px"><button class="add-btn-sm" onclick="priceAddRow()">+ Aggiungi quotazione</button></div>`;
 }
@@ -180,7 +174,7 @@ function priceAddRow() {
   if (!Array.isArray(it.priceList)) it.priceList = [];
   it.priceList.push(stampNew({
     id: gid(), supplierId: it.supplierId || null, price: '', minQty: '', leadDays: '',
-    code: '', desc: '', date: new Date().toISOString().slice(0, 10), rfqId: null, note: '',
+    code: '', desc: '', date: oggiISO(), rfqId: null, note: '',
   }));
   touch(it); saveDB(); priceListRefresh(); renderCatalogs();
 }
@@ -345,7 +339,7 @@ function usageBody(id) {
   // sua unità vale per tutte le righe e si dice una volta, in testa.
   const u = itemUom(it);
   const tabDiretti = `<div class="cat-group-title">Impieghi diretti (${diretti.length})</div>
-    <table><thead><tr><th>Codice</th><th>Articolo</th><th>Tipo</th><th style="text-align:right">${labelUom('Q.tà', u)}</th><th></th></tr></thead>
+    <table><thead><tr><th scope="col">Codice</th><th scope="col">Articolo</th><th scope="col">Tipo</th><th scope="col" style="text-align:right">${labelUom('Q.tà', u)}</th><th scope="col"></th></tr></thead>
     <tbody>${diretti.map(r => `<tr>
       <td style="font-family:var(--mono)">${codeLink(r.item.id, r.item.code)}</td>
       <td>${esc(r.item.name)}</td>
@@ -357,7 +351,7 @@ function usageBody(id) {
   if (!cime.length) return tabDiretti;
 
   const etichettaCime = cime.some(c => c.item.type === 'macchina') ? 'Macchine impattate' : 'Assiemi di testa impattati';
-  const colonneSim = simula ? '<th style="text-align:right">Costo simulato</th><th style="text-align:right">Differenza</th>' : '';
+  const colonneSim = simula ? '<th scope="col" style="text-align:right">Costo simulato</th><th scope="col" style="text-align:right">Differenza</th>' : '';
   // Un solo withTempCost per tutte le cime: entra e esce dalla simulazione una
   // volta, non una per riga — ogni giro azzerava le cache globali due volte e
   // rifaceva ogni rollup da zero, a ogni carattere digitato nel campo.
@@ -388,9 +382,9 @@ function usageBody(id) {
 
   return `${tabDiretti}
     <div class="cat-group-title">${etichettaCime} (${cime.length})</div>
-    <table><thead><tr><th>Codice</th><th>Articolo</th>
-      <th style="text-align:right">${labelUom('Q.tà impiegata', u)}</th><th style="text-align:right">Costo attuale</th>
-      <th style="text-align:right">Prezzo vendita</th>${colonneSim}</tr></thead>
+    <table><thead><tr><th scope="col">Codice</th><th scope="col">Articolo</th>
+      <th scope="col" style="text-align:right">${labelUom('Q.tà impiegata', u)}</th><th scope="col" style="text-align:right">Costo attuale</th>
+      <th scope="col" style="text-align:right">Prezzo vendita</th>${colonneSim}</tr></thead>
     <tbody>${righe}</tbody></table>
     <p style="color:var(--text-dim);font-size:12px;margin-top:10px">La quantità è quella necessaria per una unità dell'assieme di testa, scarto compreso.</p>`;
 }
@@ -536,6 +530,53 @@ function catalogFilterChange(scope) {
 function catalogSearchInput(scope) {
   debounced('cat-' + scope, () => catalogFilterChange(scope));
 }
+// ─── La griglia raggruppata, condivisa da Anagrafica e Magazzino ───
+// Le due viste disegnano lo stesso oggetto: gruppi con un titolo che dice
+// quanti articoli contengono, le prime N righe, e un piede che offre di vederne
+// altre. Erano due copie parallele, e ogni correzione andava fatta due volte —
+// il `.table-wrap` che mancava a tutte e due lo ha dimostrato, perché mancava a
+// tutte e due. La seconda, prima o poi, si dimentica.
+//
+// Quello che le due viste hanno davvero di diverso resta fuori e si passa:
+// l'intestazione, il disegno della riga, il limite corrente, i comandi del
+// piede e cosa dire quando non c'è niente da mostrare.
+//
+//   itemGrid({ hostId, rows, head, riga, limite, pagina, altro, tutti, vuoto, colonne })
+function itemGrid(o) {
+  const host = document.getElementById(o.hostId);
+  if (!host) return;   // la vista non è montata
+  const { groups, keys } = catalogGroups(o.rows);
+  // Si riempiono i gruppi nell'ordine di visualizzazione finché c'è spazio: il
+  // taglio non prende un po' da ognuno, che sarebbe un elenco di nessuno.
+  let restanti = o.limite;
+  let disegnati = 0;
+  const html = keys.map(k => {
+    const tutti = groups[k].items;
+    const visibili = tutti.slice(0, Math.max(0, restanti));
+    restanti -= visibili.length;
+    disegnati += visibili.length;
+    if (!visibili.length) return '';
+    // Il titolo nomina sempre il totale del gruppo, anche quando ne disegna solo
+    // i primi: un conteggio che mentisse lì manderebbe qualcuno a decidere
+    // sulla base di un elenco tagliato senza saperlo.
+    const conteggio = visibili.length < tutti.length ? `${visibili.length} di ${tutti.length}` : `${tutti.length}`;
+    return `<div class="cat-group-title">${esc(k)} <span style="color:var(--text-dim);font-weight:500">(${conteggio})</span></div>
+      <div class="table-wrap"><table>${o.head}<tbody>${visibili.map(o.riga).join('')}</tbody></table></div>`;
+  }).join('');
+  const mancanti = o.rows.length - disegnati;
+  const piu = mancanti > 0 ? `<div class="cat-more">
+      <span>Mostrati ${disegnati} di ${o.rows.length} articoli</span>
+      <button class="btn-outline" onclick="${o.altro}">Mostra altri ${Math.min(o.pagina, mancanti)}</button>
+      <button class="btn-outline" onclick="${o.tutti}">Mostra tutti</button>
+    </div>` : '';
+  host.innerHTML = o.rows.length ? html + piu : `<div class="empty-text">${o.vuoto}</div>`;
+  a11yFields(host);
+  colsMountButton(o.colonne);
+  colsApply();
+  // La tabella si riscrive per intero a ogni filtro: il pannello rimette
+  // l'evidenza sulla riga scelta, e la lascia cadere se quella riga non c'è più.
+  inspectorSync();
+}
 // ─── Raggruppamento delle righe ───
 // Commerciali, materie prime e parti per macrofamiglia; gli altri tipi per
 // categoria. Restituisce i gruppi e le loro chiavi già in ordine di
@@ -581,43 +622,24 @@ function renderCatalog(scope) {
   const pfx = sc.pfx;
   const rows = catalogFilteredRows(scope);
 
-  const { groups, keys } = catalogGroups(rows);
-
   // «Costo un.» è per una unità dell'articolo, cioè nella U.M. della colonna
   // accanto: si dice in intestazione, una volta, invece che su ogni riga.
-  const head = `<thead><tr><th class="col-flags"></th><th class="col-code">Codice</th><th class="col-name">Nome</th>
-    <th class="col-type">Tipo</th><th class="col-family">Famiglia</th><th class="col-uom">U.M.</th>
-    <th class="col-cost" title="Costo di una unità, nella U.M. della colonna accanto">Costo un. (${esc(cur())}/U.M.)</th>
-    <th class="col-meta">Dettaglio</th><th class="row-actions"></th></tr></thead>`;
-  // Si riempiono i gruppi nell'ordine di visualizzazione finché c'è spazio.
-  // Il titolo dice sempre quanti articoli contiene il gruppo per intero, anche
-  // quando ne sono disegnati solo i primi: il conteggio non deve mentire.
-  let restanti = catalogLimit[scope];
-  let disegnati = 0;
-  const html = keys.map(k => {
-    const tutti = groups[k].items;
-    const visibili = tutti.slice(0, Math.max(0, restanti));
-    restanti -= visibili.length;
-    disegnati += visibili.length;
-    if (!visibili.length) return '';
-    const conteggio = visibili.length < tutti.length ? `${visibili.length} di ${tutti.length}` : `${tutti.length}`;
-    return `<div class="cat-group-title">${esc(k)} <span style="color:var(--text-dim);font-weight:500">(${conteggio})</span></div>
-      <table>${head}<tbody>${visibili.map(catalogRow).join('')}</tbody></table>`;
-  }).join('');
-  const mancanti = rows.length - disegnati;
-  const piu = mancanti > 0 ? `<div class="cat-more">
-      <span>Mostrati ${disegnati} di ${rows.length} articoli</span>
-      <button class="btn-outline" onclick="catalogShowMore('${scope}')">Mostra altri ${Math.min(CATALOG_PAGE, mancanti)}</button>
-      <button class="btn-outline" onclick="catalogShowAll('${scope}')">Mostra tutti</button>
-    </div>` : '';
-  const tabella = document.getElementById(pfx + '-table');
-  tabella.innerHTML = rows.length ? html + piu : '<div class="empty-text">Nessun articolo trovato.</div>';
-  a11yFields(tabella);
-  colsMountButton(scope);
-  colsApply();
-  // La tabella si riscrive per intero a ogni filtro: il pannello rimette
-  // l’evidenza sulla riga scelta, e la lascia cadere se quella riga non c’è più.
-  inspectorSync();
+  const head = `<thead><tr><th scope="col" class="col-flags"></th><th scope="col" class="col-code">Codice</th><th scope="col" class="col-name">Nome</th>
+    <th scope="col" class="col-type">Tipo</th><th scope="col" class="col-family">Famiglia</th><th scope="col" class="col-uom">U.M.</th>
+    <th scope="col" class="col-cost" title="Costo di una unità, nella U.M. della colonna accanto">Costo un. (${esc(cur())}/U.M.)</th>
+    <th scope="col" class="col-meta">Dettaglio</th><th scope="col" class="row-actions"></th></tr></thead>`;
+  itemGrid({
+    hostId: pfx + '-table',
+    rows,
+    head,
+    riga: catalogRow,
+    limite: catalogLimit[scope],
+    pagina: CATALOG_PAGE,
+    altro: `catalogShowMore('${scope}')`,
+    tutti: `catalogShowAll('${scope}')`,
+    vuoto: 'Nessun articolo trovato.',
+    colonne: scope,
+  });
 }
 // ─── Export dell'anagrafica ───
 // È l'elenco che si sta guardando, non il template d'import: quello resta
@@ -864,51 +886,64 @@ function refreshItemCode() {
   if (!itemCodeAuto) return;
   const codeEl = document.getElementById('it-code');
   if (!codeEl) return;
-  codeEl.value = genItemCode(itemDraftFromForm());
+  codeEl.value = genItemCodeUI(itemDraftFromForm());
 }
 // Anteprima del nome composto (concetto + descrizione) nella modale parte
 function updatePartNamePreview() {
   const el = document.getElementById('part-name-preview');
   if (el) el.textContent = composePartName(val('it-concept'), val('it-namefree')) || '—';
 }
+// Mostra e nasconde i blocchi della scheda articolo secondo il tipo scelto.
+//
+// `mostra` invece di getElementById(...).style: dodici dereferenziazioni nude e
+// due guardate, nella stessa funzione, erano una regola che non c'era. Il giorno
+// in cui un campo esce dal template, l'apertura della scheda articolo smetteva
+// di funzionare del tutto — e la scheda è il centro dell'anagrafica.
 function toggleItemFields() {
-  const t = document.getElementById('it-type').value;
+  const tipo = document.getElementById('it-type');
+  if (!tipo) return;   // la scheda non è aperta
+  const t = tipo.value;
+  const mostra = (id, cond) => {
+    const el = document.getElementById(id);
+    if (el) el.style.display = cond ? '' : 'none';
+  };
   // Nome: campo libero singolo per tutti i tipi tranne "parte", che usa concetto + descrizione
-  document.getElementById('fld-name-std').style.display = t === 'parte' ? 'none' : '';
-  document.getElementById('fld-name-parte').style.display = t === 'parte' ? '' : 'none';
+  mostra('fld-name-std', t !== 'parte');
+  mostra('fld-name-parte', t === 'parte');
   if (t === 'parte') updatePartNamePreview();
   // Prezzo e fornitore: riepilogo in sola lettura, si modificano solo dal listino
-  document.getElementById('fld-pricing').style.display = hasPriceList({ type: t }) ? '' : 'none';
-  document.getElementById('fld-sourcing').style.display = t === 'parte' ? '' : 'none';
+  mostra('fld-pricing', hasPriceList({ type: t }));
+  mostra('fld-sourcing', t === 'parte');
   const showFam = usesFamily(t);
-  document.getElementById('fld-family').style.display = showFam ? '' : 'none';
-  document.getElementById('fld-assembly-note').style.display = isAssembly(t) ? '' : 'none';
-  document.getElementById('fld-cycle').style.display = t === 'parte' ? '' : 'none';
+  mostra('fld-family', showFam);
+  mostra('fld-assembly-note', isAssembly(t));
+  mostra('fld-cycle', t === 'parte');
   // Flag: preferito su commerciali e materie prime, obsoleto anche sulle parti
   const showObs = t === 'acquistato' || t === 'materiale' || t === 'parte';
-  document.getElementById('fld-flag-fav').style.display = canFavorite(t) ? '' : 'none';
-  document.getElementById('fld-flag-obs').style.display = showObs ? '' : 'none';
-  document.getElementById('fld-flags').style.display = showObs ? '' : 'none';
+  mostra('fld-flag-fav', canFavorite(t));
+  mostra('fld-flag-obs', showObs);
+  mostra('fld-flags', showObs);
   // Magazzino: solo su ciò che si tiene a scorta. Un assieme si produce, e la
   // sua giacenza sarebbe quella dei componenti contata due volte.
-  const stock = document.getElementById('fld-stock');
-  if (stock) stock.style.display = hasStock({ type: t }) ? '' : 'none';
+  mostra('fld-stock', hasStock({ type: t }));
   // Doppia unità: solo dove esiste un listino, perché è il prezzo del fornitore
   // che può essere espresso in un'altra unità.
-  const alt = document.getElementById('fld-altuom');
-  if (alt) alt.style.display = hasPriceList({ type: t }) ? '' : 'none';
+  mostra('fld-altuom', hasPriceList({ type: t }));
   // Codifica gerarchica: schema per la macchina, appartenenza per gli altri tipi
   const isChild = t === 'gruppo' || t === 'sottogruppo' || t === 'parte';
-  document.getElementById('fld-coding-mac').style.display = t === 'macchina' ? '' : 'none';
-  document.getElementById('fld-coding-child').style.display = isChild ? '' : 'none';
-  document.getElementById('fld-coding-gsigla').style.display = t === 'gruppo' ? '' : 'none';
-  document.getElementById('fld-coding-group').style.display = (t === 'sottogruppo' || t === 'parte') ? '' : 'none';
+  mostra('fld-coding-mac', t === 'macchina');
+  mostra('fld-coding-child', isChild);
+  mostra('fld-coding-gsigla', t === 'gruppo');
+  mostra('fld-coding-group', t === 'sottogruppo' || t === 'parte');
   if (showFam) {
     // Ripopola le famiglie con quelle del tipo selezionato, preservando la selezione se compatibile
     const famSel = document.getElementById('it-family');
-    const cur = famSel.value;
-    famSel.innerHTML = familyOptions(cur, t);
-    if (famSel.value !== cur) document.getElementById('it-subfamily').innerHTML = subFamilyOptions('', '');
+    if (famSel) {
+      const cur = famSel.value;
+      famSel.innerHTML = familyOptions(cur, t);
+      const subSel = document.getElementById('it-subfamily');
+      if (famSel.value !== cur && subSel) subSel.innerHTML = subFamilyOptions('', '');
+    }
   }
   refreshItemCode();
 }
@@ -1229,7 +1264,7 @@ function delCycleRow(idx) {
   if (!roleGuard('catalog')) return;
   if (!(it.cycle || [])[idx]) return;
   it.cycle.splice(idx, 1);
-  touch(it); saveDB(); renderCycles(); showToast('Riga eliminata');
+  touch(it); saveDB(); renderCycles(); savedToast('Riga eliminata');
 }
 function moveCycleOp(k, dir) {
   const it = currentCycleItem(); if (!it) return;
@@ -1288,7 +1323,7 @@ function pickCycleItem(id) {
   if (!Array.isArray(it.cycle)) it.cycle = [];
   it.cycle.push({ kind: 'item', itemId: id, qty: 1, costOverride: null });
   closeCyclePicker();
-  touch(it); saveDB(); renderCycles(); showToast('Articolo aggiunto alla distinta parte');
+  touch(it); saveDB(); renderCycles(); savedToast('Articolo aggiunto alla distinta parte');
 }
 // Selettore inline di una lavorazione da un centro di lavoro esistente (costo fisso, non orario).
 function addCycleOpRow() {
@@ -1316,7 +1351,7 @@ function pickCycleOp() {
   // In fondo all'elenco: l'ultima fase aggiunta è l'ultima del ciclo, poi si sposta con ↑↓
   it.cycle.push({ kind: 'op', workCenterId: wcId, supplierId: val('cyc-opsup'), cost: numVal('cyc-opcost', 0), note: '' });
   closeCyclePicker();
-  touch(it); saveDB(); renderCycles(); showToast('Lavorazione aggiunta');
+  touch(it); saveDB(); renderCycles(); savedToast('Lavorazione aggiunta');
 }
 
 function newItemModal(scope) {
@@ -1533,12 +1568,15 @@ function saveNewItem() {
     }
   }
   Store.insert('items', it);
-  closeModal(); renderCatalogs(); showToast(src ? 'Copia creata' : 'Articolo creato');
+  closeModal(); renderCatalogs(); savedToast(src ? 'Copia creata' : 'Articolo creato');
   // Un articolo appena creato non ha modo di ricevere un prezzo: la scheda non
   // lo chiede più. Il listino si apre da solo, ma solo se non è già arrivato
   // dalla copia — lì il prezzo c'è già.
   if (hasPriceList(it) && !priceRows(it).length) priceListModal(it.id);
 }
+// La scheda articolo ricorda chi si sta modificando: chiusa, non deve
+// ricordarlo più — itemDraftFromForm legge questa variabile.
+onPanelClose('form', () => { window.__editingItemId = null; window.__itemScope = null; });
 function editItemModal(id) {
   if (!roleGuard('catalog')) return;
   const it = getItem(id); if (!it) return;
@@ -1561,7 +1599,7 @@ function saveItemEdit(id) {
   if (dupErr) { showToast(dupErr, 'error'); return; }
   readItemForm(it);
   touch(it);
-  saveDB(); closeModal(); renderCatalogs(); showToast('Articolo aggiornato');
+  saveDB(); closeModal(); renderCatalogs(); savedToast('Articolo aggiornato');
 }
 function delItem(id) {
   if (!roleGuard('catalog')) return;
@@ -1637,7 +1675,7 @@ function bulkDelete(ids) {
     // gesto, non di una riga.
     showToast(`${cestinati.length} ${cestinati.length === 1 ? 'articolo eliminato' : 'articoli eliminati'}`, 'success', {
       label: '↶ Annulla',
-      fn: () => { cestinati.forEach(v => Store.restore(v)); renderCatalogs(); showToast('Ripristinati'); },
+      fn: () => { cestinati.forEach(v => Store.restore(v)); renderCatalogs(); savedToast('Ripristinati'); },
     });
   });
 }

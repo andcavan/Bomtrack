@@ -72,15 +72,42 @@ function listInfoAoa(spec) {
 // evita un file che non si apre.
 function sheetName(nome) { return String(nome || 'Foglio').replace(/[:\\/?*[\]]/g, ' ').slice(0, 31); }
 
+// ─── Le colonne di data ───
+// Una colonna dichiarata `data: true` porta nelle righe la data **ISO**, non il
+// «06/09/2026» già scritto: la formattazione è un fatto del formato di uscita,
+// e i due traduttori la fanno ognuno a modo suo. Scritta come testo, in Excel
+// non si ordinava né si filtrava per data — e proprio negli elenchi dove la
+// domanda è «cosa è passato a settembre».
+const XLSX_FMT_DATA = 'dd/mm/yyyy';
+function listCellData(v) {
+  const g = String(v || '').slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(g)) return v || '';
+  // Mezzogiorno UTC: costruita a mezzanotte, un fuso a ovest la farebbe
+  // scivolare al giorno prima nella cella.
+  const d = new Date(g + 'T12:00:00Z');
+  return isNaN(d.getTime()) ? (v || '') : d;
+}
+
 function exportListXlsx(spec) {
   if (!listRows(spec)) { showToast('Niente da esportare con questi filtri', 'error'); return false; }
   if (!requireXlsx()) return false;
   const wb = XLSX.utils.book_new();
   (spec.sezioni || []).forEach(s => {
-    const aoa = [s.colonne.map(c => c.h)].concat(s.righe);
+    const dataCols = s.colonne.map(c => !!c.data);
+    const conv = r => r.map((v, k) => (dataCols[k] ? listCellData(v) : v));
+    const aoa = [s.colonne.map(c => c.h)].concat((s.righe || []).map(conv));
     if (s.totali) aoa.push(s.totali);
-    const ws = XLSX.utils.aoa_to_sheet(aoa);
+    const ws = XLSX.utils.aoa_to_sheet(aoa, { cellDates: true });
     ws['!cols'] = s.colonne.map(c => ({ wch: c.w || 14 }));
+    // Il formato italiano sulle celle di data: senza, SheetJS le scrive col
+    // formato di serie (m/d/yy) e in officina si legge il mese al posto del giorno.
+    dataCols.forEach((isData, k) => {
+      if (!isData) return;
+      for (let r = 1; r < aoa.length; r++) {
+        const cella = ws[XLSX.utils.encode_cell({ r, c: k })];
+        if (cella && (cella.t === 'd' || cella.t === 'n')) cella.z = XLSX_FMT_DATA;
+      }
+    });
     // Filtro automatico sull'intestazione, come nell'export del catalogo: con
     // qualche centinaio di righe è la differenza fra un foglio che si usa e uno
     // che si guarda. La riga dei totali resta fuori dall'intervallo: dentro,
@@ -163,7 +190,8 @@ function exportListPdf(spec) {
     doc.autoTable({
       startY: y,
       head: [s.colonne.map(c => c.h)],
-      body: (s.righe || []).map(r => r.map(v => (v == null ? '' : v))),
+      body: (s.righe || []).map(r => r.map((v, k) => (v == null ? ''
+        : (s.colonne[k] && s.colonne[k].data ? fmtDateIt(v) : v)))),
       foot: s.totali ? [s.totali.map(v => (v == null ? '' : v))] : undefined,
       styles: { fontSize: 8 },
       headStyles: { fillColor: [58, 123, 232] },

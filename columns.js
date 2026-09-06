@@ -16,7 +16,11 @@
 // Progetto disegnano le righe con la stessa funzione ma sono due elenchi
 // diversi, e chi li usa li guarda per motivi diversi.
 
-const COLS_KEY = 'bomtrack.columns';
+// Underscore come tutte le altre chiavi locali. La vecchia col punto si
+// travasa alla prima lettura (localPref, core.js): le colonne nascoste a mano
+// non devono ricomparire tutte per un cambio di nome.
+const COLS_KEY = 'bomtrack_columns';
+const COLS_KEY_VECCHIA = 'bomtrack.columns';
 
 // Codice e Nome non si nascondono: sono l'identità della riga, e un elenco in
 // cui non si sa più di cosa parla ogni riga non è un elenco più pulito, è un
@@ -48,7 +52,11 @@ const COLUMNS = {
   ],
 };
 // Le due anagrafiche hanno le stesse colonne ma tengono scelte separate.
-COLUMNS.design = COLUMNS.buy;
+// Una copia e non lo stesso array: l'alias funzionava solo finché nessuno lo
+// mutava, e la separazione che il commento descrive valeva per colsHidden, non
+// per la definizione — aggiungere una colonna a Progetto l'avrebbe aggiunta
+// anche ad Acquisti, senza un errore da nessuna parte.
+COLUMNS.design = COLUMNS.buy.map(c => Object.assign({}, c));
 // Dove sta la tabella di ciascuna vista: la regola CSS si limita a quella, così
 // nascondere una colonna in Acquisti non la nasconde in Progetto.
 const COL_TABLE = { buy: 'buy-table', design: 'des-table', stock: 'stk-table' };
@@ -61,7 +69,7 @@ function colIsHidden(view, key) { return colsHiddenOf(view).includes(key); }
 
 function colsLoad() {
   try {
-    const p = JSON.parse(localStorage.getItem(COLS_KEY) || 'null');
+    const p = JSON.parse(localPref(COLS_KEY, COLS_KEY_VECCHIA) || 'null');
     if (p && typeof p === 'object') colsHidden = p;
   } catch (e) { /* preferenze illeggibili: si riparte da tutte le colonne */ }
   colsSanitize();

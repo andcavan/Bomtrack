@@ -88,13 +88,7 @@ function addDays(iso, giorni) {
   d.setUTCDate(d.getUTCDate() + (Number(giorni) || 0));
   return d.toISOString().slice(0, 10);
 }
-// Oggi secondo il calendario dell'utente, non secondo Greenwich: alle 23 del 30
-// settembre in Italia è ancora il 30, e un semaforo che dicesse "1 ottobre"
-// segnalerebbe in ritardo qualcosa che non lo è.
-function oggiISO() {
-  const n = new Date();
-  return new Date(n.getTime() - n.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
-}
+// oggiISO() e fmtDateIt() sono in core.js, accanto a fmtStamp.
 // Giorni di consegna dichiarati da una quotazione. Senza quotazione, o senza il
 // dato, vale zero: nessun anticipo, non un anticipo inventato.
 function leadDaysOfRow(row) {
@@ -451,15 +445,15 @@ function planDocsBody(gruppi, planId, kind) {
           ${ico('lock', 'tinted', '')} già in ${esc(bloccata.map(x => x.number).join(', '))}</span>`);
       } else {
         const a = altri(r);
-        if (a.length) seg.push(`<span class="price-best" title="Esiste già ${esc(a.map(docRefLabel).join(', '))}, di tipo diverso: questa riga resta selezionabile">📄 ${esc(a.map(x => x.number).join(', '))}</span>`);
+        if (a.length) seg.push(`<span class="price-best" title="Esiste già ${esc(a.map(docRefLabel).join(', '))}, di tipo diverso: questa riga resta selezionabile">${ico('file', 'tinted', '')} ${esc(a.map(x => x.number).join(', '))}</span>`);
         if (r.underMin) seg.push(`<span class="mrp-warn" title="Quantità minima del fornitore: ${fmtUom(r.minQty, r.uom)}">${ico('warning', 'tinted', '')} sotto il minimo di ${fmtUom(r.minQty, r.uom)}</span>`);
         // Due assenze diverse, e la seconda è quella che manda fuori un ordine
         // sbagliato: l'articolo un prezzo ce l'ha, ma non da questo fornitore.
-        if (r.noDocPrice) seg.push(`<span class="mrp-warn" title="${esc(supplierName(r.supplierId) || 'Questo fornitore')} non ha questo articolo a listino: la riga nascerà senza prezzo, da compilare a mano. Il prezzo di un altro fornitore non si applica.">⚠ non a listino</span>`);
+        if (r.noDocPrice) seg.push(`<span class="mrp-warn" title="${esc(supplierName(r.supplierId) || 'Questo fornitore')} non ha questo articolo a listino: la riga nascerà senza prezzo, da compilare a mano. Il prezzo di un altro fornitore non si applica.">${ico('warning', 'tinted', '')} non a listino</span>`);
         else if (r.noPrice) seg.push('<span class="mrp-warn" title="Senza prezzo la riga vale zero">' + ico('warning', 'tinted', '') + ' senza prezzo</span>');
         // Il listino applicabile non è quello con cui è stato costificato: il
         // documento seguirà il listino, e il totale qui sopra viene dal costo.
-        else if (r.listinoDiverso) seg.push(`<span class="mrp-warn" title="Costificato a ${fmtPer(r.price, r.uom)}, ma ${esc(supplierName(r.supplierId) || 'il fornitore')} oggi quota ${fmtPer(r.docInGestione, r.uom)}. Sul documento va il listino.">⇄ a listino ${fmtPer(r.priceDoc, r.uom)}</span>`);
+        else if (r.listinoDiverso) seg.push(`<span class="mrp-warn" title="Costificato a ${fmtPer(r.price, r.uom)}, ma ${esc(supplierName(r.supplierId) || 'il fornitore')} oggi quota ${fmtPer(r.docInGestione, r.uom)}. Sul documento va il listino.">${ico('refresh', 'tinted', '')} a listino ${fmtPer(r.priceDoc, r.uom)}</span>`);
       }
       // Questo pannello è l'anteprima del documento: l'importo è quello che il
       // documento porterà, cioè il listino applicabile. Senza una quotazione di
@@ -642,6 +636,7 @@ function renderMrp() {
     comandi: `<button class="add-btn-sm" onclick="newPlan()">+ Nuovo piano</button>
       ${listExportButtons('planListExportSpec')}`,
     filtri: `<input type="text" class="search" id="plan-search" value="${esc(val('plan-search'))}" placeholder="Numero o titolo..." oninput="planSearchInput()">
+      ${dateRangeFilter('plan-date', val('plan-date-from'), val('plan-date-to'), 'planFilterChange()', 'piano')}
       <span class="doc-filter-count" id="plan-count">${planCountText()}</span>`,
     righe: planListRows(),
     doc: mrpView === 'edit' ? renderPlanEdit(currentPlanId) : '',
@@ -654,14 +649,25 @@ function renderMrp() {
   });
   a11yFields(host);
 }
+// Come per la ricerca: si ridisegna solo l'elenco, la barra resta com'è.
+function planFilterChange() {
+  renderInto('plan-list', planListRows);
+  const c = document.getElementById('plan-count');
+  if (c) c.textContent = planCountText();
+}
 function planCountText() {
   return worklistCount(planFilteredList().length, (db.plans || []).length, 'piano', 'piani');
 }
 // I piani che l'elenco mostra. Estratta dal disegno perché la usa l'export.
 function planFilteredList() {
   const q = (val('plan-search') || '').toLowerCase();
+  const da = val('plan-date-from'), al = val('plan-date-to');
   const tutti = (db.plans || []).slice().sort((a, b) => (b.number || '').localeCompare(a.number || ''));
-  return q ? tutti.filter(p => (p.number + ' ' + (p.title || '')).toLowerCase().includes(q)) : tutti;
+  return tutti.filter(p => {
+    if (!inDateRange(p.date, da, al)) return false;
+    if (!q) return true;
+    return (p.number + ' ' + (p.title || '')).toLowerCase().includes(q);
+  });
 }
 // ─── Export dell'elenco dei piani ───
 // L'elenco, non il contenuto di un piano: quello ha già i suoi export
@@ -670,16 +676,16 @@ function planListExportSpec() {
   return {
     titolo: 'Fabbisogno materiali — piani',
     slug: 'piani',
-    filtri: [['Ricerca', val('plan-search')]],
+    filtri: [['Ricerca', val('plan-search')], ['Data', dateRangeText(val('plan-date-from'), val('plan-date-to'))]],
     sezioni: [{
       nome: 'Piani',
       colonne: [
         { h: 'Numero', w: 18 }, { h: 'Titolo', w: 34 }, { h: 'Stato', w: 12 },
-        { h: 'Data', w: 12 }, { h: 'Consegna', w: 12 }, { h: 'Articoli a piano', w: 14, num: true },
+        { h: 'Data', w: 12, data: true }, { h: 'Consegna', w: 12, data: true }, { h: 'Articoli a piano', w: 14, num: true },
       ],
       righe: planFilteredList().map(p => [
         p.number || '', p.title || '', p.active === false ? 'chiuso' : 'aperto',
-        fmtDateIt(p.date), fmtDateIt(p.dueDate), (p.lines || []).length,
+        p.date || '', p.dueDate || '', (p.lines || []).length,
       ]),
     }],
   };
@@ -766,8 +772,8 @@ function renderPlanEdit(id) {
         <button class="add-btn-sm" onclick="planAddModal('${id}')">+ Aggiungi al piano</button>
       </div>
       <div class="table-wrap"><table>
-        <thead><tr><th>Codice</th><th>Articolo</th><th>U.M.</th><th style="width:120px">Q.tà</th>
-          <th style="width:150px" title="Data in cui questo deve essere pronto">Serve per</th><th></th></tr></thead>
+        <thead><tr><th scope="col">Codice</th><th scope="col">Articolo</th><th scope="col">U.M.</th><th scope="col" style="width:120px">Q.tà</th>
+          <th scope="col" style="width:150px" title="Data in cui questo deve essere pronto">Serve per</th><th scope="col"></th></tr></thead>
         <tbody>${planRows}</tbody></table></div>
     </div>
 
@@ -849,18 +855,18 @@ function mrpBuyLineHtml(r) {
 function mrpBuyTable(rows) {
   if (!rows.length) return '<div class="empty-text">Niente da comprare: il piano è vuoto o i suoi articoli non hanno distinta.</div>';
   const colonneStock = mrpNet
-    ? `<th style="text-align:right" title="Quanto serve in tutto">Lordo</th>
-       <th style="text-align:right" title="Calcolato da ricevimenti e movimenti">Esistente</th>
-       <th style="text-align:right" title="Già promesso agli altri piani di fabbisogno aperti: esistente meno questo è quello di cui si può disporre">Impegnato</th>
-       <th style="text-align:right" title="Ordinato e non ancora ricevuto">In arrivo</th>` : '';
+    ? `<th scope="col" style="text-align:right" title="Quanto serve in tutto">Lordo</th>
+       <th scope="col" style="text-align:right" title="Calcolato da ricevimenti e movimenti">Esistente</th>
+       <th scope="col" style="text-align:right" title="Già promesso agli altri piani di fabbisogno aperti: esistente meno questo è quello di cui si può disporre">Impegnato</th>
+       <th scope="col" style="text-align:right" title="Ordinato e non ancora ricevuto">In arrivo</th>` : '';
   const nCol = (mrpNet ? 11 : 7) + 2;   // + le due colonne di data
-  const head = `<thead><tr><th>Codice</th><th>Articolo</th><th>Fornitore</th>
-    <th title="Data in cui il materiale serve">Serve per</th>
-    <th title="Data in cui serve meno i giorni di consegna del fornitore">Ordinare entro</th>
-    <th>U.M.</th>
-    ${colonneStock}<th style="text-align:right">${mrpNet ? 'Da comprare' : 'Q.tà'}</th>
-    <th style="text-align:right" title="Prezzo di una unità, nella U.M. della colonna U.M.">Prezzo (${esc(cur())}/U.M.)</th>
-    <th style="text-align:right">Importo (${esc(cur())})</th></tr></thead>`;
+  const head = `<thead><tr><th scope="col">Codice</th><th scope="col">Articolo</th><th scope="col">Fornitore</th>
+    <th scope="col" title="Data in cui il materiale serve">Serve per</th>
+    <th scope="col" title="Data in cui serve meno i giorni di consegna del fornitore">Ordinare entro</th>
+    <th scope="col">U.M.</th>
+    ${colonneStock}<th scope="col" style="text-align:right">${mrpNet ? 'Da comprare' : 'Q.tà'}</th>
+    <th scope="col" style="text-align:right" title="Prezzo di una unità, nella U.M. della colonna U.M.">Prezzo (${esc(cur())}/U.M.)</th>
+    <th scope="col" style="text-align:right">Importo (${esc(cur())})</th></tr></thead>`;
   const totale = rows.reduce((s, r) => s + r.amount, 0);
   let body;
   if (mrpGrouped) {
@@ -888,9 +894,9 @@ function mrpMakeTable(make) {
       <td style="font-family:var(--mono);text-align:right">${fmtN(c * e.qty)}</td></tr>`;
   }).join('');
   return `<div class="table-wrap"><table>
-    <thead><tr><th>Codice</th><th>Parte</th><th>U.M.</th>
-      <th style="text-align:right">Q.tà</th><th style="text-align:right">Costo un. (${esc(cur())}/U.M.)</th>
-      <th style="text-align:right">Importo (${esc(cur())})</th></tr></thead>
+    <thead><tr><th scope="col">Codice</th><th scope="col">Parte</th><th scope="col">U.M.</th>
+      <th scope="col" style="text-align:right">Q.tà</th><th scope="col" style="text-align:right">Costo un. (${esc(cur())}/U.M.)</th>
+      <th scope="col" style="text-align:right">Importo (${esc(cur())})</th></tr></thead>
     <tbody>${rows}</tbody></table></div>`;
 }
 // Le quantità esplose sono float (scarti e frazioni): si mostrano senza zeri

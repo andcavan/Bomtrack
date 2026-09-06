@@ -234,3 +234,155 @@ describe('loadDB — primo avvio e dati corrotti', () => {
     assert.ok(app.snapshot().items.length > 0);
   });
 });
+
+// ═══════════════════════════════════════════════════════════
+//  I riferimenti che la migrazione dimenticava
+// ═══════════════════════════════════════════════════════════
+// Fino alla 0.59 migrateV2() rimappava quattro classi di riferimento su tredici.
+// Chi apriva l'app con dati v1 trovava ordini senza fornitore, righe senza
+// articolo, movimenti di magazzino orfani — e la migrazione aveva già salvato.
+// Qui c'è un database v1 con **tutte** le classi dichiarate in REFS: se una
+// resta all'id legacy, il test la nomina.
+function legacyCompleto() {
+  return {
+    nextId: 99,
+    suppliers: [{ id: 5, name: 'Alfa' }, { id: 6, name: 'Beta' }],
+    workCenters: [{ id: 1, name: 'Tornitura', hourlyRate: 50 }],
+    families: [{ id: 7, name: 'Meccanico', subs: [{ id: 8, name: 'Cuscinetti' }] }],
+    items: [
+      { id: 10, code: 'MAC', name: 'Macchina', type: 'macchina', uom: 'pz', sigla: 'MAC' },
+      { id: 11, code: 'GRP', name: 'Gruppo', type: 'gruppo', uom: 'pz', machineItemId: 10 },
+      { id: 12, code: 'PRT', name: 'Parte', type: 'parte', uom: 'pz',
+        machineItemId: 10, groupItemId: 11,
+        cycle: [{ kind: 'mat', itemId: 13 }, { kind: 'op', workCenterId: 1, cost: 5 }] },
+      { id: 13, code: 'ACQ', name: 'Cuscinetto', type: 'acquistato', uom: 'pz', purchasePrice: 20,
+        supplierId: 5, familyId: 7, subFamilyId: 8,
+        priceList: [{ id: 'q1', supplierId: 6, price: 19, date: '2026-01-01' }] },
+    ],
+    revisions: [{ id: 'r1', itemId: 11, rev: 'A', snapshot: {} }],
+    movements: [{ id: 'mv1', itemId: 13, kind: 'rettifica', qty: 3, date: '2026-01-01' }],
+    rfqs: [{ id: 'rq1', number: 'RDO-1', supplierId: 5, status: 'bozza',
+      lines: [{ id: 'rl1', itemId: 13, qty: 1 }] }],
+    orders: [{ id: 'od1', number: 'ODA-1', supplierId: 6, status: 'bozza',
+      lines: [{ id: 'ol1', itemId: 13, qty: 1 }] }],
+    plans: [{ id: 'pl1', number: 'PIA-1', lines: [{ id: 'pln1', itemId: 10, qty: 1 }] }],
+    settings: { overheadPct: 0, marginPct: 0, currency: '€' },
+  };
+}
+
+describe('migrateV2 — nessun riferimento resta indietro', () => {
+  it('ogni campo dichiarato in REFS punta a un record che esiste', () => {
+    const app = caricato(legacyCompleto());
+    const db = app.snapshot();
+    const insiemi = {
+      item: new Set(db.items.map(r => r.id)),
+      supplier: new Set(db.suppliers.map(r => r.id)),
+      workCenter: new Set(db.workCenters.map(r => r.id)),
+      family: new Set(db.families.map(f => f.id)),
+      subFamily: new Set(db.families.reduce((a, f) => a.concat((f.subs || []).map(s => s.id)), [])),
+    };
+    const refs = JSON.parse(app.eval('JSON.stringify(REFS)'));
+    const mancanti = [];
+    const controlla = (dove, rec, campi) => {
+      Object.keys(campi).forEach(k => {
+        if (rec[k] == null) return;
+        if (!insiemi[campi[k]].has(rec[k])) mancanti.push(dove + '.' + k + ' = ' + JSON.stringify(rec[k]));
+      });
+    };
+    Object.keys(refs).forEach(coll => {
+      const def = refs[coll];
+      (db[coll] || []).forEach((rec, i) => {
+        if (def.fields) controlla(coll + '[' + i + ']', rec, def.fields);
+        Object.keys(def.children || {}).forEach(figlio => {
+          (rec[figlio] || []).forEach((r, j) => controlla(coll + '[' + i + '].' + figlio + '[' + j + ']', r, def.children[figlio]));
+        });
+      });
+    });
+    assert.deepEqual(mancanti, [], 'riferimenti rimasti a un id che non esiste più');
+  });
+
+  it('nessun id numerico legacy sopravvive da nessuna parte', () => {
+    const db = caricato(legacyCompleto()).snapshot();
+    const interi = [];
+    const cerca = (v, dove) => {
+      if (Array.isArray(v)) { v.forEach((x, i) => cerca(x, dove + '[' + i + ']')); return; }
+      if (!v || typeof v !== 'object') return;
+      Object.keys(v).forEach(k => {
+        if (/Id$/.test(k) && typeof v[k] === 'number') interi.push(dove + '.' + k + ' = ' + v[k]);
+        cerca(v[k], dove + '.' + k);
+      });
+    };
+    Object.keys(db).forEach(k => cerca(db[k], k));
+    assert.deepEqual(interi, [], 'campi *Id ancora interi dopo la migrazione');
+  });
+
+  it('la quotazione cita il proprio fornitore, non quello dell\'articolo', () => {
+    const db = caricato(legacyCompleto()).snapshot();
+    const acq = db.items.find(i => i.code === 'ACQ');
+    const alfa = db.suppliers.find(s => s.name === 'Alfa');
+    const beta = db.suppliers.find(s => s.name === 'Beta');
+    assert.equal(acq.supplierId, alfa.id, 'il fornitore in uso');
+    assert.equal(acq.priceList[0].supplierId, beta.id, 'e la quotazione resta di chi era');
+  });
+
+  it('macchina e gruppo di una parte seguono le nuove chiavi', () => {
+    const db = caricato(legacyCompleto()).snapshot();
+    const byCode = c => db.items.find(i => i.code === c);
+    assert.equal(byCode('PRT').machineItemId, byCode('MAC').id);
+    assert.equal(byCode('PRT').groupItemId, byCode('GRP').id);
+    assert.equal(byCode('GRP').machineItemId, byCode('MAC').id);
+  });
+});
+
+// Il seed del listino gira dentro migrateDB, cioè **prima** delle migrazioni
+// versionate: scriveva 's1' nella riga di listino e nessuno la rimappava più.
+// Ogni installazione nuova nasceva con tre quotazioni intestate a un fornitore
+// inesistente, che in Gestione comparivano come «senza fornitore».
+describe('Primo avvio su un archivio vuoto', () => {
+  it('nessuna quotazione del seed resta senza il suo fornitore', () => {
+    const app = loadApp({ silent: true });
+    app.ref('Store').load();
+    const db = app.snapshot();
+    const sup = new Set(db.suppliers.map(s => s.id));
+    const orfane = db.items.reduce((a, i) => a.concat((i.priceList || [])
+      .filter(r => r.supplierId && !sup.has(r.supplierId))
+      .map(r => i.code + ' → ' + r.supplierId)), []);
+    assert.deepEqual(orfane, []);
+  });
+});
+
+// Un blob illeggibile è quasi tutto ancora lì, e un recupero a mano ne salva la
+// maggior parte. Ripartire dai dati demo *e salvarli sopra* cancellava l'unica
+// copia rimasta prima che qualcuno potesse guardarla.
+describe('Archivio locale illeggibile', () => {
+  const troncato = '{"items":[{"id":"x","code":"AAA"';
+  const conTroncato = () => {
+    const app = loadApp({ silent: true });
+    app.seedStorage(troncato);
+    app.ref('Store').load();
+    return app;
+  };
+  it('il blob originale non viene sovrascritto', () => {
+    assert.equal(conTroncato().storage.getItem('bomtrack_v1'), troncato);
+  });
+  it('e ne resta una copia messa da parte', () => {
+    assert.equal(conTroncato().storage.getItem('bomtrack_v1_illeggibile'), troncato);
+  });
+  it('il fatto viene registrato, non solo scritto in console', () => {
+    const app = conTroncato();
+    assert.equal(app.eval('dbLoadError && dbLoadError.kind'), 'parse');
+    assert.equal(app.eval('dbLoadError.rescued'), true);
+  });
+  it('la seconda copia non calpesta la prima', () => {
+    const app = conTroncato();
+    app.seedStorage('{"altro":');
+    app.ref('Store').load();
+    assert.equal(app.storage.getItem('bomtrack_v1_illeggibile'), troncato, 'vale la prima, che è quella buona');
+  });
+  it('un archivio sano continua a caricarsi e a salvarsi', () => {
+    const app = loadApp({ silent: true });
+    app.ref('Store').load();
+    assert.equal(app.eval('dbLoadError'), null);
+    assert.ok(app.storage.getItem('bomtrack_v1'), 'il primo avvio salva il database iniziale');
+  });
+});

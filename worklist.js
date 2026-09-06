@@ -83,6 +83,46 @@ function worklistCount(shown, total, singolare, plurale) {
   if (shown === total) return total + ' ' + (total === 1 ? singolare : plurale);
   return shown + ' di ' + total;
 }
+// ─── Filtro per periodo, condiviso dai quattro elenchi ───
+// Richieste, ordini, commesse e piani si guardano tutti per periodo — «cosa è
+// passato a settembre» — e la domanda è la stessa: due estremi sulla data del
+// documento. Sta qui perché quattro copie della stessa coppia di caselle
+// divergerebbero al primo ritocco, e perché il filtro dello schermo e quello
+// dell'export devono restare lo stesso codice.
+//
+// `onchange` è l'espressione da eseguire al cambio: i menu a tendina in queste
+// barre sono già immediati, e scegliere una data dal calendario è un gesto
+// concluso quanto un click — non c'è niente da aspettare.
+function dateRangeFilter(prefix, from, to, onchange, cosa) {
+  const lab = esc(cosa || 'documento');
+  return `<div class="wl-filter-dates">
+    <span class="wl-filter-lbl">Data</span>
+    <input type="date" id="${prefix}-from" value="${esc(from || '')}" title="Dal giorno" aria-label="Data ${lab}: dal giorno" onchange="${onchange}">
+    <span class="wl-filter-sep">→</span>
+    <input type="date" id="${prefix}-to" value="${esc(to || '')}" title="Al giorno" aria-label="Data ${lab}: al giorno" onchange="${onchange}">
+  </div>`;
+}
+// Le date sono già `AAAA-MM-GG`: confrontarle come stringhe le ordina come il
+// calendario, senza costruire Date e senza fusi orari di mezzo. Lo slice
+// difende dai record vecchi, che qui portavano l'istante completo.
+// Un documento senza data resta fuori quando un periodo è impostato: non
+// avendo data, non si può dire che ci cada dentro.
+function inDateRange(iso, from, to) {
+  if (!from && !to) return true;
+  const g = (iso || '').slice(0, 10);
+  if (!g) return false;
+  if (from && g < from) return false;
+  if (to && g > to) return false;
+  return true;
+}
+// L'intervallo detto a parole, per l'intestazione degli export: «dal 1/9 al
+// 30/9» si legge, due caselle di date no.
+function dateRangeText(from, to) {
+  if (from && to) return `dal ${fmtDateIt(from)} al ${fmtDateIt(to)}`;
+  if (from) return `dal ${fmtDateIt(from)}`;
+  if (to) return `fino al ${fmtDateIt(to)}`;
+  return '';
+}
 // Chiudere il documento aperto. Prende il posto del vecchio «← Elenco»:
 // l'elenco non è più un altrove in cui tornare, è lì a destra.
 function worklistCloseBtn(azione, cosa) {

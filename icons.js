@@ -34,6 +34,9 @@ const ICONS = {
   chevronDown: '<path d="m5.5 9.5 6.5 7 6.5-7"/>',
   refresh: '<path d="M20.3 12a8.3 8.3 0 1 1-2.6-6"/><path d="M20.5 3.5V9h-5.5"/>',
   eye: '<path d="M2.5 12S6.3 5.5 12 5.5 21.5 12 21.5 12 17.7 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="2.9"/>',
+  // Il pulsante del tema mostra dove si va, non dove si è: di giorno la luna.
+  sun: '<circle cx="12" cy="12" r="4.2"/><path d="M12 2.6v2.4M12 19v2.4M21.4 12H19M5 12H2.6M18.6 5.4l-1.7 1.7M7.1 16.9l-1.7 1.7M18.6 18.6l-1.7-1.7M7.1 7.1 5.4 5.4"/>',
+  moon: '<path d="M20.4 14.2A8.6 8.6 0 0 1 9.8 3.6a8.6 8.6 0 1 0 10.6 10.6z"/>',
 
   // Stato
   warning: '<path d="M12 3.6 2.9 19.5a1.1 1.1 0 0 0 1 1.6h16.2a1.1 1.1 0 0 0 1-1.6z"/><path d="M12 9.4v4.8M12 17.4h.01"/>',
@@ -132,6 +135,7 @@ const ICON_LABEL = {
   edit: 'Modifica', trash: 'Elimina', link: 'Dove è usato', search: 'Cerca',
   plus: 'Aggiungi', copy: 'Duplica', check: 'Fatto', close: 'Chiudi',
   chevronRight: 'Espandi', chevronDown: 'Comprimi', refresh: 'Ricalcola', eye: 'Sola lettura',
+  sun: 'Tema chiaro', moon: 'Tema scuro',
   warning: 'Attenzione', lock: 'Bloccato', unlock: 'Sbloccato', clock: 'Storico',
   blocked: 'Non più utilizzabile', pin: 'Revisione',
   file: 'PDF', sheet: 'Excel', cart: 'Acquisto', euro: 'Prezzi e listino',

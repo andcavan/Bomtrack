@@ -14,7 +14,9 @@
 // Le viste che non compaiono nel registro qui sotto non hanno pannello e non
 // se ne accorgono: `inspectorFor()` restituisce niente e tutto resta com'era.
 
-const INSP_KEY = 'bomtrack.inspector';
+// Vedi COLS_KEY in columns.js: stessa convenzione, stesso travaso.
+const INSP_KEY = 'bomtrack_inspector';
+const INSP_KEY_VECCHIA = 'bomtrack.inspector';
 const INSP_MIN = 260, INSP_MAX = 720, INSP_DEF = 340;
 
 // Cosa è selezionato. `ids` è una lista anche se oggi ne contiene sempre al
@@ -32,7 +34,7 @@ let inspTab = {};        // ultima scheda aperta, per vista
 // non deve poter impedire l'avvio.
 function inspPrefsLoad() {
   try {
-    const p = JSON.parse(localStorage.getItem(INSP_KEY) || 'null');
+    const p = JSON.parse(localPref(INSP_KEY, INSP_KEY_VECCHIA) || 'null');
     if (!p) return;
     if (typeof p.open === 'boolean') inspOpen = p.open;
     if (p.width) inspWidth = inspClampWidth(p.width);
@@ -424,7 +426,11 @@ function inspResizeEnd() {
 if (typeof document !== 'undefined' && document.addEventListener) {
   inspPrefsLoad();
   document.addEventListener('click', inspectorRowClick);
-  document.addEventListener('mousedown', inspResizeStart);
-  document.addEventListener('mousemove', inspResizeMove);
-  document.addEventListener('mouseup', inspResizeEnd);
+  // pointer* invece di mouse*: sostituzione uno a uno, e la maniglia comincia a
+  // funzionare anche col dito. Su tablet era inerte, e il pannello restava
+  // largo quanto nasce rubando spazio all'elenco per sempre.
+  document.addEventListener('pointerdown', inspResizeStart);
+  document.addEventListener('pointermove', inspResizeMove);
+  document.addEventListener('pointerup', inspResizeEnd);
+  document.addEventListener('pointercancel', inspResizeEnd);   // il dito che esce dallo schermo
 }

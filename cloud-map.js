@@ -65,6 +65,16 @@ function flattenDB(source, opts) {
         if (o.stripSecrets && (def.secret || []).includes(k)) return;
         riga[k] = rec[k];
       });
+      // `pos` e `childSets` sono nomi che questa traduzione si prende: servono a
+      // nestDB() per rimettere le righe nell'ordine e per sapere quali array
+      // ricostruire, e nestDB() poi li toglie. Se un record di dominio arrivasse
+      // a portare un campo con uno di questi due nomi, il giro completo —
+      // nestDB(flattenDB(x)) === x, che test/cloudmap.test.js verifica — smetterebbe
+      // di valere in silenzio. Meglio accorgersene qui che dalle righe sbagliate.
+      if (rec.pos !== undefined || rec.childSets !== undefined) {
+        throw new Error('flattenDB: il record ' + coll + '/' + rec.id
+          + ' usa un nome riservato alla traduzione (pos, childSets)');
+      }
       riga.pos = i;
       if (presenti.length) riga.childSets = presenti.join(',');
       out[def.table].push(riga);
@@ -153,6 +163,10 @@ function ordinaPerPos(righe) {
 
 // Le tabelle toccate da un insieme di modifiche (l'esito di Store.pendingChanges()).
 // Serve all'adapter per sapere cosa mandare senza rispedire tutto.
+//
+// Nell'app non la chiama nessuno, e non è una dimenticanza: è il seam del futuro
+// adapter cloud, come pendingChanges() e takeChanges(). Sta qui provata e pronta
+// perché il giorno in cui il backend arriva non si debba anche inventarla.
 function tablesForChanges(changes) {
   const out = [];
   const schema = (typeof SCHEMA !== 'undefined') ? SCHEMA : {};

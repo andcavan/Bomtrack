@@ -179,3 +179,74 @@ describe('Righe e filtri', () => {
     assert.match(h, /onkeydown=/, 'chi non usa il mouse deve poter aprire una commessa');
   });
 });
+
+// Il filtro per periodo è uno solo per quattro elenchi: se diverge, schermo ed
+// export cominciano a raccontare due storie diverse dello stesso periodo.
+describe('Filtro per periodo, condiviso', () => {
+  const app = () => { const a = loadApp({ silent: true }); a.setDb(dati()); a.asRole('admin'); return a; };
+  const dentro = (a, iso, da, al) =>
+    a.eval(`inDateRange(${JSON.stringify(iso)}, ${JSON.stringify(da)}, ${JSON.stringify(al)})`);
+
+  it('un intervallo vuoto lascia passare tutto, data o non data', () => {
+    const a = app();
+    assert.equal(dentro(a, '2025-03-01', '', ''), true);
+    assert.equal(dentro(a, '', '', ''), true);
+  });
+  it('gli estremi sono compresi', () => {
+    const a = app();
+    assert.equal(dentro(a, '2025-03-01', '2025-03-01', '2025-03-31'), true);
+    assert.equal(dentro(a, '2025-03-31', '2025-03-01', '2025-03-31'), true);
+    assert.equal(dentro(a, '2025-04-01', '2025-03-01', '2025-03-31'), false);
+  });
+  it('vale anche aperto da un lato solo', () => {
+    const a = app();
+    assert.equal(dentro(a, '2025-03-01', '2025-02-01', ''), true);
+    assert.equal(dentro(a, '2025-01-01', '2025-02-01', ''), false);
+    assert.equal(dentro(a, '2025-01-01', '', '2025-02-01'), true);
+  });
+  it('senza data si resta fuori quando un periodo è impostato', () => {
+    const a = app();
+    assert.equal(dentro(a, '', '2020-01-01', ''), false, 'non avendo data non ci si può dire dentro');
+  });
+  it("una data vecchia con l'ora dentro si confronta lo stesso", () => {
+    const a = app();
+    assert.equal(dentro(a, '2025-03-01T09:30:00.000Z', '2025-03-01', '2025-03-31'), true);
+  });
+  it("l'intervallo si dice a parole per l'intestazione degli export", () => {
+    const a = app();
+    assert.equal(a.eval("dateRangeText('2025-03-01', '2025-03-31')"), 'dal 01/03/2025 al 31/03/2025');
+    assert.equal(a.eval("dateRangeText('2025-03-01', '')"), 'dal 01/03/2025');
+    assert.equal(a.eval("dateRangeText('', '2025-03-31')"), 'fino al 31/03/2025');
+    assert.equal(a.eval("dateRangeText('', '')"), '');
+  });
+
+  it("le commesse si filtrano per data di apertura, e l'export lo dichiara", () => {
+    const a = app();
+    a.eval('renderJobs()');
+    assert.match(a.html('view-jobs'), /job-date-from/, "le caselle stanno con l'elenco");
+    a.el('job-date-from').value = '2025-02-01';
+    assert.deepEqual(Array.from(a.eval('jobFilteredList().map(j => j.id)')), ['j2']);
+    assert.equal(a.eval('jobCountText()'), '1 di 2');
+    assert.match(a.eval('JSON.stringify(jobsExportSpec().filtri)'), /dal 01\/02\/2025/);
+  });
+
+  it("i piani si filtrano per data, e l'export lo dichiara", () => {
+    const a = app();
+    a.eval('renderMrp()');
+    assert.match(a.html('view-mrp'), /plan-date-from/);
+    a.el('plan-date-from').value = '2025-03-15';
+    a.el('plan-date-to').value = '2025-04-30';
+    assert.deepEqual(Array.from(a.eval('planFilteredList().map(p => p.id)')), ['pl2']);
+    assert.equal(a.eval('planCountText()'), '1 di 2');
+    assert.match(a.eval('JSON.stringify(planListExportSpec().filtri)'), /dal 15\/03\/2025 al 30\/04\/2025/);
+  });
+
+  it('il periodo si combina con la ricerca testuale', () => {
+    const a = app();
+    a.eval('renderJobs()');
+    a.el('job-search').value = 'alfa';
+    a.el('job-date-from').value = '2025-02-01';
+    assert.deepEqual(Array.from(a.eval('jobFilteredList().map(j => j.id)')), [],
+      'Alfa è di gennaio: il testo trova, il periodo esclude');
+  });
+});

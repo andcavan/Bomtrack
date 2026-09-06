@@ -106,22 +106,50 @@ function catDate(row, h) {
 function catDateOf(v) {
   if (v instanceof Date) return isNaN(v.getTime()) ? '' : v.toISOString().slice(0, 10);
   const s = String(v).trim();
-  if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
-  const it = s.match(/^(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})$/);
-  if (it) return `${it[3]}-${it[2].padStart(2, '0')}-${it[1].padStart(2, '0')}`;
-  const n = catNumOf(s);
-  if (!isNaN(n) && n > 0 && n < 300000) {
-    // Epoca Excel: il giorno 1 è il 1900-01-01, con il 1900 bisestile inesistente
-    const d = new Date(Date.UTC(1899, 11, 30) + Math.round(n) * 86400000);
-    return isNaN(d.getTime()) ? '' : d.toISOString().slice(0, 10);
+  // ISO, anche con mese o giorno a una cifra ("2026-1-5"): scriverlo così non è
+  // sbagliato, e prima cadeva fra le maglie fino al ramo del seriale.
+  const iso = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})(?:[T ].*)?$/);
+  if (iso) return `${iso[1]}-${iso[2].padStart(2, '0')}-${iso[3].padStart(2, '0')}`;
+  // gg/mm/aaaa e gg/mm/aa. L'anno a due cifre è del Duemila: un listino datato
+  // 1926 non esiste, uno datato 2026 è quello di quest'anno.
+  const it = s.match(/^(\d{1,2})[/.-](\d{1,2})[/.-](\d{2}|\d{4})$/);
+  if (it) {
+    const anno = it[3].length === 2 ? String(2000 + Number(it[3])) : it[3];
+    return `${anno}-${it[2].padStart(2, '0')}-${it[1].padStart(2, '0')}`;
+  }
+  // Il seriale di Excel — ma solo se la cella è un numero e nient'altro.
+  // Senza questa guardia "31/01/26" arrivava lo stesso qui: parseFloat si ferma
+  // alla barra e restituisce 31, che diventava il 30 gennaio 1900. E siccome la
+  // data è la chiave d'identità della quotazione (catUpsertQuote), nasceva un
+  // doppione datato 1900 che bestPriceRow considerava vecchissimo. In silenzio,
+  // e con 120 anni di scarto.
+  if (/^\d+([.,]\d+)?$/.test(s)) {
+    const n = catNumOf(s);
+    if (!isNaN(n) && n > 0 && n < 300000) {
+      // Epoca Excel: il giorno 1 è il 1900-01-01, con il 1900 bisestile inesistente
+      const d = new Date(Date.UTC(1899, 11, 30) + Math.round(n) * 86400000);
+      return isNaN(d.getTime()) ? '' : d.toISOString().slice(0, 10);
+    }
   }
   return '';
 }
-function catToday() { return new Date().toISOString().slice(0, 10); }
+// Il fuso conta: la data è l'identità di una quotazione (catUpsertQuote), e
+// fra mezzanotte e le due toISOString() ne dava una di ieri — cioè una riga
+// nuova al posto di un aggiornamento.
+function catToday() { return oggiISO(); }
 // In export: un numero resta numero, un campo non impostato resta vuoto (le
 // scorte distinguono "nessun valore" da "zero", e uno 0 finto le riempirebbe).
 function catNumOut(v) { return v === '' || v == null ? '' : (Number(v) || 0); }
+// Il vuoto come «no». Va bene dove la colonna indica quale riga fra tante è
+// quella scelta ("In uso"): là il no è ovvio e scriverlo trentadue volte è
+// rumore.
 function catSiNo(v) { return v ? 'Sì' : ''; }
+// Il no scritto, per i flag che si devono poter **spegnere** da file. boolCell
+// legge la cella vuota come «non toccare»: un articolo a cui si è tolto il
+// Preferito, esportato e ricaricato su un'altra postazione, restava preferito
+// per sempre — e il file diceva il vero, solo che nessuno lo ascoltava. Scritto,
+// il no è un'istruzione; vuoto era un silenzio.
+function catSiNoEsplicito(v) { return v ? 'Sì' : 'No'; }
 function catSupplierName(id) { const s = getSupplier(id); return s ? (s.name || '') : ''; }
 
 // ─── Colonne per tipo ───
@@ -136,6 +164,11 @@ const CAT_COL_PRICE = [
   ['Codice fornitore', (it, q) => q ? (q.code || '') : ''],
   ['Descrizione fornitore', (it, q) => q ? (q.desc || '') : ''],
   ['Data prezzo', (it, q) => q ? (q.date || '') : ''],
+  // La nota della quotazione. Si chiama «Note prezzo» e non «Note» perché nello
+  // stesso foglio c'è già la nota dell'articolo: un articolo con una sola
+  // quotazione si esporta in linea, e senza questa colonna la sua nota non
+  // finiva in nessuna cella del file — persa al primo giro su una postazione nuova.
+  ['Note prezzo', (it, q) => q ? (q.note || '') : ''],
 ];
 const CAT_COL_STOCK = [
   ['Scorta minima', it => catNumOut(it.safetyStock)],
@@ -156,8 +189,8 @@ const CAT_COLS_BUY = [
   ['Nome *', it => it.name || ''],
   ['UM *', it => it.uom || ''],
 ].concat(CAT_COL_ALTUOM, CAT_COL_FAMILY, CAT_COL_PRICE, CAT_COL_STOCK, [
-  ['Preferito', it => catSiNo(it.favorite)],
-  ['Obsoleto', it => catSiNo(it.obsolete)],
+  ['Preferito', it => catSiNoEsplicito(it.favorite)],
+  ['Obsoleto', it => catSiNoEsplicito(it.obsolete)],
   ['Note', it => it.notes || ''],
 ]);
 const CAT_COLS_MACCHINA = [
@@ -196,7 +229,7 @@ const CAT_COLS_PARTE = [
   ['UM *', it => it.uom || ''],
   ['Approvvigionamento', it => PART_SOURCING[partSourcing(it)] || ''],
 ].concat(CAT_COL_FAMILY, CAT_COL_ALTUOM, CAT_COL_PRICE, CAT_COL_STOCK, [
-  ['Obsoleto', it => catSiNo(it.obsolete)],
+  ['Obsoleto', it => catSiNoEsplicito(it.obsolete)],
   ['Note', it => it.notes || ''],
   // Di sola lettura: il nome di una parte si compone da concetto + descrizione
   // (composePartName). Scriverlo qui non cambierebbe niente, e l'import lo ignora.
@@ -381,7 +414,7 @@ function catInfoAoa(scope) {
       ['Macrofamiglia / Sottofamiglia', 'Create se non esistono. Determinano il codice automatico.'],
       ['Fornitore', 'Creato se non esiste.'],
       ['Scorta minima / Lotto riordino', 'Vuoto = non impostato (diverso da 0).'],
-      ['Preferito / Obsoleto', 'Sì oppure vuoto.'],
+      ['Preferito / Obsoleto', "Sì oppure No. Cella vuota = lascia il valore invariato."],
       ['Esempio', 'Codice vuoto · Cuscinetto SKF 6204 · pz · famiglia Meccanico/Cuscinetti · fornitore SKF · prezzo 12,50'],
     ]);
   }
@@ -438,7 +471,9 @@ function exportCatalogXlsx(scope) {
 //   A. i fogli articolo, nell'ordine dichiarato;
 //   B. il foglio Listino, che ha bisogno degli articoli della fase A;
 //   C. la quotazione in uso, una volta per articolo e non una per riga.
-function catStat() { return { created: 0, updated: 0, skipped: 0 }; }
+// Gli stessi tre contatori di _stat() in import-export.js, che è dove vivono i
+// contatori dei report: un nome solo per un oggetto solo.
+function catStat() { return _stat(); }
 function importCatalogSheets(byName, scope, opts) {
   scope = catScopeOf(scope);
   const o = opts || {};
@@ -576,7 +611,19 @@ function catApplyItemRow(row, def, ctx, ln, st) {
       const au2 = au === null ? altUomOf(it) : au;
       const af = afRaw === null || afRaw === '' ? altFactorOf(it) : afRaw;
       if (au2 && !isNaN(af) && af > 0 && au2 !== it.uom) { it.altUom = catEnsureUom(au2, ctx); it.altFactor = af; }
-      else { delete it.altUom; delete it.altFactor; }
+      else {
+        // Togliere la doppia unità è legittimo — si svuotano le due celle — ma
+        // arrivarci per un refuso no: "5,5 kg" o "circa 8" nel Fattore davano
+        // NaN e cadevano qui dentro, e l'articolo perdeva la conversione
+        // d'acquisto in silenzio, col costo che cambiava senza traccia. Lo
+        // stesso isNaN, venti righe più giù, produce un errore di riga.
+        const scritto = afRaw !== null && afRaw !== '' && isNaN(af);
+        if (scritto) {
+          err(`"Fattore" non è un numero: la doppia unità di ${esc(it.code || '')} è stata lasciata com'era`);
+        } else {
+          delete it.altUom; delete it.altFactor;
+        }
+      }
     }
   }
 
@@ -682,9 +729,11 @@ function catApplyItemRow(row, def, ctx, ln, st) {
   else if (isNew) {
     const auto = genItemCode(it);
     if (!auto) {
-      err(type === 'gruppo' || type === 'macchina'
+      // codeGenError dice il motivo quando ce n'è uno preciso (la numerazione
+      // esaurita); altrimenti manca un dato, e l'elenco lo spiega.
+      err(codeGenError || (type === 'gruppo' || type === 'macchina'
         ? 'codice mancante e non generabile: serve la sigla (e la macchina) oppure un codice scritto a mano'
-        : 'codice mancante e non generabile: servono macchina e gruppo, oppure la macrofamiglia, oppure un codice scritto a mano');
+        : 'codice mancante e non generabile: servono macchina e gruppo, oppure la macrofamiglia, oppure un codice scritto a mano'));
       return;
     }
     if (getItemByCode(auto)) { err(`codice automatico "${esc(auto)}" già in uso`); return; }
@@ -732,10 +781,29 @@ function catUpsertQuote(it, row, ctx, foglio, ln, prezzo) {
   const rep = ctx.rep;
   const supName = catCell(row, 'Fornitore');
   const supplierId = supName ? findOrCreateSupplier(supName, rep) : (supName === '' ? null : undefined);
+  const dataCella = catCell(row, foglio === CAT_PRICE_SHEET ? 'Data *' : 'Data prezzo');
   const data = catDate(row, foglio === CAT_PRICE_SHEET ? 'Data *' : 'Data prezzo') || catToday();
+  // Ripiegare su oggi va bene per una cella vuota, non per una cella scritta
+  // male: la data è l'identità della quotazione, e sostituirla di nascosto
+  // significa creare una riga nuova al posto di aggiornarne una.
+  if (dataCella && !catDate(row, foglio === CAT_PRICE_SHEET ? 'Data *' : 'Data prezzo')) {
+    rep.warnings.push(`${foglio}, riga ${ln}: data "${esc(String(dataCella))}" non riconosciuta, si usa oggi (${data})`);
+  }
   if (!Array.isArray(it.priceList)) it.priceList = [];
   const sid = supplierId === undefined ? null : supplierId;
-  let r = it.priceList.find(x => (x.supplierId || null) === sid && (x.date || '') === data);
+  let r = null;
+  if (supplierId === undefined) {
+    // La colonna non c'è: il foglio non dice niente sul fornitore, e «una colonna
+    // cancellata lascia il campo com'è» è la regola dichiarata nei template.
+    // Prima si cercava una quotazione *senza* fornitore e, non trovandola, se ne
+    // creava una nuova: un doppione a ogni ricarica dello stesso file.
+    // Si cerca per data soltanto: se quella data individua una quotazione sola,
+    // è quella. Se ne individua più d'una, l'identità è ambigua e si ricade sul
+    // caso normale, che almeno è prevedibile.
+    const perData = it.priceList.filter(x => (x.date || '') === data);
+    if (perData.length === 1) r = perData[0];
+  }
+  if (!r) r = it.priceList.find(x => (x.supplierId || null) === sid && (x.date || '') === data);
   const nuova = !r;
   if (nuova) {
     r = stampNew({ id: gid(), supplierId: sid, price: '', minQty: '', leadDays: '',
@@ -758,7 +826,11 @@ function catUpsertQuote(it, row, ctx, foglio, ln, prezzo) {
   }
   const sc = catCell(row, 'Codice fornitore'); if (sc !== null) r.code = sc;
   const sd = catCell(row, 'Descrizione fornitore'); if (sd !== null) r.desc = sd;
-  const nt = catCell(row, 'Note'); if (nt !== null && foglio === CAT_PRICE_SHEET) r.note = nt;
+  // Nel foglio Listino la nota della quotazione si chiama «Note»; nei fogli
+  // articolo quel nome è già della nota dell'articolo, e la quotazione in linea
+  // porta la sua sotto «Note prezzo».
+  const nt = foglio === CAT_PRICE_SHEET ? catCell(row, 'Note') : catCell(row, 'Note prezzo');
+  if (nt !== null) r.note = nt;
   if (!nuova) touch(r);
   return r;
 }
@@ -890,6 +962,9 @@ function showCatalogReport(rep) {
   if (rep.createdSubFamilies) auto.push(`${rep.createdSubFamilies} sottofamiglie`);
   if (auto.length) note.push('Creati automaticamente: ' + auto.join(', ') + '.');
   if (rep.createdUoms.length) note.push(`<strong>Unità di misura nuove</strong>: ${esc(rep.createdUoms.join(', '))} — se è un refuso, correggilo in Gestione → Unità di misura.`);
+  // Le voci arrivano già escapate da chi le scrive — è la convenzione di tutti
+  // gli errori e avvisi del repo, e va rispettata a monte: qui si stampa in
+  // innerHTML, e escapare una seconda volta mostrerebbe "&lt;" al posto di "<".
   const blocco = (titolo, voci, colore) => voci.length
     ? `<div style="margin-top:12px"><strong style="color:${colore}">${titolo} (${voci.length}):</strong>
         <div class="picker-results" style="max-height:200px;margin-top:6px">${voci.map(e => `<div class="picker-row">${e}</div>`).join('')}</div></div>` : '';

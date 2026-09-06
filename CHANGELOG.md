@@ -2,6 +2,214 @@
 
 Le revisioni seguono il versionamento semantico `0.MINOR.PATCH`: **MINOR** per nuove funzionalità, **PATCH** per correzioni. La versione in cima è quella in `APP_VERSION` (`core.js`) e mostrata nell'header dell'app.
 
+### 0.64.0 — 2026-09-06
+
+Coda del controllo generale: le cose rimaste aperte, chiuse. Niente di quello che c'è qui si vede usando l'app — è tutta manutenzione, e serve a far durare quello che c'è.
+
+**Unificate le griglie di Anagrafica e Magazzino**
+Le due viste disegnavano lo stesso oggetto — gruppi con un titolo che conta, le prime 200 righe, un piede che offre di vederne altre — in due copie parallele. Ogni correzione andava fatta due volte, e la seconda prima o poi si dimentica: il `.table-wrap` mancante della revisione scorsa mancava **a tutte e due**, ed è la prova. Ora la griglia è una sola (`itemGrid`), e quello che le due viste hanno davvero di diverso resta fuori e si passa: le colonne, il disegno della riga, il limite corrente, i comandi del piede e cosa dire quando non c'è niente da mostrare — perché anche lì il Magazzino distingue «non c'è nulla a magazzino» da «i tuoi filtri non pescano niente», e sono due situazioni diverse.
+
+Prima di toccare le due viste più usate è stata scritta la rete: **18 casi in `test/grid.test.js`** che descrivono il comportamento condiviso — la paginazione, il titolo che nomina il totale anche quando taglia, il taglio che riempie i gruppi in ordine invece di prendere un po' da ognuno — verificati sul codice di prima e ancora verdi su quello di dopo. Restano, perché è quel comportamento a dover valere in entrambe.
+
+**Corretto**
+- **Le chiavi dell'archivio locale seguono una convenzione sola.** Due preferenze usavano il punto (`bomtrack.columns`, `bomtrack.inspector`) e quattro l'underscore, senza che niente distinguesse i due gruppi: nessuna pulizia o diagnostica poteva raccoglierle per prefisso. Le due vecchie si **travasano** alla prima lettura invece di essere buttate: le colonne nascoste a mano in Anagrafica sono una scelta di qualcuno, e ricomparire tutte senza spiegazione sarebbe stato peggio del disordine.
+- **`jobId` non era normalizzato** su richieste e ordini mentre `planId` sì: sui documenti creati prima delle commesse il campo mancava del tutto, e la traduzione per il cloud avrebbe prodotto righe con e senza quella colonna — l'incoerenza che tutte le altre normalizzazioni esistono per evitare.
+- `THEME_KEY` è ripetuto, cablato, nello script in testa a `index.html`, e rinominarlo da una parte sola non produce **nessun errore**: il tema smette solo di applicarsi in anticipo e torna il lampo scuro. Ora i due punti se lo dicono.
+
+**Copertura di test**
+Quindici funzioni avevano zero test, ed erano quelle che toccano più dati in una volta: **`test/backup.test.js`**, nuovo, ne copre il blocco intero con 47 casi.
+
+- **`validateSnapshot`** — la guardia scritta apposta per il file troncato, e la sola che nessuno provava. Ora ha i suoi otto casi: il file di un altro programma, la collezione che non è un elenco (e dice quale), la versione di schema illeggibile, il backup che viene da una revisione più recente.
+- **Backup da file, come lo vive chi lo usa**: il file illeggibile, il JSON valido ma non nostro e il backup buono sono tre problemi diversi e vanno detti diversi; la conferma che mostra in numeri cosa entra e cosa si perde; l'annullamento che non tocca niente.
+- **Azzeramenti**: `Store.reset`, `Store.clearAll`, `wipeAllConfirm` che pretende la parola esatta, i seed una-tantum che non devono ripopolare un database appena svuotato, chi azzera che resta dentro come amministratore.
+- **`reconcileSession`**, cioè cosa succede alla sessione quando il database cambia sotto i piedi: il proprio utente che c'è ancora, il database senza utenti che riaccoglie chi sta lavorando, quello con altri utenti che chiede di rientrare.
+- **Cestino e diagnostica**: ripristino, eliminazione definitiva, svuotamento, l'annullamento della conferma, i codici duplicati che vengono elencati e **non** corretti d'ufficio, lo spazio occupato che avvisa prima di sbatterci contro.
+- **I fogli delle impostazioni**, uno per uno invece che di rimbalzo: la riga senza nome, la colonna assente contro la cella vuota (che sono due istruzioni diverse), la provincia in minuscolo, il booleano che deve poter dire «no», la tariffa con la virgola italiana.
+- **I template**: che le colonne del template distinte siano davvero quelle che l'import rilegge — un template che l'import non sa rileggere è un contratto rotto — e che nell'export delle impostazioni non finisca nessuna password.
+
+**L'attrezzatura**
+- Il DOM finto dell'harness ha ora **l'elemento radice** (dove `theme.js` scrive il tema) e **le API dei file**: `FileReader`, `Blob`, `URL.createObjectURL`. Erano l'ultimo pezzo di piattaforma che mancava, e senza restavano fuori dalla suite tutte le porte d'ingresso dell'app — l'import distinte, quello delle impostazioni, il ripristino di un backup — cioè proprio le funzioni che toccano più dati in una volta. La lettura è sincrona, a differenza del browser: un test che debba aspettare un evento è un test che a volte passa.
+- Tolte le `const` dichiarate dentro `eval` in `test/families.test.js`: in un contesto `vm` restano nel global lessicale, e funzionavano solo perché ogni caso crea un'app nuova.
+
+**Note**
+- La suite passa da 1287 a **1381 casi**. Il file dei test del backup è più lungo del codice che prova, ed è giusto così: sono i gesti che nessuno rifà a mano per verificarli, perché azzerare il database per vedere se funziona significa azzerarlo davvero.
+- Resta una cosa che **non è un difetto ma una decisione**: all'import, un articolo che non aveva nessuna quotazione e ne riceve una sola se la vede attivare d'ufficio. È un ripiego voluto e commentato; l'effetto collaterale è che «prezzo deliberatamente non applicato» non sopravvive a un giro export→import su un database vuoto. Va deciso, non corretto di nascosto.
+
+### 0.63.0 — 2026-09-06
+
+Ultima parte del controllo generale: coerenza, duplicazioni, codice morto, prestazioni, documentazione allineata al codice.
+
+**Aggiunto**
+- **Sospendere una voce di anagrafica** (⏸), per fornitori, clienti e centri di lavoro. Il campo `active` era migrato, documentato nello schema cloud, esportato in Excel e **letto** in mezza app — i fornitori attivi nel menu dell'import, i clienti attivi nei suggerimenti della commessa, i centri attivi nella scelta della lavorazione — ma nessun comando lo poteva mettere a «no»: solo gli utenti avevano il pulsante. Era una promessa che l'app non manteneva. Sospendere non è eliminare, ed è la ragione per cui serve: un fornitore citato da ordini di tre anni fa non si può cancellare, ma non deve nemmeno continuare a comparire in ogni menu.
+
+**Corretto**
+- **Le date negli export degli elenchi erano testo.** In Excel non si ordinavano né si filtravano per periodo — proprio negli elenchi dove la domanda è «cosa è passato a settembre». Ora una colonna può dichiararsi di tipo data: le righe portano la data ISO e ciascun traduttore la scrive a modo suo, l'Excel come cella di data in formato `gg/mm/aaaa`, il PDF come testo all'italiana.
+- **Un .csv in UTF-8 senza BOM entrava storpiato**: «Perché» diventava «PerchÃ©», e l'articolo finiva a catalogo così. Le altre due codifiche — la CP1252 di Excel italiano e l'UTF-8 con BOM — erano già gestite dalla libreria; questa no, e adesso si riconosce dai byte. Verificato passando dalla libreria vera, non per ipotesi.
+- **«Oggi» si calcolava in quattro modi diversi**, e tre erano in orario di Greenwich: fra mezzanotte e le due davano **ieri**. Su un nome di file è una seccatura; sulla data di una quotazione no, perché quella data **è l'identità della riga** — una quotazione datata ieri è una riga nuova al posto di un aggiornamento. Ora passano tutti da `oggiISO()`, che guarda il calendario di chi lavora.
+- **Sei schede di modifica in Gestione si aprivano senza chiedere il ruolo**: il dato era comunque protetto, ma chi è in sola lettura compilava tutto e scopriva il rifiuto solo su Salva — mentre le altre due glielo dicevano subito.
+- **Quattro schede diverse condividevano gli stessi id di campo**: `eu-` era insieme «utente» e «unità di misura», `ec-` insieme «cliente» e «concetto». Non collidevano solo perché tutte e quattro usano la chiave pannello di serie e se ne apre una per volta: il giorno in cui a una si desse una chiave propria, il salvataggio dell'utente avrebbe letto il campo dell'unità di misura.
+- **Le colonne di Acquisti e Progetto erano lo stesso array**, non una copia: la separazione che il commento descriveva valeva per le colonne nascoste, non per la definizione — aggiungerne una a Progetto l'avrebbe aggiunta anche ad Acquisti, senza un errore da nessuna parte.
+- Tolte le **emoji rimaste** dove l'icona esisteva già, compresa quella che stava nella stessa lista che l'icona la usa, due righe più su. `icons.js` spiega da tempo perché: non ereditano il colore, cambiano forma da un sistema all'altro, si siedono sulla linea di base in modo diverso.
+- La classe `muted` non esiste nel foglio di stile: il messaggio d'errore dell'app si stampava a colore pieno invece che attenuato.
+
+**Prestazioni**
+- **La generazione dei codici articolo era quadratica.** Per ogni codice si compilava una espressione regolare e la si provava su **ogni** articolo in archivio; durante un import è una volta per riga. Misurato su 4000 articoli e 2000 codici: **3339 ms → 5 ms**. È lo stesso costo che l'indice dei codici toglie alla *ricerca* e che era rimasto intatto sulla *generazione*.
+- **Famiglie, concetti e autori hanno ora un indice**, come già articoli, fornitori e centri di lavoro: `getFamily` la chiamano l'elenco del catalogo per ogni riga e la codifica per ogni codice generato. Con la stessa guardia di freschezza degli altri, perché gli import creano famiglie dentro il ciclo e chiedono il codice subito dopo.
+- `genItemCode()` **non parla più all'interfaccia**: durante un import sparava un toast per riga esaurita. Dice perché non ce l'ha fatta, e chi ha davanti una persona lo mostra, chi legge un file lo scrive nel report.
+
+**Pulizia**
+- Unificate le funzioni gemelle: le due letture di un file Excel (differivano di tre righe e ripetevano identiche le due gestioni d'errore), i due contatori dei report, i quattro modi di dire «oggi».
+- `addressOneLine()` non era chiamata da nessuna parte, test compresi: eliminata. `toAltUom()` e `tablesForChanges()` invece **restano**, e ora lo dicono: non sono dimenticanze, sono metà di un contratto e il seam del futuro adapter, con i loro test.
+- Tolta la variabile CSS `--wl-w`, manopola di un ridimensionamento mai implementato: il valore vero era da sempre il suo ripiego.
+- `flattenDB()` si appropria dei nomi `pos` e `childSets` per tradurre: ora se ne accorge invece di rompere in silenzio il giro completo che `test/cloudmap.test.js` verifica.
+- L'unico `confirm()` nativo rimasto — dentro `openModal` — resta, e ora è scritto perché: `openModal` è sincrona e ottanta chiamanti ci scrivono dentro subito dopo, mentre `askConfirm` risponde con una richiamata. Sostituirlo vorrebbe dire rendere asincrona l'apertura di ogni scheda dell'app.
+
+**Documentazione**
+- `docs/cloud-schema.md` allineato al codice: il conteggio delle collezioni (fermo a «nove» da quattro collezioni fa, e ora non più scritto), il nuovo registro `REFS`, il contratto `takeChanges()`/`markSynced(mark)`, il `touch()` del ripristino dal cestino, `orders.requested_delivery` che il client cancella a ogni caricamento, e il fatto che `settings` non è in `SCHEMA` — quindi nessuna tabella la genera, e l'adapter deve trattarla a parte.
+
+**Note**
+- 25 casi nuovi fra `test/codes.test.js` e `test/vendor-xlsx.test.js`, compreso il confronto dell'indice dei progressivi con l'implementazione precedente, presa verbatim da git, su sette casi limite. La suite passa da 1270 a 1287.
+- **Non fatto, e vale la pena saperlo**: la griglia dell'Anagrafica e quella del Magazzino restano due implementazioni parallele della stessa cosa — stessa struttura, stessa paginazione, già divergenti sulla firma di una funzione. Unificarle è un lavoro a sé, e farlo di sfuggita dentro un controllo generale avrebbe toccato le due viste più usate senza una rete di test all'altezza.
+
+### 0.62.0 — 2026-09-06
+
+Terza parte del controllo generale: quello che l'app diceva a chi non guarda lo schermo, e a chi lo guarda stretto.
+
+**Corretto**
+- **Tutta la validazione era muta.** Ogni messaggio dell'app passa dal toast — «Nome richiesto», «Codice già in uso», «La quantità non può essere negativa», e le decine di altri — ma il toast non era una *live region*: per un lettore di schermo quei messaggi non esistevano, e il salvataggio semplicemente «non faceva niente» senza che si potesse sapere perché. Ora l'elemento si annuncia, e distingue le due urgenze: un errore interrompe (`assertive`), una conferma aspetta il proprio turno (`polite`).
+- **La schermata di accesso non aveva etichette.** I tre campi vivevano sul solo `placeholder`, e `a11yFields()` — che ripara le etichette delle schede — non ci passa mai, perché cerca `.modal-field` e l'accesso usa un'altra classe. È l'unica schermata che ogni utente attraversa per forza. Le etichette sono ora vere e riservate ai lettori di schermo (`.sr-only`): il disegno della scheda non cambia di un pixel. Anche l'errore di credenziali viene annunciato.
+- **99 intestazioni di tabella non dichiaravano di essere colonne.** Su griglie da 12-16 colonne, senza `scope` un lettore di schermo non associa la cella alla sua intestazione: la navigazione per celle diventa una sequenza di numeri senza etichetta.
+- **Anagrafica e Magazzino sfondavano il viewport.** Erano le due sole griglie a emettere una tabella nuda, senza il `.table-wrap` che documenti, fabbisogno, listino e scheda articolo usano da sempre: su schermo stretto trascinavano in scorrimento orizzontale **l'intera pagina**, intestazione e navigazione comprese. Ora scorre la tabella, dentro sé stessa.
+- **I pulsanti di navigazione perdevano il nome sotto i 1330px.** Lì la media query nasconde l'etichetta, e `display:none` toglie quel testo anche all'albero di accessibilità: restava solo il `title` come ripiego. Ora ogni gruppo porta il proprio nome esplicito, e la seconda riga dichiara quale vista è quella aperta (`aria-current`).
+- **Il pannello laterale non si ridimensionava col dito.** Gli ascoltatori erano `mouse*`: su tablet la maniglia era inerte e il pannello restava largo quanto nasce, rubando spazio all'elenco per sempre. Ora sono `pointer*` — sostituzione uno a uno — con `touch-action:none` sulla maniglia, altrimenti il dito farebbe scorrere la pagina invece di trascinare.
+
+**Note**
+- **Il DOM finto della suite ora ricorda gli attributi.** `setAttribute` era un no-op e `getAttribute` non esisteva: tutto ciò che l'app scrive in un attributo — i ruoli dei pannelli, le etichette che `a11yFields` ripara, l'urgenza del toast — si poteva provare solo per il fatto che non lanciava, non per quello che diceva. È una lacuna dell'attrezzatura, non di una funzione, e apre alla verifica un'intera classe di comportamenti.
+- 14 casi nuovi in `test/a11y.test.js`, fra cui uno che rifiuta qualsiasi `<th>` senza `scope` in tutte le viste: la regola non si può più dimenticare aggiungendo una colonna. La suite passa da 1256 a 1270.
+
+### 0.61.0 — 2026-09-06
+
+Seconda parte del controllo generale: una regressione appena introdotta, e i punti in cui l'app accettava di salvare qualcosa che poi non sapeva più leggere.
+
+**Corretto**
+- **Nel tema scuro erano sparite le ombre** di schede, toast e pannello laterale. La riga che definiva i due token diceva `--shadow:var(--shadow)`: una variabile che cita sé stessa è invalida, e ogni regola che la usa viene scartata senza che il browser protesti. Introdotta con i temi della 0.58.0 e invisibile rileggendo il foglio, perché sembra una riga come le altre — ora un test rifiuta qualsiasi token che si autodefinisca, e verifica che le variabili usate senza valore di scorta esistano davvero.
+- **«Salva» poteva svuotare un nome che «Aggiungi» pretendeva.** `saveSupplier` e `saveWc` accettavano il campo vuoto — un fornitore senza nome è una riga bianca in Gestione, e ogni richiesta e ordine intestati a lui stampano «senza fornitore» in PDF senza che niente lo segnali. `saveFamily` e `saveSubFamily` facevano di peggio: tenevano il nome di prima e annunciavano lo stesso «Aggiornata», così chi aveva svuotato il campo credeva di aver rinominato. I quattro passano ora da `requireVal()`, che è lo stesso controllo del ramo «aggiungi».
+- **La modifica di un componente di distinta poteva salvarlo senza articolo.** Il controllo c'era su «aggiungi» e non su «modifica»: con il selettore lasciato vuoto la riga restava in distinta puntando al nulla, e il report la stampava vuota.
+- **Sottogruppi e parti si contendevano gli stessi codici.** Dentro `MAC-GRP-###` i sottogruppi scendono da 999 e le parti salgono da 1, ma il calcolo del prossimo numero guardava solo i pari tipo: quando i due blocchi si incontravano l'app proponeva un codice **già in uso**, e poi lo rifiutava da sé con «codice già in uso» — sempre lo stesso, a ogni tentativo. Un vicolo cieco da cui si usciva solo scrivendo il codice a mano. Ora la numerazione salta i numeri dell'altro blocco, e quando lo spazio è davvero finito lo dice invece di proporre un doppione.
+- **`kg` e `KG` convivevano come due unità di misura distinte**, contate separate e rinominate una per volta, lasciando le altre righe appese al codice vecchio.
+- **La sessione scadeva dal primo accesso, non dall'ultimo.** Chi usa l'app tutti i giorni veniva comunque rimandato alla password al trentesimo giorno — mentre la ragione per cui la scadenza esiste è la postazione condivisa lasciata aperta, cioè quella dove nessuno entra da settimane. Ora rientrare rinnova.
+- **Un avviso d'import poteva eseguire codice.** Il messaggio «sigla già in uso» interpolava il nome preso da una cella Excel senza passarlo da `esc()`, e i due report d'import lo stampano in `innerHTML`: bastava una macrofamiglia chiamata come un tag. Tutti gli altri avvisi del progetto escapavano già; questo era l'unico che se n'era dimenticato, ed è ora l'unica convenzione, scritta accanto a dove si stampa.
+- **`esc()` non copriva l'apice singolo.** Nessun exploit vivo — gli attributi `onclick="fn('…')"` ricevono solo identificatori generati — ma il primo che ci passasse il nome di un articolo si sarebbe rotto su «L'albero», e su qualcosa di peggio avrebbe fatto altro.
+- **Una vista senza il suo pannello lasciava l'app completamente vuota**: le viste erano già state spente, e l'eccezione fermava il resto. Ora non si cambia vista e l'errore viene registrato.
+- **Lo stato delle schede non si spegneva alla chiusura.** Chiuso il listino, la variabile che ricorda su quale articolo si stava lavorando continuava a puntare lì, e un ridisegno arrivato da altrove scriveva sull'articolo sbagliato. Ogni scheda dichiara ora come si ripulisce (`onPanelClose`), accanto a dove quello stato viene creato.
+- **`newId()` poteva lanciare proprio dove serviva il ripiego**: il fallback usava `crypto` fuori dalla guardia che stava verificandone l'esistenza — cioè nei contesti datati su `file://` per cui il fallback è stato scritto.
+- **`resetViewState()` azzerava i filtri dei documenti con la forma precedente**, senza i due estremi del filtro per periodo: rimasti fuori il giorno stesso in cui sono nati. Ora si azzerano dalla funzione che li definisce.
+- Ripulita `toggleItemFields()`, che dereferenziava dodici nodi senza guardia e due con: il giorno in cui un campo esce dal template, la scheda articolo smetteva di aprirsi del tutto.
+
+**Note**
+- `saveOwnPassword` passa ora da `Store.update` come tutto il resto: era rimasta l'unica scrittura sugli utenti che scavalcava la porta dello Store, cioè quella che l'adapter cloud intercetterà.
+- 18 casi nuovi fra `test/theme.test.js`, `test/validate.test.js`, `test/codes.test.js` e `test/families.test.js`. La suite passa da 1238 a 1256.
+
+### 0.60.0 — 2026-09-06
+
+Controllo generale del codice. Questa revisione non aggiunge niente che si veda: chiude i punti in cui l'app **perdeva o falsava dati senza dirlo**. Sono difetti vecchi, trovati leggendo, e ognuno ha ora un test che impedisce che tornino.
+
+**Corretto — dati**
+- **La migrazione dai dati v1 rimappava quattro riferimenti su tredici.** Convertendo gli id vecchi in UUID seguiva fornitore, famiglia, sottofamiglia dell'articolo, componenti e lavorazioni; **lasciava indietro** le quotazioni a listino, macchina e gruppo di una parte, il fornitore di richieste e ordini, l'articolo delle loro righe, le righe dei piani, i movimenti di magazzino e le revisioni. Chi apriva l'app con un archivio v1 trovava ordini senza fornitore, righe senza articolo e movimenti orfani — con la migrazione già salvata. I riferimenti stanno adesso in un registro unico (`REFS`, accanto a `SCHEMA`), e le mappe di conversione sono **una per tipo**: gli id vecchi degli articoli erano numeri nudi, e una mappa sola poteva scambiare l'articolo 3 per il fornitore 3.
+- **Ogni installazione nuova nasceva con tre quotazioni intestate a un fornitore inesistente.** Il seed del listino gira prima delle migrazioni e scriveva l'id vecchio del fornitore nella riga di listino, che nessuno rimappava più: in Gestione comparivano come «senza fornitore». Era una delle nove classi dimenticate, e si è chiusa con loro.
+- **Un archivio locale illeggibile veniva sostituito dai dati di esempio e salvato sopra.** Un JSON interrotto — scrittura a metà, spazio finito, chiavetta sfilata — è quasi tutto ancora lì, e un recupero a mano ne salva la maggior parte: cancellarlo era l'unica cosa da non fare. Ora il blob resta dov'è, **una copia va da parte** (`bomtrack_v1_illeggibile`), non si salva niente sopra finché l'utente non lo decide, e una scheda spiega cos'è successo e che i dati non sono persi. Prima c'era solo una riga in console.
+- **Un import distinte poteva svuotare una distinta e non rimetterla.** Il padre veniva azzerato alla prima riga valida e il controllo dei cicli arrivava dopo: un file la cui unica riga per quel padre creava un ciclo lasciava la distinta vuota, con un messaggio d'errore al posto dei componenti. Ora, se per un padre non entra nemmeno una riga, **la sua distinta torna quella di prima** e il report lo dichiara.
+- **«1.234,56» entrava come 1,23.** `numOr` sostituiva la prima virgola e lasciava i punti — un prezzo plausibile, e falso — nelle quantità di distinta, nei parametri delle impostazioni e nelle tariffe orarie. Il parser giusto era già scritto per lo stesso difetto (`catNumOf`), e ora lo usano entrambi.
+- **Le date a due cifre sbagliavano di 120 anni.** «31/01/26» non passava la regola italiana, cadeva nel ramo del seriale Excel dove `parseFloat` si ferma alla barra e legge 31, e diventava **30 gennaio 1900**; «2026-1-5» diventava 1905. E siccome la data è l'**identità** di una quotazione, nasceva un doppione datato 1900 che il confronto prezzi considerava vecchissimo. Ora si leggono anno a due cifre e mesi non impaginati, e il ramo del seriale si prende solo le celle che sono davvero un numero.
+
+**Corretto — sincronizzazione** (nessun effetto oggi, che l'app è locale; sono le fondamenta su cui poggerà il database condiviso)
+- **Il conto delle modifiche era cieco alle righe figlie.** Confrontava il solo timbro del record radice: rinominare una sottofamiglia tocca la sottofamiglia, non la famiglia, e quella rinomina risultava **«niente da mandare»**. Ora la firma di un record comprende i figli con identità propria — sottofamiglie, quotazioni, righe di documento — e non dipende più dalla disciplina di quaranta punti di chiamata.
+- **Il conto e la fotografia che lo azzera si prendono ora insieme** (`Store.takeChanges()`). Fotografare al ritorno dalla rete marcava come già inviato tutto ciò che era stato scritto **durante** l'invio: modifiche perse in silenzio.
+- **Ripristinare un backup, azzerare o svuotare il database non lascia più credere che sia tutto allineato**: la fotografia si dichiara non valida, e il riallineamento tocca a chi può confrontare le due parti.
+- **Un ripristino dal cestino ridata il record.** Rientrando col timbro che aveva prima di essere eliminato sarebbe stato più vecchio della lapide, e il primo scarico dal server l'avrebbe ricancellato — che è esattamente ciò che `docs/cloud-schema.md` chiedeva di evitare.
+
+**Corretto — quello che il file Excel si portava via**
+- **Preferito e Obsoleto non si potevano più spegnere da file**: l'export scriveva la cella vuota per «no», e l'import legge la cella vuota come «non toccare». Ora il no è scritto.
+- **La nota di una quotazione in linea non finiva in nessuna cella** (colonna «Note prezzo»): un articolo con una sola quotazione la perdeva al primo giro su una postazione nuova.
+- **«Attivo» dei centri di lavoro non veniva esportato né riletto**, e il nome non si aggiornava mai: un centro sospeso rinasceva attivo, e le sue ore tornavano a costare.
+- **Ricaricare lo stesso file senza la colonna «Fornitore» creava un doppione di quotazione** a ogni giro, contro la regola dichiarata nei template — «una colonna cancellata lascia il campo com'era».
+- **Un refuso nel «Fattore» cancellava la doppia unità in silenzio**, e il costo d'acquisto cambiava senza traccia. Ora è un errore di riga, come già era venti righe più giù.
+
+**Corretto — interfaccia**
+- **Il toast verde «Salvato» non compare più quando il salvataggio non è avvenuto.** Con l'archivio pieno o in navigazione privata si vedeva la conferma verde e, sopra, la scheda rossa che diceva il contrario: due messaggi opposti sullo stesso gesto. Quaranta conferme passano ora da `savedToast()`, che tace se i byte non sono arrivati.
+
+**Note**
+- Le righe d'ordine restano **sempre nell'unità di gestione**, col prezzo convertito: una barra gestita a metri e quotata a chilo si ordina in metri a *(kg per metro) × (prezzo al chilo)*. Era già il comportamento dell'app da due revisioni, ma **un test era rimasto sulla regola opposta** e la suite era rossa da allora — cioè la verifica automatica non guardava più nessuno. È tornata verde, e `docUomFor()`, rimasta in giro con il commento della regola vecchia, è stata tolta: un lettore che avesse trovato quella prima avrebbe capito il sistema al rovescio.
+- 34 casi nuovi fra `test/migrate.test.js`, `test/import.test.js` e `test/sync.test.js`. La suite passa da 1204 a 1238.
+- Nota di metodo emersa dai test: i timbri hanno **risoluzione al millisecondo**, quindi due scritture nello stesso millesimo sono indistinguibili per il conto delle modifiche. Oggi non ha effetto — l'app è locale e salva tutto — ma è il limite del protocollo, e va saputo prima di appoggiarci il backend.
+
+### 0.59.0 — 2026-09-06
+
+**Aggiunto**
+- **Anagrafica clienti** (*Gestione → 📇 Clienti*), accanto a quella dei fornitori e con gli stessi campi: nome, referente, email, telefono, P.IVA / C.F., indirizzo completo e note. Fino a ieri il cliente esisteva solo come **testo dentro la commessa**, riscritto a mano ogni volta: lo stesso cliente diventava «Rossi Srl», «Rossi S.r.l.» e «rossi», e nessun elenco lo rimetteva insieme.
+- **I nomi dell'anagrafica si propongono nel campo Cliente della commessa.** È un suggerimento, non un vincolo: la commessa di un cliente che in anagrafica non c'è ancora si scrive lo stesso, e il cliente si registra dopo. I clienti sospesi non si propongono.
+- **Il foglio Clienti entra nell'export e nell'import delle impostazioni di Gestione**, con le stesse regole degli altri: chiave il nome, additivo, non cancella niente.
+
+**Note**
+- **Il campo Cliente della commessa resta testo, e non è una scorciatoia.** Trasformarlo in un riferimento all'anagrafica vorrebbe dire riscrivere elenco, ricerca ed export delle commesse — e soprattutto **lasciare senza cliente le commesse già scritte**, che un cliente in anagrafica non ce l'hanno per definizione. Il legame resta quindi il nome, e da lì discendono le tre regole che lo tengono in piedi: il nome è **unico** (due omonimi renderebbero ambigua la citazione), **rinominare un cliente allinea le commesse** che portavano il vecchio nome — altrimenti resterebbero appese a un nome che in anagrafica non esiste più — e **un cliente citato da una commessa non si elimina**, come per i fornitori usati da un articolo. Il giorno in cui la commessa prendesse un riferimento vero, la migrazione sarà un abbinamento per nome: è la ragione per cui il nome si tiene unico da adesso.
+- Il rename allinea confrontando i nomi **ignorando spazi e maiuscole**: una commessa scritta « bianchi » non deve restare indietro proprio perché qualcuno aveva battuto uno spazio di troppo.
+- I clienti sono una collezione come le altre — cestino con ripristino, timbri di modifica, tabella `customers` nella mappa cloud: non un elenco a parte da ricordarsi di trattare a mano.
+- 18 casi in `test/customers.test.js`.
+
+### 0.58.1 — 2026-09-06
+
+**Corretto**
+- **Sette contrasti sotto la soglia di leggibilità, sei dei quali c'erano da sempre nel tema scuro.** I peggiori: il pulsante **Salva** quando ci sono modifiche non salvate (bianco su ambra, **2.2:1**) e il toast di conferma (bianco su verde, **2.8:1**). Più il blu d'accento sia come testo (4.24:1) sia come fondo dei pulsanti pieni (4.06:1), il rosso del badge «non salvato» (3.5:1) e il rosso Acrobat del pulsante PDF (4.0:1). La soglia è 4.5:1 — quella del testo normale, che vale anche per le scritte dei pulsanti: sono in grassetto ma a 12-13px, molto sotto i 18.66px da cui il testo conta come «grande».
+
+**Note**
+- **Un colore ha due mestieri, e non può farli con lo stesso valore.** Uno lo si **legge** — testo, bordi, icone — e deve staccare dal fondo della scheda; sull'altro ci si **scrive sopra** — i pulsanti pieni — e deve staccare dall'inchiostro. Sul tema scuro i due vincoli tirano in direzioni opposte: perché il blu si legga sulla scheda serve luminanza ≥ 0.225, perché regga il bianco serve ≤ 0.183. **La finestra è vuota: nessun blu può fare entrambe le cose**, e quello di prima stava esattamente nel mezzo, mancandole tutte e due di poco. Da qui `--accent` per il primo mestiere e `--accent-solid` per il secondo, e lo stesso per rosso e verde. Sul tema chiaro il fondo bianco allarga la finestra e i due valori coincidono, ma i nomi restano: il foglio di stile non deve sapere quale tema è in corso.
+- **L'ambra fa eccezione e cambia inchiostro invece che tinta.** Scurirla fino a reggere il bianco la spegnerebbe proprio dove serve gridare — è il pulsante che dice «hai modifiche non salvate». Resta accesa e la scritta diventa scura: 8.1:1 invece di 2.2:1. Sul tema chiaro l'ambra è già scura e l'inchiostro torna bianco, e questo lo decide un token (`--on-orange`), non una regola in più.
+- Gli spostamenti sono piccoli e la faccia dell'app non cambia: il blu d'accento va da `#3A7BE8` a `#4583E9`, il fondo dei pulsanti a `#2A70E6`. Il rosso Acrobat scende a `#E41C1C`, che resta il rosso di quel formato.
+- **7 casi nuovi in `test/theme.test.js` che non provano codice, provano numeri** — ed è il motivo per cui servono. Un colore si sposta di due punti perché «si vedeva meglio» e la leggibilità se ne va senza che niente si rompa: nessuna schermata sbaglia, nessun test fallisce, semplicemente qualcuno in officina fatica a leggere. Ora la soglia è scritta, la palette si rilegge dal foglio di stile vero — non da una copia nel test, che si direbbe d'accordo con sé stessa — e un contrasto che scende fa fallire la suite nominando il colore.
+
+### 0.58.0 — 2026-09-06
+
+**Aggiunto**
+- **Tema chiaro, oltre a quello scuro.** Il pulsante è nell'intestazione, accanto a stampa e ricerca, e gira su **tre** stati: *come il sistema*, *chiaro*, *scuro*. Il primo è quello di partenza ed è anche il più utile — il PC sa già se fuori è giorno, e in officina lo schermo si guarda alle sette del mattino e alle sette di sera. Chi sceglie esplicitamente vince sul sistema, e la scelta resta al riavvio.
+
+**Note**
+- **Il colore stava già tutto in dodici variabili**, usate ~340 volte: il tema non ha richiesto di riscrivere il foglio di stile, ma di scrivere una seconda palette e di sistemare **45 righe** che avevano ancora un colore fisso. La prova che l'impianto reggeva c'era da sempre in fondo al file — il blocco di stampa ridefinisce gli stessi token in chiaro, e non ha mai avuto bisogno di una regola in più.
+- **Il chiaro non è lo scuro invertito.** Le tinte d'accento leggibili su fondo scuro su bianco non lo sono: l'arancio `#E8A33A` su bianco dà 1.9:1, illeggibile, e va portato all'ambra. Blu, rosso e verde sono anche testo, non solo bordi, e sono stati scuriti per la stessa ragione. Sulla carta bianca del tema chiaro ogni colore sta ora fra 5.3:1 e 17:1.
+- **Le tinte tenui sono derivate, non riscritte**: i fondi degli avvisi, le pastiglie di tipo, le righe selezionate nascono da `color-mix` sui colori di base, quindi esistono una volta sola e seguono il tema da sé. Un `rgba()` fisso è invece un colore pensato per un fondo solo — ed era il motivo per cui quelle 45 righe non potevano cambiare tema.
+- **Il tema si applica prima che la pagina si disegni**, con quattro righe in testa a `index.html`: `theme.js` sta in fondo al body, e aspettarlo significherebbe un lampo scuro in faccia a chi ha scelto il chiaro.
+- **«Come il sistema» si esprime togliendo l'attributo**, non scrivendo `data-theme="auto"`: è l'assenza a restituire la decisione alla media query. È il punto su cui è facile sbagliare senza accorgersene — il tema resterebbe bloccato a metà — ed è quello che i test coprono per primo.
+- **La preferenza vive nel browser di chi lavora, non nel database.** È una comodità personale, come la larghezza dell'ispettore: sincronizzarla imporrebbe il proprio tema ai colleghi. Per la stessa ragione il comando sta nell'intestazione e non in Gestione, che scrive solo l'amministratore: il tema lo sceglie chi guarda lo schermo, qualunque ruolo abbia.
+- **Stampare col tema scuro attivo non annerisce la pagina.** Il blocco di stampa ora ripete il selettore con l'attributo: senza, `:root[data-theme=dark]` vinceva per specificità e usciva un foglio nero. La carta resta bianca in tutti e tre gli stati.
+- Rosso Acrobat e verde Excel restano fissi: sono i colori dei due formati, non del tema, e cambiarli col fondo li renderebbe irriconoscibili proprio dove distinguono due pulsanti gemelli.
+- 13 casi in `test/theme.test.js`. Il colore non si prova senza un motore di rendering; si prova il **contratto** fra i due pezzi — quale attributo `theme.js` scrive e quando lo toglie — che è esattamente ciò che non si vede rileggendo il CSS.
+
+### 0.57.0 — 2026-09-06
+
+**Aggiunto**
+- **La sigla di una macrofamiglia non si può più ripetere nel suo ambito, e quella di una sottofamiglia dentro la sua macrofamiglia.** La sigla non è un'etichetta: compone il codice articolo — `CMM-MEC-CUS-007` — e ripetuta lo rende ambiguo, perché da quel codice non si risale più a quale delle due famiglie `MEC` venga il pezzo. Un codice costruito a segmenti che non identifica più la sua famiglia ha perso la ragione per cui è fatto così. Il controllo scatta in Gestione su tutti e quattro i punti in cui una sigla si scrive: nuova macrofamiglia, modifica, nuova sottofamiglia, modifica.
+- **Le sigle già ripetute si vedono**, in un riquadro in testa alla scheda famiglie del loro ambito e in rosso accanto alla riga che le porta. L'elenco dice che il problema esiste, il rosso dice quale riga aprire.
+
+**Note**
+- **Il campo di gara è quello che il codice non ha già fissato da sé.** Per una macrofamiglia è il suo ambito, perché il prefisso `CMM`/`MAT`/`PRT` separa già i tre: `CMM-MEC` e `MAT-MEC` non si confondono, e vietare anche quello esaurirebbe presto le sigle di tre lettere per nulla. Per una sottofamiglia è la macrofamiglia che la contiene, perché il segmento precedente l'ha già scelta: `CMM-IDR-GUA` e `CMM-MEC-GUA` sono due codici distinti. La regola vieta esattamente ciò che crea ambiguità, e niente di più.
+- **Le sigle duplicate già in archivio restano**, e non bloccano il lavoro: si impedisce di introdurne di nuove, non si punisce chi c'era già. Riscriverle d'ufficio cambierebbe di nascosto il prefisso dei codici futuri di una famiglia, e a decidere quale delle due cambiare è una persona. È la stessa scelta, e lo stesso riquadro, dei codici articolo duplicati in Gestione › Backup. I codici già assegnati non cambiano in nessun caso.
+- **Chi lascia il campo sigla vuoto è soggetto alla stessa regola**, ma il messaggio lo dice: la sigla dedotta dal nome («Meccanismi» → `MEC`) altrimenti sembrerebbe arrivare dal nulla. Le sigle automatiche sono le prime tre lettere del nome, quindi le collisioni non sono un caso di scuola: «Meccanico» e «Meccanica» danno entrambe `MEC`.
+- **Negli import la sigla si scosta da sola** — le famiglie lì si creano senza nessuno davanti, e un file di 500 articoli non deve fallire per tre lettere in comune. Si cerca la prima libera allungando prima sul nome, che resta leggibile (`MEC` → `MECC` → `MECCA`), e solo dopo numerando (`MEC2`); il tetto è 6 caratteri, quanto il campo accetta. Ogni scostamento finisce scritto nel report: l'import impostazioni ha ora una sezione avvisi in arancio, distinta dagli errori in rosso, perché quelle righe sono entrate — solo non esattamente come erano scritte.
+- 29 casi nuovi in `test/families.test.js`, dove i due test che contano di più sono quelli che dicono *ammesso*: stessa sigla in un altro ambito, stessa sigla in un'altra macrofamiglia. Sono loro a distinguere questa regola da un'unicità globale, ed è su uno di loro che la prima stesura sbagliava.
+
+### 0.56.0 — 2026-09-06
+
+**Aggiunto**
+- **Filtro per periodo in tutti e quattro gli elenchi**: richieste, ordini, commesse e piani di fabbisogno. Un intervallo *dal … al …*, che si può lasciare aperto da un lato solo (*dal 1 settembre* in poi, oppure *fino al 30 giugno*). Vale sulla data del documento — per le commesse è la **data di apertura**, quella che risponde a «cosa abbiamo preso in carico a settembre», non la consegna. Entra nel conteggio, nel pulsante **Azzera filtri** dove c'è, e nell'intestazione dell'export, che dichiara il periodo a parole — «dal 1/9/2026 al 30/9/2026» — perché un elenco stampato senza dire su cosa è filtrato è un elenco che qualcuno leggerà come completo.
+
+**Cambiato**
+- **Le testate dei documenti sono più compatte, e ora si somigliano davvero.** Gli otto campi di un ordine (titolo, fornitore, data, stato, resa, pagamento, conferma d'ordine, note) occupavano quasi uno schermo pieno per via di spazi vuoti che si sommavano fra loro, e le righe cominciavano sotto la piega. Ora la scheda entra in un colpo d'occhio. Lo stesso ritmo verticale vale per **richieste, ordini, commesse e piani di fabbisogno**: sono quattro volte lo stesso gesto — i dati di intestazione di un documento — e ora hanno la stessa forma, campi dentro una scheda riquadrata sotto la barra dei comandi. Prima commesse e piani li tenevano nudi sullo sfondo, e le quattro pagine si somigliavano solo a metà.
+
+**Note**
+- Il filtro è **uno solo per quattro elenchi** (`dateRangeFilter`, `inDateRange`, `dateRangeText` in `worklist.js`, dove sta già il telaio comune): quattro copie della stessa coppia di caselle divergerebbero al primo ritocco, e il filtro dello schermo e quello dell'export devono restare lo stesso codice — altrimenti il file e la schermata raccontano due storie diverse dello stesso periodo.
+- Le date si confrontano come stringhe `AAAA-MM-GG`, che è già l'ordine del calendario: nessuna conversione, nessun fuso orario di mezzo. I documenti più vecchi che portavano l'istante completo invece del solo giorno vengono tagliati prima del confronto, e un documento senza data resta fuori quando un intervallo è impostato — non avendo data, non si può dire che ci cada dentro.
+- Lo spazio recuperato non viene da campi più piccoli ma da margini contati due volte: `manage-wrap` distanzia già i blocchi col suo `gap`, e il gap dei flex **non** si fonde coi margini — ogni blocco che ne portava uno apriva una fascia in più. Stessa cosa dentro la scheda, dove `modal-field` (nato per le finestre modali, dove è lui a distanziare) si sommava al `gap` della griglia: 24px fra una riga e l'altra invece di 12. Le regole stanno in `style.css` sotto `manage-wrap`, `rfq-head` e `modal-grid`, e valgono per le quattro pagine insieme.
+- Il riquadro su commessa e piano si ottiene dallo stile, non riscrivendo il markup: la regola guarda le griglie di campi **in pagina** (`.manage-wrap > .modal-grid`) e non tocca quelle dentro le finestre modali, dove la scheda è già la finestra e un riquadro dentro il riquadro non direbbe niente.
+
 ### 0.55.0 — 2026-09-05
 
 **Aggiunto**

@@ -85,6 +85,59 @@ describe('docFilterApply', () => {
   });
 });
 
+describe('docFilterApply — intervallo di date', () => {
+  // Quattro date volutamente scomode: i due estremi dell'intervallo, uno fuori,
+  // e un documento senza data — il caso su cui è facile sbagliare.
+  const quattro = () => [
+    rfq({ id: 'gen', number: 'RFQ-2026-001', date: '2026-01-15' }),
+    rfq({ id: 'giu1', number: 'RFQ-2026-002', date: '2026-06-01' }),
+    rfq({ id: 'giu30', number: 'RFQ-2026-003', date: '2026-06-30' }),
+    rfq({ id: 'senza', number: 'RFQ-2026-004', date: '' }),
+  ];
+  function filtra(patch) {
+    const app = conDocumenti(quattro());
+    app.eval('Object.assign(docFilters.rfq, ' + JSON.stringify(patch) + ')');
+    return Array.from(app.eval('docFilterApply("rfq", db.rfqs).map(d => d.id)'));
+  }
+
+  it('un intervallo vuoto non filtra niente', () => {
+    assert.deepEqual(filtra({ from: '', to: '' }), ['gen', 'giu1', 'giu30', 'senza']);
+  });
+  it('gli estremi sono compresi', () => {
+    assert.deepEqual(filtra({ from: '2026-06-01', to: '2026-06-30' }), ['giu1', 'giu30']);
+  });
+  it('vale anche aperto da un lato solo', () => {
+    assert.deepEqual(filtra({ from: '2026-06-01', to: '' }), ['giu1', 'giu30']);
+    assert.deepEqual(filtra({ from: '', to: '2026-01-31' }), ['gen']);
+  });
+  it('un documento senza data resta fuori quando un periodo è impostato', () => {
+    assert.ok(!filtra({ from: '2020-01-01', to: '' }).includes('senza'),
+      'senza data non si può dire che ci cada dentro');
+  });
+  it("una data vecchia con l'ora dentro si confronta lo stesso", () => {
+    const app = conDocumenti([rfq({ id: 'x', date: '2026-06-15T09:30:00.000Z' })]);
+    app.eval('Object.assign(docFilters.rfq, { from: "2026-06-01", to: "2026-06-30" })');
+    assert.deepEqual(Array.from(app.eval('docFilterApply("rfq", db.rfqs).map(d => d.id)')), ['x']);
+  });
+  it('il periodo si combina con gli altri criteri', () => {
+    assert.deepEqual(filtra({ from: '2026-06-01', to: '2026-06-30', q: 'rfq-2026-003' }), ['giu30']);
+  });
+  it('un periodo impostato accende «azzera filtri», e azzerarlo lo spegne', () => {
+    const app = conDocumenti(quattro());
+    app.eval('Object.assign(docFilters.rfq, { from: "2026-06-01" })');
+    assert.equal(app.eval('docFilterActive("rfq")'), true);
+    app.eval('docFilterReset("rfq")');
+    assert.equal(app.eval('docFilterActive("rfq")'), false);
+    assert.equal(app.eval('docFilters.rfq.from'), '', 'azzerare deve svuotare anche le date');
+  });
+  it("l'export dichiara il periodo a parole", () => {
+    const app = conDocumenti(quattro());
+    app.eval('Object.assign(docFilters.rfq, { from: "2026-06-01", to: "2026-06-30" })');
+    const filtri = app.eval('JSON.stringify(rfqListExportSpec().filtri)');
+    assert.match(filtri, /dal 01\/06\/2026 al 30\/06\/2026/, 'chi legge il file deve sapere su cosa è filtrato');
+  });
+});
+
 describe('catalogo — disegno a blocchi', () => {
   // 500 commerciali senza famiglia: finiscono tutti nello stesso gruppo.
   function conArticoli(n) {

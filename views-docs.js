@@ -42,7 +42,7 @@ function applyDocLock(mode, host) {
     const off = !modeAllows(mode, kind);
     host.querySelectorAll('.lock-' + kind).forEach(el => {
       el.disabled = off;
-      if (off) el.title = 'Documento bloccato: usa 🔓 Sblocca per modifica';
+      if (off) el.title = 'Documento bloccato: usa «Sblocca per modifica»';
     });
   });
 }
@@ -57,7 +57,7 @@ function askMarkSent(doc, question, sentStatus, rerender) {
     doc.status = sentStatus;
     touch(doc); saveDB(); rerender();
     showToast('Stato: ' + sentStatus.charAt(0).toUpperCase() + sentStatus.slice(1));
-  }, { title: '📤 Documento generato', ok: 'Sì, segna come inviato', cancel: 'No, resta in bozza', safe: true });
+  }, { title: 'Documento generato', ok: 'Sì, segna come inviato', cancel: 'No, resta in bozza', safe: true });
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -172,7 +172,7 @@ function docGuard(k, id, lockKind) {
   if (!roleGuard('docs')) return false;
   const doc = K.get(id); if (!doc) return false;
   if (modeAllows(docMode(k, doc), lockKind)) return true;
-  showToast(`${K.nome} ${docStatusLabel(K, doc)}: usa 🔓 Sblocca per modificarl${K.suffisso}`, 'error');
+  showToast(`${K.nome} ${docStatusLabel(K, doc)}: usa «Sblocca per modifica»`, 'error');
   return false;
 }
 function docUnlock(k, id) {
@@ -180,7 +180,7 @@ function docUnlock(k, id) {
   const doc = K.get(id); if (!doc) return;
   askConfirm(`${K.articolo} ${doc.number} risulta ${docStatusLabel(K, doc)}.\nSbloccarl${K.suffisso} per modificarl${K.suffisso}?`, () => {
     K.setUnlocked(id); K.render(); showToast(`${K.nome} sbloccat${K.suffisso}`);
-  }, { title: '🔓 Sblocca per modifica', ok: 'Sblocca', safe: true });
+  }, { title: 'Sblocca per modifica', ok: 'Sblocca', safe: true });
 }
 // Salvataggio differito: le modifiche restano in memoria e si persistono solo
 // con "Salva". Finché ci sono modifiche non salvate i pulsanti che generano il
@@ -397,7 +397,6 @@ function rfqAutoStatus(r) {
   r.status = priced ? 'ricevuta' : 'inviata';
 }
 function getRfq(id) { return db.rfqs.find(r => r.id === id); }
-function fmtDateIt(d) { return d ? new Date(d).toLocaleDateString('it-IT') : ''; }
 // ─── Codice e descrizione «presso il fornitore», sulla riga di un documento ───
 // Escono **solo se il fornitore coincide**: sono il modo in cui quel fornitore
 // chiama l'articolo, e stamparli su un documento intestato a un altro non è
@@ -434,11 +433,18 @@ function docLineFromItem(it, supplierId) {
   const quotato = row && row.price !== '' && row.price != null;
   return {
     id: gid(), itemId: it.id, code: it.code || '', description: it.name || '',
-    // La riga è sempre nell'unità di gestione dell'articolo — è quella con cui
-    // si ordina e si riceve davvero, anche quando il fornitore valorizza il
-    // listino in un'altra unità (una barra a metri quotata a chilo). Il
-    // prezzo passa dalla stessa "porta unica" di applyPriceRow: arriva già
-    // convertito, mai il numero grezzo del listino nell'unità sua.
+    // La riga è sempre nell'unità di gestione dell'articolo — è quella con
+    // cui si ordina, si riceve e si monta — anche quando il fornitore
+    // valorizza il listino in un'altra unità. Il prezzo passa dalla stessa
+    // "porta unica" di applyPriceRow: arriva già convertito, mai il numero
+    // grezzo del listino nell'unità sua.
+    //
+    // Una barra d'acciaio da 6 m, gestita a metri, che pesa 20 kg/m:
+    //   il fornitore quota a kg  →  riga in m, prezzo = 20 × (prezzo al kg)
+    //   il fornitore quota a m   →  riga in m, prezzo tale e quale
+    // La seconda riga non è un caso a parte: priceUomOf() ricade sull'unità
+    // di gestione e uomFactor() vale 1, quindi la conversione c'è sempre e
+    // qualche volta non fa niente. Un ramo in meno da sbagliare.
     uom: itemUom(it) || defaultUom(),
     qty: 1, price: quotato ? (rowUnitCost(it, row) || 0) : '', deliveryDate: '', note: '',
   };
@@ -460,9 +466,10 @@ function docOriginRef(d) {
 // fuori, così sopravvivono al re-render, e la digitazione aggiorna solo la
 // lista (toccare la barra filtri farebbe perdere il focus al campo di ricerca).
 const docFilters = {
-  rfq: { q: '', status: '', supplierId: '' },
-  order: { q: '', status: '', supplierId: '' },
+  rfq: { q: '', status: '', supplierId: '', from: '', to: '' },
+  order: { q: '', status: '', supplierId: '', from: '', to: '' },
 };
+function docFiltersVuoti() { return { q: '', status: '', supplierId: '', from: '', to: '' }; }
 // I campi di filtro dell'elenco, senza contenitore: li incolonna `wl-filters`
 // del telaio (worklist.js). In una colonna da 360px tre menu affiancati
 // sarebbero tre fessure — qui vanno uno sotto l'altro, larghi quanto la colonna.
@@ -479,11 +486,12 @@ function docFilterBar(kind, statusMap, shown, total) {
       <option value="none" ${f.supplierId === 'none' ? 'selected' : ''}>— senza fornitore —</option>
       ${sups.map(s => `<option value="${s.id}" ${f.supplierId === s.id ? 'selected' : ''}>${esc(s.name)}</option>`).join('')}
     </select>
+    ${dateRangeFilter(kind + 'f', f.from, f.to, `docFilterChange('${kind}')`, 'documento')}
     <span class="doc-filter-count" id="${kind}f-count">${docFilterCountText(shown, total)}</span>
     ${docFilterActive(kind) ? `<button class="btn-outline" onclick="docFilterReset('${kind}')">✕ Azzera filtri</button>` : ''}`;
 }
 function docFilterCountText(shown, total) { return worklistCount(shown, total, 'documento', 'documenti'); }
-function docFilterActive(kind) { const f = docFilters[kind]; return !!(f.q || f.status || f.supplierId); }
+function docFilterActive(kind) { const f = docFilters[kind]; return !!(f.q || f.status || f.supplierId || f.from || f.to); }
 // Digitazione nel campo di ricerca: si aspetta la pausa. I menu a tendina
 // restano immediati — un click è già un'intenzione conclusa.
 function docFilterInput(kind) { debounced('doc-' + kind, () => docFilterChange(kind)); }
@@ -492,6 +500,8 @@ function docFilterChange(kind) {
   f.q = (val(kind + 'f-q') || '').toLowerCase();
   f.status = val(kind + 'f-status');
   f.supplierId = val(kind + 'f-sup');
+  f.from = val(kind + 'f-from');
+  f.to = val(kind + 'f-to');
   // Solo la lista: la barra filtri resta com'è, altrimenti il campo perde il focus
   const count = document.getElementById(kind + 'f-count');
   const all = kind === 'rfq' ? db.rfqs : db.orders;
@@ -499,7 +509,7 @@ function docFilterChange(kind) {
   if (count) count.textContent = docFilterCountText(docFilterApply(kind, all).length, all.length);
 }
 function docFilterReset(kind) {
-  docFilters[kind] = { q: '', status: '', supplierId: '' };
+  docFilters[kind] = docFiltersVuoti();
   if (kind === 'rfq') renderRfq(); else renderOrders();
 }
 // Testo cercabile di un documento, righe comprese. Costruirlo significa
@@ -522,6 +532,7 @@ function docFilterApply(kind, docs) {
   return docs.filter(d => {
     if (f.status && d.status !== f.status) return false;
     if (f.supplierId === 'none' ? !!d.supplierId : (f.supplierId && d.supplierId !== f.supplierId)) return false;
+    if (!inDateRange(d.date, f.from, f.to)) return false;
     if (!f.q) return true;
     return docSearchText(d).includes(f.q);
   });
@@ -542,7 +553,7 @@ function docListExportSpec(kind) {
     .sort((a, b) => (b.number || '').localeCompare(a.number || '')));
   const colonne = [
     { h: 'Numero', w: 18 }, { h: 'Oggetto', w: 34 }, { h: 'Stato', w: 14 },
-    { h: 'Fornitore', w: 28 }, { h: 'Data', w: 12 }, { h: 'Righe', w: 8, num: true },
+    { h: 'Fornitore', w: 28 }, { h: 'Data', w: 12, data: true }, { h: 'Righe', w: 8, num: true },
   ];
   if (ordini) colonne.push({ h: `Totale (${cur()})`, w: 16, num: true },
     { h: 'Ordinato', w: 12, num: true }, { h: 'Ricevuto', w: 12, num: true });
@@ -553,13 +564,14 @@ function docListExportSpec(kind) {
       ['Ricerca', f.q],
       ['Stato', mappaStati[f.status] || ''],
       ['Fornitore', f.supplierId === 'none' ? 'senza fornitore' : (supplierName(f.supplierId) || '')],
+      ['Data', dateRangeText(f.from, f.to)],
     ],
     sezioni: [{
       nome: K.nome,
       colonne,
       righe: docs.map(d => {
         const base = [d.number || '', d.title || '', mappaStati[d.status] || d.status || '',
-          supplierName(d.supplierId) || '', fmtDateIt(d.date), (d.lines || []).length];
+          supplierName(d.supplierId) || '', d.date || '', (d.lines || []).length];
         if (!ordini) return base;
         const rec = orderReception(d);
         return base.concat([+orderTotal(d).toFixed(2), rec.ordered, rec.received]);
@@ -781,7 +793,7 @@ function cell2(sopra, sotto, cls) {
   return `<td${cls ? ` class="${cls}"` : ''}><div class="ln-a">${sopra}</div><div class="ln-b">${sotto == null ? '' : sotto}</div></td>`;
 }
 function th2(sopra, sotto, titolo) {
-  return `<th${titolo ? ` title="${esc(titolo)}"` : ''}><div class="ln-a">${sopra}</div><div class="ln-b">${sotto || ''}</div></th>`;
+  return `<th scope="col"${titolo ? ` title="${esc(titolo)}"` : ''}><div class="ln-a">${sopra}</div><div class="ln-b">${sotto || ''}</div></th>`;
 }
 
 function renderRfqEdit(id) {
@@ -850,12 +862,12 @@ function renderRfqEdit(id) {
     <p class="empty-text" style="text-align:left;padding:0 0 8px">Prezzo unitario e data consegna si lasciano vuoti nel documento inviato e si compilano al ritorno dell'offerta.</p>
     <div class="table-wrap"><table class="rfq-table rfq-table-2">
       <thead><tr>
-        <th class="ln-idx">#</th>
+        <th scope="col" class="ln-idx">#</th>
         ${th2('Codice', 'Descrizione')}
         ${th2('Q.tà', 'U.M.')}
         ${th2(`Prezzo unit. (${esc(cur())}/U.M.)`, `Importo (${esc(cur())})`, 'Prezzo di una unità, nella U.M. della riga; sotto, quanto fa per la quantità di riga')}
         ${th2('Data consegna', '')}
-        <th></th></tr></thead>
+        <th scope="col"></th></tr></thead>
       <tbody>${lines}</tbody></table></div>
     <div class="rfq-export-bar">
       <label>Documento di richiesta:</label>
@@ -1022,7 +1034,7 @@ function renderRfqCompare() {
     const posTotals = totals.filter(t => t > 0);
     const minTot = posTotals.length ? Math.min(...posTotals) : null;
     const totalRow = `<tr class="rfq-cmp-total"><td>Totale offerta</td>${totals.map(t => `<td class="${minTot != null && t === minTot ? 'rfq-min' : ''}">${fmtN(t)}</td>`).join('')}</tr>`;
-    const header = `<tr><th>Articolo</th>${sel.map(r => `<th>${esc(r.supplierId ? supplierName(r.supplierId) : r.number)}<div class="rfq-cmp-sub">${esc(r.number)}</div></th>`).join('')}</tr>`;
+    const header = `<tr><th scope="col">Articolo</th>${sel.map(r => `<th scope="col">${esc(r.supplierId ? supplierName(r.supplierId) : r.number)}<div class="rfq-cmp-sub">${esc(r.number)}</div></th>`).join('')}</tr>`;
     matrix = `<div class="table-wrap"><table class="rfq-table rfq-cmp-table">
       <thead>${header}</thead><tbody>${bodyRows}${totalRow}</tbody></table></div>
       <p class="empty-text" style="text-align:left">Prezzo minimo per riga e totale offerta più basso evidenziati in verde. I totali usano la quantità indicata in ciascuna richiesta.</p>`;
@@ -1305,13 +1317,13 @@ function renderOrderEdit(id) {
       </span></h3>
     <div class="table-wrap"><table class="rfq-table rfq-table-2">
       <thead><tr>
-        <th class="ln-idx">#</th>
+        <th scope="col" class="ln-idx">#</th>
         ${th2('Codice', 'Descrizione')}
         ${th2('Q.tà', 'U.M.')}
         ${th2(`Prezzo unit. (${esc(cur())}/U.M.)`, `Importo (${esc(cur())})`, 'Prezzo di una unità, nella U.M. della riga; sotto, quanto fa per la quantità di riga')}
         ${th2('Richiesta', 'Confermata', 'Sopra la data che abbiamo chiesto, sotto quella che il fornitore ha confermato')}
         ${th2('Ricevuto', 'Residuo', 'Sopra quanto è arrivato, sotto quanto manca')}
-        <th></th></tr></thead>
+        <th scope="col"></th></tr></thead>
       <tbody>${lines}</tbody>
       <tfoot><tr class="rfq-cmp-total"><td colspan="3" style="text-align:right">Totale imponibile</td><td>${fmtN(total)}</td><td colspan="3"></td></tr></tfoot>
     </table></div>

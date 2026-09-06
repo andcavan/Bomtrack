@@ -88,12 +88,19 @@ describe('Cestino: eliminare non è perdere', () => {
     assert.equal(a.eval('duplicateCodeGroups().length'), 0);
   });
 
+  // «Com'era» vale per il contenuto, non per la data di modifica: il ripristino
+  // è un fatto nuovo e va datato come tale. In cloud l'eliminazione lascia un
+  // tombstone, e un record che rientra con l'updatedAt di prima è più vecchio
+  // del tombstone — il pull successivo lo ricancellerebbe.
   it('ripristinare lo rimette dov\'era, com\'era', () => {
     const a = app(conDati());
     const prima = a.snapshot().items.find(i => i.id === 'm1');
     a.eval('Store.remove("items", "m1")');
     a.eval(`Store.restore(${JSON.stringify(a.eval('db.trash[0].id'))})`);
-    assert.deepEqual(a.snapshot().items.find(i => i.id === 'm1'), prima);
+    const dopo = a.snapshot().items.find(i => i.id === 'm1');
+    const senzaData = o => { const c = Object.assign({}, o); delete c.updatedAt; delete c.updatedBy; return c; };
+    assert.deepEqual(senzaData(dopo), senzaData(prima), 'il contenuto torna identico');
+    assert.ok(String(dopo.updatedAt) > String(prima.updatedAt || ''), 'ma il ripristino ridata il record');
     assert.equal(a.snapshot().trash.length, 0);
   });
 

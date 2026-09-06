@@ -199,3 +199,114 @@ describe('findByCode', () => {
     assert.equal(a.eval('findByCode("zzz")'), null);
   });
 });
+
+// ═══════════════════════════════════════════════════════════
+//  Una riga rifiutata non deve costare la distinta
+// ═══════════════════════════════════════════════════════════
+// L'azzeramento del padre avveniva alla prima riga «valida», e il controllo dei
+// cicli veniva dopo: un file la cui unica riga per quel padre creava un ciclo
+// lasciava il padre senza componenti, con un messaggio d'errore al posto della
+// distinta — e saveDB() rendeva la perdita definitiva.
+describe('Import distinte: il padre non resta a mani vuote', () => {
+  // S1 contiene S2, S2 contiene M. Il file prova a mettere S1 dentro S2: è un
+  // ciclo, e il sottogruppo dentro il sottogruppo è ammesso — quindi la riga
+  // arriva davvero al controllo dei cicli, che è il punto.
+  const conCiclo = () => makeDb({
+    items: [
+      Object.assign(mat('m1', 10), { code: 'M' }),
+      Object.assign(asm('s2', 'sottogruppo'), { code: 'S2', components: [comp('m1', 4)] }),
+      Object.assign(asm('s1', 'sottogruppo'), { code: 'S1', components: [comp('s2', 1)] }),
+    ],
+  });
+
+  it('un ciclo non svuota la distinta che era già lì', () => {
+    const a = app(conCiclo());
+    const rep = a.eval('importBom([{ CodicePadre: "S2", CodiceFiglio: "S1", Qta: 1 }])');
+    const s2 = a.snapshot().items.find(i => i.code === 'S2');
+    assert.equal(s2.components.length, 1, 'la distinta di prima è ancora lì');
+    assert.equal(s2.components[0].itemId, 'm1');
+    assert.equal(s2.components[0].qty, 4, 'con la sua quantità');
+    assert.equal(rep.added, 0);
+    assert.equal(rep.restored, 1, 'e il report lo dichiara');
+    assert.ok(rep.errors.some(e => /ciclo/.test(e)), 'il ciclo resta segnalato');
+  });
+
+  it('le righe buone entrano lo stesso, quelle cattive no', () => {
+    const a = app(conCiclo());
+    const rep = a.eval('importBom([{ CodicePadre: "S2", CodiceFiglio: "M", Qta: 3 }, { CodicePadre: "S2", CodiceFiglio: "NONESISTE", Qta: 1 }])');
+    const s2 = a.snapshot().items.find(i => i.code === 'S2');
+    assert.equal(s2.components.length, 1);
+    assert.equal(s2.components[0].qty, 3, 'la riga buona ha sostituito la distinta');
+    assert.equal(rep.added, 1);
+    assert.equal(rep.restored, 0);
+    assert.equal(rep.errors.length, 1);
+  });
+
+  it('una distinta vuota di partenza non viene dichiarata ripristinata', () => {
+    const a = app(makeDb({
+      items: [
+        Object.assign(asm('s2', 'sottogruppo'), { code: 'S2' }),
+        Object.assign(asm('s1', 'sottogruppo'), { code: 'S1', components: [comp('s2', 1)] }),
+      ],
+    }));
+    const rep = a.eval('importBom([{ CodicePadre: "S2", CodiceFiglio: "S1", Qta: 1 }])');
+    assert.equal(rep.restored, 0, 'non c era niente da rimettere');
+  });
+});
+
+// ═══════════════════════════════════════════════════════════
+//  I numeri come li scrive un ufficio acquisti italiano
+// ═══════════════════════════════════════════════════════════
+// numOr faceva parseFloat(v.replace(',', '.')): su "1.234,56" si fermava al
+// punto delle migliaia e restituiva 1,234 — un prezzo plausibile, e falso.
+// Entrava così nelle quantità di distinta, nei parametri delle impostazioni e
+// nelle tariffe orarie, senza un errore.
+describe('numOr — i separatori italiani', () => {
+  const n = (v, def) => app().eval('numOr(' + JSON.stringify(v) + ', ' + JSON.stringify(def === undefined ? null : def) + ')');
+  it('migliaia col punto e decimali con la virgola', () => {
+    assert.equal(n('1.234,56'), 1234.56, 'era il caso che dava 1,234: un prezzo plausibile, e falso');
+  });
+  // Con un separatore solo non si indovina: "1.500" può essere millecinquecento
+  // o uno e mezzo, e nessuna delle due letture è più vera dell'altra. Il punto
+  // isolato resta decimale — le celle numeriche vere arrivano già come numeri e
+  // non passano di qui, quindi il caso riguarda solo il testo scritto a mano.
+  it('con un separatore solo vale la lettura decimale, dichiarata', () => {
+    assert.equal(n('12.000'), 12);
+  });
+  it('e anche la forma anglosassone, che arriva dai gestionali', () => {
+    assert.equal(n('1,234.56'), 1234.56);
+  });
+  it('la virgola sola resta il separatore decimale', () => {
+    assert.equal(n('12,5'), 12.5);
+  });
+  it('quello che non è un numero ricade sul valore di scorta', () => {
+    assert.equal(n('abc', 7), 7);
+    assert.equal(n('', 0), 0);
+  });
+  it('un numero vero passa senza toccarlo', () => {
+    assert.equal(n(3.25), 3.25);
+  });
+});
+
+describe('catDateOf — le date come le scrive un fornitore', () => {
+  const d = v => app().eval('catDateOf(' + JSON.stringify(v) + ')');
+  it('ISO, anche senza lo zero davanti', () => {
+    assert.equal(d('2026-01-05'), '2026-01-05');
+    assert.equal(d('2026-1-5'), '2026-01-05', 'prima finiva letto come seriale Excel: 1905');
+  });
+  it('giorno/mese/anno, con il punto o la barra', () => {
+    assert.equal(d('31/01/2026'), '2026-01-31');
+    assert.equal(d('5.1.2026'), '2026-01-05');
+  });
+  it('anno a due cifre: è del Duemila', () => {
+    assert.equal(d('31/01/26'), '2026-01-31', 'prima diventava il 30 gennaio 1900');
+  });
+  it('il seriale di Excel resta un seriale', () => {
+    assert.equal(d('46032'), '2026-01-10');
+  });
+  it('quello che non è una data non diventa una data qualsiasi', () => {
+    assert.equal(d('pippo'), '');
+    assert.equal(d(''), '');
+    assert.equal(d('31/13/2026'), '2026-13-31', 'il mese assurdo si vede, non si inventa');
+  });
+});

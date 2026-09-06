@@ -496,44 +496,32 @@ function renderStock() {
     kpi(`Valore giacenza (${esc(cur())})`, fmtN(valore), 'purple'),
   ].join('');
 
-  const { groups, keys } = catalogGroups(rows);
-  const head = `<thead><tr><th class="col-flags"></th><th class="col-code">Codice</th><th class="col-name">Nome</th>
-    <th class="col-type">Tipo</th><th class="col-family">Famiglia</th><th class="col-uom">U.M.</th>
-    <th class="col-onhand" style="text-align:right" title="Ricevuto sugli ordini più i movimenti">Esistente</th>
-    <th class="col-incoming" style="text-align:right" title="Atteso da ordini inviati, confermati o parziali">In arrivo</th>
-    <th class="col-committed" style="text-align:right" title="Promesso dai piani di fabbisogno aperti">Impegnato</th>
-    <th class="col-free" style="text-align:right" title="Esistente + in arrivo − impegnato: quanto se ne può ancora promettere">Libero</th>
-    <th class="col-safety" style="text-align:right">Scorta min.</th><th class="col-lot" style="text-align:right">Lotto</th>
-    <th class="row-actions"></th></tr></thead>`;
-  // Stessa paginazione dell'anagrafica, e stessa regola sul titolo: dice quanti
-  // articoli contiene il gruppo per intero anche quando ne disegna solo i primi.
-  let restanti = stockLimit;
-  let disegnati = 0;
-  const html = keys.map(k => {
-    const gruppo = groups[k].items;
-    const visibili = gruppo.slice(0, Math.max(0, restanti));
-    restanti -= visibili.length;
-    disegnati += visibili.length;
-    if (!visibili.length) return '';
-    const conteggio = visibili.length < gruppo.length ? `${visibili.length} di ${gruppo.length}` : `${gruppo.length}`;
-    return `<div class="cat-group-title">${esc(k)} <span style="color:var(--text-dim);font-weight:500">(${conteggio})</span></div>
-      <table>${head}<tbody>${visibili.map(stockRow).join('')}</tbody></table>`;
-  }).join('');
-  const mancanti = rows.length - disegnati;
-  const piu = mancanti > 0 ? `<div class="cat-more">
-      <span>Mostrati ${disegnati} di ${rows.length} articoli</span>
-      <button class="btn-outline" onclick="stockShowMore()">Mostra altri ${Math.min(STOCK_PAGE, mancanti)}</button>
-      <button class="btn-outline" onclick="stockShowAll()">Mostra tutti</button>
-    </div>` : '';
-  const tabella = document.getElementById(STOCK_PFX + '-table');
-  tabella.innerHTML = rows.length ? html + piu
-    : `<div class="empty-text">${tutti.length ? 'Nessun articolo con questi filtri.' : 'Nessun articolo a magazzino: qui compaiono commerciali, materie prime e parti.'}</div>`;
-  a11yFields(tabella);
-  colsMountButton('stock');
-  colsApply();
-  // La tabella si riscrive per intero a ogni filtro: il pannello rimette
-  // l’evidenza sulla riga scelta, e la lascia cadere se quella riga non c’è più.
-  inspectorSync();
+  const head = `<thead><tr><th scope="col" class="col-flags"></th><th scope="col" class="col-code">Codice</th><th scope="col" class="col-name">Nome</th>
+    <th scope="col" class="col-type">Tipo</th><th scope="col" class="col-family">Famiglia</th><th scope="col" class="col-uom">U.M.</th>
+    <th scope="col" class="col-onhand" style="text-align:right" title="Ricevuto sugli ordini più i movimenti">Esistente</th>
+    <th scope="col" class="col-incoming" style="text-align:right" title="Atteso da ordini inviati, confermati o parziali">In arrivo</th>
+    <th scope="col" class="col-committed" style="text-align:right" title="Promesso dai piani di fabbisogno aperti">Impegnato</th>
+    <th scope="col" class="col-free" style="text-align:right" title="Esistente + in arrivo − impegnato: quanto se ne può ancora promettere">Libero</th>
+    <th scope="col" class="col-safety" style="text-align:right">Scorta min.</th><th scope="col" class="col-lot" style="text-align:right">Lotto</th>
+    <th scope="col" class="row-actions"></th></tr></thead>`;
+  // Stessa griglia dell'anagrafica (itemGrid, views-catalog.js): stessa
+  // paginazione, stesso titolo di gruppo, stesso piede. Qui cambiano solo le
+  // colonne, il disegno della riga e cosa dire quando non c'è niente.
+  itemGrid({
+    hostId: STOCK_PFX + '-table',
+    rows,
+    head,
+    riga: stockRow,
+    limite: stockLimit,
+    pagina: STOCK_PAGE,
+    altro: 'stockShowMore()',
+    tutti: 'stockShowAll()',
+    // Due vuoti diversi: «non c'è niente a magazzino» e «i tuoi filtri non
+    // pescano niente» sono due situazioni, e la seconda ha una via d'uscita.
+    vuoto: tutti.length ? 'Nessun articolo con questi filtri.'
+      : 'Nessun articolo a magazzino: qui compaiono commerciali, materie prime e parti.',
+    colonne: 'stock',
+  });
 }
 
 // ─── Export ───

@@ -127,7 +127,12 @@ function restoreSession() {
   try { s = JSON.parse(localStorage.getItem(SESSION_KEY) || 'null'); } catch (e) { s = null; }
   const u = s && s.userId ? getUser(s.userId) : null;
   if (!u || u.active === false || sessionExpired(s)) { localStorage.removeItem(SESSION_KEY); return false; }
-  doLogin(u, false);
+  // Si rientra e si **rinnova**: la scadenza è per inattività, non per età
+  // assoluta. Senza il rinnovo, chi usa l'app tutti i giorni veniva comunque
+  // buttato fuori al trentesimo giorno dal primo accesso — e la ragione per cui
+  // la scadenza esiste è la postazione condivisa lasciata aperta, che è
+  // esattamente la postazione dove nessuno entra da settimane.
+  doLogin(u, true);
   return true;
 }
 function logout() {
@@ -195,5 +200,9 @@ function saveOwnPassword() {
   if (n1.length < 4) { showToast('La nuova password deve avere almeno 4 caratteri', 'error'); return; }
   if (n1 !== n2) { showToast('Le due password non coincidono', 'error'); return; }
   setUserPassword(u, n1);
-  touch(u); saveDB(); closeModal(); showToast('Password aggiornata');
+  // Store.update fa touch e commit in un colpo, ed è la porta che l'adapter
+  // cloud intercetterà: createFirstAdmin usa già Store.insert, e due strade
+  // per la stessa collezione nello stesso file sono una di troppo.
+  Store.update('users', u.id, { passwordHash: u.passwordHash, passwordSalt: u.passwordSalt });
+  closeModal(); savedToast('Password aggiornata');
 }

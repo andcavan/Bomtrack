@@ -257,3 +257,165 @@ describe('pickCycleItem — le guardie stanno accanto alla scrittura', () => {
     assert.equal(a.snapshot().items.find(x => x.id === 'p1').cycle.length, 0);
   });
 });
+
+// ═══════════════════════════════════════════════════════════
+//  Sottogruppi e parti abitano lo stesso prefisso
+// ═══════════════════════════════════════════════════════════
+// MAC-GRP-### è uno spazio solo, percorso in due direzioni: i sottogruppi
+// scendono da 999, le parti salgono da 1. Il calcolo del prossimo numero
+// guardava solo i pari tipo, quindi quando i due blocchi si incontravano l'app
+// proponeva un codice già preso — e poi lo rifiutava da sé con «codice già in
+// uso», sempre lo stesso, a ogni tentativo. Un vicolo cieco.
+function conGruppoAffollato(incrN) {
+  const items = [
+    { id: 'mac', code: 'TRN', name: 'Tornio', type: 'macchina', uom: 'pz', sigla: 'TRN',
+      incrDigitsN: incrN, components: [], operations: [] },
+    { id: 'grp', code: 'TRN-BAS', name: 'Basamento', type: 'gruppo', uom: 'pz', sigla: 'BAS',
+      machineItemId: 'mac', components: [], operations: [] },
+  ];
+  const pad = n => String(n).padStart(incrN, '0');
+  // Le parti hanno preso 1..4, i sottogruppi 9..5 scendendo: lo spazio da 9 è pieno.
+  [1, 2, 3, 4].forEach(n => items.push({ id: 'p' + n, code: 'TRN-BAS-' + pad(n), name: 'Parte ' + n,
+    type: 'parte', uom: 'pz', machineItemId: 'mac', groupItemId: 'grp', cycle: [] }));
+  [9, 8, 7, 6, 5].forEach(n => items.push({ id: 's' + n, code: 'TRN-BAS-' + pad(n), name: 'Sotto ' + n,
+    type: 'sottogruppo', uom: 'pz', machineItemId: 'mac', groupItemId: 'grp', components: [], operations: [] }));
+  return makeDb({ items });
+}
+const bozza = tipo => 'genItemCode({ id: "nuovo", type: ' + JSON.stringify(tipo)
+  + ', uom: "pz", machineItemId: "mac", groupItemId: "grp" })';
+
+describe('Numerazione condivisa fra sottogruppi e parti', () => {
+  it('la parte successiva salta i numeri presi dai sottogruppi', () => {
+    const a = app(conGruppoAffollato(3));
+    const code = a.eval(bozza('parte'));
+    assert.equal(code, 'TRN-BAS-010', 'da 5 a 9 sono dei sottogruppi: si riparte da 10');
+    assert.equal(a.eval('!!getItemByCode(' + JSON.stringify(code) + ')'), false, 'e il codice è libero davvero');
+  });
+
+  it('il sottogruppo successivo salta i numeri presi dalle parti', () => {
+    const a = app(conGruppoAffollato(3));
+    const code = a.eval(bozza('sottogruppo'));
+    assert.equal(code, 'TRN-BAS-000', 'da 4 a 1 sono delle parti: sotto c-è solo lo zero');
+    assert.equal(a.eval('!!getItemByCode(' + JSON.stringify(code) + ')'), false);
+  });
+
+  it('il codice proposto passa la validazione che l-app stessa applica', () => {
+    ['parte', 'sottogruppo'].forEach(tipo => {
+      const a = app(conGruppoAffollato(3));
+      const code = a.eval(bozza(tipo));
+      assert.equal(a.eval('validateItemCode(' + JSON.stringify(code) + ', "nuovo")'), null,
+        tipo + ': proporre un codice che poi si rifiuta è un vicolo cieco');
+    });
+  });
+
+  it('con lo spazio esaurito si dice, invece di proporre un doppione', () => {
+    // incrN = 1: nove numeri in tutto, 0-9, e li abbiamo occupati tutti.
+    const a = app(conGruppoAffollato(1));
+    a.eval('db.items.push({ id: "s0", code: "TRN-BAS-0", name: "Sotto 0", type: "sottogruppo", uom: "pz", machineItemId: "mac", groupItemId: "grp", components: [], operations: [] }); invalidateCaches();');
+    assert.equal(a.eval(bozza('parte')), '', 'niente codice è meglio di un codice già di un altro');
+    assert.equal(a.eval(bozza('sottogruppo')), '');
+  });
+
+  it('in un gruppo vuoto le due numerazioni partono dai loro estremi', () => {
+    const a = app(makeDb({ items: [
+      { id: 'mac', code: 'TRN', name: 'Tornio', type: 'macchina', uom: 'pz', sigla: 'TRN', components: [], operations: [] },
+      { id: 'grp', code: 'TRN-BAS', name: 'Basamento', type: 'gruppo', uom: 'pz', sigla: 'BAS', machineItemId: 'mac', components: [], operations: [] },
+    ] }));
+    assert.equal(a.eval(bozza('parte')), 'TRN-BAS-001');
+    assert.equal(a.eval(bozza('sottogruppo')), 'TRN-BAS-999');
+  });
+});
+
+// ═══════════════════════════════════════════════════════════
+//  L'indice dei progressivi
+// ═══════════════════════════════════════════════════════════
+// nextCodeForPrefix() compilava una regex e la provava su OGNI articolo, a ogni
+// chiamata: durante un import è una chiamata per riga nuova, e su qualche
+// migliaio di righe contro qualche migliaio di articoli il costo è quadratico.
+// Ora la passata è una e vale per tutti i prefissi. Questi casi fissano il
+// comportamento **identico** a quello di prima, che è la parte che conta.
+describe('Progressivi per prefisso', () => {
+  const conCodici = codici => app(makeDb({
+    items: codici.map((c, i) => ({ id: 'i' + i, code: c, name: 'x', type: 'acquistato', uom: 'pz' })),
+  }));
+  const next = (a, pfx) => a.eval('nextCodeForPrefix(' + JSON.stringify(pfx) + ')');
+
+  it('riparte dal massimo, non dall-ultimo inserito', () => {
+    const a = conCodici(['CMM-MEC-CUS-001', 'CMM-MEC-CUS-007', 'CMM-MEC-CUS-003']);
+    assert.equal(next(a, 'CMM-MEC-CUS-'), 'CMM-MEC-CUS-008');
+  });
+
+  it('un altro prefisso non entra nel conto', () => {
+    const a = conCodici(['CMM-MEC-CUS-001', 'CMM-MEC-ALT-999']);
+    assert.equal(next(a, 'CMM-MEC-CUS-'), 'CMM-MEC-CUS-002');
+  });
+
+  it('il prefisso è quello per intero, non un suo inizio', () => {
+    const a = conCodici(['MAT-001', 'MAT-ACC-050']);
+    assert.equal(next(a, 'MAT-'), 'MAT-002', 'MAT-ACC-050 sta sotto MAT-ACC-, non sotto MAT-');
+  });
+
+  it('un codice che non finisce con cifre non conta', () => {
+    const a = conCodici(['CMM-MEC-12A', 'CMM-MEC-9']);
+    assert.equal(next(a, 'CMM-MEC-'), 'CMM-MEC-010');
+  });
+
+  it('le maiuscole contano, come nel confronto di prima', () => {
+    const a = conCodici(['PRT-X-0001', 'prt-x-0002']);
+    assert.equal(next(a, 'PRT-X-'), 'PRT-X-002');
+  });
+
+  it('senza nessun codice si parte da uno', () => {
+    assert.equal(next(conCodici([]), 'CMM-'), 'CMM-001');
+  });
+
+  it('un articolo aggiunto dentro il ciclo entra subito nel conto', () => {
+    // È il caso dell-import: le righe si creano una dopo l-altra e il codice
+    // della seconda deve vedere quello della prima, senza passare da un salvataggio.
+    const a = conCodici(['CMM-MEC-CUS-001']);
+    assert.equal(next(a, 'CMM-MEC-CUS-'), 'CMM-MEC-CUS-002');
+    a.eval('db.items.push({ id: "nuovo", code: "CMM-MEC-CUS-002", name: "y", type: "acquistato", uom: "pz" })');
+    assert.equal(next(a, 'CMM-MEC-CUS-'), 'CMM-MEC-CUS-003', 'un indice fermo darebbe di nuovo 002');
+  });
+});
+
+// genItemCode è logica di dominio: durante un import viene chiamata una volta
+// per riga, e sparava un toast per ognuna. Ora dice perché non ce l-ha fatta, e
+// chi ha davanti una persona lo mostra.
+describe('Il codice non generato dice perché, senza gridarlo', () => {
+  it('la numerazione esaurita si legge in codeGenError', () => {
+    const a = app(makeDb({ items: [
+      { id: 'mac', code: 'TRN', name: 'Tornio', type: 'macchina', uom: 'pz', sigla: 'TRN', incrDigitsN: 1, components: [], operations: [] },
+      { id: 'grp', code: 'TRN-BAS', name: 'Base', type: 'gruppo', uom: 'pz', sigla: 'BAS', machineItemId: 'mac', components: [], operations: [] },
+    ].concat([0, 1, 2, 3, 4, 5, 6, 7, 8, 9].map(n => ({
+      id: 'p' + n, code: 'TRN-BAS-' + n, name: 'P' + n, type: 'parte', uom: 'pz',
+      machineItemId: 'mac', groupItemId: 'grp', cycle: [],
+    }))) }));
+    const code = a.eval('genItemCode({ id: "x", type: "parte", uom: "pz", machineItemId: "mac", groupItemId: "grp" })');
+    assert.equal(code, '');
+    assert.match(a.eval('codeGenError'), /esaurita/);
+  });
+
+  it('e si azzera al tentativo successivo, che riesce', () => {
+    const a = app(makeDb({ items: [
+      { id: 'mac', code: 'TRN', name: 'Tornio', type: 'macchina', uom: 'pz', sigla: 'TRN', components: [], operations: [] },
+      { id: 'grp', code: 'TRN-BAS', name: 'Base', type: 'gruppo', uom: 'pz', sigla: 'BAS', machineItemId: 'mac', components: [], operations: [] },
+    ] }));
+    assert.equal(a.eval('genItemCode({ id: "x", type: "parte", uom: "pz", machineItemId: "mac", groupItemId: "grp" })'), 'TRN-BAS-001');
+    assert.equal(a.eval('codeGenError'), '', 'un errore vecchio non deve sopravvivere a un successo');
+  });
+});
+
+// Le due anagrafiche condividevano lo STESSO array di colonne, non una copia.
+describe('Le colonne di Acquisti e Progetto sono separate davvero', () => {
+  it('non sono lo stesso array', () => {
+    const a = app(makeDb());
+    assert.equal(a.eval('COLUMNS.design === COLUMNS.buy'), false,
+      'un alias si rompe alla prima colonna aggiunta a una sola delle due');
+  });
+  it('ma dicono le stesse cose', () => {
+    const a = app(makeDb());
+    assert.deepEqual(JSON.parse(a.eval('JSON.stringify(COLUMNS.design)')),
+      JSON.parse(a.eval('JSON.stringify(COLUMNS.buy)')));
+  });
+});

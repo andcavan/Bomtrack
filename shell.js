@@ -164,8 +164,13 @@ function openNavGroup(gid) {
 }
 function renderNav() {
   const attivo = groupOfView(activeView);
+  // aria-label esplicito, non affidato al testo: sotto i 1330px la media query
+  // nasconde .nav-label, e display:none toglie quel testo anche all'albero di
+  // accessibilità — il pulsante resterebbe senza nome. a11yFields non lo ripara,
+  // perché ripara solo i pulsanti che il testo non ce l'hanno per niente, e qui
+  // ce l'hanno: semplicemente non si vede e non si sente.
   document.getElementById('main-nav').innerHTML = navGroups().map(g =>
-    `<button class="nav-btn ${attivo && attivo.id === g.id ? 'active' : ''}" onclick="openNavGroup('${g.id}')" title="${esc(g.label)}">
+    `<button class="nav-btn ${attivo && attivo.id === g.id ? 'active' : ''}" onclick="openNavGroup('${g.id}')" title="${esc(g.label)}" aria-label="${esc(g.label)}">
        <span class="nav-ico">${ico(g.icon, 'tinted pill')}</span><span class="nav-label">${esc(g.label)}</span></button>`).join('');
   // Seconda riga: le voci del gruppo aperto. Con una voce sola non c'è niente
   // da scegliere e la riga sparisce invece di ripetere il nome del gruppo.
@@ -173,7 +178,7 @@ function renderNav() {
   if (!sub) return;
   const voci = attivo && attivo.views.length > 1 ? attivo.views : [];
   sub.innerHTML = voci.map(w =>
-    `<button class="subnav-btn ${activeView === w.id ? 'active' : ''}" onclick="setView('${w.id}')">${esc(w.label)}</button>`).join('');
+    `<button class="subnav-btn ${activeView === w.id ? 'active' : ''}" onclick="setView('${w.id}')" title="${esc(w.label)}" aria-current="${activeView === w.id ? 'page' : 'false'}">${esc(w.label)}</button>`).join('');
 }
 // ─── Navigazione e indirizzo ───
 // La vista aperta finisce nell'hash dell'indirizzo. Non è un vezzo: senza,
@@ -214,6 +219,10 @@ function setView(v) {
   if (g) lastViewOfGroup[g.id] = v;
   document.querySelectorAll('.view-panel').forEach(p => p.classList.remove('active'));
   const panel = document.getElementById('view-' + v);
+  // Senza guardia un id mancante lasciava l'app con TUTTE le viste nascoste:
+  // le .view-panel sono già state spente qui sopra, e l'eccezione fermava il
+  // resto della funzione. Meglio non cambiare vista che restare al buio.
+  if (!panel) { onAppError('view', 'Pannello mancante: view-' + v); return; }
   panel.classList.add('active');
   // Sola lettura per il ruolo: la UI nasconde le azioni, le guardie bloccano comunque
   const area = VIEW_AREA[v];
@@ -244,6 +253,8 @@ function showReadOnlyBanner(panel, area) {
   if (!area || canWrite(area)) return;
   const b = document.createElement('div');
   b.className = 'ro-banner';
-  b.textContent = `👁 Sola lettura — il ruolo "${roleLabel(currentUser && currentUser.role)}" non modifica ${AREA_LABELS[area]}.`;
+  // innerHTML e non textContent: il testo porta un'icona, e i due pezzi che
+  // vengono dai dati passano da esc() come ovunque.
+  b.innerHTML = `${ico('eye', 'tinted', '')} Sola lettura — il ruolo "${esc(roleLabel(currentUser && currentUser.role))}" non modifica ${esc(AREA_LABELS[area])}.`;
   panel.insertBefore(b, panel.firstChild);
 }

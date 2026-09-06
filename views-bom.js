@@ -277,6 +277,8 @@ function itemPickerOptions(parentType, selectedId, excludeId) {
   }).join('');
 }
 // Picker a ricerca live: candidati ammessi dal tipo padre, filtrabili per codice/nome.
+// I candidati del picker vivono qui finché la scheda è aperta, e non oltre.
+onPanelClose('form', () => { window.__pickerCandidates = null; });
 function pickerCandidates(parentType, excludeId) {
   const allowed = ALLOWED_CHILDREN[parentType] || [];
   return db.items
@@ -362,7 +364,7 @@ function saveNewComponent() {
   if (isNeg('cmp-qty')) { showToast('La quantità non può essere negativa', 'error'); return; }
   it.components.push({ itemId, qty: numVal('cmp-qty', 0), scrapPct: numVal('cmp-scrap', 0, 100) });
   touch(it);
-  saveDB(); closeModal(); renderBom(); showToast('Componente aggiunto');
+  saveDB(); closeModal(); renderBom(); savedToast('Componente aggiunto');
 }
 function editComponentModal(idx) {
   if (!roleGuard('bom')) return;
@@ -385,18 +387,22 @@ function saveComponentEdit(idx) {
   const it = getItem(currentBomId); if (!it) return;
   const comp = it.components[idx]; if (!comp) return;
   const itemId = val('cmp-item');
+  // Stesso controllo di saveNewComponent: senza, il picker lasciato senza
+  // selezione salvava itemId '' e la distinta si ritrovava una riga orfana,
+  // che il report stampa vuota e il costo non sa valorizzare.
+  if (!itemId) { showToast('Seleziona un articolo', 'error'); return; }
   if (!isAllowedChild(it.type, itemId)) { showToast('Tipo non ammesso in un ' + typeLabel(it.type).toLowerCase(), 'error'); return; }
   if (createsCycle(it.id, itemId)) { showToast('Operazione annullata: creerebbe un ciclo', 'error'); return; }
   if (isNeg('cmp-qty')) { showToast('La quantità non può essere negativa', 'error'); return; }
   comp.itemId = itemId; comp.qty = numVal('cmp-qty', 0); comp.scrapPct = numVal('cmp-scrap', 0, 100);
   touch(it);
-  saveDB(); closeModal(); renderBom(); showToast('Componente aggiornato');
+  saveDB(); closeModal(); renderBom(); savedToast('Componente aggiornato');
 }
 function delComponent(idx) {
   if (!roleGuard('bom')) return;
   const it = getItem(currentBomId); if (!it) return;
   askConfirm('Eliminare questo componente dalla distinta?', () => {
-    it.components.splice(idx, 1); touch(it); saveDB(); renderBom(); showToast('Componente eliminato');
+    it.components.splice(idx, 1); touch(it); saveDB(); renderBom(); savedToast('Componente eliminato');
   });
 }
 // Verifica se aggiungere childId dentro parentId creerebbe un ciclo.
@@ -462,7 +468,7 @@ function saveNewOperation() {
   if (isNeg('op-hours')) { showToast('Le ore non possono essere negative', 'error'); return; }
   it.operations.push({ workCenterId: val('op-wc'), hours: numVal('op-hours', 0), note: val('op-note') });
   touch(it);
-  saveDB(); closeModal(); renderBom(); showToast('Lavorazione aggiunta');
+  saveDB(); closeModal(); renderBom(); savedToast('Lavorazione aggiunta');
 }
 function editOperationModal(idx) {
   if (!roleGuard('bom')) return;
@@ -484,13 +490,13 @@ function saveOperationEdit(idx) {
   if (isNeg('op-hours')) { showToast('Le ore non possono essere negative', 'error'); return; }
   op.workCenterId = val('op-wc'); op.hours = numVal('op-hours', 0); op.note = val('op-note');
   touch(it);
-  saveDB(); closeModal(); renderBom(); showToast('Lavorazione aggiornata');
+  saveDB(); closeModal(); renderBom(); savedToast('Lavorazione aggiornata');
 }
 function delOperation(idx) {
   if (!roleGuard('bom')) return;
   const it = getItem(currentBomId); if (!it) return;
   askConfirm('Eliminare questa lavorazione?', () => {
-    it.operations.splice(idx, 1); touch(it); saveDB(); renderBom(); showToast('Lavorazione eliminata');
+    it.operations.splice(idx, 1); touch(it); saveDB(); renderBom(); savedToast('Lavorazione eliminata');
   });
 }
 
@@ -531,7 +537,7 @@ function machineDraftFromForm() {
 function refreshMachineCode() {
   if (!itemCodeAuto) return;
   const el = document.getElementById('mac-code'); if (!el) return;
-  el.value = genItemCode(machineDraftFromForm());
+  el.value = genItemCodeUI(machineDraftFromForm());
 }
 function saveNewMachine() {
   if (!roleGuard('bom')) return;
@@ -546,7 +552,7 @@ function saveNewMachine() {
     notes: val('mac-notes'), active: true, components: [], operations: [],
   }, d));
   currentBomId = id; bomExpanded = new Set();
-  closeModal(); renderBom(); showToast('Macchina creata');
+  closeModal(); renderBom(); savedToast('Macchina creata');
 }
 function editCurrentItemModal() {
   if (!roleGuard('bom')) return;
@@ -575,7 +581,7 @@ function saveCurrentItem() {
   const ov = val('mac-ov'); it.overheadPctOverride = ov === '' ? null : clampNum(parseFloat(ov), 0, 1000);
   const mg = val('mac-mg'); it.marginPctOverride = mg === '' ? null : clampNum(parseFloat(mg), 0, 1000);
   touch(it);
-  saveDB(); closeModal(); renderBom(); showToast('Testata aggiornata');
+  saveDB(); closeModal(); renderBom(); savedToast('Testata aggiornata');
 }
 function deleteCurrentMachine() {
   if (!roleGuard('bom')) return;

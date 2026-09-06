@@ -11,13 +11,23 @@ Dalla 0.24.0 questo documento non è più solo un'intenzione: le parti qui sotto
 esistono nel codice, sono verificate dalla suite e si possono leggere invece di
 immaginarle.
 
-- **Registro dello schema** — `SCHEMA` in `store.js`: le nove collezioni, i loro
+- **Registro dello schema** — `SCHEMA` in `store.js`: le collezioni radice, i loro
   array annidati, quali righe hanno un id proprio e la politica di merge di
-  ciascuna. Chi deve percorrere il database lo legge da qui.
+  ciascuna. Chi deve percorrere il database lo legge da qui. (Il numero non si
+  scrive: era «nove» da quando erano nove, e sono cambiate quattro volte.)
+- **Registro dei riferimenti** — `REFS` in `store.js`: quale campo punta a che
+  cosa. Lo usa la migrazione v1→v2 per riscrivere gli id vecchi in UUID; finché
+  i riferimenti erano cablati a mano ne rimappava quattro su tredici.
 - **Traduzione annidato ↔ normalizzato** — `flattenDB()` / `nestDB()` in
   `cloud-map.js`, funzioni pure. Il giro completo è verificato campo per campo
   (`test/cloudmap.test.js`).
-- **Conto delle modifiche** — `Store.pendingChanges()` / `Store.markSynced()`.
+- **Conto delle modifiche** — `Store.takeChanges()` / `Store.markSynced(mark)`.
+  Il conto e la fotografia che lo azzera si prendono **insieme**: fra la
+  richiesta e la risposta c'è la rete, e chi lavora continua a scrivere.
+  Fotografare al ritorno marcherebbe quelle scritture come già inviate.
+  La firma del record comprende le righe figlie con identità propria
+  (sottofamiglie, quotazioni, righe di documento): senza, una sottofamiglia
+  rinominata risultava «niente da mandare».
 - **Seam dell'adapter** — `Store.adapter`, con `LocalAdapter` (localStorage) come
   implementazione attuale.
 - **Comportamento atteso sui conflitti** — `test/sync.test.js`: due client
@@ -39,6 +49,7 @@ immaginarle.
 |---|---|---|
 | `users` | `profiles` | id uuid PK → `auth.users(id)`, name, username unique, email, role (`admin`\|`acquisti`\|`progettazione`\|`lettore`), color, active bool |
 | `suppliers` | `suppliers` | id uuid PK, name, referente, email, phone, vat, street, street_number, zip, city, province, country, default_transport, default_payment, active bool, created_at, updated_at |
+| `customers` | `customers` | id uuid PK, name **unique** (case-insensitive), referente, email, phone, vat, street, street_number, zip, city, province, country, notes, active bool, created_at, updated_at |
 | `workCenters` | `work_centers` | id uuid PK, name, hourly_rate numeric, active, created_at, updated_at |
 | `families` | `families` | id uuid PK, name, kind ('acquistato'\|'materiale'\|'parte'), sigla, created_at, updated_at |
 | `families[].subs` | `sub_families` | id uuid PK, family_id uuid FK, name, sigla, created_at, updated_at |
@@ -49,7 +60,7 @@ immaginarle.
 | `items[].priceList` | `item_prices` | id uuid PK, item_id uuid FK, supplier_id FK **nullable** (quotazione inserita a mano), price numeric, min_qty numeric, lead_days int, code, desc, date, rfq_id FK nullable, line_id, note, created_at, updated_at |
 | `rfqs` | `rfqs` | id uuid PK, number unique per anno, title, date, status ('bozza'\|'inviata'\|'ricevuta'\|'chiusa'), supplier_id FK, transport, payment, plan_id FK nullable, notes, notes_internal, active, created_at, updated_at |
 | `rfqs[].lines` | `rfq_lines` | id uuid PK, rfq_id uuid FK, item_id FK nullable (riga manuale), code, description, uom, qty, price nullable, delivery_date, note |
-| `orders` | `orders` | id uuid PK, number unique per anno, title, date, status ('bozza'\|'inviato'\|'confermato'\|'parziale'\|'evaso'\|'annullato'), supplier_id FK, transport, payment, requested_delivery, rfq_id FK nullable, plan_id FK nullable, supplier_confirmation, notes, notes_internal, active, created_at, updated_at |
+| `orders` | `orders` | id uuid PK, number unique per anno, title, date, status ('bozza'\|'inviato'\|'confermato'\|'parziale'\|'evaso'\|'annullato'), supplier_id FK, transport, payment, rfq_id FK nullable, plan_id FK nullable, supplier_confirmation, notes, notes_internal, active, created_at, updated_at |
 | `orders[].lines` | `order_lines` | id uuid PK, order_id uuid FK, item_id FK nullable, code, description, uom, qty, price nullable, delivery_date, received numeric, note |
 | `plans` | `production_plans` | id uuid PK, number unique per anno, title, date, notes, active, created_at, updated_at |
 | `plans[].lines` | `production_plan_lines` | id uuid PK, plan_id uuid FK, item_id uuid FK, qty numeric |
@@ -57,7 +68,7 @@ immaginarle.
 | `trash` | `trash` | id uuid PK, coll, deleted_at, deleted_by uuid FK, **record jsonb** — le eliminazioni recuperabili, ripulite dopo `TRASH_DAYS` |
 | `jobs` | `jobs` | id uuid PK, number unique per anno, customer, title, customer_ref, status ('aperta'\|'produzione'\|'chiusa'\|'annullata'), date, due_date, notes, active, created_at, updated_at |
 | `movements` | `stock_movements` | id uuid PK, item_id uuid FK, kind ('rettifica'\|'carico'\|'scarico'), qty numeric **con segno**, date, note, created_by, created_at |
-| `settings` | `settings` | una riga per team (o coppie chiave/valore) |
+| `settings` | `settings` | una riga per team (o coppie chiave/valore). **Non è in `SCHEMA`**: è un oggetto solo, senza id né `updatedAt`, e `pendingChanges()` la segnala confrontando il contenuto (`settings: true`). `flattenDB()` non la esporta e `tablesForChanges()` non ne ricava nessuna tabella: l'adapter deve trattarla a parte, ed è il motivo per cui il flag è un booleano e non un elenco di id |
 
 **Vincoli che il modello locale dà per scontati** e che in cloud vanno scritti:
 
@@ -65,6 +76,13 @@ immaginarle.
   articolo**: è il "prezzo in uso" nella costificazione. Cancellando quella riga
   il campo va a `NULL` senza toccare `unit_cost`/`purchase_price` — il costo
   resta, si sgancia solo il riferimento (`priceDelRow()`).
+- `jobs.customer` è **testo**, non una FK a `customers`: l'anagrafica clienti è
+  arrivata dopo le commesse, e le commesse già scritte non hanno un cliente in
+  anagrafica da citare. `customers.name` è quindi unico e il rename in Gestione
+  propaga il nuovo nome alle commesse che portavano il vecchio
+  (`renameJobCustomer()`); un cliente citato da una commessa non si elimina. Il
+  giorno in cui `jobs` prendesse una `customer_id`, la migrazione è un join per
+  nome — ed è la ragione per cui il nome è tenuto unico da ora.
 - `item_prices` esiste solo per `type in ('acquistato','materiale','parte')`.
 - `item_prices (rfq_id, line_id)` è la chiave anti-duplicato usata da
   `rfqRecordPrices()`: registrare due volte la stessa offerta non deve creare due
@@ -162,6 +180,9 @@ all'altro client che una riga è sparita. Servono entrambi, e per motivi diversi
 Ripristinare dal cestino, lato sync, è un inserimento nuovo con lo stesso id —
 il che richiede che il tombstone sia superabile da un `updated_at` più recente,
 altrimenti il ripristino verrebbe cancellato di nuovo al pull successivo.
+Dalla 0.60.0 `Store.restore()` fa `touch()` sul record che rientra, che è ciò
+che rende vera quella condizione: prima tornava con la data che aveva **prima**
+di essere eliminato, cioè più vecchia della propria lapide.
 
 ## Cancellazioni: servono i tombstone
 
@@ -216,8 +237,10 @@ perché è tutto ciò che `Store` usa davvero.
 const LocalAdapter = { name, read(), write(payload), size() };
 Store.adapter = unAltroAdapter;              // unico punto da cui passa la destinazione dei dati
 
+Store.takeChanges()       // { changes, mark } — il conto E la fotografia, insieme
+Store.markSynced(mark)    // riallinea a quella fotografia, non all'adesso
 Store.pendingChanges()    // { items: { upsert: [id…], remove: [id…] }, …, settings: true }
-Store.markSynced()        // riallinea dopo un invio riuscito
+                          // null = fotografia non valida: serve un riallineamento completo
 Store.schema()            // il registro: collezioni, figli, politica di merge
 ```
 

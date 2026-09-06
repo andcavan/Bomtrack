@@ -253,6 +253,7 @@ function renderJobs() {
     comandi: `<button class="add-btn-sm" onclick="newJob()">+ Nuova commessa</button>
       ${listExportButtons('jobsExportSpec')}`,
     filtri: `<input type="text" class="search" id="job-search" value="${esc(val('job-search'))}" placeholder="Numero, cliente o descrizione..." oninput="jobSearchInput()">
+      ${dateRangeFilter('job-date', val('job-date-from'), val('job-date-to'), 'jobFilterChange()', 'apertura commessa')}
       <span class="doc-filter-count" id="job-count">${jobCountText()}</span>`,
     righe: jobListRows(),
     doc: jobView === 'edit' ? renderJobEdit(currentJobId) : '',
@@ -273,6 +274,14 @@ function jobSearchInput() {
     if (c) c.textContent = jobCountText();
   });
 }
+// Le date si scelgono dal calendario: un gesto già concluso, niente da
+// aspettare. Come per la digitazione si ridisegna solo l'elenco, o la barra
+// perderebbe il campo appena toccato.
+function jobFilterChange() {
+  renderInto('job-list', jobListRows);
+  const c = document.getElementById('job-count');
+  if (c) c.textContent = jobCountText();
+}
 function jobCountText() {
   return worklistCount(jobFilteredList().length, jobList().length, 'commessa', 'commesse');
 }
@@ -280,26 +289,33 @@ function jobCountText() {
 // l'export: filtrare due volte è il modo di far divergere schermo e file.
 function jobFilteredList() {
   const q = (val('job-search') || '').toLowerCase();
-  const tutte = jobList().slice().sort((a, b) => String(b.number || '').localeCompare(String(a.number || '')));
-  return q ? tutte.filter(j => (j.number + ' ' + (j.customer || '') + ' ' + (j.title || '')).toLowerCase().includes(q)) : tutte;
+  const da = val('job-date-from'), a = val('job-date-to');
+  const tutte = jobList().slice().sort((a2, b) => String(b.number || '').localeCompare(String(a2.number || '')));
+  return tutte.filter(j => {
+    // Il periodo guarda l'apertura della commessa, non la consegna: è la data
+    // che risponde a «cosa abbiamo preso in carico a settembre».
+    if (!inDateRange(j.date, da, a)) return false;
+    if (!q) return true;
+    return (j.number + ' ' + (j.customer || '') + ' ' + (j.title || '')).toLowerCase().includes(q);
+  });
 }
 // ─── Export dell'elenco ───
 function jobsExportSpec() {
   return {
     titolo: 'Commesse',
     slug: 'commesse',
-    filtri: [['Ricerca', val('job-search')]],
+    filtri: [['Ricerca', val('job-search')], ['Data apertura', dateRangeText(val('job-date-from'), val('job-date-to'))]],
     sezioni: [{
       nome: 'Commesse',
       colonne: [
         { h: 'Numero', w: 18 }, { h: 'Stato', w: 14 }, { h: 'Cliente', w: 28 }, { h: 'Descrizione', w: 34 },
-        { h: 'Consegna', w: 12 }, { h: 'In ritardo', w: 10 }, { h: 'Piani', w: 8, num: true },
+        { h: 'Consegna', w: 12, data: true }, { h: 'In ritardo', w: 10 }, { h: 'Piani', w: 8, num: true },
         { h: 'Ordini', w: 8, num: true }, { h: `Ordinato (${cur()})`, w: 16, num: true },
       ],
       righe: jobFilteredList().map(j => {
         const t = jobTotals(j.id);
         return [j.number || '', JOB_STATUS[j.status] || j.status || '', j.customer || '', j.title || '',
-          fmtDateIt(j.dueDate), jobLate(j) ? 'sì' : '', jobPlans(j.id).length, t.ordini, +t.ordinato.toFixed(2)];
+          j.dueDate || '', jobLate(j) ? 'sì' : '', jobPlans(j.id).length, t.ordini, +t.ordinato.toFixed(2)];
       }),
     }],
   };
@@ -355,7 +371,8 @@ function renderJobEdit(id) {
     </div>
     <div class="modal-grid">
       <div class="modal-field"><label>Cliente</label>
-        <input value="${esc(j.customer || '')}" onchange="jobSetField('${id}','customer',this.value)"></div>
+        <input list="job-customer-opts" value="${esc(j.customer || '')}" onchange="jobSetField('${id}','customer',this.value)">
+        ${customerDatalist('job-customer-opts')}</div>
       <div class="modal-field"><label>Descrizione</label>
         <input value="${esc(j.title || '')}" onchange="jobSetField('${id}','title',this.value)"></div>
       <div class="modal-field"><label>Riferimento cliente</label>

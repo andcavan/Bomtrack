@@ -55,6 +55,7 @@ function renderReport() {
   reportBomId = val('report-select') || reportBomId;
   const it = getItem(reportBomId);
   const wrap = document.getElementById('report-content');
+  if (!wrap) return;   // la vista non è montata: come fanno tutte le altre
   if (!it) { wrap.innerHTML = '<div class="empty-text">Seleziona un prodotto.</div>'; return; }
 
   const c = costOf(it.id);
@@ -101,7 +102,7 @@ function renderReport() {
     <div class="breakdown-section" style="margin-bottom:20px"><h3 class="sub-title">Incidenza voci di costo
       <button class="btn-outline" style="margin-left:10px" onclick="costWhyModal('${it.id}')">${ico('search', 'tinted', '')} Da dove viene questo costo</button></h3>${bars}</div>
     <div class="breakdown-section"><h3 class="sub-title">Distinta base esplosa</h3>
-      <div class="table-wrap"><table><thead><tr><th>Pos.</th><th>Codice</th><th>Articolo</th><th>Tipo</th><th>Q.tà</th><th>Costo un.</th><th>Costo riga</th></tr></thead>
+      <div class="table-wrap"><table><thead><tr><th scope="col">Pos.</th><th scope="col">Codice</th><th scope="col">Articolo</th><th scope="col">Tipo</th><th scope="col">Q.tà</th><th scope="col">Costo un.</th><th scope="col">Costo riga</th></tr></thead>
       <tbody>${tableRows}</tbody></table></div></div>`;
 }
 

@@ -1,11 +1,96 @@
-:root{--bg:#0F1117;--card:#181B24;--card-hover:#1E2230;--border:#2A2E3B;--text:#E8E9ED;--text-dim:#8B8FA3;--accent:#3A7BE8;--accent-h:#4A8BF8;--red:#E85D3A;--green:#2EAE6D;--orange:#E8A33A;--purple:#9B6DFF;--font:'DM Sans','Segoe UI',system-ui,sans-serif;--mono:'JetBrains Mono','SF Mono',monospace}
+/* ─── Temi ───
+   Il tema si sceglie in tre stati: chiaro, scuro, oppure «come il sistema» —
+   che è il valore di partenza, perché a quest'ora del pomeriggio il PC in
+   ufficio lo sa già. Chi sceglie esplicitamente vince sul sistema: l'attributo
+   `data-theme` sull'elemento radice batte la media query.
+
+   Il colore vive tutto qui dentro. Il resto del foglio nomina i token e non
+   conosce nessun tema: era già così prima che i temi esistessero — la prova è
+   il blocco di stampa in fondo, che ridefinisce gli stessi token in chiaro da
+   sempre e non ha mai richiesto una regola in più.
+
+   Le tinte tenui (i fondi degli avvisi, le pastiglie di tipo, le righe
+   selezionate) sono derivate con `color-mix` dai colori di base invece che
+   scritte a mano: così esistono una volta sola e seguono il tema da sé. Un
+   `rgba()` fisso, invece, è un colore pensato per un fondo solo. */
+:root{
+  color-scheme:dark;
+  --bg:#0F1117;--card:#181B24;--card-hover:#1E2230;--border:#2A2E3B;
+  --text:#E8E9ED;--text-dim:#8B8FA3;
+  --accent:#4583E9;--accent-solid:#2A70E6;--accent-h:#1960D8;
+  --red:#E85D3A;--red-solid:#D43E19;--red-h:#FF7755;
+  /* --green-solid non compare in nessuna regola: lo usa showToast() da core.js */
+  --green:#2EAE6D;--green-solid:#238452;
+  --orange:#E8A33A;--orange-solid:#E8A33A;--orange-h:#E5961F;--on-orange:#171A21;
+  --purple:#9B6DFF;
+  /* Auto-referenziarsi qui rendeva la proprietà invalida, e nel tema scuro —
+     che è questo, il :root di partenza — ogni box-shadow che la usa veniva
+     scartato: pannelli, toast e ispettore restavano senza ombra. */
+  --shadow:rgba(0,0,0,.45);--shadow-soft:rgba(0,0,0,.4);
+  --font:'DM Sans','Segoe UI',system-ui,sans-serif;
+  --mono:'JetBrains Mono','SF Mono',monospace;
+}
+/* Il chiaro non è lo scuro invertito: i colori d'accento che su fondo scuro
+   sono leggibili, su bianco no. L'arancio è il caso limite — #E8A33A su bianco
+   ha un contrasto di 1.9:1, illeggibile — e va scurito fino all'ambra. Stessa
+   ragione per blu, rosso e verde: qui sono anche testo, non solo bordi. */
+@media(prefers-color-scheme:light){
+  :root:not([data-theme=dark]){
+    color-scheme:light;
+    --bg:#F5F6F8;--card:#FFFFFF;--card-hover:#EDEFF3;--border:#DCE0E8;
+    --text:#171A21;--text-dim:#5D6472;
+    --accent:#2563C7;--accent-solid:#2563C7;--accent-h:#1B4CA0;
+    --red:#C4381A;--red-solid:#C4381A;--red-h:#A32C12;
+    --green:#17784A;--green-solid:#17784A;
+    --orange:#95610D;--orange-solid:#95610D;--orange-h:#7A4E08;--on-orange:#FFFFFF;
+    --purple:#6B3FD4;
+    --shadow:rgba(23,26,33,.16);--shadow-soft:rgba(23,26,33,.12);
+  }
+}
+:root[data-theme=light]{
+  color-scheme:light;
+  --bg:#F5F6F8;--card:#FFFFFF;--card-hover:#EDEFF3;--border:#DCE0E8;
+  --text:#171A21;--text-dim:#5D6472;
+  --accent:#2563C7;--accent-solid:#2563C7;--accent-h:#1B4CA0;
+  --red:#C4381A;--red-solid:#C4381A;--red-h:#A32C12;
+  --green:#17784A;--green-solid:#17784A;
+  --orange:#95610D;--orange-solid:#95610D;--orange-h:#7A4E08;--on-orange:#FFFFFF;
+  --purple:#6B3FD4;
+  --shadow:rgba(23,26,33,.16);--shadow-soft:rgba(23,26,33,.12);
+}
+/* Perché ogni colore vive in due versioni.
+   Un colore ha due mestieri e non può farli con lo stesso valore: uno lo si
+   **legge** (testo, bordi, icone) e deve staccare dal fondo della scheda;
+   sull'altro ci si **scrive sopra** (i pulsanti pieni) e deve staccare
+   dall'inchiostro. Sul tema scuro i due vincoli tirano in direzioni opposte, e
+   non esiste un blu che li soddisfi entrambi: quello di prima stava nel mezzo e
+   li mancava tutti e due — 4.24:1 da leggere, 4.06:1 sotto il bianco.
+   Da qui `--x` per il primo mestiere e `--x-solid` per il secondo. Sul tema
+   chiaro il fondo bianco allarga la finestra e i due coincidono, ma i nomi
+   restano: è il foglio a non dover sapere quale tema è in corso.
+   L'ambra fa storia a sé — scurirla fino a reggere il bianco la spegnerebbe
+   proprio dove serve gridare, quindi resta accesa e cambia l'inchiostro
+   (`--on-orange`), che è nero sullo scuro e bianco sul chiaro. */
+/* Derivate: una definizione sola per due temi. `color-mix` legge i token qui
+   sopra, che al cambio di tema sono già cambiati. */
+:root{
+  --accent-soft:color-mix(in srgb,var(--accent) 10%,transparent);
+  --accent-soft-hi:color-mix(in srgb,var(--accent) 15%,transparent);
+  --accent-line:color-mix(in srgb,var(--accent) 32%,transparent);
+  --red-soft:color-mix(in srgb,var(--red) 15%,transparent);
+  --green-soft:color-mix(in srgb,var(--green) 14%,transparent);
+  --orange-soft:color-mix(in srgb,var(--orange) 13%,transparent);
+  --purple-soft:color-mix(in srgb,var(--purple) 14%,transparent);
+  --purple-veil:color-mix(in srgb,var(--purple) 5%,transparent);
+  --hairline:color-mix(in srgb,var(--border) 55%,transparent);
+}
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 body{font-family:var(--font);background:var(--bg);color:var(--text);font-size:14px;min-height:100vh}
 input,select,button,textarea{font-family:var(--font)}
 ::-webkit-scrollbar{width:6px;height:6px}::-webkit-scrollbar-track{background:var(--bg)}::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
 
 /* Toast */
-#toast{position:fixed;top:16px;right:16px;padding:10px 20px;border-radius:8px;color:#fff;font-weight:600;z-index:999;font-size:13px;box-shadow:0 4px 20px rgba(0,0,0,.4);transform:translateY(-20px);opacity:0;transition:all .25s ease;pointer-events:none}
+#toast{position:fixed;top:16px;right:16px;padding:10px 20px;border-radius:8px;color:#fff;font-weight:600;z-index:999;font-size:13px;box-shadow:0 4px 20px var(--shadow-soft);transform:translateY(-20px);opacity:0;transition:all .25s ease;pointer-events:none}
 #toast.show{transform:translateY(0);opacity:1}
 /* Col pulsante l'avviso deve essere cliccabile: pointer-events resta none
    finché non c'è niente da cliccare, così un toast non intercetta i click. */
@@ -18,7 +103,7 @@ input,select,button,textarea{font-family:var(--font)}
 /* Le schede sono finestre mobili, non modali: niente velo scuro sopra la
    pagina, che resta usabile mentre una scheda è aperta. Si trascinano per il
    titolo e si ridimensionano dall'angolo in basso a destra. */
-.panel{position:fixed;background:var(--card);border:1px solid var(--border);border-radius:14px;padding:28px;width:min(520px,calc(100vw - 24px));max-height:88vh;overflow:auto;resize:both;min-width:300px;min-height:120px;box-shadow:0 18px 48px rgba(0,0,0,.45);animation:fadeIn .15s}
+.panel{position:fixed;background:var(--card);border:1px solid var(--border);border-radius:14px;padding:28px;width:min(520px,calc(100vw - 24px));max-height:88vh;overflow:auto;resize:both;min-width:300px;min-height:120px;box-shadow:0 18px 48px var(--shadow);animation:fadeIn .15s}
 .panel-wide{width:min(860px,calc(100vw - 24px))}
 /* Solo il titolo del pannello trascina: un h3 dentro al corpo no. */
 .panel > h3{font-size:17px;font-weight:700;margin-bottom:18px;display:flex;align-items:center;gap:8px;padding-right:24px;cursor:move;user-select:none}
@@ -30,8 +115,17 @@ input,select,button,textarea{font-family:var(--font)}
   .panel,.panel-wide{left:8px!important;top:8px!important;width:calc(100vw - 16px);max-height:calc(100vh - 16px);resize:none;padding:20px}
   .panel > h3{cursor:default}
 }
-/* L'icona nativa del calendario è nera: sullo sfondo scuro dei campi sparisce. */
+/* L'icona nativa del calendario è nera: sul fondo scuro dei campi sparisce e va
+   schiarita, sul chiaro è già giusta — invertirla la farebbe sparire lì. Non è
+   un colore, è un filtro: non può passare da un token, serve la regola doppia.
+   `color-scheme` sui :root fa già il resto (barre di scorrimento, campi nativi). */
 input[type=date]::-webkit-calendar-picker-indicator,input[type=datetime-local]::-webkit-calendar-picker-indicator{filter:invert(.8)}
+@media(prefers-color-scheme:light){
+  :root:not([data-theme=dark]) input[type=date]::-webkit-calendar-picker-indicator,
+  :root:not([data-theme=dark]) input[type=datetime-local]::-webkit-calendar-picker-indicator{filter:none}
+}
+:root[data-theme=light] input[type=date]::-webkit-calendar-picker-indicator,
+:root[data-theme=light] input[type=datetime-local]::-webkit-calendar-picker-indicator{filter:none}
 .modal-actions{display:flex;gap:8px;margin-top:20px;justify-content:flex-end;flex-wrap:wrap}
 .modal-field{display:flex;flex-direction:column;gap:4px;margin-bottom:12px}
 .modal-field label{font-size:11px;font-weight:600;color:var(--text-dim);text-transform:uppercase;letter-spacing:.06em}
@@ -70,7 +164,7 @@ input[type=date]::-webkit-calendar-picker-indicator,input[type=datetime-local]::
 .picker-row{padding:8px 12px;font-size:13px;cursor:pointer;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;transition:background .12s}
 .picker-row:last-child{border-bottom:none}
 .picker-row:hover{background:var(--card-hover)}
-.picker-row.is-sel{background:rgba(58,123,232,.12)}
+.picker-row.is-sel{background:var(--accent-soft-hi)}
 .picker-row b{font-family:var(--mono);font-weight:600}
 .picker-type{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:var(--text-dim);background:var(--card);border:1px solid var(--border);border-radius:4px;padding:2px 6px;white-space:nowrap}
 .picker-empty{padding:10px 12px;font-size:12px;color:var(--text-dim);text-align:center}
@@ -85,7 +179,7 @@ input[type=date]::-webkit-calendar-picker-indicator,input[type=datetime-local]::
 .nav::-webkit-scrollbar{display:none}
 .nav-btn{background:transparent;border:none;color:var(--text-dim);padding:7px 10px;white-space:nowrap;border-radius:8px;cursor:pointer;font-size:13px;font-weight:500;display:flex;align-items:center;gap:6px;transition:all .15s}
 .nav-btn:hover{color:var(--text)}
-.nav-btn.active{background:rgba(58,123,232,.09);color:var(--accent)}
+.nav-btn.active{background:var(--accent-soft);color:var(--accent)}
 .header-right{display:flex;align-items:center;gap:8px;flex:0 0 auto}
 /* Header compatto: pulsanti a sola icona e orologio con data per esteso */
 .btn-icon{padding:6px 8px;line-height:0;display:inline-flex;align-items:center}
@@ -116,7 +210,7 @@ input[type=date]::-webkit-calendar-picker-indicator,input[type=datetime-local]::
 /* Su carta il colore non c’è: le pastiglie diventerebbero rettangoli grigi. */
 @media print{.ico{color:inherit!important}.ico.pill{background:none;padding:0}}
 /* Divergenza tra dati in memoria e dati salvati: deve restare visibile finché dura */
-.unsaved-badge{padding:4px 10px;border-radius:20px;background:var(--red);color:#fff;font-size:12px;font-weight:600;white-space:nowrap;cursor:help}
+.unsaved-badge{padding:4px 10px;border-radius:20px;background:var(--red-solid);color:#fff;font-size:12px;font-weight:600;white-space:nowrap;cursor:help}
 .header-clock{display:flex;flex-direction:column;align-items:center;line-height:1.2;white-space:nowrap}
 .clock-date{font-size:11px;color:var(--text-dim)}
 .clock-time{font-family:var(--mono);font-size:14px;font-weight:700}
@@ -129,13 +223,13 @@ input[type=date]::-webkit-calendar-picker-indicator,input[type=datetime-local]::
 .subnav:empty{display:none}
 .subnav-btn{background:transparent;border:none;color:var(--text-dim);padding:5px 12px;border-radius:6px;cursor:pointer;font-size:12.5px;font-weight:500;white-space:nowrap;transition:all .15s}
 .subnav-btn:hover{color:var(--text);background:var(--card-hover)}
-.subnav-btn.active{color:var(--accent);background:rgba(58,123,232,.12);font-weight:600}
+.subnav-btn.active{color:var(--accent);background:var(--accent-soft-hi);font-weight:600}
 /* Degradazione progressiva: la barra resta su una riga sola cedendo, in ordine,
    il ruolo nella pill, le etichette del nav e solo per ultima la data. */
 @media(max-width:1420px){.user-role{display:none}}
 /* Senza etichetta la vista attiva va marcata di più: la sola tinta non basta */
 @media(max-width:1330px){.nav-label{display:none}.nav-btn{padding:7px 9px}.nav-ico{font-size:16px}
-  .nav-btn.active{background:rgba(58,123,232,.16);box-shadow:inset 0 -2px 0 var(--accent)}}
+  .nav-btn.active{background:var(--accent-soft-hi);box-shadow:inset 0 -2px 0 var(--accent)}}
 @media(max-width:780px){.clock-date{display:none}}
 @media(max-width:620px){.header-clock{display:none}}
 
@@ -151,11 +245,11 @@ input[type=date]::-webkit-calendar-picker-indicator,input[type=datetime-local]::
 .field-group select{cursor:pointer}
 
 /* Buttons */
-.add-btn{background:var(--accent);border:none;color:#fff;padding:12px 28px;border-radius:10px;cursor:pointer;font-size:14px;font-weight:600;display:inline-flex;align-items:center;gap:8px;transition:background .15s}
+.add-btn{background:var(--accent-solid);border:none;color:#fff;padding:12px 28px;border-radius:10px;cursor:pointer;font-size:14px;font-weight:600;display:inline-flex;align-items:center;gap:8px;transition:background .15s}
 .add-btn:hover{background:var(--accent-h)}
-.add-btn-sm{background:var(--accent);border:none;color:#fff;padding:10px 18px;border-radius:8px;cursor:pointer;font-size:13px;font-weight:600;display:inline-flex;align-items:center;gap:4px;white-space:nowrap}
+.add-btn-sm{background:var(--accent-solid);border:none;color:#fff;padding:10px 18px;border-radius:8px;cursor:pointer;font-size:13px;font-weight:600;display:inline-flex;align-items:center;gap:4px;white-space:nowrap}
 .add-btn-sm:hover{background:var(--accent-h)}
-.btn-primary{background:var(--accent);border:none;color:#fff;padding:10px 20px;border-radius:8px;cursor:pointer;font-size:14px;font-weight:600;transition:background .15s}
+.btn-primary{background:var(--accent-solid);border:none;color:#fff;padding:10px 20px;border-radius:8px;cursor:pointer;font-size:14px;font-weight:600;transition:background .15s}
 .btn-primary:hover{background:var(--accent-h)}
 .btn-ghost{background:transparent;border:1px solid var(--border);color:var(--text-dim);padding:8px 16px;border-radius:8px;cursor:pointer;font-size:13px;transition:all .15s}
 .btn-ghost:hover{color:var(--text);border-color:var(--text-dim)}
@@ -167,7 +261,7 @@ input[type=date]::-webkit-calendar-picker-indicator,input[type=datetime-local]::
    grande del testo, o si perde fra i numeri della riga. */
 .mini-btn .ico{width:13px;height:13px}
 .bom-toggle .ico{width:9px;height:9px}
-.mini-btn.danger{color:var(--red)}.mini-btn.danger:hover{color:#ff7755}
+.mini-btn.danger{color:var(--red)}.mini-btn.danger:hover{color:var(--red-h)}
 
 /* KPI */
 .kpi-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}
@@ -194,12 +288,16 @@ input[type=date]::-webkit-calendar-picker-indicator,input[type=datetime-local]::
 /* Distinta toolbar */
 .bom-toolbar{display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap;background:var(--card);border:1px solid var(--border);border-radius:14px;padding:18px 24px;margin-bottom:20px}
 .bom-toolbar .field-group{min-width:220px}
+/* Dentro la barra il titolo è un'etichetta, non l'apertura di una sezione: il
+   margine inferiore di `.section-title` alzava la barra di 20px a vuoto.
+   Alcune pagine lo azzeravano con uno style inline: ora vale per tutte. */
+.bom-toolbar .section-title{margin:0}
 
 /* Distinta tree */
 .bom-tree{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:8px 0;overflow-x:auto}
 .bom-head,.bom-node{display:grid;grid-template-columns:minmax(280px,2fr) 70px 70px 90px 110px 110px 96px;align-items:center;gap:8px;padding:9px 18px;font-size:13px}
 .bom-head{font-size:11px;font-weight:600;color:var(--text-dim);text-transform:uppercase;letter-spacing:.05em;border-bottom:1px solid var(--border);position:sticky;top:0}
-.bom-node{border-bottom:1px solid rgba(42,46,59,.35)}
+.bom-node{border-bottom:1px solid var(--hairline)}
 .bom-node:hover{background:var(--card-hover)}
 .bom-node-root{background:var(--card-hover);border-bottom:2px solid var(--border)}
 .bom-node-root .nm,.bom-node-root .bom-code{font-weight:700}
@@ -213,21 +311,21 @@ input[type=date]::-webkit-calendar-picker-indicator,input[type=datetime-local]::
 /* Posizione gerarchica (1, 1.1, 1.1.1…): min-width per allineare i numeri corti a quelli lunghi */
 .bom-pos{font-family:var(--mono);font-size:11px;color:var(--text-dim);flex-shrink:0;min-width:34px}
 .bom-type-tag{font-size:9px;padding:2px 6px;border-radius:8px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;flex-shrink:0}
-.tt-materiale{background:rgba(232,163,58,.15);color:var(--orange)}
-.tt-acquistato{background:rgba(58,123,232,.15);color:var(--accent)}
-.tt-parte{background:rgba(155,109,255,.15);color:var(--purple)}
-.tt-sottogruppo{background:rgba(46,174,109,.13);color:var(--green)}
-.tt-gruppo{background:rgba(46,174,109,.2);color:var(--green)}
-.tt-macchina{background:rgba(232,93,58,.15);color:var(--red)}
-.tt-lav{background:rgba(46,174,109,.15);color:var(--green)}
-.bom-node-cycle{background:rgba(155,109,255,.04)}
+.tt-materiale{background:var(--orange-soft);color:var(--orange)}
+.tt-acquistato{background:var(--accent-soft-hi);color:var(--accent)}
+.tt-parte{background:var(--purple-soft);color:var(--purple)}
+.tt-sottogruppo{background:var(--green-soft);color:var(--green)}
+.tt-gruppo{background:color-mix(in srgb,var(--green) 22%,transparent);color:var(--green)}
+.tt-macchina{background:var(--red-soft);color:var(--red)}
+.tt-lav{background:var(--green-soft);color:var(--green)}
+.bom-node-cycle{background:var(--purple-veil)}
 .bom-row-actions{display:flex;gap:4px;justify-content:flex-end}
-.bom-ops{padding:6px 18px;border-bottom:1px solid rgba(42,46,59,.35);font-size:12px;color:var(--text-dim)}
+.bom-ops{padding:6px 18px;border-bottom:1px solid var(--hairline);font-size:12px;color:var(--text-dim)}
 .bom-op-tag{display:inline-flex;align-items:center;gap:4px;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:3px 8px;margin:2px 4px 2px 0;font-size:11px}
 
 /* Ciclo di lavorazione (parte) */
 .cycle-box{background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:10px 12px;overflow-x:auto}
-.cycle-row{display:grid;grid-template-columns:minmax(150px,2fr) minmax(110px,1fr) 56px 74px 92px 88px 32px;align-items:center;gap:8px;padding:6px 0;font-size:13px;border-bottom:1px solid rgba(42,46,59,.35)}
+.cycle-row{display:grid;grid-template-columns:minmax(150px,2fr) minmax(110px,1fr) 56px 74px 92px 88px 32px;align-items:center;gap:8px;padding:6px 0;font-size:13px;border-bottom:1px solid var(--hairline)}
 /* Le lavorazioni hanno la fase in testa e le frecce di riordino in coda */
 .cycle-op-row{grid-template-columns:52px minmax(150px,2fr) minmax(110px,1fr) 92px 88px 62px 32px}
 .cycle-row:last-child{border-bottom:none}
@@ -302,14 +400,39 @@ input[type=date]::-webkit-calendar-picker-indicator,input[type=datetime-local]::
 table{width:100%;border-collapse:collapse}
 th{text-align:left;padding:10px 12px;font-size:11px;font-weight:600;color:var(--text-dim);text-transform:uppercase;letter-spacing:.06em;border-bottom:1px solid var(--border)}
 td{padding:10px 12px;font-size:13px}
-tr{border-bottom:1px solid rgba(42,46,59,.4)}
+tr{border-bottom:1px solid var(--hairline)}
 
 /* Manage */
-.manage-wrap{display:flex;flex-direction:column;gap:20px}
+.manage-wrap{display:flex;flex-direction:column;gap:14px}
+/* `manage-wrap` è già una colonna con gap, e il gap flex non si fonde con i
+   margini: ogni blocco che ne porta uno apriva una fascia vuota in più fra
+   barra, timbro, avvisi e riquadro dei campi. Qui il ritmo lo detta il gap. */
+.manage-wrap > .bom-toolbar{margin-bottom:0}
+.manage-wrap > .rfq-head,.manage-wrap > .rfq-warn,.manage-wrap > .ord-ref,
+.manage-wrap > .doc-lock-banner{margin:0}
+.manage-wrap > .stamp-line{margin-top:0}
+/* Il titolo di sezione sta con la sua tabella, non a metà strada: sopra prende
+   un po' d'aria in più, sotto resta attaccato a ciò che introduce. */
+.manage-wrap > .rfq-subhead{margin:8px 0 0}
+.manage-wrap > .table-wrap{margin-top:0}
+.manage-wrap > .rfq-export-bar{margin-top:0}
+.manage-wrap > .cost-summary{margin-bottom:0}
+.manage-wrap > .mrp-section{margin:0}
+.manage-wrap > .empty-text{padding:4px 0}
+/* Commessa e piano di fabbisogno: la stessa scheda di richieste e ordini.
+   È lo stesso gesto — i dati di intestazione di un documento — e finché i
+   campi stavano nudi sullo sfondo le quattro pagine si somigliavano a metà.
+   Solo in pagina: dentro una finestra modale la griglia resta com'è, lì la
+   scheda è già la finestra e un riquadro dentro il riquadro non dice niente. */
+.manage-wrap > .modal-grid{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px 16px;gap:10px 12px}
+.manage-wrap > .modal-grid > .modal-field{margin-bottom:0}
+.manage-wrap > .modal-grid > .modal-field input,
+.manage-wrap > .modal-grid > .modal-field select,
+.manage-wrap > .modal-grid > .modal-field textarea{padding:8px 11px}
 .mgmt-tabs{display:flex;gap:6px;flex-wrap:wrap}
 .mgmt-tab{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:10px 18px;cursor:pointer;color:var(--text-dim);font-size:13px;font-weight:500;display:flex;align-items:center;gap:6px;transition:all .15s}
 .mgmt-tab:hover{color:var(--text)}
-.mgmt-tab.active{background:rgba(58,123,232,.09);border-color:rgba(58,123,232,.27);color:var(--accent)}
+.mgmt-tab.active{background:var(--accent-soft);border-color:var(--accent-line);color:var(--accent)}
 .mgmt-panel{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:24px}
 .settings-group-title{font-size:14px;font-weight:700;margin:0 0 12px;padding-top:16px;border-top:1px solid var(--border);display:flex;align-items:center;gap:6px}
 .settings-group-title:first-child{margin-top:0;padding-top:0;border-top:none}
@@ -329,7 +452,7 @@ tr{border-bottom:1px solid rgba(42,46,59,.4)}
 .cat-group-title{font-size:12px;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.05em;margin:18px 0 6px}
 .cat-group-title:first-child{margin-top:0}
 /* Listino fornitori: la quotazione in uso e quella più bassa vanno riconosciute a colpo d'occhio */
-.price-active{background:rgba(58,123,232,.10)}
+.price-active{background:var(--accent-soft)}
 .price-best{color:var(--green);font-weight:700;margin-left:4px}
 /* La riga era troppo lunga: i numeri stanno in colonne strette (i giorni di
    consegna in quattro cifre) e codice fornitore e origine scendono sotto al
@@ -410,7 +533,16 @@ textarea.notes-internal{border-style:dashed}
    il tema scuro in stampa è una tanica d'inchiostro. */
 #print-head{display:none}
 @media print{
-  :root{--bg:#fff;--card:#fff;--card-hover:#fff;--border:#bbb;--text:#000;--text-dim:#555}
+  /* La carta è bianca comunque, anche stampando col tema scuro attivo: senza
+     ripetere il selettore con l'attributo, `:root[data-theme=dark]` vincerebbe
+     per specificità e uscirebbe una pagina nera. `color-scheme` va riportato a
+     chiaro per la stessa ragione. */
+  :root,:root[data-theme]{color-scheme:light;--bg:#fff;--card:#fff;--card-hover:#fff;--border:#bbb;--text:#000;--text-dim:#555;
+    --accent:#2563C7;--accent-solid:#2563C7;--accent-h:#1B4CA0;
+    --red:#C4381A;--red-solid:#C4381A;--red-h:#A32C12;
+    --green:#17784A;--green-solid:#17784A;
+    --orange:#95610D;--orange-solid:#95610D;--orange-h:#7A4E08;--on-orange:#FFFFFF;
+    --purple:#6B3FD4;--shadow:transparent;--shadow-soft:transparent}
   input[type=date]::-webkit-calendar-picker-indicator,input[type=datetime-local]::-webkit-calendar-picker-indicator{filter:none}
   body{background:#fff;color:#000;font-size:11px}
   #app-header,#sub-nav,#toast,#modal-root,#login-screen,#unsaved-badge{display:none!important}
@@ -435,7 +567,10 @@ textarea.notes-internal{border-style:dashed}
 .kpi-card,.breakdown-section,.mgmt-panel,.bom-tree,.bom-toolbar{animation:fadeUp .3s ease}
 
 /* Export buttons */
-.export-btn-pdf{background:#E84040;border:none;color:#fff;padding:10px 20px;border-radius:8px;cursor:pointer;font-size:13px;font-weight:600;display:inline-flex;align-items:center;gap:6px;transition:opacity .15s}
+/* Rosso Acrobat e verde Excel: sono i colori dei due formati, non del tema.
+   Cambiarli col fondo li renderebbe irriconoscibili proprio dove servono a
+   distinguere due pulsanti gemelli. Il bianco sopra regge su entrambi. */
+.export-btn-pdf{background:#E41C1C;border:none;color:#fff;padding:10px 20px;border-radius:8px;cursor:pointer;font-size:13px;font-weight:600;display:inline-flex;align-items:center;gap:6px;transition:opacity .15s}
 .export-btn-pdf:hover{opacity:.85}
 .export-btn-xls{background:#217346;border:none;color:#fff;padding:10px 20px;border-radius:8px;cursor:pointer;font-size:13px;font-weight:600;display:inline-flex;align-items:center;gap:6px;transition:opacity .15s}
 .export-btn-xls:hover{opacity:.85}
@@ -446,9 +581,15 @@ textarea.notes-internal{border-style:dashed}
 .bom-toolbar .export-btn-xls + .export-btn-pdf{margin-left:0}
 
 /* Richieste di offerta (RFQ) */
-.rfq-head{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:16px 18px;margin:12px 0 18px;display:flex;flex-direction:column;gap:12px}
-.rfq-head-row{display:flex;gap:16px;flex-wrap:wrap}
+.rfq-head{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px 16px;margin:0;display:flex;flex-direction:column;gap:10px}
+.rfq-head-row{display:flex;gap:12px;flex-wrap:wrap}
 .rfq-head-row .modal-field{flex:1;min-width:140px}
+/* `modal-field` nasce per le schede modali, dove è lui a distanziare i campi.
+   Qui a distanziarli è il gap della colonna: sommati facevano 24px fra una
+   riga e l'altra, e la testata occupava mezzo schermo per otto campi. */
+.rfq-head .modal-field{margin-bottom:0}
+.rfq-head .modal-field input,.rfq-head .modal-field select,.rfq-head .modal-field textarea{padding:8px 11px}
+.rfq-head .modal-field textarea{line-height:1.45}
 .rfq-subhead{font-size:14px;font-weight:600;color:var(--text);margin:18px 0 10px;display:flex;align-items:center;justify-content:space-between;gap:12px}
 .rfq-head-actions{display:flex;gap:8px}
 .rfq-sup-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:8px;margin-bottom:6px}
@@ -472,7 +613,7 @@ textarea.notes-internal{border-style:dashed}
 
 /* Banner di blocco modifiche */
 .doc-lock-banner{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;
-  background:rgba(58,123,232,.08);border:1px solid var(--accent);color:var(--text);border-radius:8px;padding:9px 14px;font-size:13px;margin:12px 0}
+  background:var(--accent-soft);border:1px solid var(--accent);color:var(--text);border-radius:8px;padding:9px 14px;font-size:13px;margin:12px 0}
 input:disabled,select:disabled,textarea:disabled{opacity:.5;cursor:not-allowed}
 button:disabled{opacity:.4;cursor:not-allowed}
 
@@ -485,9 +626,11 @@ button:disabled{opacity:.4;cursor:not-allowed}
 .rfq-qty-input:focus,.rfq-price-input:focus,.rfq-date-input:focus,.rfq-meta-input:focus{border-color:var(--accent)}
 .rfq-date-input{width:140px}
 .rfq-meta-input{width:80px;margin-right:4px}
-.rfq-warn{background:rgba(232,163,58,.1);border:1px solid var(--orange);color:var(--orange);border-radius:8px;padding:9px 14px;font-size:13px;margin:12px 0}
-.rfq-save-btn.dirty{background:var(--orange)}
-.rfq-save-btn.dirty:hover{background:#f0b452}
+.rfq-warn{background:var(--orange-soft);border:1px solid var(--orange);color:var(--orange);border-radius:8px;padding:9px 14px;font-size:13px;margin:12px 0}
+/* Ambra accesa con inchiostro scuro: il bianco sopra darebbe 2.2:1, e questo
+   è il pulsante che dice «hai modifiche non salvate». */
+.rfq-save-btn.dirty{background:var(--orange-solid);color:var(--on-orange)}
+.rfq-save-btn.dirty:hover{background:var(--orange-h)}
 .rfq-export-btn:disabled{opacity:.4;cursor:not-allowed}
 .rfq-dirty-hint{font-size:12px;color:var(--orange)}
 .terms-default{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:var(--green);border:1px solid var(--green);border-radius:4px;padding:1px 5px;margin-left:6px}
@@ -535,7 +678,7 @@ button:disabled{opacity:.4;cursor:not-allowed}
 .rfq-cmp-sub{font-size:11px;color:var(--text-dim);font-family:var(--mono);margin-top:2px}
 .rfq-cmp-cell{position:relative}
 .rfq-cmp-cell .rfq-line-tot{display:block;font-size:11px;color:var(--text-dim);margin-top:3px;font-family:var(--mono)}
-.rfq-cmp-cell.rfq-min{background:rgba(46,174,109,.12)}
+.rfq-cmp-cell.rfq-min{background:var(--green-soft)}
 .rfq-cmp-cell.rfq-min .rfq-line-tot{color:var(--green);font-weight:600}
 .rfq-cmp-cell.rfq-award{box-shadow:inset 0 0 0 2px var(--accent)}
 .rfq-award-sel{background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:6px 8px;color:var(--text);font-size:12px;outline:none}
@@ -559,6 +702,10 @@ button:disabled{opacity:.4;cursor:not-allowed}
 .login-remember{display:flex;align-items:center;gap:6px;margin:2px 0 12px;font-size:13px;color:var(--text-dim)}
 .login-remember input{accent-color:var(--accent);width:14px;height:14px;cursor:pointer}
 .login-remember label{cursor:pointer}
+/* Testo che esiste solo per i lettori di schermo. Serve dove il disegno vive
+   sul placeholder — la scheda d'accesso — ma il campo ha comunque bisogno di
+   un'etichetta vera. Non display:none, che la toglierebbe anche a loro. */
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
 .login-error{color:var(--red);font-size:13px;margin-bottom:10px}
 .login-note{color:var(--text-dim);font-size:11px;line-height:1.5;margin-top:20px}
 .user-pill{display:flex;align-items:center;gap:5px;padding:3px 10px 3px 7px;border-radius:20px;border:1.5px solid var(--border);font-size:13px;font-weight:500;white-space:nowrap}
@@ -566,7 +713,7 @@ button:disabled{opacity:.4;cursor:not-allowed}
 .user-role{color:var(--text-dim);font-size:11px}
 /* Sola lettura per ruolo: la UI nasconde creazione ed eliminazione, le guardie bloccano comunque */
 .view-readonly .add-btn-sm,.view-readonly .add-btn,.view-readonly .mini-btn.danger{display:none}
-.ro-banner{background:rgba(232,163,58,.1);border:1px solid var(--orange);color:var(--orange);border-radius:10px;padding:10px 14px;font-size:13px;margin-bottom:14px}
+.ro-banner{background:var(--orange-soft);border:1px solid var(--orange);color:var(--orange);border-radius:10px;padding:10px 14px;font-size:13px;margin-bottom:14px}
 
 /* La lente delle caselle di ricerca. Stava dentro il placeholder come emoji —
    ma un placeholder è testo: quella lente finiva nella traduzione, nella
@@ -612,10 +759,12 @@ body.insp-rail .subnav{padding-right:54px}
 .insp-rail-btn:hover{color:var(--accent);border-color:var(--accent)}
 /* Il bordo da trascinare. Sei pixel sono pochi da centrare col mouse: l'area
    sensibile è larga il doppio, spostata a cavallo del bordo. */
-.insp-resizer{display:none;position:fixed;top:56px;bottom:0;right:var(--insp-w,340px);
+/* touch-action:none perché il trascinamento passa dai pointer event: senza,
+   il dito sulla maniglia farebbe scorrere la pagina invece di ridimensionare. */
+.insp-resizer{touch-action:none;display:none;position:fixed;top:56px;bottom:0;right:var(--insp-w,340px);
   width:12px;margin-right:-6px;z-index:41;cursor:col-resize}
 body.insp-on .insp-resizer{display:block}
-.insp-resizer:hover{background:linear-gradient(90deg,transparent,rgba(58,123,232,.35),transparent)}
+.insp-resizer:hover{background:linear-gradient(90deg,transparent,var(--accent-line),transparent)}
 /* Mentre si trascina, il testo non si deve selezionare e il cursore non deve
    cambiare passando sopra le righe. */
 body.insp-resizing{user-select:none;cursor:col-resize}
@@ -669,7 +818,7 @@ body.insp-resizing #inspector{pointer-events:none}
 
 /* La riga scelta. La barretta a sinistra regge anche dove il fondo tenue si
    perde, cioè sulle righe alternate e su quelle degli articoli obsoleti. */
-tr.row-selected>td{background:rgba(58,123,232,.10)}
+tr.row-selected>td{background:var(--accent-soft)}
 tr.row-selected>td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
 tbody tr[data-sel]{cursor:pointer}
 /* Con il pannello aperto la colonna dei pulsanti sparisce: i suoi comandi sono
@@ -680,7 +829,7 @@ body.insp-on .row-actions{display:none}
    cassetto e l'elenco resta largo quanto la finestra. */
 @media(max-width:1100px){
   body.insp-on #app-main{max-width:1200px;padding-right:16px}
-  #inspector{box-shadow:-14px 0 40px rgba(0,0,0,.45);width:min(var(--insp-w,340px),92vw)}
+  #inspector{box-shadow:-14px 0 40px var(--shadow);width:min(var(--insp-w,340px),92vw)}
   .insp-resizer{display:none!important}
 }
 /* Su carta non esiste niente da cliccare: il pannello sparisce e la pagina si
@@ -715,7 +864,10 @@ body.insp-on .row-actions{display:none}
    documento: si cambia riga senza perdere il posto. Sotto i 1100px le due
    colonne si impilano, con l'elenco sopra — su uno schermo stretto la scelta
    viene prima del contenuto. */
-.wl{display:grid;grid-template-columns:minmax(0,1fr) var(--wl-w,360px);gap:20px;align-items:start}
+/* La colonna dell-elenco non si ridimensiona (a differenza del pannello
+   laterale, che ha --insp-w scritta da inspector.js): la larghezza è questa,
+   scritta, invece di un var() con un ripiego che era il valore vero. */
+.wl{display:grid;grid-template-columns:minmax(0,1fr) 360px;gap:20px;align-items:start}
 .wl-main{min-width:0}
 .wl-side{position:sticky;top:14px;max-height:calc(100vh - 92px);display:flex;flex-direction:column;gap:12px;
   background:var(--card);border:1px solid var(--border);border-radius:14px;padding:16px}
@@ -729,6 +881,13 @@ body.insp-on .row-actions{display:none}
 .wl-filters input,.wl-filters select{width:100%;background:var(--bg);border:1px solid var(--border);border-radius:8px;
   padding:9px 12px;color:var(--text);font-size:13px;outline:none}
 .wl-filters input:focus,.wl-filters select:focus{border-color:var(--accent)}
+/* L'intervallo di date è un filtro solo: le due caselle stanno sulla stessa
+   riga, con la freccia in mezzo a dire il verso. L'etichetta serve perché una
+   casella data vuota non dice cosa filtra. */
+.wl-filter-dates{display:flex;align-items:center;gap:6px}
+.wl-filters .wl-filter-dates input{flex:1;min-width:0;padding:7px 8px;font-size:12px}
+.wl-filter-lbl{font-size:11px;font-weight:600;color:var(--text-dim);text-transform:uppercase;letter-spacing:.06em}
+.wl-filter-sep{color:var(--text-dim);font-size:12px}
 .wl-filters .doc-filter-count{align-self:flex-start}
 .wl-filters button{align-self:flex-start;font-size:12px}
 .wl-list{flex:1;min-height:0;overflow-y:auto;display:flex;flex-direction:column;gap:6px;margin:0 -4px;padding:0 4px}
@@ -754,6 +913,8 @@ body.insp-on .row-actions{display:none}
   .wl-list{max-height:320px}
   .wl-filters{flex-direction:row;flex-wrap:wrap}
   .wl-filters input,.wl-filters select{width:auto;flex:1;min-width:180px}
+  .wl-filter-dates{flex:1.4;min-width:280px}
+  .wl-filters .wl-filter-dates input{min-width:0}
 }
 /* In stampa esce il documento, non lo strumento per sceglierlo. */
 @media print{.wl{display:block}.wl-side{display:none!important}}

@@ -180,10 +180,10 @@ function itemInfoAcquisto(it) {
   ]);
 
   const tabella = righe.length ? `<div class="table-wrap"><table>
-    <thead><tr><th>Fornitore</th><th title="Come questo fornitore chiama l'articolo: è quello che finisce sui suoi documenti">Codice e descrizione presso il fornitore</th>
-      <th style="text-align:right" title="Prezzo di una unità, nella U.M. della colonna accanto">Prezzo (${esc(cur())}/U.M.)</th><th>U.M.</th>
-      <th style="text-align:right">Q.tà min.</th><th style="text-align:right" title="Giorni di consegna dichiarati dal fornitore">Consegna (gg)</th>
-      <th>Data</th><th></th></tr></thead>
+    <thead><tr><th scope="col">Fornitore</th><th scope="col" title="Come questo fornitore chiama l'articolo: è quello che finisce sui suoi documenti">Codice e descrizione presso il fornitore</th>
+      <th scope="col" style="text-align:right" title="Prezzo di una unità, nella U.M. della colonna accanto">Prezzo (${esc(cur())}/U.M.)</th><th scope="col">U.M.</th>
+      <th scope="col" style="text-align:right">Q.tà min.</th><th scope="col" style="text-align:right" title="Giorni di consegna dichiarati dal fornitore">Consegna (gg)</th>
+      <th scope="col">Data</th><th scope="col"></th></tr></thead>
     <tbody>${righe.map(r => {
       const u = priceUomOf(it, r);
       return `<tr${r.id === it.activePriceId ? ' style="font-weight:700"' : ''}>
@@ -268,8 +268,8 @@ function itemInfoComposizione(it) {
     }).join('');
     return itemInfoSection(`${ico('tree', 'tinted', '')} Composizione (${comps.length} ${comps.length === 1 ? 'componente' : 'componenti'}${ops.length ? ' · ' + ops.length + (ops.length === 1 ? ' lavorazione' : ' lavorazioni') : ''})`,
       `<div class="table-wrap"><table>
-        <thead><tr><th>Codice</th><th>Componente</th><th style="text-align:right">Q.tà</th>
-          <th style="text-align:right">Scarto</th><th style="text-align:right">Costo riga</th></tr></thead>
+        <thead><tr><th scope="col">Codice</th><th scope="col">Componente</th><th scope="col" style="text-align:right">Q.tà</th>
+          <th scope="col" style="text-align:right">Scarto</th><th scope="col" style="text-align:right">Costo riga</th></tr></thead>
         <tbody>${righe}${righeOp}</tbody></table></div>`);
   }
 
@@ -301,7 +301,7 @@ function itemInfoComposizione(it) {
     : '';
   return itemInfoSection(`${ico('wrench', 'tinted', '')} Distinta parte e ciclo — ${esc(cycleCountLabel(it))}`,
     `<div class="table-wrap"><table>
-      <thead><tr><th>Codice / Fase</th><th>Riga</th><th style="text-align:right">Q.tà</th><th style="text-align:right">Costo</th></tr></thead>
+      <thead><tr><th scope="col">Codice / Fase</th><th scope="col">Riga</th><th scope="col" style="text-align:right">Q.tà</th><th scope="col" style="text-align:right">Costo</th></tr></thead>
       <tbody>${righe}</tbody></table></div>${nota}`);
 }
 
@@ -317,7 +317,7 @@ function itemInfoImpieghi(it) {
   const u = itemUom(it);
   const tab = (titolo, righe) => `<div class="cat-group-title">${titolo}</div>
     <div class="table-wrap"><table>
-      <thead><tr><th>Codice</th><th>Articolo</th><th style="text-align:right">${labelUom('Q.tà', u)}</th></tr></thead>
+      <thead><tr><th scope="col">Codice</th><th scope="col">Articolo</th><th scope="col" style="text-align:right">${labelUom('Q.tà', u)}</th></tr></thead>
       <tbody>${righe.map(r => `<tr>
         <td>${codeLink(r.item.id, r.item.code)}</td>
         <td><span class="bom-type-tag tt-${r.item.type}">${typeShort(r.item.type)}</span> ${esc(r.item.name)}</td>

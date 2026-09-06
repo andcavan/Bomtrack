@@ -97,3 +97,133 @@ describe('a11yFields non è mai un ostacolo', () => {
     assert.doesNotThrow(() => a.eval('renderHome(); renderJobs(); renderRfq(); renderOrders(); renderMrp();'));
   });
 });
+
+// ═══════════════════════════════════════════════════════════
+//  Quello che l'app dice a chi non guarda lo schermo
+// ═══════════════════════════════════════════════════════════
+const fs = require('node:fs');
+const path = require('node:path');
+const HTML = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+const CSS_A11Y = fs.readFileSync(path.join(__dirname, '..', 'style.css'), 'utf8');
+
+// Ogni messaggio dell'app passa dal toast, errori di validazione compresi. Senza
+// una live region tutta quella validazione non esiste per chi usa un lettore di
+// schermo: il salvataggio «non fa niente» e non viene detto perché.
+describe('Il toast è una live region', () => {
+  it('l-elemento la dichiara nel markup', () => {
+    const div = HTML.match(/<div id="toast"[^>]*>/)[0];
+    assert.match(div, /aria-live=/);
+    assert.match(div, /role="status"/);
+  });
+
+  it('un errore interrompe, una conferma aspetta il proprio turno', () => {
+    const a = loadApp({ silent: true });
+    a.eval('showToast("Salvato")');
+    assert.equal(a.el('toast').getAttribute('aria-live'), 'polite');
+    assert.equal(a.el('toast').getAttribute('role'), 'status');
+    a.eval('showToast("Nome richiesto", "error")');
+    assert.equal(a.el('toast').getAttribute('aria-live'), 'assertive');
+    assert.equal(a.el('toast').getAttribute('role'), 'alert');
+  });
+});
+
+// È la sola schermata che ogni utente attraversa per forza, e a11yFields() non
+// ci passa mai: ripara i campi cercando .modal-field, e qui la classe è un'altra.
+describe('La schermata di accesso ha etichette vere', () => {
+  ['login-name', 'login-email', 'login-password'].forEach(id => {
+    it('il campo ' + id + ' ha la sua label', () => {
+      assert.match(HTML, new RegExp('<label[^>]*for="' + id + '"'), 'nessuna label per ' + id);
+    });
+  });
+  it('l-errore di credenziali viene annunciato', () => {
+    const div = HTML.match(/<div id="login-error"[^>]*>/)[0];
+    assert.match(div, /role="alert"/);
+  });
+  it('.sr-only esiste e non nasconde ai lettori di schermo', () => {
+    assert.match(CSS_A11Y, /\.sr-only\{[^}]*position:absolute/);
+    assert.doesNotMatch(CSS_A11Y.match(/\.sr-only\{[^}]*\}/)[0], /display:none/,
+      'display:none toglierebbe l-etichetta anche a chi ne ha bisogno');
+  });
+});
+
+// Su tabelle da 12-16 colonne, senza scope un lettore di schermo non associa la
+// cella alla sua intestazione: la navigazione per celle diventa una sequenza di
+// numeri senza etichetta.
+describe('Le intestazioni di tabella dichiarano di essere colonne', () => {
+  const FILES = ['views-catalog.js', 'views-docs.js', 'views-item.js', 'views-mrp.js',
+    'views-report.js', 'views-stock.js'];
+  it('nessun <th> resta senza scope', () => {
+    const nudi = [];
+    FILES.forEach(f => {
+      const s = fs.readFileSync(path.join(__dirname, '..', f), 'utf8');
+      s.split(/\r?\n/).forEach((riga, i) => {
+        // `<th` seguito da spazio, `>` o `$` (l'intestazione a due righe dei
+        // documenti costruisce gli attributi con un template).
+        const m = riga.match(/<th(?![a-z])(?! scope=)/);
+        if (m) nudi.push(f + ':' + (i + 1));
+      });
+    });
+    assert.deepEqual(nudi, []);
+  });
+});
+
+// Le due griglie principali erano le uniche a emettere una <table> nuda: su
+// schermo stretto trascinavano in scroll orizzontale l'intera pagina.
+describe('Le tabelle larghe scorrono dentro sé stesse', () => {
+  it('ogni tabella larga che l-app disegna sta dentro .table-wrap', () => {
+    // Si guarda quello che esce, non il sorgente: da quando la griglia è una
+    // sola (itemGrid), cercare il markup dentro i file delle viste proverebbe
+    // dove sta scritto invece di cosa fa.
+    const a = loadApp({ silent: true });
+    a.asRole('admin');
+    a.setDb(makeDb({ items: [Object.assign(mat('m1', 10), { code: 'M1' })] }));
+    a.eval('renderCatalog("buy")');
+    a.eval('renderStock()');
+    [['Anagrafica', 'buy-table'], ['Magazzino', 'stk-table']].forEach(([nome, id]) => {
+      const h = a.html(id);
+      assert.match(h, /<table/, nome + ': nessuna tabella disegnata');
+      assert.doesNotMatch(h.replace(/<div class="table-wrap"><table/g, ''), /<table/,
+        nome + ': una tabella fuori da .table-wrap sfonda il viewport su schermo stretto');
+    });
+  });
+  it('e .table-wrap scorre davvero in orizzontale', () => {
+    assert.match(CSS_A11Y, /\.table-wrap\{[^}]*overflow-x:auto/);
+  });
+});
+
+// Sotto i 1330px la media query nasconde .nav-label, e display:none toglie quel
+// testo anche all'albero di accessibilità: il pulsante resterebbe senza nome.
+describe('La navigazione conserva il nome quando perde il testo', () => {
+  it('ogni pulsante di gruppo porta il proprio aria-label', () => {
+    const a = loadApp({ silent: true });
+    a.asRole('admin');
+    a.setDb(makeDb());
+    a.eval('activeView = "bom"; renderNav();');
+    const html = a.html('main-nav');
+    const bottoni = html.match(/<button class="nav-btn[^>]*>/g) || [];
+    assert.ok(bottoni.length > 1, 'la barra disegna i suoi gruppi');
+    bottoni.forEach(b => assert.match(b, /aria-label="/, b));
+  });
+  it('la seconda riga dice quale vista è quella aperta', () => {
+    const a = loadApp({ silent: true });
+    a.asRole('admin');
+    a.setDb(makeDb());
+    a.eval('activeView = "buy"; renderNav();');
+    const html = a.html('sub-nav');
+    if (!html) return;   // gruppo con una voce sola: la riga non si disegna
+    assert.match(html, /aria-current="page"/);
+  });
+});
+
+// Su tablet la maniglia era inerte, e il pannello restava largo quanto nasce
+// rubando spazio all'elenco per sempre.
+describe('Il pannello laterale si ridimensiona anche col dito', () => {
+  const INSP = fs.readFileSync(path.join(__dirname, '..', 'inspector.js'), 'utf8');
+  it('gli ascoltatori sono pointer, non mouse', () => {
+    ['pointerdown', 'pointermove', 'pointerup'].forEach(e => assert.match(INSP, new RegExp("'" + e + "'"), e));
+    assert.doesNotMatch(INSP, /addEventListener\('mouse(down|move|up)'/, 'i mouse* lasciavano fuori il dito');
+  });
+  it('e la maniglia non fa scorrere la pagina mentre si trascina', () => {
+    assert.match(CSS_A11Y, /\.insp-resizer\{[^}]*touch-action:none/);
+  });
+});

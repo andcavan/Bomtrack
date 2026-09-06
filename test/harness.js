@@ -13,7 +13,7 @@ const path = require('node:path');
 const ROOT = path.join(__dirname, '..');
 // Stessa sequenza di index.html: i file si caricano nello stesso contesto e
 // condividono lo scope globale, esattamente come i <script> della pagina.
-const SRC = ['icons.js', 'store.js', 'cloud-map.js', 'core.js', 'auth.js', 'costing.js', 'shell.js', 'worklist.js',
+const SRC = ['icons.js', 'theme.js', 'store.js', 'cloud-map.js', 'core.js', 'auth.js', 'costing.js', 'shell.js', 'worklist.js',
   'views-bom.js', 'views-rev.js', 'views-stock.js', 'views-catalog.js', 'views-report.js', 'views-jobs.js', 'views-home.js', 'views-mrp.js', 'views-item.js',
   'views-docs.js', 'views-manage.js', 'export-lists.js', 'import-catalog.js', 'columns.js', 'inspector.js', 'import-export.js'];
 
@@ -60,7 +60,17 @@ function elementoFinto() {
     firstChild: null,
     remove() {}, click() {}, closest() { return null; },
     querySelectorAll() { return []; }, querySelector() { return null; },
-    insertAdjacentHTML() {}, setAttribute() {}, removeAttribute() {},
+    insertAdjacentHTML() {},
+    // Gli attributi si ricordano davvero. Erano un no-op, quindi tutto ciò che
+    // l'app scrive in un attributo — i ruoli dei pannelli, le etichette che
+    // a11yFields ripara, l'urgenza della live region del toast — non era
+    // verificabile: si poteva provare che il codice non lancia, non che dica
+    // la cosa giusta.
+    attrs: {},
+    setAttribute(k, v) { this.attrs[k] = String(v); },
+    getAttribute(k) { return Object.prototype.hasOwnProperty.call(this.attrs, k) ? this.attrs[k] : null; },
+    hasAttribute(k) { return Object.prototype.hasOwnProperty.call(this.attrs, k); },
+    removeAttribute(k) { delete this.attrs[k]; },
     // Il minimo che serve a renderInto(): chi ha il focus, chi contiene chi, e
     // il punto di digitazione. Il focus è finto ma coerente — `focus()` lo
     // sposta davvero, così un test può verificare che il ridisegno lo restituisca.
@@ -112,12 +122,52 @@ function loadApp(opts) {
     querySelectorAll() { return []; },
     createElement() { return elementoFinto(); },
     body: elementoFinto(),
+    // L'elemento radice: è dove theme.js scrive `data-theme`, e senza si poteva
+    // solo verificare che themeApply() non esplodesse. Era il test del tema a
+    // fabbricarselo da sé — l'unico che estendeva il DOM finto dal di fuori — e
+    // il secondo che ne avesse avuto bisogno l'avrebbe ricopiato.
+    documentElement: elementoFinto(),
     // Chi ha il focus. `null` come nel DOM vero prima di ogni interazione:
     // le funzioni che lo confrontano si comportano come su una pagina appena
     // caricata, dove nessun campo è a fuoco.
     activeElement: null,
   };
   sandbox.window = sandbox;
+  // ── File in entrata e in uscita ──
+  // Erano l'ultimo pezzo di piattaforma che mancava, e senza restavano fuori
+  // dalla suite tutte le porte d'ingresso dell'app: l'import distinte, quello
+  // delle impostazioni, il ripristino di un backup. Sono le funzioni che
+  // toccano più dati in una volta, ed erano le uniche non provabili.
+  //
+  // La lettura è **sincrona**, a differenza del browser: un test che debba
+  // aspettare un evento è un test che a volte passa. `fileFinto()` costruisce
+  // ciò che un <input type=file> consegna.
+  sandbox.FileReader = function FileReader() {
+    this.result = null;
+    this.error = null;
+    const consegna = (r, valore) => {
+      r.result = valore;
+      if (typeof r.onload === 'function') r.onload({ target: r });
+    };
+    this.readAsText = function (file) {
+      if (file && file._errore) { this.error = file._errore; if (this.onerror) this.onerror({ target: this }); return; }
+      consegna(this, file ? file._testo : '');
+    };
+    this.readAsArrayBuffer = function (file) {
+      if (file && file._errore) { this.error = file._errore; if (this.onerror) this.onerror({ target: this }); return; }
+      const t = file ? file._testo : '';
+      const buf = typeof t === 'string' ? Buffer.from(t, 'binary') : Buffer.from(t);
+      consegna(this, buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength));
+    };
+  };
+  // I file scaricati non finiscono su disco: si annotano, così un test può
+  // verificare che cosa l'app avrebbe consegnato e con che nome.
+  sandbox.scaricati = [];
+  sandbox.Blob = function Blob(parti) { this.parti = parti || []; this._testo = (parti || []).join(''); };
+  sandbox.URL = {
+    createObjectURL(b) { sandbox.scaricati.push({ contenuto: b && b._testo }); return 'blob:finto/' + sandbox.scaricati.length; },
+    revokeObjectURL() {},
+  };
   sandbox.innerWidth = 1280; sandbox.innerHeight = 800;   // i pannelli si posizionano rispetto alla finestra
   sandbox.confirm = () => true;   // le richieste di conferma si accettano: il test verifica l'effetto
   sandbox.setTimeout = (fn) => { void fn; return 0; };   // niente code differite nei test
@@ -151,6 +201,15 @@ function loadApp(opts) {
     // Copia in realm Node del db (comoda per confronti con JSON.stringify)
     snapshot() { return JSON.parse(vm.runInContext('JSON.stringify(db)', ctx)); },
     eval(expr) { return vm.runInContext(expr, ctx); },
+    // L'evento che un <input type=file> consegna al suo gestore. `contenuto` è
+    // il testo del file; `errore` simula il file illeggibile (disco rimosso,
+    // permessi), che ha un percorso suo e va provato quanto gli altri.
+    fileEvent(nome, contenuto, errore) {
+      const file = { name: nome, _testo: contenuto, _errore: errore || null };
+      return { target: { files: [file], value: nome } };
+    },
+    // I file che l'app ha "scaricato" durante il test, in ordine.
+    scaricati() { return ref('scaricati'); },
   };
 }
 

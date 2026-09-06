@@ -7,6 +7,19 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="style.css">
+<!-- Il tema si applica PRIMA che la pagina si disegni: theme.js sta in fondo al
+     body, e aspettarlo significherebbe un lampo scuro in faccia a chi ha scelto
+     il chiaro. Qui si scrive solo l'attributo — il colore lo fa il foglio di
+     stile — e la chiave è la stessa di theme.js, che poi si riallinea. -->
+<script>
+  try {
+    // Stessa chiave di THEME_KEY in theme.js, ripetuta qui perché questo script
+    // gira prima di ogni altro file. Cambiarne una sola non rompe niente in modo
+    // visibile: torna solo il lampo scuro. Vanno cambiate insieme.
+    var t = localStorage.getItem('bomtrack_theme');
+    if (t === 'light' || t === 'dark') document.documentElement.setAttribute('data-theme', t);
+  } catch (e) { /* in automatico: decide la media query */ }
+</script>
 <!-- Librerie di export, dentro il repo (vedi vendor/LEGGIMI.md). Erano su CDN con
      SRI: la firma proteggeva dal CDN compromesso, ma restavano due cose. La
      prima è che SheetJS non pubblica più su cdnjs dalla 0.18, e quella versione
@@ -23,7 +36,12 @@
 </head>
 <body>
 
-<div id="toast"></div>
+<!-- Ogni messaggio dell'app passa da qui, errori di validazione compresi:
+     senza una live region tutta quella validazione non esiste per chi usa un
+     lettore di schermo — il salvataggio "non fa niente" e non si sa perché.
+     `polite` di serie perché la maggior parte sono conferme; showToast alza
+     ad `assertive` quando il messaggio è un errore. -->
+<div id="toast" role="status" aria-live="polite" aria-atomic="true"></div>
 <div id="modal-root"></div>
 
 <!-- ACCESSO — al primo avvio (nessun utente) diventa la creazione dell'amministratore -->
@@ -35,19 +53,29 @@
     <h1 class="login-title">Bomtrack<sup class="app-version" id="app-version-login" title="Revisione in esecuzione"></sup></h1>
     <p class="login-sub" id="login-sub">Distinte base &amp; Costificazione</p>
     <form id="login-form" onsubmit="return false">
+      <!-- Etichette vere, non solo placeholder: a11yFields() ripara i campi
+           delle schede cercando .modal-field, e qui la classe è un'altra —
+           quindi da qui non ci passa mai. È la prima schermata dell'app e
+           l'unica che ogni utente attraversa per forza. Le etichette restano
+           visibili solo ai lettori di schermo (.sr-only): il disegno della
+           scheda d'accesso vive sui placeholder e non cambia. -->
       <div class="login-field" id="login-setup-fields" style="display:none">
+        <label class="sr-only" for="login-name">Nome e cognome</label>
         <input type="text" id="login-name" placeholder="Nome e cognome" autocomplete="name" onkeydown="if(event.key==='Enter')submitLogin()">
       </div>
       <div class="login-field">
+        <label class="sr-only" for="login-email">Email</label>
         <input type="email" id="login-email" placeholder="Email" autocomplete="username" onkeydown="if(event.key==='Enter')submitLogin()">
       </div>
       <div class="login-field">
+        <label class="sr-only" for="login-password">Password</label>
         <input type="password" id="login-password" placeholder="Password" autocomplete="current-password" onkeydown="if(event.key==='Enter')submitLogin()">
       </div>
       <div class="login-remember" id="login-remember-row">
         <label><input type="checkbox" id="login-remember"> Ricordami su questo PC</label>
       </div>
-      <div id="login-error" class="login-error" style="display:none"></div>
+      <!-- L'errore di credenziali va annunciato: è la risposta a un gesto. -->
+      <div id="login-error" class="login-error" role="alert" style="display:none"></div>
       <button class="add-btn-sm" id="login-submit" style="width:100%;justify-content:center" onclick="submitLogin()">Accedi</button>
     </form>
     <p class="login-note">I dati risiedono in questo browser: l'accesso separa i ruoli tra colleghi, non protegge i dati.</p>
@@ -69,6 +97,8 @@
     <span class="user-pill" id="user-pill"></span>
     <button class="btn-outline btn-icon" onclick="globalSearchModal()" title="Cerca ovunque (Ctrl+K)" aria-label="Cerca ovunque"><svg class="ico tinted ic-search" aria-hidden="true"><use href="#ic-search"></use></svg></button>
     <button class="btn-outline btn-icon" onclick="printView()" title="Stampa questa vista (Ctrl+P)" aria-label="Stampa"><svg class="ico tinted ic-printer" aria-hidden="true"><use href="#ic-printer"></use></svg></button>
+    <!-- Icona e testo li mette themeButtonFill(): dipendono dal tema in corso -->
+    <button class="btn-outline btn-icon" id="theme-btn" onclick="themeToggle()" title="Cambia tema" aria-label="Cambia tema"></button>
     <button class="btn-outline btn-icon" onclick="changePassword()" title="Cambia password" aria-label="Cambia password"><svg class="ico tinted ic-key" aria-hidden="true"><use href="#ic-key"></use></svg></button>
     <button class="btn-outline btn-icon" onclick="logout()" title="Esci" aria-label="Esci">
       <svg class="ico tinted ic-logout" aria-hidden="true"><use href="#ic-logout"></use></svg>
@@ -286,6 +316,8 @@
      L'ordine conta solo per l'avvio, che sta in fondo all'ultimo file. -->
 <!-- Le icone: sprite e tinte. Va per primo, ico() serve gia al primo disegno. -->
 <script src="icons.js"></script>
+<!-- Dopo icons.js: al caricamento riempie il pulsante del tema con sole o luna. -->
+<script src="theme.js"></script>
 <script src="store.js"></script>
 <!-- Traduzione annidato ↔ normalizzato: legge SCHEMA da store.js, non dipende
      da altro. Nessun codice di rete: l'app resta locale. -->
