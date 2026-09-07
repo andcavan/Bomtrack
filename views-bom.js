@@ -82,7 +82,7 @@ function renderBom() {
   const tree = document.getElementById('bom-tree');
   if (!it) {
     summary.innerHTML = '';
-    tree.innerHTML = '<div class="empty-text">Nessun prodotto. Crea una macchina con "+ Nuova macchina".</div>';
+    tree.innerHTML = '<div class="empty-text">Nessun prodotto. Creane uno in <strong>Anagrafica → Progetto → + Nuovo articolo</strong>.</div>';
     return;
   }
   const c = costOf(it.id);
@@ -501,59 +501,6 @@ function delOperation(idx) {
 }
 
 // ─── Macchina / testata prodotto ───
-function newMachineModal() {
-  if (!roleGuard('bom')) return;
-  const sm = machineScheme(null);
-  openModal(`<h3>${ico('tree', 'tinted pill', '')} Nuova macchina</h3>
-    <div class="modal-grid">
-      <div class="modal-field"><label>Sigla macchina</label>
-        <input id="mac-sigla" maxlength="10" placeholder="es. TRN" style="text-transform:uppercase;font-family:var(--mono);font-weight:700"
-          oninput="this.value=this.value.toUpperCase();refreshMachineCode()"></div>
-      <div class="modal-field"><label>Codice</label><input id="mac-code" placeholder="auto dalla sigla" oninput="markCodeManual()"></div>
-      <div class="modal-field"><label>U.M.</label><select id="mac-uom">${uomOptions(defaultUom())}</select></div>
-    </div>
-    <div class="modal-field"><label>Nome</label><input id="mac-name" placeholder="Es. Nastro Trasportatore NT-200"></div>
-    <div class="modal-grid">
-      <div class="modal-field"><label>N° car. sigla gruppo</label><input type="number" id="mac-glen" min="1" max="10" value="${sm.gLen}" onchange="refreshMachineCode()"></div>
-      <div class="modal-field"><label>Tipo car. sigla gruppo</label><select id="mac-gtype" onchange="refreshMachineCode()">${typeOptionsHtml(sm.gType)}</select></div>
-      <div class="modal-field"><label>Cifre progressivo S##</label><input type="number" id="mac-incrs" min="1" max="6" value="${sm.incrS}" onchange="refreshMachineCode()"></div>
-      <div class="modal-field"><label>Cifre numerazione ###</label><input type="number" id="mac-incrn" min="1" max="6" value="${sm.incrN}" onchange="refreshMachineCode()"></div>
-    </div>
-    <div class="modal-field"><label>Note</label><textarea id="mac-notes" rows="2"></textarea></div>
-    <div class="modal-actions"><button class="btn-ghost" onclick="closeModal()">Annulla</button>
-      <button class="add-btn-sm" onclick="saveNewMachine()">Crea</button></div>`);
-  itemCodeAuto = true;
-}
-// Bozza macchina dai campi della modale "Nuova macchina"
-function machineDraftFromForm() {
-  return {
-    type: 'macchina', sigla: val('mac-sigla'),
-    gCodeLen: parseInt(val('mac-glen'), 10) || 3,
-    gCodeType: val('mac-gtype') || 'alpha',
-    incrDigitsS: parseInt(val('mac-incrs'), 10) || 2,
-    incrDigitsN: parseInt(val('mac-incrn'), 10) || 3,
-  };
-}
-function refreshMachineCode() {
-  if (!itemCodeAuto) return;
-  const el = document.getElementById('mac-code'); if (!el) return;
-  el.value = genItemCodeUI(machineDraftFromForm());
-}
-function saveNewMachine() {
-  if (!roleGuard('bom')) return;
-  const name = val('mac-name');
-  if (!name) { showToast('Nome richiesto', 'error'); return; }
-  const d = machineDraftFromForm();
-  if (d.sigla && !/^[A-Z0-9]+$/.test(d.sigla)) { showToast('La sigla macchina ammette solo A-Z e 0-9', 'error'); return; }
-  if (d.sigla && machineItems().some(m => m.sigla === d.sigla)) { showToast(`Sigla macchina "${d.sigla}" già in uso`, 'error'); return; }
-  const id = gid();
-  Store.insert('items', Object.assign({
-    id, code: val('mac-code') || id, name, type: 'macchina', uom: val('mac-uom') || defaultUom(),
-    notes: val('mac-notes'), active: true, components: [], operations: [],
-  }, d));
-  currentBomId = id; bomExpanded = new Set();
-  closeModal(); renderBom(); savedToast('Macchina creata');
-}
 function editCurrentItemModal() {
   if (!roleGuard('bom')) return;
   const it = getItem(currentBomId); if (!it) return;
