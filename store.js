@@ -27,7 +27,8 @@ const defaultDB = {
   // fattura.
   customers: [],
   rfqs: [],
-  orders: [],
+  orders: [],       // ordini d'acquisto (ODA): merce
+  workOrders: [],   // ordini di lavoro (ODL): lavorazioni affidate a un terzista
   plans: [],        // piani di produzione (fabbisogno materiali)
   // `suppliers` (opzionale, assente sui centri esistenti finché non se ne
   // registra uno): fornitori conto lavoro abituali per quel centro, ciascuno
@@ -310,9 +311,15 @@ const SCHEMA = {
   // revisione non va mai fusa con niente, e normalizzarla significherebbe darle
   // la stessa forma dei dati vivi, cioè invitare qualcuno a modificarla.
   revisions: { table: 'item_revisions' },
-  // Movimenti di magazzino: rettifiche e consumi. I **carichi da ordine non
-  // stanno qui** — quelli li racconta già `received` sulla riga d'ordine, e
-  // scriverli in due posti significherebbe tenerli d'accordo a mano.
+  // Movimenti di magazzino: rettifiche, consumi e conto lavoro. I **carichi da
+  // ordine non stanno qui** — quelli li racconta già `received` sulla riga
+  // d'ordine, e scriverli in due posti significherebbe tenerli d'accordo a mano.
+  //
+  // L'eccezione apparente sono i due movimenti di conto lavoro, che portano un
+  // `orderId`: la regola regge lo stesso, perché la riga d'ordine che li
+  // giustifica **non ha un articolo** e quindi non carica niente da sé. Lì il
+  // movimento non duplica il ricevimento: è l'unica scrittura che muove il
+  // magazzino, e l'ordine dice solo da dove viene.
   movements: { table: 'stock_movements' },
   suppliers: { table: 'suppliers' },
   // Clienti: anagrafica autonoma, come i fornitori. La commessa ne cita il
@@ -322,6 +329,13 @@ const SCHEMA = {
   families: { table: 'families', children: { subs: { table: 'sub_families', rowId: 'id', merge: 'row' } } },
   rfqs: { table: 'rfqs', children: { lines: { table: 'rfq_lines', rowId: 'id', merge: 'row' } } },
   orders: { table: 'orders', children: { lines: { table: 'order_lines', rowId: 'id', merge: 'row' } } },
+  // Ordini di lavoro: la stessa forma degli ordini d'acquisto, e una collezione
+  // a sé. Le due cose che si comprano da un fornitore — merce e lavorazioni —
+  // hanno numerazione, elenco e stampa distinti perché sono due documenti
+  // diversi nella realtà: uno chiede della roba, l'altro manda dei pezzi a
+  // lavorare. Tenerli in una tabella sola costringeva ogni conto a filtrare per
+  // un campo, ed è il tipo di distinzione che prima o poi qualcuno dimentica.
+  workOrders: { table: 'work_orders', children: { lines: { table: 'work_order_lines', rowId: 'id', merge: 'row' } } },
   plans: { table: 'production_plans', children: { lines: { table: 'production_plan_lines', rowId: 'id', merge: 'row' } } },
   // Commesse: il cliente e la data a monte di tutto. Un piano ne cita una, e da
   // lì la citazione scende su richieste e ordini — è la catena che risponde a
@@ -353,6 +367,14 @@ const SCHEMA = {
 // record v1 ripristinato dal cestino esce con gli id di allora — è un caso che
 // non si dà (il cestino è nato dopo la v2) e che comunque va risolto guardando,
 // non indovinando.
+//
+// **Due riferimenti che questa mappa non copre**, scritti qui perché non si
+// scoprano il giorno in cui servisse una v3:
+//   - `plans.jobId` e `rfqs/orders.planId|jobId` non ci sono. Oggi è innocuo —
+//     commesse e piani sono nati dopo la v2, e nessun blob v1 li contiene.
+//   - `rfq_lines/order_lines.phaseKey` **contiene un itemId dentro una stringa**
+//     (`itemId#indice#workCenterId`). Una rimappatura non saprebbe seguirlo lì
+//     dentro: dovrebbe riscrivere la chiave, non sostituire un campo.
 const REFS = {
   items: {
     fields: { supplierId: 'supplier', familyId: 'family', subFamilyId: 'subFamily',
@@ -365,9 +387,14 @@ const REFS = {
     },
   },
   revisions: { fields: { itemId: 'item' } },
-  movements: { fields: { itemId: 'item' } },
+  // `orderId` e `lineId` restano fuori: REFS non ha una destinazione 'order',
+  // e gli ordini non sono mai stati rimappati. Va scritto, non lasciato muto.
+  movements: { fields: { itemId: 'item', supplierId: 'supplier', fromSupplierId: 'supplier' } },
   rfqs: { fields: { supplierId: 'supplier' }, children: { lines: { itemId: 'item' } } },
   orders: { fields: { supplierId: 'supplier' }, children: { lines: { itemId: 'item' } } },
+  // Le righe di un ODL non hanno un articolo: portano una `phaseKey`, che un
+  // itemId ce l'ha dentro ma dentro una stringa — vedi la nota qui sopra.
+  workOrders: { fields: { supplierId: 'supplier' }, children: { lines: {} } },
   plans: { children: { lines: { itemId: 'item' } } },
 };
 const COLLECTIONS = Object.keys(SCHEMA);
@@ -455,7 +482,25 @@ function migrateDB() {
   });
   if (!db.items) db.items = [];
   if (!db.revisions) db.revisions = [];   // storico delle distinte rilasciate
-  if (!db.movements) db.movements = [];   // rettifiche e consumi di magazzino
+  // Capacità del centro, in ore a settimana. **Zero significa «non dichiarata»**,
+  // non «nessuna capacità»: senza questa distinzione ogni centro esistente
+  // risulterebbe sovraccarico al primo caricamento, e il prospetto del carico
+  // nascerebbe già da ignorare.
+  (db.workCenters || []).forEach(w => { if (w.capacityHours == null) w.capacityHours = 0; });
+  if (!db.workOrders) db.workOrders = [];   // ordini di lavoro (conto lavoro)
+  if (!db.movements) db.movements = [];   // rettifiche, consumi e conto lavoro
+  // Contorno del conto lavoro: da chi sta la merce e quale ordine la giustifica.
+  // Nullo su tutti i movimenti precedenti, e la colonna deve esserci comunque —
+  // righe con e senza la stessa colonna sono l'incoerenza che queste
+  // normalizzazioni esistono per evitare.
+  db.movements.forEach(m => {
+    if (m.supplierId === undefined) m.supplierId = null;
+    // Sui passaggi di lavorazione (clStep) `supplierId` è **dove va** e questo è
+    // **da dove viene**: nullo da una parte o dall'altra significa «da noi».
+    if (m.fromSupplierId === undefined) m.fromSupplierId = null;
+    if (m.orderId === undefined) m.orderId = null;
+    if (m.lineId === undefined) m.lineId = null;
+  });
   if (!db.jobs) db.jobs = [];             // commesse cliente
   // Cestino: le eliminazioni recenti, recuperabili. Si svuota da solo passata
   // la finestra di ripristino, altrimenti crescerebbe finché lo spazio del
@@ -552,11 +597,20 @@ function migrateDB() {
       }
       if (l.deliveryDate == null) l.deliveryDate = '';
       if (l.note == null) l.note = '';
+      // Riga di conto lavoro: la fase del ciclo da cui viene. Nulla su tutte le
+      // altre, e la colonna deve esserci comunque — vedi il commento qui sotto
+      // sugli ordini: righe con e senza la stessa colonna sono l'incoerenza che
+      // queste normalizzazioni esistono per evitare.
+      if (l.phaseKey == null) l.phaseKey = null;
+      if (l.phaseKeys == null) l.phaseKeys = l.phaseKey || null;
     });
     delete r.supplierIds; delete r.offers; delete r.awards;
   });
-  // Ordini a fornitore: normalizzazione campi riga (prezzo, consegna, ricevuto)
-  (db.orders || []).forEach(o => {
+  // Ordini a fornitore e ordini di lavoro: stessa forma, stessa normalizzazione.
+  // Sono due collezioni e non una perché sono due documenti diversi — merce e
+  // lavorazioni — ma i campi che li reggono sono gli stessi, e scriverli due
+  // volte significherebbe che la seconda copia prima o poi resta indietro.
+  [].concat(db.orders || [], db.workOrders || []).forEach(o => {
     if (o.transport == null) o.transport = '';
     if (o.payment == null) o.payment = '';
     delete o.requestedDelivery;   // rimosso: ridondante con la data di consegna per riga, che sola aveva effetto
@@ -573,8 +627,20 @@ function migrateDB() {
       if (l.deliveryDate == null) l.deliveryDate = '';
       if (l.received == null) l.received = 0;
       if (l.note == null) l.note = '';
+      if (l.phaseKey == null) l.phaseKey = null;   // riga di conto lavoro
+      // Le fasi **consecutive** dello stesso terzista stanno in una riga sola, e
+      // `phaseKey` ne nomina solo la prima: senza l'elenco completo le altre
+      // risulterebbero ancora da documentare e il fabbisogno le riproporrebbe.
+      // Sulle righe scritte prima che le tratte esistessero la riga copre una
+      // fase sola, e le due colonne dicono la stessa cosa.
+      if (l.phaseKeys == null) l.phaseKeys = l.phaseKey || null;
     });
   });
+  // Un ODL nasce sempre da una fase di ciclo, quindi le sue righe non hanno mai
+  // un articolo: il vincolo va reso vero anche sui dati, non solo sperato.
+  // È la stessa garanzia contro il doppio conteggio di magazzino descritta in
+  // docs/cloud-schema.md, applicata all'ingresso invece che all'uscita.
+  (db.workOrders || []).forEach(o => (o.lines || []).forEach(l => { l.itemId = null; }));
   // Piani di produzione. L'unico stato è aperto/chiuso, e decide se il piano
   // impegna materiale a magazzino. I piani salvati prima che l'impegno
   // esistesse nascono **aperti**: sono i piani in corso di chi aggiorna, e
@@ -672,14 +738,45 @@ function migrateDB() {
         it.sourcing = (it.cycle || []).length ? 'make' : 'buy';
       }
     }
-    // Righe lavorazione del ciclo: da ore × tariffa a costo fisso (conserva il valore già calcolato)
+    // Righe lavorazione del ciclo. Le ore sono un attributo di **tempo**, presenti
+    // su ogni riga qualunque sia il modo di costo: a costo fisso non concorrono al
+    // costo — il prezzo concordato col terzista è quello, non ore × tariffa — ma
+    // dicono quanto la fase occupa il centro, ed è da lì che nasce il carico.
     (it.cycle || []).forEach(row => {
-      if (row.kind !== 'op' || row.cost != null) return;
+      if (row.kind !== 'op') return;
       const wc = db.workCenters.find(w => w.id === row.workCenterId);
-      row.cost = (row.costOverride != null && row.costOverride !== '')
-        ? (Number(row.costOverride) || 0)
-        : (Number(row.hours) || 0) * (wc ? (Number(wc.hourlyRate) || 0) : 0);
-      delete row.hours; delete row.costOverride;
+      const tariffa = wc ? (Number(wc.hourlyRate) || 0) : 0;
+      if (row.costMode == null) {
+        // Riga precedente al modo di costo: da ore × tariffa a costo fisso,
+        // conservando il valore già calcolato. `hours` non si cancella più.
+        row.costMode = 'fisso';
+        if (row.cost == null) {
+          row.cost = (row.costOverride != null && row.costOverride !== '')
+            ? (Number(row.costOverride) || 0)
+            : (Number(row.hours) || 0) * tariffa;
+        }
+        delete row.costOverride;
+      } else if (row.costMode === 'orario' && row.hours == null && row.cost != null) {
+        // Riparazione. Fino alla 0.64.2 questa normalizzazione cancellava `hours`
+        // da ogni riga senza `cost`, cioè da **tutte** quelle a costo orario — che
+        // il costo non ce l'hanno per definizione. La fase valeva zero al primo
+        // riavvio, e in silenzio. Le ore si ricostruiscono dividendo per la stessa
+        // tariffa con cui erano state moltiplicate: quella del **centro**, non
+        // `row.rate`, perché era il centro che il difetto usava. Dividere per altro
+        // sbaglierebbe proprio dove il fornitore ha una tariffa propria.
+        row.hours = tariffa > 0 ? +(Number(row.cost) / tariffa).toFixed(4) : 0;
+      }
+      // Dove il centro manca o ha tariffa zero le ore non sono ricostruibili e
+      // restano zero: non si inventano. Quelle righe le nomina il riepilogo.
+      if (row.hours == null) row.hours = 0;
+      if (row.rate == null) row.rate = 0;
+      if (row.note == null) row.note = '';
+      // Giorni di attraversamento di una fase in **conto lavoro**. Il tempo di
+      // una lavorazione esterna non è occupazione di una macchina nostra: il
+      // pezzo esce e torna, e quello che serve sapere è quando torna. Zero su
+      // tutte le fasi precedenti, e su quelle interne resta zero per sempre —
+      // lì il tempo sono le ore.
+      if (row.days == null) row.days = 0;
     });
   });
   // Migrazioni versionate

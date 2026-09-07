@@ -212,7 +212,7 @@ describe('permessi', () => {
 // si scopre alla consegna.
 describe('Righe già finite in un documento del piano', () => {
   const usati = (app, kind) => JSON.parse(app.eval(`JSON.stringify((() => {
-    const m = planDocumentedItems('pl1'); const out = {};
+    const m = planDocumentedKeys('pl1'); const out = {};
     m.forEach((v, k) => { const f = v.filter(x => x.kind === ${JSON.stringify(kind)}); if (f.length) out[k] = f.map(x => x.number); });
     return out; })())`));
 

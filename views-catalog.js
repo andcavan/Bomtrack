@@ -1152,21 +1152,45 @@ function cycleBomTable(bomRows) {
 }
 function cycleOpsTable(opRows) {
   if (!opRows.length) return '<div class="empty-text" style="padding:8px 0">Nessuna lavorazione. Usa "+ Lavorazione" per aggiungere una fase.</div>';
+  // ── La colonna «Tempo» misura due cose diverse, e non è una scorciatoia ──
+  // Una fase **interna** occupa una macchina: il suo tempo si conta in **ore**,
+  // ed è quello che finisce nel carico dei centri.
+  // Una fase in **conto lavoro** non occupa niente di nostro: il pezzo esce e
+  // torna, e il suo tempo è un **attraversamento in giorni**. Contarlo in ore
+  // significherebbe rispondere alla domanda sbagliata — a nessuno interessa
+  // quante ore ci mette il terzista, interessa **quando ripresenta il pezzo**,
+  // ed è da lì che si ricava entro quando mandargli l'ordine di lavoro.
+  //
+  // Le ore di una fase esterna a costo orario non spariscono: restano dove sono
+  // un **costo**, cioè accanto alla tariffa nella cella del costo. Sono le ore
+  // che il terzista fattura, non il nostro tempo.
   const head = `<div class="cycle-row cycle-op-row cycle-head">
     <span>Fase</span><span>Lavorazione</span><span>Fornitore</span><span>Modo</span>
+    <span class="num" title="Interna: ore di occupazione del centro, che alimentano il Carico centri. Conto lavoro: giorni di attraversamento, da cui si ricava entro quando mandare l'ordine di lavoro">Tempo</span>
     <span class="num">Costo (${esc(cur())})</span><span class="num">Costo riga (${esc(cur())})</span><span>Ordine</span><span></span></div>`;
   const last = opRows.length - 1;
   return head + opRows.map(({ r, i }, k) => {
     const orario = r.costMode === 'orario';
+    const esterna = !!r.supplierId;
+    // In modo orario le ore sono la base del costo e stanno con la tariffa: su
+    // una fase esterna sono l'unico posto in cui compaiono, perché la colonna
+    // del tempo lì misura giorni.
     const costoCell = orario
       ? `<span class="cycle-op-cost">
-          <input class="num" type="number" min="0" step="0.25" value="${Number(r.hours) || 0}" title="Ore" placeholder="ore"
-            onchange="updateCycleRow(${i})" id="cyc-ophours-${i}">
+          ${esterna ? `<input class="num" type="number" min="0" step="0.25" value="${Number(r.hours) || 0}" title="Ore fatturate dal terzista, per pezzo" placeholder="ore"
+            onchange="updateCycleRow(${i})" id="cyc-ophours-${i}">` : ''}
           <input class="num" type="number" min="0" step="0.5" value="${Number(r.rate) || 0}" title="Tariffa ${esc(cur())}/h" placeholder="${esc(cur())}/h"
             onchange="updateCycleRow(${i})" id="cyc-oprate-${i}">
         </span>`
       : `<input class="num" type="number" min="0" step="0.01" value="${Number(r.cost) || 0}"
           title="Costo fisso della lavorazione" onchange="updateCycleRow(${i})" id="cyc-cost-in-${i}">`;
+    const tempoCell = esterna
+      ? `<span class="cycle-op-time"><input class="num" type="number" min="0" step="1" value="${Number(r.days) || 0}"
+          title="Giorni di attraversamento dal terzista: da qui si ricava entro quando mandargli l'ordine di lavoro"
+          onchange="updateCycleRow(${i})" id="cyc-opdays-${i}"><em>gg</em></span>`
+      : `<span class="cycle-op-time"><input class="num" type="number" min="0" step="0.25" value="${Number(r.hours) || 0}"
+          title="Ore per pezzo${orario ? '' : ' — non entra nel costo, serve al carico del centro'}"
+          onchange="updateCycleRow(${i})" id="cyc-ophours-${i}"><em>h</em></span>`;
     return `<div class="cycle-row cycle-op-row">
       <span class="cycle-phase">${cyclePhaseNumber(k)}</span>
       <span class="cycle-name">${cycleRowLabel(r)}</span>
@@ -1175,6 +1199,7 @@ function cycleOpsTable(opRows) {
         <option value="fisso" ${!orario ? 'selected' : ''}>Fisso</option>
         <option value="orario" ${orario ? 'selected' : ''}>Orario</option>
       </select>
+      ${tempoCell}
       ${costoCell}
       <span class="num cost" id="cyc-cost-${i}">${fmtN(cycleRowCost(r))}</span>
       <span class="cycle-move">
@@ -1230,14 +1255,22 @@ function cycleExportSpec() {
         nome: 'Ciclo di lavorazione',
         colonne: [
           { h: 'Fase', w: 8, num: true }, { h: 'Lavorazione', w: 34 }, { h: 'Fornitore', w: 24 },
+          // Due colonne e non una: le ore e i giorni misurano cose diverse, e in
+          // un foglio di calcolo una colonna che cambia unità riga per riga non
+          // si può sommare né filtrare.
+          { h: 'Ore (h)', w: 10, num: true }, { h: 'Giorni (gg)', w: 12, num: true },
           { h: `Costo (${cur()})`, w: 16, num: true },
         ],
         righe: ops.map(({ r }, k) => {
           const wc = getWorkCenter(r.workCenterId);
           return [cyclePhaseNumber(k), wc ? wc.name : '(centro mancante)',
-            supplierName(r.supplierId) || '', +cycleRowCost(r).toFixed(2)];
+            supplierName(r.supplierId) || '', Number(r.hours) || 0, Number(r.days) || 0,
+            +cycleRowCost(r).toFixed(2)];
         }),
-        totali: ops.length ? ['Totale lavorazioni', '', '', tot(ops)] : null,
+        totali: ops.length
+          ? ['Totale lavorazioni', '', '', +ops.reduce((s, x) => s + (Number(x.r.hours) || 0), 0).toFixed(2),
+            +ops.reduce((s, x) => s + (Number(x.r.days) || 0), 0).toFixed(0), tot(ops)]
+          : null,
       },
     ],
   };
@@ -1263,12 +1296,18 @@ function updateCycleRow(idx) {
   const row = (it.cycle || [])[idx]; if (!row) return;
   if (row.kind === 'op') {
     row.supplierId = val('cyc-sup-' + idx);
+    // Il tempo cambia unità con la natura della fase: ore su una lavorazione
+    // interna, giorni di attraversamento su una in conto lavoro. I due campi
+    // esistono entrambi sulla riga, ma solo uno per volta è a video — leggere
+    // quello assente riporterebbe zero e cancellerebbe l'altro.
+    if (row.supplierId) row.days = numVal('cyc-opdays-' + idx, 0);
+    else row.hours = numVal('cyc-ophours-' + idx, 0);
     if (row.costMode === 'orario') {
-      row.hours = numVal('cyc-ophours-' + idx, 0);
       row.rate = numVal('cyc-oprate-' + idx, 0);
-    } else {
-      row.cost = numVal('cyc-cost-in-' + idx, 0);
-    }
+      // Su una fase esterna a costo orario le ore sono quelle **fatturate**, e
+      // stanno con la tariffa: è l'unico punto in cui compaiono.
+      if (row.supplierId) row.hours = numVal('cyc-ophours-' + idx, 0);
+    } else row.cost = numVal('cyc-cost-in-' + idx, 0);
   } else {
     row.qty = numVal('cyc-qty-' + idx, 0);
     // Vuoto = nessun override, si usa il costo calcolato. Un negativo si corregge
@@ -1290,7 +1329,12 @@ function onCycleRowSupplierChange(idx) {
     const rateEl = document.getElementById('cyc-oprate-' + idx);
     if (rateEl) rateEl.value = wcRateFor(wc, val('cyc-sup-' + idx));
   }
+  const eraEsterna = !!row.supplierId;
   updateCycleRow(idx);
+  // Passare da interna a conto lavoro (o viceversa) cambia **cosa misura** la
+  // colonna del tempo: si ridisegna, o resterebbe a video un campo che scrive
+  // in un altro posto.
+  if (eraEsterna !== !!row.supplierId) renderCycles();
 }
 // Passare da fisso a orario (o viceversa) cambia quali campi contano per il
 // costo: si ridisegna la riga così i campi giusti compaiono subito.
@@ -1299,9 +1343,11 @@ function onCycleRowModeChange(idx) {
   if (!roleGuard('catalog')) { renderCycles(); return; }
   const row = (it.cycle || [])[idx]; if (!row) return;
   row.costMode = val('cyc-opmode-' + idx) === 'orario' ? 'orario' : 'fisso';
-  if (row.costMode === 'orario') {
-    if (!row.hours) row.hours = 1;
-    if (!row.rate) row.rate = wcRateFor(getWorkCenter(row.workCenterId), row.supplierId);
+  // Le ore non si toccano cambiando modo: sono un tempo, e il tempo della fase
+  // non cambia perché è cambiato il modo in cui la si paga. Il valore proposto
+  // alle fasi nuove sta in pickCycleOp.
+  if (row.costMode === 'orario' && !row.rate) {
+    row.rate = wcRateFor(getWorkCenter(row.workCenterId), row.supplierId);
   }
   touch(it); saveDB(); renderCycles();
 }
@@ -1384,13 +1430,18 @@ function addCycleOpRow() {
       <div class="modal-field"><label>Centro di lavoro</label><select id="cyc-wc" onchange="onCycleOpWcChange()">${wcOptionsNoRate(null)}</select></div>
       <div class="modal-field"><label>Interna / Conto lavoro</label><select id="cyc-opsup" onchange="onCycleOpModeChange()">${wcSupplierOptions(wc, '')}</select></div>
     </div>
-    <div class="modal-field"><label>Costo</label><select id="cyc-opmode" onchange="onCycleOpModeChange()">
-      <option value="fisso">Fisso</option><option value="orario">Orario</option></select></div>
+    <div class="modal-grid">
+      <div class="modal-field"><label>Costo</label><select id="cyc-opmode" onchange="onCycleOpModeChange()">
+        <option value="fisso">Fisso</option><option value="orario">Orario</option></select></div>
+      <div class="modal-field" id="cyc-optime-h"><label>Ore (h)</label><input type="number" id="cyc-ophours" min="0" step="0.25" value="1"
+        title="Ore di occupazione del centro. A costo fisso non entrano nel costo: servono al Carico centri"></div>
+      <div class="modal-field" id="cyc-optime-gg" style="display:none"><label>Giorni (gg)</label><input type="number" id="cyc-opdays" min="0" step="1" value="0"
+        title="Giorni di attraversamento dal terzista: da qui si ricava entro quando mandargli l'ordine di lavoro"></div>
+    </div>
     <div class="modal-grid" id="cyc-opmode-fisso">
       <div class="modal-field"><label>Costo (${cur()})</label><input type="number" id="cyc-opcost" min="0" step="0.01" value="0"></div>
     </div>
     <div class="modal-grid" id="cyc-opmode-orario" style="display:none">
-      <div class="modal-field"><label>Ore (h)</label><input type="number" id="cyc-ophours" min="0" step="0.25" value="1"></div>
       <div class="modal-field"><label>Tariffa (${cur()}/h)</label><input type="number" id="cyc-oprate" min="0" step="0.5" value="0"></div>
     </div>
     <div class="cycle-actions">
@@ -1409,10 +1460,15 @@ function onCycleOpWcChange() {
 }
 function onCycleOpModeChange() {
   const orario = val('cyc-opmode') === 'orario';
-  const fissoBox = document.getElementById('cyc-opmode-fisso');
-  const orarioBox = document.getElementById('cyc-opmode-orario');
-  if (fissoBox) fissoBox.style.display = orario ? 'none' : '';
-  if (orarioBox) orarioBox.style.display = orario ? '' : 'none';
+  const esterna = !!val('cyc-opsup');
+  const mostra = (id, si) => { const el = document.getElementById(id); if (el) el.style.display = si ? '' : 'none'; };
+  mostra('cyc-opmode-fisso', !orario);
+  mostra('cyc-opmode-orario', orario);
+  // Il tempo di una fase interna sono ore di macchina; quello di una in conto
+  // lavoro sono giorni di attraversamento. A costo orario anche una fase esterna
+  // vuole le ore, ma come base del costo: lì si chiedono entrambi.
+  mostra('cyc-optime-h', !esterna || orario);
+  mostra('cyc-optime-gg', esterna);
   if (orario) {
     const rateEl = document.getElementById('cyc-oprate');
     if (rateEl) rateEl.value = wcRateFor(getWorkCenter(val('cyc-wc')), val('cyc-opsup'));
@@ -1426,8 +1482,10 @@ function pickCycleOp() {
   if (!Array.isArray(it.cycle)) it.cycle = [];
   const orario = val('cyc-opmode') === 'orario';
   // In fondo all'elenco: l'ultima fase aggiunta è l'ultima del ciclo, poi si sposta con ↑↓
-  const row = { kind: 'op', workCenterId: wcId, supplierId: val('cyc-opsup'), costMode: orario ? 'orario' : 'fisso', note: '' };
-  if (orario) { row.hours = numVal('cyc-ophours', 0); row.rate = numVal('cyc-oprate', 0); }
+  const row = { kind: 'op', workCenterId: wcId, supplierId: val('cyc-opsup'),
+    costMode: orario ? 'orario' : 'fisso',
+    hours: numVal('cyc-ophours', 0), days: numVal('cyc-opdays', 0), note: '' };
+  if (orario) row.rate = numVal('cyc-oprate', 0);
   else row.cost = numVal('cyc-opcost', 0);
   it.cycle.push(row);
   closeCyclePicker();

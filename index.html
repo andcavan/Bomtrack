@@ -218,6 +218,7 @@
       <h2 class="section-title"><svg class="ico ic-package tinted pill" aria-hidden="true"><use href="#ic-package"></use></svg> Magazzino</h2>
       <button class="export-btn-xls" onclick="exportListXlsx(stockExportSpec())"><svg class="ico ic-sheet tinted" aria-hidden="true"><use href="#ic-sheet"></use></svg> Esporta Excel</button>
       <button class="export-btn-pdf" onclick="exportListPdf(stockExportSpec())"><svg class="ico ic-file tinted" aria-hidden="true"><use href="#ic-file"></use></svg> Esporta PDF</button>
+      <span id="stk-cl-btn"></span>
     </div>
     <div class="catalog-filters">
       <input type="text" class="search" id="stk-search" placeholder="Cerca codice o nome..." oninput="stockSearchInput()">
@@ -239,6 +240,7 @@
         <option value="zero">Giacenza a zero</option>
         <option value="con">Con giacenza</option>
         <option value="negativo">Libero negativo</option>
+        <option value="terzi">Presso terzi o in lavorazione</option>
       </select>
       <span id="cols-btn-stock"></span>
     </div>
@@ -285,6 +287,12 @@
 
   <!-- COMMESSE — riempita da renderJobs() -->
   <div id="view-jobs" class="view-panel"></div>
+
+  <!-- ORDINI DI LAVORO (conto lavoro: lavorazioni affidate a un terzista) -->
+  <div id="view-odl" class="view-panel"></div>
+
+  <!-- CARICO DEI CENTRI DI LAVORO (prospetto derivato, sola lettura) -->
+  <div id="view-load" class="view-panel"></div>
 
   <!-- FABBISOGNO MATERIALI (piani di produzione) -->
   <div id="view-mrp" class="view-panel"></div>

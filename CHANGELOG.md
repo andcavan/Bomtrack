@@ -2,6 +2,248 @@
 
 Le revisioni seguono il versionamento semantico `0.MINOR.PATCH`: **MINOR** per nuove funzionalità, **PATCH** per correzioni. La versione in cima è quella in `APP_VERSION` (`core.js`) e mostrata nell'header dell'app.
 
+### 0.72.0 — 2026-09-08
+
+**Un ordine di lavoro è una tratta, non una fase — e il magazzino si muove ai due estremi del ciclo, non a quelli del documento.**
+
+**Corretto: il magazzino si muoveva alla fase sbagliata**
+Gli ancoraggi del conto lavoro guardavano **le righe del documento**. Una parte con fasi 10 interna, 20 Beta, 30 interna, 40 Beta ha **due** ordini di lavoro da Beta, e ciascuno — essendo prima e ultima riga di sé stesso — offriva sia lo scarico sia il carico: il materiale usciva due volte e il pezzo finito si caricava due volte. Ora gli estremi che contano sono quelli del **ciclo**:
+- alla **prima tratta esterna** esce il **materiale del ciclo**, e scarica;
+- all'**ultima tratta esterna** entra il **pezzo finito**, e carica;
+- a ogni altro estremo si sposta il **pezzo stesso**, e non carica né scarica.
+
+**Un terzo tipo di movimento: il passaggio di lavorazione**
+Il pezzo che torna da un terzista per andarne a un altro non entra e non esce dal magazzino: **cambia luogo a quantità invariata**. Il movimento `clStep` lo dice, e porta due estremi — da chi arriva, a chi va — uno dei quali nullo, perché fra due terzisti il pezzo passa sempre da noi. È l'**unica eccezione** alla regola dell'esistente, scritta in un predicato solo (`movimentoToccaMagazzino`) invece che in un `if` sparso in ogni punto che somma movimenti:
+
+> esistente = Σ ricevuto + Σ movimenti **che toccano il magazzino**
+
+Fra due tratte i pezzi compaiono nel prospetto sotto **«in casa, fra due fasi»**: esistono, non sono a scaffale e non sono da nessun terzista, e questo è l'unico posto che li conta. Il filtro di magazzino diventa *presso terzi o in lavorazione* — la domanda che lo apre è la stessa, «cosa ho in giro?».
+
+**Una riga per tratta, e un documento per passata**
+- Le fasi **consecutive** dello stesso terzista sono **una** lavorazione da commissionare, non due righe da spuntare: stanno in una riga sola — «fasi 20-30» — con prezzo e giorni sommati e il dettaglio di ciascuna nella nota. Spuntarne una e non l'altra produceva un ordine che non stava in piedi.
+- Le fasi dello stesso terzista **non** consecutive vanno in **ordini di lavoro distinti**: fra le due il pezzo torna da noi, e chiedergliele insieme era un ordine che il terzista non poteva eseguire di seguito. Il criterio è la *passata*, e nella scheda di generazione il secondo gruppo si chiama per nome — «Beta — seconda passata» — o due gruppi identici non si distinguerebbero.
+- La **richiesta d'offerta** invece le tiene insieme, ed è voluto: chiedere non è commissionare, e a un preventivo si risponde una volta. Alla conversione in ordine si separano.
+- La riga di documento porta ora `phaseKeys`, l'elenco di **tutte** le fasi che copre. Indicizzando solo la prima, le fasi in mezzo risultavano ancora da documentare e il fabbisogno le riproponeva — in un ordine che le conteneva già.
+
+**Una volta sola, per davvero**
+Niente impediva di registrare due volte la stessa uscita. Il conto si legge dai movimenti, che l'ordine e la riga li portano già: la scheda propone il **residuo**, e a residuo zero lo dice invece di riproporre il modulo come se niente fosse. Superarlo resta possibile — una rispedizione dopo uno scarto è legittima — perché vietarlo avrebbe trasformato un caso vero in un motivo per registrare fuori dall'app.
+
+**Un ordine di lavoro scritto a mano**
+Fin qui un ODL nasceva solo da un piano: l'unico modo di riempirne uno vuoto era la riga manuale, testo libero senza tariffa dal ciclo e senza nessuno dei comandi del conto lavoro. Ora **+ Lavorazione da ciclo** fa scegliere la parte fra quelle che un ciclo ce l'hanno, poi la tratta e i pezzi. Si vedono **tutte** le fasi — anche quelle di un altro terzista e quelle interne, marcate in elenco — perché mandare fuori una lavorazione che di solito si fa in casa è un caso vero, e l'app lo segnala invece di impedirlo. La riga che ne esce passa dalla **stessa fabbrica** di quella generata dal fabbisogno, e un caso lo verifica campo per campo. L'ordine però non è legato a nessun piano, ed è detto in pagina: lì la fase continuerà a risultare da ordinare.
+
+**Carico centri: i codici, e il grafico**
+- Sotto la tavola, **i codici da produrre**: codice, pezzi, settimana e le fasi interne con ore per pezzo e ore totali, ordinati per settimana e per ore decrescenti — la domanda che ci si fa guardandoli è «cosa lancio per primo». «62 ore alla tornitura» senza sapere su quanti pezzi era un numero da credere sulla parola. I **pezzi** non si sommano fra le fasi di uno stesso codice (ogni fase lavora gli stessi pezzi); le **ore** sì.
+- Sopra, un **grafico a barre** per centro: una barra per settimana, la capacità come linea tratteggiata, gli stessi colori della tavola — neutro fino all'85%, arancio fino al 100%, rosso sopra. Un centro senza capacità dichiarata disegna le barre e nient'altro. Il grafico serve a dire **dove guardare**, non sostituisce i numeri: ogni barra porta il suo, e la tavola resta la lettura esatta.
+- SVG scritto a mano, nessuna libreria nuova: le tre in `vendor/` ci sono perché un PDF e un foglio Excel non si scrivono a mano, un grafico a barre sì — e una libreria in più sarebbe un file in più da riverificare a ogni aggiornamento. Ogni blocco porta un `aria-label` che riassume il centro, per chi il disegno non lo vede.
+- Cliccando il nome di un centro le due letture si restringono a quello, e il filtro entra anche nell'intestazione dell'export. L'export ha ora **due sezioni**, in forma lunga.
+
+**Un saldo che si legge in ordine di data**
+Emerso provando il giro con **lo stesso** terzista due volte: il saldo del presso-terzi era la differenza fra due totali, e la prima volta che i perni tornavano da Beta *uscivano* dal suo registro senza esserci mai entrati — da lui erano arrivati come tondo, e la trasformazione non la scrive nessuno. Quella partenza senza arrivo annullava il ritorno vero della seconda tratta, e il prospetto diceva che da Beta non c'era niente mentre i pezzi erano là. Il saldo si calcola ora **in ordine di data**, azzerando a ogni passo quel che andrebbe sotto zero: è la stessa regola già scritta — un saldo negativo è una trasformazione, non un debito — applicata a ogni passaggio invece che al totale.
+
+**Note**
+- **57 casi nuovi**, e i due che portano il peso sono il giro completo delle quattro tratte (il materiale esce **una** volta, il pezzo si carica **una** volta, e i due gesti in mezzo non toccano la giacenza) e il confronto campo per campo fra una riga scritta a mano e una generata dal piano. Poi le tratte e le passate, il residuo che si azzera, l'ordine di lavoro vecchio a una riga per fase che **conserva gli ancoraggi di prima** senza nessuna migrazione, i codici da produrre, e il grafico verificato contro la tavola invece che contro sé stesso. La suite passa da 1550 a **1607** casi.
+- `README.md` e `docs/cloud-schema.md` aggiornati: la regola dell'esistente è riscritta con la sua eccezione, non lasciata in contraddizione.
+
+### 0.71.0 — 2026-09-07
+
+**Corretto: il materiale usciva una volta per fase invece che una volta per pezzo.**
+Un ordine di lavoro ha una riga per fase, e ogni riga offriva *spedisci materiale* e *registra rientro*. Ma le fasi di un ciclo sono lavorazioni sullo **stesso** pezzo: due fasi dallo stesso terzista per quattro pezzi facevano uscire otto materiali e rientrare otto pezzi. L'app non sbagliava un conto — invitava a registrarne uno sbagliato, e il magazzino ci credeva.
+
+**Il materiale esce una volta, e non è una scelta libera**
+- Lo *spedisci materiale* sta ora sulla **prima fase** di ogni parte presente nel documento, il *registra rientro* sull'**ultima**. L'ordine è quello delle fasi del ciclo, non quello delle righe nel documento.
+- Le fasi in mezzo non restano mute: dicono **dove** sono i comandi — «materiale in uscita alla fase 10, rientro alla fase 30» — perché la loro assenza somiglierebbe a un difetto.
+- Ogni parte del documento ha i **propri** ancoraggi: due parti diverse escono e rientrano ciascuna per conto suo, e una parte con una fase sola esce e rientra sulla stessa riga.
+- Il materiale che esce **non si sceglie più da un elenco di tutti gli articoli**: viene dal **ciclo della parte**, con le quantità già calcolate — *q.tà del ciclo × pezzi dell'ordine* — e correggibili. È lo stesso materiale che il fabbisogno ha già fatto comprare, ed è il senso della frase «il materiale in uscita è quello contenuto nel ciclo di lavorazione». La scheda registra un movimento per riga, e una quantità lasciata a zero non ne registra nessuno.
+- Un ciclo **senza** materiale a magazzino lo dice invece di offrire una scheda vuota: quel materiale lo mette il terzista, e non c'è niente da scaricare.
+
+**Un saldo negativo non è merce mancante**
+Emerso provando il giro completo: rientrando **perni** dopo aver spedito **tondo**, il prospetto *presso terzi* mostrava «PERNO −4» — un pezzo che dal terzista non c'era mai stato. Un saldo negativo su un codice è come si vede una **trasformazione**, non un debito: il prospetto ora mostra i soli saldi positivi, e il filtro di magazzino «presso terzi» somma solo quelli. Sommare i negativi scalava da un articolo quello che sta fuori come un altro.
+
+**Note**
+- **11 casi nuovi** in `test/contolavoro.test.js`, e il primo è lo scenario che ha fatto vedere il difetto: due fasi allo stesso terzista per 4 pezzi, dove ora **escono 8 kg di tondo e rientrano 4 perni**, non 8 e 8. Poi gli ancoraggi (compreso quello che verifica che conti l'ordine delle **fasi** e non quello delle righe), il disegno a video con i comandi che compaiono una volta sola e la fase in mezzo che lo spiega, due parti nello stesso ODL, il materiale ricavato dal ciclo con i suoi casi limite, e la quantità a zero che non registra niente. La suite passa da 1539 a **1550** casi.
+- Le righe di conto lavoro rimaste in un ordine d'acquisto da prima della separazione fra ODA e ODL passano dalla stessa scheda: hanno la stessa forma, e la stessa regola.
+
+### 0.70.1 — 2026-09-07
+
+**Corretto**
+- **I due comandi di conto lavoro sotto una riga di ordine di lavoro si accavallavano alla descrizione della riga sopra.** La causa non è di misura ma di natura: `plandoc-link` disegna un riquadro (bordo più 6px di padding verticale) su uno `<span>`, e **un elemento inline con padding verticale non allarga la riga di testo che lo contiene** — il riquadro deborda sopra e sotto, e finisce addosso ai vicini. Nell'elenco dei documenti generati da un piano non si vedeva, perché lì quei riquadri stanno in un contenitore flex, dove diventano blocchi da soli. Sotto una riga di documento non c'era nessun flex a salvarli.
+- La classe dichiara ora `display:inline-block`, e i due comandi hanno una **riga propria** (`line-cl-actions`, disposta in flex) invece di stare dentro `line-note`, che è un blocco pensato per una nota di testo. Il punto di separazione fra i due passa dallo spazio, non più da un `·` in mezzo ai riquadri.
+
+**Lo stesso difetto, altrove**
+Il controllo scritto per impedire il ritorno ne ha trovate **altre sei** con la stessa forma, latenti: `picker-type`, `rfq-pick-type`, `doc-badge`, `home-chip` e le due etichette di riga `rfq-manual-tag` e `rfq-clavoro-tag`. Nessuna si vedeva rotta oggi — vivono quasi sempre dentro contenitori flex, dove il difetto non si manifesta — ma bastava usarne una in mezzo al testo per ritrovare lo stesso accavallamento. Corrette tutte allo stesso modo: dove la classe sta in un flex la dichiarazione non cambia niente, dove sta inline la salva.
+
+**Note**
+- **3 casi nuovi** in `test/theme.test.js`. Il controllo non prova il disegno — la suite non ha un motore di layout — ma il **contratto fra i due file**: le classi che disegnano un riquadro si ricavano da `style.css` (bordo più padding verticale non nullo), gli `<span>` che le portano si ricavano dalle viste, e ognuna deve dichiarare un `display` che il riquadro lo contenga. L'elenco non è scritto a mano: se domani nasce un'altra classe con la stessa forma, la trova questo controllo invece dello schermo. C'è anche il caso che verifica che il controllo **stia provando qualcosa** — se `plandoc-link` smettesse di essere un riquadro, l'altro passerebbe a vuoto.
+- Verificato che il controllo riconosca il difetto rimettendolo per un attimo: togliendo `display:inline-block` da `plandoc-link` la suite fallisce nominando la classe. La suite passa da 1536 a **1539** casi.
+
+### 0.70.0 — 2026-09-07
+
+**Il tempo di una lavorazione esterna si misura in giorni, non in ore.** Una fase interna occupa una macchina, e le sue ore sono quelle che alimentano il *Carico centri*. Una fase in conto lavoro non occupa niente di nostro: il pezzo esce, sta dal terzista, e torna. Contarla in ore rispondeva alla domanda sbagliata — di quante ore ci metta il terzista non importa a nessuno, importa **quando ripresenta il pezzo**.
+
+**Nel ciclo di lavorazione**
+- La colonna delle ore diventa **Tempo**, e cambia unità con la natura della fase: **ore (h)** su una lavorazione interna, **giorni (gg)** su una in conto lavoro. Si passa dall'una all'altra scegliendo o togliendo il fornitore, e la riga si ridisegna: cambia proprio cosa quel campo misura, e lasciarlo com'era avrebbe fatto scrivere il numero nel posto sbagliato.
+- Le ore di una fase esterna **a costo orario** non spariscono: si spostano accanto alla tariffa, nella cella del costo. Lì sono **le ore che il terzista fattura**, cioè un pezzo del prezzo, non il nostro tempo — ed è l'unico punto in cui ha senso vederle.
+- Le due grandezze restano **due colonne** nell'export del ciclo, con i rispettivi totali: una colonna che cambia unità riga per riga non si può né sommare né filtrare in un foglio di calcolo.
+
+**Nel fabbisogno, ed è il motivo per cui esistono**
+- I giorni di attraversamento diventano il **tempo di consegna** della fase: se il pezzo serve pronto il 30 settembre e il terzista ci mette cinque giorni, **l'ordine di lavoro deve uscire entro il 25**. È la stessa aritmetica dei giorni di consegna a listino per il materiale, e la stessa risposta quando il dato manca — nessun anticipo, non un anticipo inventato.
+- La sezione **Da far lavorare fuori** ha una colonna **Ordinare entro** accanto a *Serve per*, con i giorni sottratti in chiaro e il badge di urgenza che finalmente significa qualcosa: prima era sempre calcolato sulla data in cui serve, come se un conto lavoro si potesse mandare l'ultimo giorno.
+- Giorni e data d'ordine entrano nel foglio **Conto lavoro** dell'export Excel e nel blocco del PDF.
+
+**Note**
+- **12 casi nuovi** fra `test/cycle-op.test.js` e `test/mrp-cl.test.js`: la fase esterna che nasce con i giorni, l'aggiornamento che non azzera le ore fatturate a costo orario, i giorni che restano zero su una fase interna, la sopravvivenza al ricaricamento a due giri, e l'anticipo — compreso quello che **attraversa il cambio di mese**, il valore negativo che non anticipa al contrario, e la data mancante che non ne fa inventare una. Più il caso che tiene ferma la separazione: **i giorni non toccano il costo**. La suite passa da 1524 a **1536** casi.
+- Una fase creata prima di questa revisione prende `days: 0`: nessun anticipo, che è il comportamento che aveva. Chi vuole la data d'ordine giusta scrive i giorni sulle fasi che gli interessano, quando gli interessa.
+- **Scelta da conoscere**: i giorni sostituiscono le ore come *tempo* di una fase esterna, ma non le sostituiscono come *costo* — a modo orario servono ancora, e restano. L'alternativa sarebbe stata vietare il costo orario sul conto lavoro, che avrebbe fatto perdere le tariffe già registrate sui centri.
+
+### 0.69.0 — 2026-09-07
+
+**Ordini d'acquisto e ordini di lavoro sono due documenti diversi, e adesso lo sono anche nell'app.** Dalla 0.66.0 le lavorazioni in conto lavoro finivano come righe dentro un ordine d'acquisto: funzionava, ma metteva nello stesso documento due cose che nella realtà non lo sono — uno **compra della merce**, l'altro **manda dei pezzi a lavorare**. Al telefono con un terzista, «l'ordine 47» non bastava più a dire di cosa si stesse parlando.
+
+**Ordini di lavoro (ODL)**, voce nuova nel gruppo Documenti
+- Numerazione **sua**: `ODL-<anno>-NNN`, indipendente dagli `ODA-<anno>-NNN`. Elenco suo, filtri suoi, stampa sua — PDF ed Excel bilingui, intestati *Committente / Terzista* invece di *Richiedente / Fornitore*.
+- Colonne pensate per una lavorazione e non per della merce: **Parte**, **Lavorazione**, **Pezzi**, **Tariffa (€/pz)**, data richiesta e confermata, **Rientrati / Ancora fuori**.
+- Niente «+ Da catalogo»: un articolo non è una lavorazione, e la voce non c'è perché non avrebbe senso premerla.
+- Stati, blocchi per stato, salvataggio differito, sblocco per modifica, guardie di ruolo: **tutto riusato** dal registro dei documenti, dove ODA e RDO vivono già. Dove il comportamento coincide davvero, due copie divergono.
+- I due comandi del conto lavoro — *spedisci materiale* e *registra rientro* — stanno sotto ogni riga dell'ODL, dove terzista e ordine sono già decisi.
+
+**Dal fabbisogno: tre pulsanti, tre documenti**
+- «Genera ordini» prende **solo la merce**, «Genera ordini di lavoro» **solo le lavorazioni**. Un ordine d'acquisto non può più contenere una fase, e un ordine di lavoro non può contenere un articolo: lo decide un filtro per tipo di documento, in un punto solo.
+- Un ODL per **terzista**: tutte le fasi affidate allo stesso, anche di parti diverse, in un documento — è la forma con cui si spedisce e con cui il terzista lo legge.
+- «Genera richieste» invece li tiene **insieme**, e non è un'incoerenza: chiedere a un fornitore quanto costa il materiale **e** quanto costa lavorarlo è una domanda sola, ed è la richiesta d'offerta a farla.
+
+**La richiesta si divide, e non perde niente**
+Convertendo una richiesta che contiene sia merce sia lavorazioni nascono **due documenti** — un ODA e un ODL, entrambi che citano la richiesta e ne portano le condizioni — e la richiesta si chiude una volta sola. Una richiesta di sola merce si comporta come sempre; una di sole lavorazioni genera il solo ODL. Una richiesta **vuota** continua a produrre un ordine d'acquisto vuoto, com'è sempre stato: l'ODA resta il ripiego.
+
+**Dove la separazione si vede**
+- **Magazzino**: nessuna differenza, ed è il punto. Le righe di un ODL non hanno un articolo — la migrazione lo impone a ogni caricamento, non lo lascia alla disciplina di chi scrive — quindi non caricano niente da sé. Il rientro dei pezzi resta un movimento, e il prospetto *presso terzi* riconosce l'ODL come documento di riferimento.
+- **Commesse**: la scheda ha un elenco **Ordini di lavoro** accanto a quello degli ordini, e l'impegnato somma i due — la domanda «quanto costa questa commessa» è una sola, e leggerla in due cifre da mettere insieme a mano non aiuta nessuno. Una commessa che regge un ODL non si elimina.
+- **Riepilogo**: gli ordini confermati in ritardo comprendono gli ODL, in un avviso solo. Il tipo si legge dal numero e il click porta ciascuno nel suo elenco.
+- **Ricerca globale**: sigla `ODL` accanto a `ODA` e `RDO`.
+
+**Note**
+- **21 casi nuovi** in `test/odl.test.js`, e non provano che l'ODL funzioni — quello lo prova la macchina che riusa — ma che le due cose restino **separate**: la numerazione che non continua la serie degli ODA, quali righe possono finire in quale documento, la richiesta mista che si divide senza perdere righe, il giro verso la forma normalizzata e ritorno, e il vincolo `itemId` nullo imposto dalla migrazione. Con gli aggiornamenti a `test/mrp-cl.test.js` la suite passa da 1497 a **1520** casi.
+- Le righe di conto lavoro finite in un ordine d'acquisto **prima** di questa revisione restano dove sono, si riconoscono ancora come tali e conservano i due comandi per muovere il materiale. Non c'è una migrazione che le sposti: spostarle vorrebbe dire spezzare documenti già numerati, e ne varrebbe la pena solo se ce ne fossero — questa separazione arriva tre revisioni dopo che il conto lavoro è nato.
+- `docs/cloud-schema.md` descrive le due tabelle nuove e **perché sono due e non una con un flag**, con la nota che la forma va tenuta allineata e che in cloud conviene una vista che le unisca per le domande che riguardano entrambe.
+
+### 0.68.0 — 2026-09-07
+
+**Il carico dei centri di lavoro.** Ultima parte del lavoro sulle lavorazioni: dopo l'approvvigionamento del conto lavoro (0.66.0) e il materiale presso i terzisti (0.67.0), restava la domanda che riguarda quello che si fa in casa — *le ore che ho promesso, il reparto le regge?* Fino a ieri `cycle[].workCenterId` e `cycle[].hours` non li leggeva nessuno fuori dalla costificazione: le ore c'erano scritte e non servivano a niente.
+
+**Carico centri**, voce nuova nel gruppo *Cicli di lavorazione*
+- Tavola **centro × settimana**: le ore che i piani chiedono a ciascun centro, contro una **capacità** dichiarata sul centro in ore/settimana. Saturazione in percentuale, neutra fino all'85%, arancio fino al 100%, **rossa sopra**, più il riepilogo in testa delle settimane sfondate **con i centri nominati**.
+- Da ogni cella si apre il **dettaglio di chi ha portato quelle ore** — parte, fase, piano, ore. Non è un vezzo: vale la regola già scritta per il materiale impegnato, un numero che non dice da dove viene non si può contestare, e quindi neanche credere.
+- Somma tutti i **piani aperti**, perché il centro è condiviso e «la tornitura regge?» non ha risposta guardando un piano per volta — stessa regola con cui si calcola il materiale impegnato. Si può restringere a un piano solo, e la stessa tavola sta in fondo alla scheda di ogni piano.
+- Le ore si raccolgono da due posti: le **fasi interne** del ciclo di una parte prodotta in casa, e le **lavorazioni degli assiemi**. Le fasi in **conto lavoro** non caricano nessun centro interno: quelle si comprano, e stanno nel fabbisogno sotto «Da far lavorare fuori». Una parte acquistata non carica niente: quelle ore le fa il fornitore.
+- Export Excel e PDF **in forma lunga**, una riga per coppia centro/settimana: un foglio con trenta colonne di settimane è illeggibile, in forma lunga si pivota in Excel in dieci secondi e si filtra per data — che è la promessa già scritta sugli export degli elenchi.
+
+**Capacità sul centro di lavoro**
+- Campo nuovo in *Gestione → Centri di lavoro*, in ore a settimana, con la sua colonna nell'export/import Excel delle impostazioni.
+- **Zero significa «non dichiarata», non «nessuna capacità»**: un centro senza capacità mostra le ore e non il sovraccarico. Senza questa distinzione ogni centro esistente sarebbe risultato sfondato al primo caricamento, e il prospetto sarebbe nato già da ignorare. La vista lo dice, contando quanti centri sono in quello stato.
+
+**Due promesse, e perché sono credibili**
+Il motore del fabbisogno dichiara da sempre, in un commento, che **il time-phasing non si fa**: un fabbisogno *materiale* spezzato per periodi prometterebbe un MRP che non c'è. Quel commento è stato **riscritto**, non lasciato a contraddire il codice, con i tre motivi per cui il carico è l'eccezione.
+
+1. **Non tocca il netting.** Le funzioni del fabbisogno netto restano identiche: il carico è un prospetto derivato in sola lettura, da cui non nasce nessun documento e nessuna quantità. Se domani lo si cancellasse, il resto dell'app non se ne accorgerebbe — e c'è un caso di prova apposta, che confronta i numeri del netto prima e dopo averlo letto.
+2. **La domanda è diversa.** Sul materiale il periodo servirebbe a decidere *quando ordinare*, e a quello risponde già la data d'ordine senza secchielli. Sulla capacità il periodo **è** la domanda: la capacità è una portata, non uno stock.
+3. **Non si promette nulla che non si dia.** Capacità infinita, dichiarata in pagina: il sovraccarico si vede, non si sposta. Nessuna schedulazione, nessun calendario, nessuna data di avvio di una fase. E le ore stanno nella settimana in cui **il pezzo serve pronto**, non in quella in cui si lavora — anche questo scritto in pagina, perché una data che sembra un piano di lavoro senza esserlo è peggio di nessuna data.
+
+**Note**
+- **25 casi nuovi** in `test/carico.test.js`, e i primi sei sono sull'aritmetica delle settimane ISO — che una implementazione ingenua sbaglia una volta l'anno e in silenzio: il 1° gennaio di un anno che comincia di venerdì sta nella settimana 53 dell'anno prima, il 31 dicembre può stare nella prima dell'anno dopo, e il lunedì si calcola **in UTC** o a est di Greenwich scivola al giorno prima — cioè in un'altra colonna del prospetto. È la lezione già pagata una volta sulle date d'ordine, e le nuove funzioni nascono con la stessa disciplina. Poi la raccolta delle ore, gli scarti che entrano nel moltiplicatore, i secchielli (comprese le righe **senza data**, che finiscono in una colonna dichiarata invece di sparire), capacità e sovraccarico, l'export, e i due casi che fanno valere il patto del punto 1. La suite passa da 1471 a **1497** casi.
+- Due casi di `test/nav.test.js` usavano i Cicli come esempio di gruppo a voce singola, che ora non lo è più. Il comportamento provato non cambia: cambia l'esempio, e se n'è aggiunto uno sul caso opposto.
+- **Difetto trovato e non corretto**, scritto in `docs/cloud-schema.md` per non riscoprirlo: `workCenters[].suppliers` — i fornitori conto lavoro aggiunti nella 0.64.0 — non è dichiarato nel registro dello schema né in quello dei riferimenti. Finisce in una colonna-array invece che in una tabella normalizzata, e la rimappatura degli id non lo attraversa. Stessa famiglia di `plans.jobId`. Non fa parte di questo lavoro ed è una decisione a sé.
+
+### 0.67.0 — 2026-09-07
+
+**Il materiale che sta dai terzisti.** La revisione scorsa ha portato le lavorazioni esterne dentro gli ordini; restava fuori la merce che si manda al terzista perché possa farle. Finché non era tracciata, spariva due volte: non era più a scaffale e non era in nessun conto, quindi il magazzino diceva zero e nessuno sapeva che venti chili di tondo stavano da Beta.
+
+**Due movimenti nuovi**
+- **Uscita a conto lavoro** e **Rientro da conto lavoro**, con il terzista (obbligatorio) e l'ordine che li giustifica (facoltativo). Si registrano dal **Magazzino**, come le rettifiche, oppure — ed è il posto naturale — **dalla riga d'ordine di conto lavoro**, dove terzista e ordine sono già decisi e resta da dire solo cosa esce e quanto.
+- **L'uscita è negativa**: il materiale che parte esce dal magazzino, perché allo scaffale non c'è più. È lo stesso gesto del consumo di produzione, e non contraddice la regola per cui *la giacenza non è una colonna*: un movimento negativo è un addendo di quella somma, non un saldo scritto da qualche parte.
+- I due movimenti portano l'articolo **che si muove davvero**: quello che esce e quello che rientra. Quando coincidono — grezzo fuori, lavorato dentro — il conto va a zero da sé; quando differiscono — materiale fuori, pezzi finiti dentro — il consumo del materiale è implicito nella coppia. Nessuna logica speciale in nessuno dei due casi, ed è il motivo per cui questo modello è stato preferito a uno che chiudesse il conto con un rientro fittizio compensato da uno scarico: due scritture per la stessa cosa, che nessuno terrebbe allineate.
+
+**Il prospetto «presso terzi»**
+- Non una vista nuova: il Magazzino elenca già gli stessi articoli. C'è un **filtro di stato** *Presso terzi*, un pulsante in toolbar che compare **solo se c'è qualcosa fuori**, e una scheda di dettaglio **per fornitore e per ordine** — che il filtro non può dare, perché la riga del magazzino è per articolo.
+- Il saldo è per **coppia (fornitore, articolo)**, non per articolo soltanto: con codici diversi in uscita e in entrata, un saldo unico non significherebbe niente.
+- **Calcolato dai soli movimenti**, come la giacenza. Nessun campo `presso terzi` da tenere allineato, e quindi niente che possa divergere: è la stessa regola per cui non esiste `onHand`, applicata a un secondo numero.
+- Export Excel e PDF in forma piatta, una riga per coppia: terzista, codice, articolo, uscito, rientrato, ancora fuori, ordini, ultimo movimento.
+- Lo storico dei movimenti di un articolo mostra ora il **terzista e l'ordine** accanto alla nota.
+
+**Nessun doppio conteggio, e perché**
+La garanzia è **strutturale, non aritmetica**: le righe d'ordine con un articolo caricano il magazzino via *ricevuto*, quelle senza caricano via movimento, e **una riga non può essere di entrambi i tipi**. Per questo la riga di conto lavoro deve avere `itemId` nullo — se qualcuno ce ne mettesse uno *e* registrasse il rientro, i pezzi risulterebbero il doppio. Il giro completo (tondo ordinato, ricevuto, spedito a Beta, perni rientrati) è verificato passo per passo, e c'è anche il caso per assurdo che dimostra cosa succederebbe violando il vincolo.
+
+**Note**
+- **14 casi nuovi** in `test/contolavoro.test.js`: i due tipi, i campi del movimento con e senza contorno, il movimento vecchio che prende i campi nulli e resta stabile a due giri, l'uscita che fa calare la giacenza, il prospetto per fornitore, il conto che si chiude, il filtro di magazzino, l'eliminazione che rimette dentro il materiale, l'export, il **giro completo in sei passi** e la prova per assurdo del vincolo. La suite passa da 1457 a **1471** casi.
+- Nel registro dello schema, il commento su `stock_movements` diceva che i carichi da ordine non stanno lì. Resta vero, ed è stato spiegato perché i due movimenti nuovi possono portare un `orderId` senza violarlo: la riga d'ordine che li giustifica non ha un articolo, quindi non carica niente da sé. Senza la nota, il prossimo lettore avrebbe pensato che la regola fosse saltata.
+- `REFS` sa ora seguire `movements.supplierId`. `orderId` e `lineId` restano fuori, perché `REFS` non ha una destinazione per gli ordini e gli ordini non sono mai stati rimappati: scritto in un commento invece di lasciare il buco muto.
+
+### 0.66.0 — 2026-09-07
+
+**Le lavorazioni in conto lavoro entrano nell'approvvigionamento.** Fino a ieri il fabbisogno rispondeva bene a una domanda sola — cosa comprare — e per le parti prodotte in casa si fermava a metà: scendeva nel ciclo a prendere il materiale e **scartava le fasi**, con un commento che diceva il vero a metà («le lavorazioni non si comprano a magazzino»: quelle esterne si comprano eccome, solo non finiscono a scaffale). Il risultato era che una zincatura da mille euro affidata a un terzista non compariva in nessun documento, e la si ordinava a memoria.
+
+**Da far lavorare fuori**
+- Una fase del ciclo con un **fornitore** è una lavorazione in conto lavoro, e ora entra nel fabbisogno accanto al materiale, in una **sezione propria** della scheda del piano: fase, centro, parte, terzista, data in cui serve, pezzi, ore totali, prezzo per pezzo e importo. Le fasi **senza** fornitore sono interne e restano fuori: non si comprano, si fanno.
+- La quantità sono i **pezzi della parte**, con i moltiplicatori di distinta già applicati. Il prezzo è **per pezzo**: la tariffa scritta nel ciclo se la fase è a costo fisso, *ore per pezzo × tariffa* se è a costo orario.
+- La tariffa è quella **congelata sulla riga** quando la fase è stata scritta, non quella che il centro ha oggi: ripescarla adesso cambierebbe da sé il prezzo di una fase che qualcuno aveva già deciso.
+- Nuovo riquadro **Conto lavoro** fra i totali del piano, foglio **Conto lavoro** nell'export Excel e blocco nel PDF.
+
+**Dal fabbisogno al documento**
+- Le fasi entrano nella scheda «Genera richieste / Genera ordini» **nel gruppo del loro terzista**, accanto al materiale dello stesso fornitore: un documento solo, perché il fornitore è uno e la consegna è una. Si riconoscono a colpo d'occhio dal numero di fase e dalla chiave inglese.
+- La riga di documento porta il **codice della parte** — è il pezzo che il terzista riceve, lavora e rispedisce, ed è il codice che cercherà sulla sua bolla — la descrizione della lavorazione, i pezzi come quantità e, a costo orario, *ore/pezzo × tariffa* nella nota, che la stampa mostra sotto la descrizione.
+- Nel documento la riga è marcata **conto lavoro**, non più «manuale»: chiamare manuale ciò che l'app ha generato faceva sembrare improvvisato il contrario di quello che è. Il *ricevuto* su quella riga significa **pezzi rientrati dal terzista**: porta l'ordine a parziale o evaso, e **non carica il magazzino** — lo dice il suggerimento della cella.
+- **Il fabbisogno netto non si applica alle lavorazioni**, ed è scritto in pagina invece che lasciato scoprire. Nettarle richiederebbe di sapere quanti pezzi sono già stati lavorati, cioè un avanzamento di produzione che Bomtrack non ha: fingere di saperlo produrrebbe quantità che nessuno può spiegare.
+
+**Come si riconosce una fase già ordinata**
+Il problema vero di questa revisione, e vale la pena dire come è stato risolto e come può sbagliare.
+
+- La riga di documento di una fase ha **`itemId` nullo**, e deve averlo: è la garanzia *strutturale* contro il doppio conteggio di magazzino. L'esistente si calcola come *ricevuto sulle righe con articolo + movimenti*; il rientro dei pezzi sarà un movimento. Con un `itemId` le due strade si sommerebbero e i pezzi risulterebbero il doppio.
+- Non potendo cercarla per articolo, la riga porta una **chiave di fase** congelata alla generazione — come già lo sono il codice e la descrizione, che pure sono copie. L'indice dentro la chiave conta **fra le sole lavorazioni**, non nell'array del ciclo: aggiungere una materia prima alla distinta parte è la modifica più frequente, e con l'indice assoluto avrebbe spostato la chiave di ogni fase successiva.
+- **Come può sbagliare**: chi riordina le fasi dopo aver generato il documento vede la fase **riproposta**. È un falso negativo, e si vede — il documento è lì nell'elenco di quelli generati dal piano. L'alternativa avrebbe bloccato la fase *sbagliata*, e quello non si sarebbe visto. Fra i due modi di sbagliare si è scelto quello visibile, ed è scritto accanto alla funzione.
+- **Non si è dato un id proprio alle righe di ciclo**, che sarebbe la strada apparentemente pulita: costringerebbe a cambiare il registro dello schema, la traduzione verso il database condiviso, la firma dei record e la politica di merge di quelle righe — che è *sostituzione dell'insieme* proprio perché un'identità di riga lì non esiste. Costo alto per un beneficio che la chiave dà senza toccare nulla.
+
+**Note**
+- **28 casi nuovi** in `test/mrp-cl.test.js`: l'esplosione (quantità lungo i livelli, fase interna esclusa, parte acquistata che non genera fasi, diamante che somma sulla stessa chiave, data più vicina, due fasi sullo stesso centro che restano due, anello troncato), la chiave e i suoi due comportamenti — quello che regge e quello dichiarato —, la riga di fabbisogno con i suoi campi *assenti*, la generazione dei documenti e la prova che una riga di conto lavoro ricevuta **non tocca il magazzino**. La suite passa da 1429 a **1457** casi.
+- `planDocumentedItems` si chiama ora `planDocumentedKeys` e indicizza per articolo **o** per fase. La copertura di commessa continua a cercare per articolo: le voci di fase restano nella mappa e non le trova nessuno, innocue. Estendere il semaforo della commessa alle lavorazioni è una decisione a sé, non un effetto collaterale di questa.
+- Scritti in `store.js`, accanto a `REFS`, i **due riferimenti che la rimappatura degli id non copre**: `plans.jobId` (innocuo, le commesse sono nate dopo) e la chiave di fase, che contiene un id articolo *dentro una stringa* e che nessuna sostituzione di campo saprebbe seguire. Meglio scritti che riscoperti.
+
+### 0.65.0 — 2026-09-07
+
+Primo passo verso l'approvvigionamento e la programmazione delle lavorazioni: prima di poterle ordinare o schedulare, le ore di una fase devono **esistere**. Fino a ieri non sopravvivevano a un riavvio.
+
+**Corretto**
+- **Le fasi a costo orario perdevano le ore a ogni caricamento, e valevano zero.** Una normalizzazione di `migrateDB()` — scritta prima che il modo di costo esistesse, e mai aggiornata quando è arrivato — cancellava `hours` da ogni riga di lavorazione priva di `cost`, cioè da **tutte** quelle a costo orario, che il costo non ce l'hanno per definizione. Si inseriva una fase da 2 h × 60 €/h, si riapriva l'app, e quella fase costava **zero**. Il difetto era silenzioso due volte: la riga restava a video con la sua tariffa, e il costo della parte scendeva senza che niente lo dicesse. Il valore scritto al suo posto usava per giunta la tariffa del **centro** invece di quella del **fornitore**, quindi sbagliava anche per chi se ne fosse accorto.
+- **Le righe già danneggiate si recuperano**, dividendo il costo per la stessa tariffa con cui era stato moltiplicato — quella del centro, non quella del fornitore, perché è quella che il difetto usava: dividere per l'altra sbaglierebbe proprio dove il terzista ha una tariffa propria. **Il recupero cambia i costi mostrati** a chi era danneggiato, da zero al valore vero. È l'effetto voluto, ma i numeri si muovono.
+- Dove il centro **manca o ha tariffa zero** le ore non sono ricostruibili, e non si inventano: restano a zero e finiscono fra gli avvisi del **Riepilogo** — «fasi a costo orario senza ore», con il codice della parte, il numero della fase e il centro, e il click che porta al ciclo. Un costo sparito non si scopre guardando il totale, che resta un numero plausibile.
+
+**Le ore si separano dal costo**
+
+Su una riga di lavorazione le ore e il costo rispondono a due domande diverse, e da questa revisione sono due campi indipendenti.
+
+- **Le ore ci sono sempre**, anche su una fase a costo fisso, e hanno una **colonna propria** nella tabella del ciclo. Erano dentro la cella del costo, e comparivano solo in modo orario.
+- **A costo fisso le ore non entrano nel costo**, ed è deliberato: un prezzo concordato con un terzista è quello, e farlo diventare *ore × tariffa* lo cambierebbe da sé. Ma quella fase il centro lo occupa lo stesso, e senza le ore il **carico dei centri di lavoro** non si potrebbe calcolare su metà delle fasi. È il pezzo che mancava, ed è il motivo di questa revisione.
+- Cambiare il modo di costo non tocca più le ore: il tempo di una fase non cambia perché è cambiato il modo in cui la si paga.
+- Le ore entrano nell'**export del ciclo**, con il loro totale.
+
+**Note**
+- **26 casi nuovi** in `test/cycle-op.test.js`: la regressione del difetto (una fase oraria che sopravvive al ricaricamento), il recupero e i suoi due limiti dichiarati, l'idempotenza a due giri, le righe precedenti al modo di costo, la separazione fra ore e costo, la fase nuova che nasce con le ore, e gli avvisi del riepilogo — con la fase numerata **fra le sole lavorazioni** e non nell'array intero, che è il numero che si legge a video. La suite passa da 1412 a **1429** casi.
+- Un caso di `test/migrate.test.js` **codificava il difetto**: pretendeva che le ore sparissero. Ora pretende il contrario, con il perché scritto accanto.
+- `docs/cloud-schema.md` descriveva `item_cycle_rows` com'era prima del modo di costo: niente `cost_mode`, niente `hours`, niente `rate`. Riscritta, con la distinzione fra riga articolo e riga lavorazione e il vincolo che tiene separate le due domande.
+
+### 0.64.3 — 2026-09-07
+
+Nessuna modifica all'app: si aggiunge il documento che mancava accanto al contratto cloud.
+
+**Documentazione**
+- **`docs/sostenibilita-free-tier.md`** — `cloud-schema.md` dice *come* i dati diventano tabelle, e non diceva *quanto occupano*. Ora il conto c'è, tabella per tabella, su tre scenari, con il modello di calcolo in fondo perché sia contestabile invece che creduto.
+- Il verdetto è che il piano gratuito regge con margine ampio — **25% dello spazio a tre anni** nello scenario realistico — ma i tre numeri che contano non sono quelli che ci si aspetta:
+  - **il budget non è 500 MB ma ~430**: un progetto Supabase vuoto ne occupa già 50–70 di cataloghi ed estensioni, e oltre il limite il progetto passa in sola lettura, cioè l'app smette di salvare;
+  - **a stringere per primo è l'egress, non il disco**: un pull completo è ~5 MB compressi, e il polling ogni 20–30 s previsto dal percorso è sostenibile **solo incrementale** — a lettura piena sarebbero decine di GB al giorno contro un tetto di 5 GB al mese;
+  - **crescono col tempo, non col catalogo**: `stock_movements` e gli snapshot delle revisioni sono da soli i due terzi dell'occupazione, e nessuno dei due dipende da quanti articoli ci sono.
+- Detto anche cosa **non** serve, perché è l'ottimizzazione che viene in mente per prima: togliere le colonne di audit dalle tre tabelle a sostituzione d'insieme e sostituire l'id sintetico con una chiave `(item_id, pos)` risparmia il 4,6%. Va fatto per igiene — quell'id non è un'identità e non merita un indice unico — ma la capienza la decide la **retention dei movimenti**, non lo schema.
+
+**Note**
+- Restano segnati due rischi del piano gratuito che non riguardano lo spazio e che oggi non hanno risposta: la **sospensione dopo 7 giorni di inattività** (un'officina chiude due settimane ad agosto) e l'**assenza di backup automatici**. Costano entrambi poco da prevenire e molto da scoprire tardi.
+- Il modello di calcolo nel documento è eseguibile con `node` senza dipendenze, e i numeri delle tabelle sono i suoi. Il giorno in cui il database esisterà, la query per confrontare previsione e realtà è nell'ultima riga del file.
+
 ### 0.64.2 — 2026-09-06
 
 **Corretto**

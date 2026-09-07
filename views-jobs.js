@@ -48,20 +48,24 @@ function jobDocs(jobId) {
   // piano che la cita: la seconda strada copre i documenti generati prima che
   // la commessa fosse assegnata al piano.
   const suo = d => d.jobId === jobId || (d.planId && planIds.has(d.planId));
-  return { rfqs: (db.rfqs || []).filter(suo), orders: (db.orders || []).filter(suo) };
+  return { rfqs: (db.rfqs || []).filter(suo), orders: (db.orders || []).filter(suo),
+    workOrders: (db.workOrders || []).filter(suo) };
 }
 // Quanto è stato ordinato per una commessa, e quanto è già arrivato.
+// Quanto è impegnato con i fornitori per una commessa: merce **e** lavorazioni.
+// Sono due documenti diversi ma un impegno solo — chi guarda una commessa vuole
+// sapere quanto costa, non da quale elenco viene la cifra.
 function jobTotals(jobId) {
-  const { orders } = jobDocs(jobId);
+  const { orders, workOrders } = jobDocs(jobId);
   let ordinato = 0, ricevuto = 0, righe = 0;
-  orders.forEach(o => {
+  [].concat(orders, workOrders).forEach(o => {
     if (o.status === 'annullato') return;
     (o.lines || []).forEach(l => {
       const q = Number(l.qty) || 0, p = Number(l.price) || 0, r = Number(l.received) || 0;
       ordinato += q * p; ricevuto += r * p; righe++;
     });
   });
-  return { ordinato, ricevuto, righe, ordini: orders.length };
+  return { ordinato, ricevuto, righe, ordini: orders.length + workOrders.length };
 }
 // Ritardo: la commessa ha una data e quella data è passata senza chiusura.
 function jobLate(j) {
@@ -115,7 +119,12 @@ function jobCoverage(jobId) {
   const miei = new Set(piani.map(p => p.id));
   // Dove ogni riga del piano è già finita: richiesta o ordine, bozze comprese.
   const docs = new Map();
-  piani.forEach(p => planDocumentedItems(p.id).forEach((refs, id) => docs.set(id, (docs.get(id) || []).concat(refs))));
+  // planDocumentedKeys indicizza anche le fasi di conto lavoro, con la loro
+  // chiave. Qui si cerca sempre per id articolo: quelle voci restano nella
+  // mappa e non le trova nessuno — innocue. La copertura di commessa guarda il
+  // materiale, e includere le lavorazioni cambierebbe il semaforo: è una
+  // decisione a sé, non un effetto collaterale di questa.
+  piani.forEach(p => planDocumentedKeys(p.id).forEach((refs, id) => docs.set(id, (docs.get(id) || []).concat(refs))));
 
   // Un'esplosione per piano, poi la somma per articolo: si tiene la data più
   // vicina (come mrpAdd) e si ricorda da quale piano viene, che è dove si va a
@@ -347,7 +356,7 @@ function jobListRows() {
 function renderJobEdit(id) {
   const j = getJob(id); if (!j) return '';
   const piani = jobPlans(id);
-  const { rfqs, orders } = jobDocs(id);
+  const { rfqs, orders, workOrders } = jobDocs(id);
   const t = jobTotals(id);
   const cov = jobCoverage(id);
   const elenco = (titolo, righe, vuoto) => `<div class="mrp-section">
@@ -362,7 +371,7 @@ function renderJobEdit(id) {
       <span style="font-family:var(--mono);width:150px">${esc(d.number)}</span>
       <span class="doc-badge">${esc((tipo === 'rfq' ? RFQ_STATUS : ORDER_STATUS)[d.status] || d.status)}</span>
       <span style="flex:1">${esc(supplierName(d.supplierId) || '—')}</span>
-      <button class="btn-ghost" onclick="${tipo === 'rfq' ? `apriRfqDaCommessa('${d.id}')` : `apriOrdineDaCommessa('${d.id}')`}">Apri →</button></div>`;
+      <button class="btn-ghost" onclick="${{ rfq: `apriRfqDaCommessa('${d.id}')`, order: `apriOrdineDaCommessa('${d.id}')`, odl: `apriOdlDaCommessa('${d.id}')` }[tipo]}">Apri →</button></div>`;
   return `<div class="manage-wrap">
     <div class="bom-toolbar">
       ${worklistCloseBtn('jobBackToList()', 'la commessa')}
@@ -404,6 +413,7 @@ function renderJobEdit(id) {
     ${elenco(ico('list', 'tinted', '') + ' Fabbisogni', piani.map(rigaPiano).join(''), 'Nessun piano collegato. Si aggancia dalla testata di un piano, nel campo Commessa.')}
     ${elenco(ico('mail', 'tinted', '') + ' Richieste di offerta', rfqs.map(d => rigaDoc(d, 'rfq')).join(''), 'Nessuna richiesta.')}
     ${elenco(ico('receipt', 'tinted', '') + ' Ordini a fornitore', orders.map(d => rigaDoc(d, 'order')).join(''), 'Nessun ordine.')}
+    ${elenco(ico('wrench', 'tinted', '') + ' Ordini di lavoro', workOrders.map(d => rigaDoc(d, 'odl')).join(''), 'Nessuna lavorazione affidata a terzi per questa commessa.')}
     </div>`;
 }
 
@@ -413,6 +423,7 @@ function renderJobEdit(id) {
 function apriPianoDaCommessa(planId) { currentPlanId = planId; mrpView = 'edit'; setView('mrp'); }
 function apriRfqDaCommessa(id) { docLeave('rfq'); currentRfqId = id; rfqView = 'edit'; setView('rfq'); }
 function apriOrdineDaCommessa(id) { docLeave('order'); currentOrderId = id; orderView = 'edit'; setView('orders'); }
+function apriOdlDaCommessa(id) { docLeave('odl'); currentOdlId = id; odlView = 'edit'; setView('odl'); }
 
 // ─── Mutatori ───
 function newJob() {
@@ -465,14 +476,15 @@ function delJob(id) {
   if (!roleGuard('docs')) return;
   const j = getJob(id); if (!j) return;
   const piani = jobPlans(id);
-  const { rfqs, orders } = jobDocs(id);
+  const { rfqs, orders, workOrders } = jobDocs(id);
   // Non si cancella una commessa che regge del lavoro: si lascerebbero piani e
   // documenti che citano un numero inesistente.
-  if (piani.length || rfqs.length || orders.length) {
+  if (piani.length || rfqs.length || orders.length || workOrders.length) {
     const usi = [];
     if (piani.length) usi.push(piani.length + (piani.length === 1 ? ' piano' : ' piani'));
     if (rfqs.length) usi.push(rfqs.length + (rfqs.length === 1 ? ' richiesta' : ' richieste'));
     if (orders.length) usi.push(orders.length + (orders.length === 1 ? ' ordine' : ' ordini'));
+    if (workOrders.length) usi.push(workOrders.length + (workOrders.length === 1 ? ' ordine di lavoro' : ' ordini di lavoro'));
     showToast('Commessa collegata a ' + usi.join(', ') + ': scollegali prima, oppure chiudila.', 'error');
     return;
   }

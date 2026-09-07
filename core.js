@@ -13,7 +13,7 @@
 // Revisione in esecuzione, mostrata accanto al logo. Va tenuta allineata alla
 // voce in cima a CHANGELOG.md (l'app si copia a mano tra PC: sapere
 // quale revisione sta girando su una postazione è l'unico modo per capirlo).
-const APP_VERSION = '0.64.2';
+const APP_VERSION = '0.72.0';
 
 let currentUser = null;      // utente della sessione (null = schermata di accesso)
 let currentBomId = null;     // articolo prodotto attualmente aperto nelle Distinte
@@ -32,8 +32,11 @@ let currentPlanId = null;    // piano di produzione aperto
 let mrpGrouped = false;      // lista d'acquisto raggruppata per fornitore
 let mrpNet = false;          // fabbisogno netto (tolti esistente e in arrivo) invece che lordo
 let orderView = 'list';      // 'list' | 'edit'
-let currentOrderId = null;   // ordine aperto in editor
+let currentOrderId = null;   // ordine d'acquisto aperto in editor
 let orderDirty = false;      // modifiche non salvate nell'editor ordine
+let odlView = 'list';        // 'list' | 'edit' — Ordini di lavoro (conto lavoro)
+let currentOdlId = null;     // ordine di lavoro aperto in editor
+let odlDirty = false;        // modifiche non salvate nell'editor ODL
 
 
 // ═══════════════════════════════════════════════════════════
@@ -338,7 +341,9 @@ function roleGuard(area) {
   return false;
 }
 // Area di scrittura corrispondente a ciascuna vista (per il banner di sola lettura)
-const VIEW_AREA = { home: null, bom: 'bom', buy: 'catalog', design: 'catalog', stock: 'catalog', cycles: 'catalog', report: null, jobs: 'docs', mrp: 'docs', rfq: 'docs', orders: 'docs', manage: 'manage' };
+// `load` (Carico centri) è null come `report`: è un prospetto derivato, in sola
+// lettura, da cui non si scrive niente.
+const VIEW_AREA = { home: null, bom: 'bom', buy: 'catalog', design: 'catalog', stock: 'catalog', cycles: 'catalog', load: null, report: null, jobs: 'docs', mrp: 'docs', rfq: 'docs', orders: 'docs', odl: 'docs', manage: 'manage' };
 
 // Le due viste di anagrafica: ciò che si compra e ciò che si progetta.
 // Ogni vista ha i suoi filtri (prefisso degli id nella pagina) e la creazione

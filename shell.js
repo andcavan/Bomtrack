@@ -32,6 +32,7 @@ function globalSearchHits(q) {
   });
   doc(db.rfqs, 'rfq', 'RDO', d => 'Richiesta · ' + (supplierName(d.supplierId) || 'senza fornitore'));
   doc(db.orders, 'order', 'ODA', d => 'Ordine · ' + (supplierName(d.supplierId) || 'senza fornitore'));
+  doc(db.workOrders, 'odl', 'ODL', d => 'Ordine di lavoro · ' + (supplierName(d.supplierId) || 'senza terzista'));
   doc(db.plans, 'plan', 'FAB', d => 'Piano di produzione · ' + (d.lines || []).length + ' righe');
   // Chi ha il codice che inizia con quanto digitato viene prima: è la ricerca
   // di chi sa già cosa cerca e lo sta scrivendo.
@@ -82,6 +83,7 @@ function globalSearchOpen(i) {
     else { setView(scopeOf(it.type)); editItemModal(it.id); }
   } else if (h.kind === 'rfq') { setView('rfq'); openRfqEdit(h.id); }
   else if (h.kind === 'order') { setView('orders'); openOrderEdit(h.id); }
+  else if (h.kind === 'odl') { setView('odl'); openOdlEdit(h.id); }
   else if (h.kind === 'plan') { setView('mrp'); openPlanEdit(h.id); }
 }
 
@@ -101,6 +103,7 @@ function printSubtitle() {
   if (activeView === 'mrp') { const p = getPlan(currentPlanId); return p ? p.number + ' ' + (p.title || '') : ''; }
   if (activeView === 'rfq') { const r = getRfq(currentRfqId); return r ? r.number + ' ' + (r.title || '') : ''; }
   if (activeView === 'orders') { const o = getOrder(currentOrderId); return o ? o.number + ' ' + (o.title || '') : ''; }
+  if (activeView === 'odl') { const o = getOdl(currentOdlId); return o ? o.number + ' ' + (o.title || '') : ''; }
   return '';
 }
 function printHeadFill() {
@@ -136,7 +139,11 @@ const NAV = [
   { id: 'stock', icon: 'package', label: 'Magazzino', views: [
     { id: 'stock', label: 'Magazzino' }] },
   { id: 'cicli', icon: 'wrench', label: 'Cicli di lavorazione', views: [
-    { id: 'cycles', label: 'Cicli di lavorazione' }] },
+    { id: 'cycles', label: 'Cicli di lavorazione' },
+    // Il carico aggregato non appartiene a nessun piano: infilarlo dentro un
+    // piano lo farebbe cercare nel posto sbagliato. Il carico del singolo piano
+    // resta comunque in fondo alla sua scheda.
+    { id: 'load', label: 'Carico centri' }] },
   { id: 'db', icon: 'tree', label: 'Distinta base', views: [
     { id: 'bom', label: 'Gestione DB' },
     { id: 'report', label: 'Visualizza DB' }] },
@@ -144,7 +151,10 @@ const NAV = [
     { id: 'jobs', label: 'Commesse' },
     { id: 'mrp', label: 'Fabbisogno' },
     { id: 'rfq', label: 'Richieste offerta' },
-    { id: 'orders', label: 'Ordini' }] },
+    { id: 'orders', label: 'Ordini' },
+    // ODA e ODL sono due documenti diversi e stanno in due elenchi: uno compra
+    // merce, l'altro manda pezzi a lavorare.
+    { id: 'odl', label: 'Ordini di lavoro' }] },
   { id: 'manage', icon: 'settings', label: 'Gestione', views: [
     { id: 'manage', label: 'Gestione' }] },
 ];
@@ -238,6 +248,8 @@ function setView(v) {
   else if (v === 'mrp') renderMrp();
   else if (v === 'rfq') renderRfq();
   else if (v === 'orders') renderOrders();
+  else if (v === 'odl') renderOdl();
+  else if (v === 'load') renderLoad();
   else if (v === 'manage') renderManage();
   showReadOnlyBanner(panel, area);
   a11yFields(panel);   // etichette ai campi e nomi ai pulsanti-icona della vista appena disegnata

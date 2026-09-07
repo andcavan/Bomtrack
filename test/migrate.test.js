@@ -191,7 +191,12 @@ describe('migrateDB — righe di lavorazione del ciclo (ore → costo fisso)', (
     });
     const row = app.snapshot().items[0].cycle[0];
     assert.equal(row.cost, 100);
-    assert.equal(row.hours, undefined);
+    assert.equal(row.costMode, 'fisso');
+    // Le ore restano: sono il tempo che la fase occupa sul centro, e quel tempo
+    // esiste anche quando il costo e' un valore fisso. Fino alla 0.64.2 questa
+    // stessa riga pretendeva che sparissero, ed era il difetto che cancellava
+    // le ore di tutte le fasi a costo orario.
+    assert.equal(row.hours, 2);
     approx(app.ref('costOf')('p').total, 100);
   });
 

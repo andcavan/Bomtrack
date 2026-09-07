@@ -446,9 +446,9 @@ function settingsSheets() {
 
   // «Attivo» come per Fornitori, Clienti e Utenti: senza, un centro sospeso
   // rinasceva attivo su una postazione nuova, e le sue ore tornavano a costare.
-  out.push({ key: 'workcenters', name: 'Centri di lavoro', cols: [{ wch: 30 }, { wch: 16 }, { wch: 8 }],
-    aoa: [['Nome', 'Tariffa oraria', 'Attivo']].concat((db.workCenters || [])
-      .map(w => [w.name || '', Number(w.hourlyRate) || 0, siNo(w.active)])) });
+  out.push({ key: 'workcenters', name: 'Centri di lavoro', cols: [{ wch: 30 }, { wch: 16 }, { wch: 18 }, { wch: 8 }],
+    aoa: [['Nome', 'Tariffa oraria', 'Capacità h/sett', 'Attivo']].concat((db.workCenters || [])
+      .map(w => [w.name || '', Number(w.hourlyRate) || 0, Number(w.capacityHours) || 0, siNo(w.active)])) });
 
   out.push({ key: 'uoms', name: 'Unità di misura', cols: [{ wch: 12 }, { wch: 30 }, { wch: 12 }],
     aoa: [['Codice', 'Descrizione', 'Predefinita']].concat(
@@ -485,7 +485,7 @@ function settingsInfoAoa() {
     // L'unità non si può scrivere nell'intestazione: normHeader() la userebbe
     // per il riconoscimento e un file esportato non si riaprirebbe più. Va detta
     // qui, che è dove si guarda prima di compilare la colonna.
-    ['Centri di lavoro', 'Chiave: Nome (maiuscole/minuscole ignorate). La tariffa oraria è in ' + cur() + ' per ora, e non può essere negativa. Attivo = Sì/No; vuoto lascia lo stato invariato.'],
+    ['Centri di lavoro', 'Chiave: Nome (maiuscole/minuscole ignorate). La tariffa oraria è in ' + cur() + ' per ora, e non può essere negativa. La capacità è in ore a settimana e serve al Carico centri: zero significa «non dichiarata», non «nessuna capacità». Attivo = Sì/No; vuoto lascia lo stato invariato.'],
     ['Unità di misura', 'Chiave: Codice. Il codice non si rinomina da qui (si rinomina in Gestione, che propaga il nuovo codice ad articoli e documenti): un codice diverso crea una nuova unità.'],
     ['Impostazioni', 'Coppie Parametro/Valore. La colonna "Valori ammessi" è solo un promemoria: non viene letta.'],
   ];
@@ -680,11 +680,18 @@ function applyWorkCentersSheet(rows, rep) {
       rate = numOr(rateRaw, NaN);
       if (isNaN(rate) || rate < 0) { rep.errors.push(`Centri di lavoro, riga ${i + 2}: tariffa non valida ("${esc(rateRaw)}")`); return; }
     }
+    const capRaw = cell(row, 'Capacità h/sett', 'Capacità', 'Capacity');
+    let cap = null;
+    if (capRaw !== null && capRaw !== '') {
+      cap = numOr(capRaw, NaN);
+      if (isNaN(cap) || cap < 0) { rep.errors.push(`Centri di lavoro, riga ${i + 2}: capacità non valida ("${esc(capRaw)}")`); return; }
+    }
     if (!Array.isArray(db.workCenters)) db.workCenters = [];
     const w = db.workCenters.find(x => (x.name || '').toLowerCase() === name.toLowerCase());
     if (!w) {
       const attNuovo = boolCell(row, 'Attivo', 'Active');
-      db.workCenters.push(stampNew({ id: gid(), name, hourlyRate: rate == null ? 0 : rate, active: attNuovo !== false }));
+      db.workCenters.push(stampNew({ id: gid(), name, hourlyRate: rate == null ? 0 : rate,
+        capacityHours: cap == null ? 0 : cap, active: attNuovo !== false }));
       out.created++;
     } else {
       // La chiave è il nome, quindi il nome non si rinomina da qui (come per i
@@ -692,6 +699,7 @@ function applyWorkCentersSheet(rows, rep) {
       // conta come aggiornamento.
       let cambiato = false;
       if (rate != null && Number(w.hourlyRate) !== rate) { w.hourlyRate = rate; cambiato = true; }
+      if (cap != null && Number(w.capacityHours) !== cap) { w.capacityHours = cap; cambiato = true; }
       const att = boolCell(row, 'Attivo', 'Active');
       if (att !== null && w.active !== att) { w.active = att; cambiato = true; }
       if (cambiato) { touch(w); out.updated++; } else out.skipped++;

@@ -119,8 +119,10 @@ describe('Disegno della barra', () => {
   });
 
   it('con una voce sola la seconda riga resta vuota', () => {
+    // Magazzino e Gestione sono i gruppi a voce singola rimasti: i Cicli ne
+    // hanno due dalla 0.68.0 (Cicli di lavorazione e Carico centri).
     const a = app();
-    a.eval('setView("cycles")');
+    a.eval('setView("stock")');
     assert.equal(a.html('sub-nav'), '');
     a.eval('setView("manage")');
     assert.equal(a.html('sub-nav'), '');
@@ -137,10 +139,17 @@ describe('Stampa', () => {
 
   it('sui gruppi a voce singola basta il nome del gruppo', () => {
     const a = app();
-    a.eval('setView("cycles")');
+    a.eval('setView("stock")');
     a.eval('printHeadFill()');
     const h = a.html('print-head');
-    assert.ok(h.includes('Cicli di lavorazione'));
+    assert.ok(h.includes('Magazzino'));
     assert.ok(!h.includes('›'));
+  });
+
+  it('sui gruppi a piu voci il nome della voce si aggiunge', () => {
+    const a = app();
+    a.eval('setView("load")');
+    a.eval('printHeadFill()');
+    assert.ok(a.html('print-head').includes('Cicli di lavorazione › Carico centri'));
   });
 });

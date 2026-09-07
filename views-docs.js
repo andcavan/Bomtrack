@@ -22,7 +22,7 @@ function modeAllows(mode, kind) {
 }
 // Lo sblocco vale per il documento aperto e dura quanto la sessione di editing:
 // uscendo verso l'elenco il documento si richiude da solo.
-let rfqUnlockedId = null, orderUnlockedId = null;
+let rfqUnlockedId = null, orderUnlockedId = null, odlUnlockedId = null;
 function docLockBanner(mode, kind, docKind, id) {
   if (mode === 'full') return '';
   const what = mode === 'offer' ? 'Prezzo unitario e data consegna restano compilabili'
@@ -150,6 +150,50 @@ const DOC_KINDS = {
     },
     // Non si può ricevere più di quanto ordinato: sarebbe una riga in eccedenza
     // che manderebbe l'ordine in "evaso" con numeri incoerenti.
+    afterSetLine: (o, l, field) => {
+      if (field !== 'received') return;
+      const ordinata = Number(l.qty) || 0;
+      if (l.received > ordinata) { l.received = ordinata; showToast('Non si può ricevere più di quanto ordinato', 'error'); }
+    },
+  },
+  // ─── Ordine di lavoro (ODL) ───
+  // Le lavorazioni affidate a un terzista. Stessa forma di un ordine
+  // d'acquisto — si manda a un fornitore, si conferma, rientra a pezzi — e un
+  // documento diverso: uno chiede della merce, l'altro manda dei pezzi a
+  // lavorare. Stati e blocchi sono gli stessi, e riusarli è deliberato: dove il
+  // comportamento coincide davvero, due copie divergono.
+  //
+  // Le sue righe **non hanno mai un articolo**: portano la fase del ciclo da cui
+  // vengono. È la garanzia contro il doppio conteggio di magazzino, e vale qui
+  // per costruzione invece che per disciplina — dall'ODL non si aggiungono righe
+  // da catalogo, perché non c'è niente da catalogo da aggiungere.
+  odl: {
+    coll: 'workOrders', pfx: 'wl',
+    nome: 'Ordine di lavoro', articolo: "L'ordine di lavoro", pronome: 'lo', suffisso: 'o',
+    STATUS: ORDER_STATUS, LOCK: ORDER_LOCK,
+    hasLinePrice: true,
+    get: id => getOdl(id),
+    all: () => db.workOrders,
+    render: () => renderOdl(),
+    autoStatus: o => ordAutoStatus(o),
+    unlocked: () => odlUnlockedId,
+    setUnlocked: v => { odlUnlockedId = v; },
+    dirty: v => { if (v === undefined) return odlDirty; odlDirty = v; return v; },
+    saveBtnId: 'odl-save-btn', exportBtnClass: 'odl-export-btn',
+    dirtyHint: "Salva l'ordine di lavoro prima di generare il documento",
+    opsFields: ['status', 'notes', 'notesInternal', 'supplierConfirmation'],
+    lineLock: field => (field === 'received' || field === 'confirmedDate') ? 'reception' : 'contract',
+    numLineFields: ['qty', 'price', 'received'],
+    newLineExtra: () => ({ received: 0, phaseKey: null, phaseKeys: null }),
+    // Non si aggiungono righe da catalogo a un ordine di lavoro: un articolo non
+    // è una lavorazione. La voce non compare nell'interfaccia; se qualcuno ci
+    // arrivasse lo stesso, qui non succede niente invece di nascere una riga che
+    // caricherebbe il magazzino da un documento che non deve caricarlo.
+    catalogLine: riga => Object.assign(riga, { received: 0, itemId: null, phaseKey: null, phaseKeys: null }),
+    catalogToast: n => n + ' righe aggiunte',
+    afterSetField: (o, field, value) => {
+      if (field === 'supplierConfirmation' && value && o.status === 'inviato') o.status = 'confermato';
+    },
     afterSetLine: (o, l, field) => {
       if (field !== 'received') return;
       const ordinata = Number(l.qty) || 0;
@@ -379,6 +423,7 @@ function docBackToList(k) {
   const K = docKind(k);
   docLeave(k);
   if (k === 'order') { orderView = 'list'; currentOrderId = null; }
+  else if (k === 'odl') { odlView = 'list'; currentOdlId = null; }
   else { rfqView = 'list'; currentRfqId = null; }
   K.render();
 }
@@ -450,6 +495,72 @@ function docLineFromItem(it, supplierId) {
   };
 }
 // Nei documenti la nota di riga si stampa sotto la descrizione, nella stessa cella.
+// L'etichetta di una riga senza articolo a catalogo. Non sono tutte uguali: una
+// riga **manuale** l'ha scritta qualcuno a mano, una riga di **conto lavoro**
+// viene dal fabbisogno ed è una fase del ciclo di una parte. Chiamarle entrambe
+// «manuale» faceva sembrare improvvisato ciò che l'app ha generato da sé.
+//
+// `itemId` su una riga di conto lavoro è nullo per forza, non per caso: è la
+// garanzia contro il doppio conteggio di magazzino (vedi planPhaseDocLine).
+// I due gesti del conto lavoro, sotto la riga che li giustifica: il terzista e
+// l'ordine sono già decisi, resta da dire cosa esce e quanto. Compaiono solo
+// sulle righe di conto lavoro, e solo con un fornitore intestato — senza, il
+// movimento non saprebbe da chi sta la merce.
+// Dalla 0.69.0 le lavorazioni vivono negli **ordini di lavoro**, e i due gesti
+// stanno lì. Questa resta per le righe di conto lavoro finite in un ordine
+// d'acquisto **prima** della separazione: sono poche o nessuna, ma toglierle il
+// comando le lascerebbe senza modo di muovere il materiale.
+function ordClLineActions(o, l) { return l.phaseKey ? docClActions(o, l) : ''; }
+// ─── I due comandi del conto lavoro, dove hanno senso e per quel che fanno ───
+// Un documento ha una riga per **tratta** — le fasi consecutive dello stesso
+// terzista stanno insieme — e il materiale non esce a ogni fase: esce una volta
+// all'inizio del ciclo, e i pezzi rientrano una volta alla fine. Due fasi dallo
+// stesso terzista per quattro pezzi sono quattro pezzi fuori e quattro dentro,
+// non otto e otto.
+//
+// I comandi cambiano **nome e effetto** secondo dove sta la tratta nel ciclo:
+// ai due estremi muovono il magazzino, in mezzo sono un passaggio che sposta il
+// pezzo e basta. Chiamarli allo stesso modo avrebbe fatto credere che caricassero
+// quattro volte lo stesso codice.
+function docClActions(o, l) {
+  if (!l.phaseKey || !o.supplierId) return '';
+  const ruolo = clLineRole(o, l);
+  const cmd = [];
+  if (ruolo.out) {
+    const passo = ruolo.outKind === 'clStep';
+    cmd.push(`<span class="plandoc-link plandoc-link-sm" ${clickAttrs(`clFromOdlModal('${o.id}','${l.id}','out')`,
+      passo ? 'Manda al terzista i pezzi tornati dalla fase precedente: non tocca il magazzino'
+        : 'Spedisci il materiale del ciclo al terzista: esce dal magazzino')}>${passo ? 'manda al terzista' : 'spedisci materiale'}</span>`);
+  }
+  if (ruolo.in) {
+    const passo = ruolo.inKind === 'clStep';
+    cmd.push(`<span class="plandoc-link plandoc-link-sm" ${clickAttrs(`clFromOdlModal('${o.id}','${l.id}','in')`,
+      passo ? 'Ritira i pezzi: restano in lavorazione e non caricano il magazzino'
+        : 'Registra il rientro dei pezzi lavorati: entrano a magazzino')}>${passo ? 'ritira dal terzista' : 'registra rientro'}</span>`);
+  }
+  // Una riga in mezzo a una tratta non muove niente, e la sua assenza di comandi
+  // somiglierebbe a un difetto: dice dove sono finiti.
+  if (!cmd.length) {
+    const fase = x => 'fase ' + cyclePhaseNumber(clPhaseIndex(x));
+    return `<div class="line-cl-actions"><span title="Il pezzo esce una volta all'inizio della tratta e torna una volta alla fine: questa fase sta in mezzo e non muove niente.">${ico('factory', 'tinted', '')} in uscita alla ${esc(fase(ruolo.prima))}, rientro alla ${esc(fase(ruolo.ultima))}</span></div>`;
+  }
+  // Dove il gesto è un passaggio si dice **perché** non muove il magazzino: un
+  // comando che sembra un carico e non carica è il modo più rapido di far
+  // perdere fiducia in una giacenza.
+  const note = [];
+  if (ruolo.out && !ruolo.in) note.push('i pezzi rientrano alla ' + 'fase ' + cyclePhaseNumber(clPhaseIndex(ruolo.ultima)));
+  if (ruolo.in && !ruolo.out) note.push('sono usciti alla ' + 'fase ' + cyclePhaseNumber(clPhaseIndex(ruolo.prima)));
+  if (ruolo.outKind === 'clStep' && ruolo.inKind === 'clStep') note.push('passaggio di lavorazione: il magazzino non si muove');
+  else if (ruolo.inKind === 'clStep' && ruolo.in) note.push('il codice si carica al rientro dell&rsquo;ultima fase');
+  else if (ruolo.outKind === 'clStep' && ruolo.out) note.push('il materiale era gi&agrave; uscito alla prima fase');
+  const nota = note.length ? ` <span class="empty-text" style="padding:0">· ${note.join(' · ')}</span>` : '';
+  return `<div class="line-cl-actions">${ico('factory', 'tinted', '')}${cmd.join('')}${nota}</div>`;
+}
+function lineOriginTag(l) {
+  if (l.itemId) return '';
+  if (l.phaseKey) return ` <span class="rfq-clavoro-tag" title="Lavorazione in conto lavoro, generata dal fabbisogno. Non è un articolo a magazzino: i pezzi che rientrano si registrano come movimento, non da qui.">conto lavoro</span>`;
+  return ' <span class="rfq-manual-tag">manuale</span>';
+}
 function lineDescDoc(l) { return l.note ? (l.description || '') + '\n' + l.note : (l.description || ''); }
 // Da dove arriva un documento: da una richiesta di offerta o da un piano di
 // fabbisogno. Serve a ritrovare il perché di un ordine mesi dopo averlo fatto.
@@ -468,6 +579,7 @@ function docOriginRef(d) {
 const docFilters = {
   rfq: { q: '', status: '', supplierId: '', from: '', to: '' },
   order: { q: '', status: '', supplierId: '', from: '', to: '' },
+  odl: { q: '', status: '', supplierId: '', from: '', to: '' },
 };
 function docFiltersVuoti() { return { q: '', status: '', supplierId: '', from: '', to: '' }; }
 // I campi di filtro dell'elenco, senza contenitore: li incolonna `wl-filters`
@@ -545,21 +657,26 @@ function docFilterApply(kind, docs) {
 // Attenzione a cosa **non** è: l'export del documento aperto, che esiste già
 // (`exportRfqPDF`, `exportOrderExcel`…) ed è quello che parte verso il fornitore.
 function docListExportSpec(kind) {
-  const ordini = kind === 'order';
   const K = docKind(kind);
+  // Le colonne di importo e ricevimento valgono per i due tipi di ordine, non
+  // per la richiesta: è la richiesta a essere il caso diverso, non l'ODL.
+  const ordini = kind === 'order' || kind === 'odl';
   const f = docFilters[kind];
   const mappaStati = ordini ? ORDER_STATUS : RFQ_STATUS;
-  const docs = docFilterApply(kind, (ordini ? db.orders : db.rfqs).slice()
+  const docs = docFilterApply(kind, K.all().slice()
     .sort((a, b) => (b.number || '').localeCompare(a.number || '')));
+  const odl = kind === 'odl';
   const colonne = [
     { h: 'Numero', w: 18 }, { h: 'Oggetto', w: 34 }, { h: 'Stato', w: 14 },
-    { h: 'Fornitore', w: 28 }, { h: 'Data', w: 12, data: true }, { h: 'Righe', w: 8, num: true },
+    { h: odl ? 'Terzista' : 'Fornitore', w: 28 }, { h: 'Data', w: 12, data: true },
+    { h: odl ? 'Lavorazioni' : 'Righe', w: 12, num: true },
   ];
   if (ordini) colonne.push({ h: `Totale (${cur()})`, w: 16, num: true },
-    { h: 'Ordinato', w: 12, num: true }, { h: 'Ricevuto', w: 12, num: true });
+    { h: odl ? 'Pezzi' : 'Ordinato', w: 12, num: true },
+    { h: odl ? 'Rientrati' : 'Ricevuto', w: 12, num: true });
   return {
-    titolo: ordini ? 'Ordini a fornitore' : 'Richieste di offerta',
-    slug: ordini ? 'ordini' : 'richieste',
+    titolo: { rfq: 'Richieste di offerta', order: 'Ordini a fornitore', odl: 'Ordini di lavoro' }[kind],
+    slug: { rfq: 'richieste', order: 'ordini', odl: 'ordini_di_lavoro' }[kind],
     filtri: [
       ['Ricerca', f.q],
       ['Stato', mappaStati[f.status] || ''],
@@ -574,7 +691,7 @@ function docListExportSpec(kind) {
           supplierName(d.supplierId) || '', d.date || '', (d.lines || []).length];
         if (!ordini) return base;
         const rec = orderReception(d);
-        return base.concat([+orderTotal(d).toFixed(2), rec.ordered, rec.received]);
+        return base.concat([+(odl ? odlTotal(d) : orderTotal(d)).toFixed(2), rec.ordered, rec.received]);
       }),
     }],
   };
@@ -723,15 +840,21 @@ function readLineIdentity(pfx, l) {
 
 // ─── Picker catalogo con filtri, condiviso tra RFQ e Ordini ───
 let __pickOnAdd = null;
-function catalogPickerModal(onAddIds) {
+// `opts` è facoltativo: chi chiamava prima non lo passa e vede il catalogo
+// intero. Serve a chi ha bisogno di un sottoinsieme — le lavorazioni si
+// scelgono fra gli articoli che un ciclo ce l'hanno, e mostrare gli altri
+// significherebbe farli scegliere per poi dire di no.
+function catalogPickerModal(onAddIds, opts) {
   __pickOnAdd = onAddIds;
-  const opts = db.items.filter(i => i.active !== false).sort((a, b) => (a.code || '').localeCompare(b.code || ''))
+  const cfg = opts || {};
+  const filtro = cfg.filtro || (() => true);
+  const scelte = db.items.filter(i => i.active !== false && filtro(i)).sort((a, b) => (a.code || '').localeCompare(b.code || ''))
     .map(i => `<label class="rfq-pick-row" data-type="${i.type}" data-fam="${i.familyId || ''}" data-sub="${i.subFamilyId || ''}" data-sup="${i.supplierId || ''}"><input type="checkbox" value="${i.id}">
       <span style="font-family:var(--mono)">${esc(i.code || '')}</span> ${esc(i.name)}${itemBadges(i)}
       <span class="rfq-pick-type">${TYPE_LABELS[i.type] || i.type}</span></label>`).join('');
   const typeOpts = ALL_TYPES.map(t => `<option value="${t}">${typeLabel(t)}</option>`).join('');
   const famOpts = (db.families || []).map(f => `<option value="${f.id}">${esc(f.name)}</option>`).join('');
-  openModal(`<h3>+ Aggiungi da catalogo</h3>
+  openModal(`<h3>${esc(cfg.titolo || '+ Aggiungi da catalogo')}</h3>
     <div class="rfq-pick-filters">
       <input class="search" id="pick-search" placeholder="Codice o nome..." oninput="debounced('pick', pickFilter)">
       <select id="pick-type" onchange="pickFilter()"><option value="">Tutti i tipi</option>${typeOpts}</select>
@@ -739,7 +862,7 @@ function catalogPickerModal(onAddIds) {
       <select id="pick-sub" onchange="pickFilter()"><option value="">Tutte le sottofamiglie</option></select>
       <select id="pick-sup" onchange="pickFilter()"><option value="">Tutti i fornitori</option>${db.suppliers.map(s => `<option value="${s.id}">${esc(s.name)}</option>`).join('')}</select>
     </div>
-    <div class="rfq-pick-list" id="pick-list">${opts || '<div class="empty-text">Catalogo vuoto.</div>'}</div>
+    <div class="rfq-pick-list" id="pick-list">${scelte || `<div class="empty-text">${cfg.vuoto || 'Catalogo vuoto.'}</div>`}</div>
     <div class="empty-text" id="pick-empty" style="display:none">Nessun articolo con questi filtri.</div>
     <div class="modal-actions"><button class="btn-ghost" onclick="closeModal()">Annulla</button>
       <button class="add-btn-sm" onclick="pickConfirm()">Aggiungi selezionati</button></div>`, true);
@@ -808,7 +931,7 @@ function renderRfqEdit(id) {
     return `<tr>
       ${cell2(i + 1, '', 'ln-idx')}
       ${cell2(`<span class="ln-code">${codeLink(l.itemId, l.code || '')}</span>`,
-    `${esc(l.description)}${l.itemId ? '' : ' <span class="rfq-manual-tag">manuale</span>'}${lotWarn ? ' ' + lotWarn : ''}${siSub}${noteSub}`)}
+    `${esc(l.description)}${lineOriginTag(l)}${lotWarn ? ' ' + lotWarn : ''}${siSub}${noteSub}`)}
       ${cell2(`<input type="number" class="rfq-qty-input lock-contract" value="${l.qty}" min="0" step="any" title="Quantità" onchange="rfqSetLine('${id}','${l.id}','qty',this.value)">`,
     esc(l.uom || ''))}
       ${cell2(`<input type="number" class="rfq-price-input lock-offer" value="${price == null ? '' : price}" min="0" step="any" placeholder="—" title="Prezzo unitario" onchange="rfqSetLine('${id}','${l.id}','price',this.value)">`,
@@ -1174,19 +1297,55 @@ function orderFromRfq(rfqId) {
     transport: r.transport || (sup && sup.defaultTransport) || db.settings.transportDefault || '',
     payment: r.payment || (sup && sup.defaultPayment) || db.settings.paymentDefault || '',
     rfqId: r.id, planId: r.planId || null, supplierConfirmation: '', notes: r.notes || '', notesInternal: r.notesInternal || '',
-    lines: (r.lines || []).map(l => ({ id: gid(), itemId: l.itemId || null, code: l.code || '', description: l.description || '',
-      uom: l.uom || defaultUom(), qty: Number(l.qty) || 0, price: (l.price === '' || l.price == null) ? '' : Number(l.price),
-      deliveryDate: l.deliveryDate || '', received: 0, note: l.note || '' })),
-    active: true });
-  db.orders.push(o);
+    lines: [], active: true });
+  // Una richiesta può contenere insieme merce e lavorazioni dello stesso
+  // fornitore — chiedere quanto costa il materiale e quanto costa lavorarlo è
+  // una domanda sola. Gli **ordini** invece sono due, e qui la richiesta si
+  // divide: le righe con una fase vanno in un ordine di lavoro, le altre in un
+  // ordine d'acquisto. Mescolarle sarebbe il contrario della separazione.
+  const copia = l => ({ id: gid(), itemId: l.itemId || null, code: l.code || '', description: l.description || '',
+    uom: l.uom || defaultUom(), qty: Number(l.qty) || 0, price: (l.price === '' || l.price == null) ? '' : Number(l.price),
+    deliveryDate: l.deliveryDate || '', received: 0, note: l.note || '',
+    phaseKey: l.phaseKey || null, phaseKeys: l.phaseKeys || l.phaseKey || null });
+  const merce = (r.lines || []).filter(l => !l.phaseKey);
+  const fasi = (r.lines || []).filter(l => !!l.phaseKey);
+  const creati = [];
+  // L'ordine d'acquisto è il caso normale e resta il ripiego: una richiesta
+  // senza righe, o con solo merce, produce un ODA — anche vuoto, com'è sempre
+  // stato. Solo una richiesta di **sole** lavorazioni non ne genera nessuno.
+  if (merce.length || !fasi.length) {
+    o.lines = merce.map(copia);
+    db.orders.push(o); creati.push({ kind: 'order', doc: o });
+  }
+  let w = null;
+  // Una richiesta d'offerta tiene insieme le due passate dello stesso terzista —
+  // chiedere non è commissionare, e a un preventivo si risponde una volta. Un
+  // **ordine** no: fra la prima e la seconda passata il pezzo torna da noi, e
+  // le due lavorazioni non si possono fare di seguito. Qui si separano.
+  const perPassata = new Map();
+  fasi.forEach(l => {
+    const k = clPassataDiRiga(l);
+    if (!perPassata.has(k)) perPassata.set(k, []);
+    perPassata.get(k).push(l);
+  });
+  Array.from(perPassata.keys()).sort((a, b) => a - b).forEach(k => {
+    const doc = stampNew(Object.assign({}, o, { id: gid(), number: nextOdlNumber(),
+      lines: perPassata.get(k).map(l => Object.assign(copia(l), { itemId: null })) }));
+    db.workOrders.push(doc); creati.push({ kind: 'odl', doc });
+    if (!w) w = doc;
+  });
   // La richiesta ha esaurito il suo scopo: si chiude da sé, ma solo se era
   // davvero uscita (da una bozza si può generare un ordine di prova).
   let closed = false;
   if (r.status === 'inviata' || r.status === 'ricevuta') { r.status = 'chiusa'; touch(r); closed = true; }
   saveDB();
-  docLeave('order'); currentOrderId = o.id; orderView = 'edit';
-  setView('orders');
-  showToast(`Ordine ${o.number} creato dalla richiesta${closed ? ' · ' + r.number + ' chiusa' : ''}`);
+  // Si apre il primo dei due: l'altro è nel suo elenco, e il messaggio lo dice.
+  const primo = creati[0];
+  docLeave(primo.kind);
+  if (primo.kind === 'order') { currentOrderId = primo.doc.id; orderView = 'edit'; setView('orders'); }
+  else { currentOdlId = primo.doc.id; odlView = 'edit'; setView('odl'); }
+  const nomi = creati.map(c => (c.kind === 'odl' ? 'ordine di lavoro ' : 'ordine ') + c.doc.number).join(' e ');
+  showToast(`Creat${creati.length > 1 ? 'i' : 'o'} ${nomi} dalla richiesta${closed ? ' · ' + r.number + ' chiusa' : ''}`);
 }
 function openOrderEdit(id) { docLeave('order'); currentOrderId = id; orderView = 'edit'; renderOrders(); }
 function orderBackToList() { docBackToList('order'); }
@@ -1252,14 +1411,14 @@ function renderOrderEdit(id) {
     return `<tr>
       ${cell2(i + 1, '', 'ln-idx')}
       ${cell2(`<span class="ln-code">${codeLink(l.itemId, l.code || '')}</span>`,
-    `${esc(l.description)}${l.itemId ? '' : ' <span class="rfq-manual-tag">manuale</span>'}${warn ? ' ' + warn : ''}${lotWarn ? ' ' + lotWarn : ''}${siSub}${l.note ? `<div class="line-note">${ico('edit', 'tinted', 'Nota di riga')} ${esc(l.note)}</div>` : ''}`)}
+    `${esc(l.description)}${lineOriginTag(l)}${warn ? ' ' + warn : ''}${lotWarn ? ' ' + lotWarn : ''}${siSub}${l.note ? `<div class="line-note">${ico('edit', 'tinted', 'Nota di riga')} ${esc(l.note)}</div>` : ''}${ordClLineActions(o, l)}`)}
       ${cell2(`<input type="number" class="rfq-qty-input lock-contract" value="${l.qty}" min="0" step="any" title="Quantità ordinata" onchange="ordSetLine('${id}','${l.id}','qty',this.value)">`,
     esc(l.uom || ''))}
       ${cell2(`<input type="number" class="rfq-price-input lock-contract" value="${price != null ? price : ''}" min="0" step="any" placeholder="—" title="Prezzo unitario" onchange="ordSetLine('${id}','${l.id}','price',this.value)">`,
     `<span class="ln-amount">${amount != null ? fmtN(amount) : '—'}</span>`)}
       ${cell2(`<input type="date" class="rfq-date-input lock-contract" value="${esc(l.deliveryDate || '')}" title="Data che abbiamo chiesto" onchange="ordSetLine('${id}','${l.id}','deliveryDate',this.value)">`,
     `<input type="date" class="rfq-date-input lock-reception" value="${esc(l.confirmedDate || '')}" title="Data che il fornitore ha confermato" onchange="ordSetLine('${id}','${l.id}','confirmedDate',this.value)">${ordLineDelayHtml(l)}`)}
-      ${cell2(`<input type="number" class="rfq-qty-input lock-reception" value="${rec}" min="0" step="any" title="Quantità ricevuta" onchange="ordSetLine('${id}','${l.id}','received',this.value)">`,
+      ${cell2(`<input type="number" class="rfq-qty-input lock-reception" value="${rec}" min="0" step="any" title="${l.phaseKey ? 'Pezzi rientrati dal terzista: portano questo ordine a parziale o evaso, ma non caricano il magazzino. Il rientro si registra come movimento.' : 'Quantità ricevuta'}" onchange="ordSetLine('${id}','${l.id}','received',this.value)">`,
     `<span class="ln-residual ${residual > 0 ? 'pos' : ''}" title="Residuo da ricevere">${fmtQty(residual)}</span>`)}
       ${cell2(`<button class="mini-btn" onclick="ordEditLineModal('${id}','${l.id}')" title="Modifica riga / nota">${ico('edit', 'tinted', 'Modifica riga / nota')}</button>`,
     `<button class="mini-btn danger lock-contract" onclick="ordDelLine('${id}','${l.id}')" title="Togli la riga">${ico('trash', 'tinted', 'Togli la riga')}</button>`, 'line-actions')}
@@ -1428,6 +1587,382 @@ function exportOrderExcel(id) {
   XLSX.writeFile(wb, `${o.number}${sup ? '_' + (sup.name || '').replace(/\s+/g, '_') : ''}.xlsx`);
   showToast('Excel esportato');
   askMarkSent(o, `Excel generato.\nSegnare l'ordine ${o.number} come inviato?`, 'inviato', renderOrders);
+}
+
+// ═══════════════════════════════════════════════════════════
+//  ORDINI DI LAVORO (ODL) — conto lavoro
+// ═══════════════════════════════════════════════════════════
+// Le lavorazioni affidate a un terzista. Un ordine d'acquisto compra della
+// merce, un ordine di lavoro manda dei pezzi a lavorare: due documenti diversi,
+// due numerazioni, due elenchi. Tenerli insieme costringeva ogni conto — il
+// totale acquistato, il carico di magazzino, la copertura di commessa — a
+// filtrare per un campo, ed è il tipo di distinzione che prima o poi qualcuno
+// dimentica in uno dei posti.
+//
+// Quello che invece **si riusa per intero** è la macchina dei documenti: stati,
+// blocchi per stato, salvataggio differito, righe, ricevimenti, guardie di
+// ruolo. Sta tutta in DOC_KINDS, e l'ODL è la terza voce di quel registro.
+function getOdl(id) { return (db.workOrders || []).find(o => o.id === id); }
+function odlMode(o) { return docMode('odl', o); }
+function odlGuard(id, kind) { return docGuard('odl', id, kind); }
+function odlUnlock(id) { return docUnlock('odl', id); }
+function odlTotal(o) { return (o.lines || []).reduce((s, l) => s + (Number(l.qty) || 0) * (Number(l.price) || 0), 0); }
+// Progressivo per anno: ODL-<anno>-NNN. Numerazione **sua**: un ODL e un ODA
+// dello stesso giorno non devono avere lo stesso numero, o al telefono col
+// terzista non si capisce di quale documento si stia parlando.
+function nextOdlNumber() {
+  const prefix = `ODL-${new Date().getFullYear()}-`;
+  const seqs = (db.workOrders || []).filter(o => (o.number || '').startsWith(prefix))
+    .map(o => parseInt((o.number || '').slice(prefix.length), 10) || 0);
+  return prefix + String((seqs.length ? Math.max(...seqs) : 0) + 1).padStart(3, '0');
+}
+
+function renderOdl() {
+  const host = document.getElementById('view-odl'); if (!host) return;
+  if (odlView === 'edit' && !getOdl(currentOdlId)) { odlView = 'list'; currentOdlId = null; }
+  const o = odlView === 'edit' ? getOdl(currentOdlId) : null;
+  const tutti = db.workOrders || [];
+  host.innerHTML = worklistHtml({
+    titolo: 'Ordini di lavoro', icona: 'wrench', listaId: 'odl-list',
+    comandi: `<button class="add-btn-sm" onclick="newOdl()">+ Nuovo ordine di lavoro</button>
+      ${listExportButtons('odlListExportSpec')}`,
+    filtri: docFilterBar('odl', ORDER_STATUS, docFilterApply('odl', tutti).length, tutti.length),
+    righe: odlListRows(),
+    doc: o ? renderOdlEdit(currentOdlId) : '',
+    vuoto: {
+      titolo: 'Nessun ordine di lavoro aperto qui',
+      testo: 'Scegli un ordine dall\'elenco a destra. Gli ordini di lavoro nascono dal Fabbisogno, dalle fasi di ciclo affidate a un terzista: al centro compaiono le lavorazioni con la tariffa, la data e i pezzi rientrati.',
+      comandi: '<button class="add-btn-sm" onclick="newOdl()">+ Nuovo ordine di lavoro</button>',
+    },
+  });
+  if (o) applyDocLock(odlMode(o), host);
+  a11yFields(host);
+}
+function odlListRows() {
+  const tutti = db.workOrders || [];
+  const list = docFilterApply('odl', tutti.slice().sort((a, b) => (b.number || '').localeCompare(a.number || '')));
+  return list.map(o => {
+    const sup = o.supplierId ? supplierName(o.supplierId) : '— nessun terzista —';
+    const rec = orderReception(o);
+    const recTxt = rec.ordered ? `rientr. ${fmtQty(rec.received)}/${fmtQty(rec.ordered)}` : '';
+    return worklistRow({
+      numero: o.number,
+      badge: statusBadge(ORDER_STATUS, o.status),
+      titolo: o.title || '',
+      meta: `${esc(sup)} · ${fmtN(odlTotal(o))}${recTxt ? ' · ' + recTxt : ''}${o.date ? ' · ' + esc(fmtDateIt(o.date)) : ''}`,
+      sel: odlView === 'edit' && currentOdlId === o.id,
+      spenta: o.status === 'annullato',
+      azione: `openOdlEdit('${o.id}')`,
+      etichetta: `Apri l'ordine di lavoro ${o.number}`,
+    });
+  }).join('') || `<div class="empty-text">${tutti.length ? 'Nessun ordine di lavoro con questi filtri.' : 'Nessun ordine di lavoro. Si generano dal Fabbisogno, dalle fasi affidate a un terzista.'}</div>`;
+}
+function newOdl() {
+  if (!roleGuard('docs')) return;
+  const o = Store.insert('workOrders', { id: gid(), number: nextOdlNumber(), title: '', date: nowISO().slice(0, 10),
+    status: 'bozza', supplierId: null, transport: db.settings.transportDefault || '', payment: db.settings.paymentDefault || '',
+    rfqId: null, planId: null, jobId: null, supplierConfirmation: '', notes: '', notesInternal: '', lines: [], active: true });
+  docLeave('odl'); currentOdlId = o.id; odlView = 'edit'; renderOdl();
+}
+function openOdlEdit(id) { docLeave('odl'); currentOdlId = id; odlView = 'edit'; renderOdl(); }
+function odlBackToList() { docBackToList('odl'); }
+function odlMarkDirty() { docMarkDirty('odl'); }
+function odlSave(id) { docSave('odl', id); }
+function odlSetField(id, field, value) { docSetField('odl', id, field, value); }
+function odlSetSupplier(id, sid) { docSetSupplier('odl', id, sid); }
+function odlSetLine(id, lineId, field, value) { docSetLine('odl', id, lineId, field, value); }
+function odlDelLine(id, lineId) { docDelLine('odl', id, lineId); }
+function odlAddManualLineModal(id) { docAddManualLineModal('odl', id); }
+function odlAddManualLine(id) { docAddManualLine('odl', id); }
+function odlEditLineModal(id, lineId) { docEditLineModal('odl', id, lineId); }
+function odlSaveLineEdit(id, lineId) { docSaveLineEdit('odl', id, lineId); }
+function odlListExportSpec() { return docListExportSpec('odl'); }
+function delOdl(id) { docDel('odl', id); }
+function odlMarkAllReceived(id) {
+  if (!odlGuard(id, 'reception')) return;
+  const o = getOdl(id); if (!o) return;
+  (o.lines || []).forEach(l => { l.received = Number(l.qty) || 0; });
+  ordAutoStatus(o); touch(o); odlMarkDirty(); renderOdl();
+}
+
+// ─── Una lavorazione scritta a mano, partendo dal ciclo ───
+// Fin qui un ordine di lavoro nasceva solo da un piano: l'unico modo di
+// riempirne uno vuoto era la riga manuale, testo libero senza `phaseKey` — e
+// quindi senza tariffa dal ciclo e senza nessuno dei comandi del conto lavoro.
+// Ma commissionare una lavorazione fuori piano è il caso normale: un pezzo
+// urgente, un ripasso, una prova.
+//
+// Si parte dal **ciclo**, non da un campo vuoto: si sceglie la parte, si sceglie
+// la tratta, si dicono i pezzi. La riga che ne esce è **identica** a quella
+// generata dal fabbisogno — stessa fabbrica, `planPhaseDocLine` — perché una
+// riga scritta a mano che si comportasse diversamente sarebbe una seconda
+// specie di riga da ricordarsi.
+function odlAddPhaseModal(id) {
+  if (!odlGuard(id, 'contract')) return;
+  catalogPickerModal(ids => odlPhasePickModal(id, ids), {
+    titolo: '+ Lavorazione da ciclo',
+    // Solo gli articoli che una lavorazione ce l'hanno: gli altri aprirebbero
+    // una scheda vuota, e scoprirlo dopo averli scelti è il modo peggiore.
+    filtro: i => (i.cycle || []).some(r => r.kind === 'op'),
+    vuoto: 'Nessun articolo ha un ciclo di lavorazione. Le fasi si scrivono nella scheda dell’articolo, sotto <em>Ciclo</em>.',
+  });
+}
+// La scelta della tratta. Si vedono **tutte** — anche quelle di un altro
+// terzista e quelle interne — marcate per quello che sono: mandare fuori una
+// lavorazione che di solito si fa in casa è un caso vero, e l'app lo segnala
+// invece di impedirlo.
+function odlPhasePickModal(id, ids) {
+  const o = getOdl(id); if (!o) return;
+  const parti = (ids || []).map(getItem).filter(it => it && (it.cycle || []).some(r => r.kind === 'op'));
+  if (!parti.length) { showToast('Nessun articolo con un ciclo di lavorazione', 'error'); return; }
+  const blocchi = parti.map((it, pi) => {
+    const righe = clCycleRuns(it).map(t => {
+      const suo = t.supplierId === o.supplierId;
+      const tag = t.esterna
+        ? (suo ? '' : `<span class="rfq-manual-tag" title="Il ciclo assegna questa lavorazione a un altro terzista">${esc(supplierName(t.supplierId) || 'altro terzista')}</span>`)
+        : '<span class="rfq-manual-tag" title="Il ciclo la fa in casa: mettendola qui la si manda fuori questa volta">interna</span>';
+      const nos = [];
+      for (let k = t.from; k <= t.to; k++) nos.push(cyclePhaseNumber(k));
+      const nomi = odlRunNomi(it, t);
+      return `<label class="rfq-pick-row">
+        <input type="checkbox" class="odl-fase" value="${esc(it.id)}#${t.from}" ${suo ? 'checked' : ''}>
+        <span class="cycle-phase">${esc(nos.join('-'))}</span> ${esc(nomi)} ${tag}</label>`;
+    }).join('');
+    return `<h4 class="settings-group-title">${esc(it.code || '')} ${esc(it.name || '')}</h4>
+      <div class="rfq-pick-list">${righe}</div>
+      <div class="modal-field"><label>${labelUom('Pezzi da lavorare', itemUom(it))}</label>
+        <input type="number" id="odl-pz-${pi}" min="0" step="any" value="1"></div>`;
+  }).join('');
+  window.__odlFasiParti = parti.map(x => x.id);
+  openModal(`<h3>${ico('wrench', 'tinted pill', '')} Lavorazioni da mettere in ${esc(o.number)}</h3>
+    <p class="empty-text" style="text-align:left;padding:0 0 8px">Le fasi <strong>consecutive dello stesso terzista</strong> stanno in una riga sola: è una lavorazione da commissionare, non due. Tariffa e giorni vengono dal ciclo, e si possono correggere sulla riga.</p>
+    ${blocchi}
+    <div class="modal-field"><label>Data di consegna richiesta</label><input type="date" id="odl-fase-due" value=""></div>
+    <p class="empty-text" style="text-align:left;padding:8px 0">Questo ordine <strong>non è legato a un piano</strong>: se la stessa fase sta anche in un fabbisogno, lì continuerà a risultare da ordinare. Il legame col piano lo dà la generazione dal fabbisogno, non questa scheda.</p>
+    <div class="modal-actions">
+      <button class="btn-ghost" onclick="closeModal()">Annulla</button>
+      <button class="add-btn-sm" onclick="odlAddPhases('${esc(id)}')">Aggiungi</button>
+    </div>`, true, 'form');
+}
+// I centri di lavoro toccati da una tratta, nell'ordine del ciclo.
+function odlRunNomi(it, t) {
+  const nomi = [];
+  let k = 0;
+  (it.cycle || []).forEach(r => {
+    if (r.kind !== 'op') return;
+    const i = k++;
+    if (i < t.from || i > t.to) return;
+    const wc = getWorkCenter(r.workCenterId);
+    nomi.push(wc ? wc.name : '(centro mancante)');
+  });
+  return Array.from(new Set(nomi)).join(' + ');
+}
+// Le righe che nascono da una scelta di tratte. Sta fuori dal gesto perché
+// **la decisione è qui** e il gesto è solo il modo di esprimerla: così si può
+// verificare che una riga scritta a mano abbia la stessa forma di una generata,
+// senza passare da caselle e pulsanti.
+function odlPhaseLines(scelte, pezziDi, due) {
+  const out = [];
+  (scelte || []).forEach(chiave => {
+    const itemId = String(chiave).split('#')[0];
+    const from = Number(String(chiave).split('#')[1]) || 0;
+    const it = getItem(itemId); if (!it) return;
+    const pezzi = Number(pezziDi(itemId)) || 0;
+    if (!(pezzi > 0)) return;                  // zero pezzi non è una lavorazione
+    const t = clCycleRuns(it).find(x => x.from === from); if (!t) return;
+    const r = clRunRow(it, t, pezzi, due || '');
+    if (!r) return;
+    out.push(Object.assign(planPhaseDocLine(r, true), { received: 0 }));
+  });
+  return out;
+}
+function odlAddPhases(id) {
+  if (!odlGuard(id, 'contract')) return;
+  const o = getOdl(id); if (!o) return;
+  const scelte = Array.from(document.querySelectorAll('.odl-fase'))
+    .filter(cb => cb.checked).map(cb => cb.value);
+  if (!scelte.length) { showToast('Nessuna lavorazione selezionata', 'error'); return; }
+  const parti = window.__odlFasiParti || [];
+  const righe = odlPhaseLines(scelte, itemId => rawNum('odl-pz-' + parti.indexOf(itemId)), val('odl-fase-due'));
+  if (!righe.length) { showToast('Niente da aggiungere: i pezzi devono essere maggiori di zero', 'error'); return; }
+  righe.forEach(l => o.lines.push(l));
+  touch(o); odlMarkDirty(); closeModal(); renderOdl();
+  showToast(righe.length === 1 ? 'Lavorazione aggiunta' : righe.length + ' lavorazioni aggiunte');
+}
+
+function renderOdlEdit(id) {
+  const o = getOdl(id); if (!o) { odlView = 'list'; return ''; }
+  const lines = (o.lines || []).map((l, i) => {
+    const qty = Number(l.qty) || 0, price = (l.price === '' || l.price == null) ? null : Number(l.price);
+    const amount = price != null ? qty * price : null;
+    const rec = Number(l.received) || 0, residual = qty - rec;
+    // Le due azioni di conto lavoro stanno sotto la riga che le giustifica:
+    // terzista e ordine sono già decisi, resta da dire cosa esce e quanto.
+    const cl = docClActions(o, l);
+    return `<tr>
+      ${cell2(i + 1, '', 'ln-idx')}
+      ${cell2(`<span class="ln-code">${esc(l.code || '')}</span>`,
+    `${esc(l.description)}${l.note ? `<div class="line-note">${ico('edit', 'tinted', 'Nota di riga')} ${esc(l.note)}</div>` : ''}${cl}`)}
+      ${cell2(`<input type="number" class="rfq-qty-input lock-contract" value="${l.qty}" min="0" step="any" title="Pezzi da lavorare" onchange="odlSetLine('${id}','${l.id}','qty',this.value)">`,
+    esc(l.uom || ''))}
+      ${cell2(`<input type="number" class="rfq-price-input lock-contract" value="${price != null ? price : ''}" min="0" step="any" placeholder="—" title="Tariffa per pezzo" onchange="odlSetLine('${id}','${l.id}','price',this.value)">`,
+    `<span class="ln-amount">${amount != null ? fmtN(amount) : '—'}</span>`)}
+      ${cell2(`<input type="date" class="rfq-date-input lock-contract" value="${esc(l.deliveryDate || '')}" title="Data che abbiamo chiesto" onchange="odlSetLine('${id}','${l.id}','deliveryDate',this.value)">`,
+    `<input type="date" class="rfq-date-input lock-reception" value="${esc(l.confirmedDate || '')}" title="Data che il terzista ha confermato" onchange="odlSetLine('${id}','${l.id}','confirmedDate',this.value)">${ordLineDelayHtml(l)}`)}
+      ${cell2(`<input type="number" class="rfq-qty-input lock-reception" value="${rec}" min="0" step="any" title="Pezzi rientrati dal terzista: portano l'ordine a parziale o evaso, ma non caricano il magazzino. Il rientro si registra come movimento." onchange="odlSetLine('${id}','${l.id}','received',this.value)">`,
+    `<span class="ln-residual ${residual > 0 ? 'pos' : ''}" title="Pezzi ancora dal terzista">${fmtQty(residual)}</span>`)}
+      ${cell2(`<button class="mini-btn" onclick="odlEditLineModal('${id}','${l.id}')" title="Modifica riga / nota">${ico('edit', 'tinted', 'Modifica riga / nota')}</button>`,
+    `<button class="mini-btn danger lock-contract" onclick="odlDelLine('${id}','${l.id}')" title="Togli la riga">${ico('trash', 'tinted', 'Togli la riga')}</button>`, 'line-actions')}
+    </tr>`;
+  }).join('') || `<tr><td colspan="7" class="empty-text">Nessuna lavorazione. Un ordine di lavoro si genera dal <strong>Fabbisogno</strong>, oppure si scrive qui con <em>+ Lavorazione da ciclo</em>: si sceglie la parte, le fasi da mandare fuori e i pezzi.</td></tr>`;
+  const total = odlTotal(o);
+  const ritardo = orderWorstDelay(o);
+  const co = db.settings.company || {};
+  const coWarn = co.name ? '' : `<div class="rfq-warn">${ico('warning', 'tinted', '')} Dati azienda non impostati: compilali in <strong>Gestione › Dati azienda</strong> per stamparli sul documento.</div>`;
+  const rfqRef = docOriginRef(o);
+  const dis = odlDirty ? 'disabled title="Salva l\'ordine di lavoro prima di generare il documento"' : '';
+  const lockBanner = docLockBanner(odlMode(o), 'Ordine di lavoro ' + (ORDER_STATUS[o.status] || o.status).toLowerCase(), 'odl', id);
+  return `<div class="manage-wrap">
+    <div class="bom-toolbar">
+      ${worklistCloseBtn('odlBackToList()', "l'ordine di lavoro")}
+      <h2 class="section-title" style="font-family:var(--mono)">${esc(o.number)}</h2>
+      ${statusBadge(ORDER_STATUS, o.status)}
+      <button class="add-btn-sm rfq-save-btn ${odlDirty ? 'dirty' : ''}" id="odl-save-btn" onclick="odlSave('${id}')">${ico('save', 'tinted', '')} Salva</button>
+      <button class="btn-outline" style="color:var(--red);border-color:var(--red)" onclick="delOdl('${id}')" title="Elimina l'ordine di lavoro">${ico('trash', 'tinted', '')} Elimina</button>
+    </div>
+    ${coWarn}${rfqRef}${lockBanner}${stampLine(o)}
+    <div class="rfq-head">
+      <div class="modal-field"><label>Titolo / oggetto</label><input class="lock-contract" value="${esc(o.title || '')}" onchange="odlSetField('${id}','title',this.value)"></div>
+      <div class="rfq-head-row">
+        <div class="modal-field"><label>Terzista</label><select class="lock-contract" onchange="odlSetSupplier('${id}',this.value)">${supplierOptions(o.supplierId)}</select></div>
+        <div class="modal-field"><label>Data ordine</label><input type="date" class="lock-contract" value="${(o.date || '').slice(0, 10)}" onchange="odlSetField('${id}','date',this.value)"></div>
+        <div class="modal-field"><label>Stato</label><select onchange="odlSetField('${id}','status',this.value)">
+          ${Object.entries(ORDER_STATUS).map(([k, v]) => `<option value="${k}" ${o.status === k ? 'selected' : ''}>${v}</option>`).join('')}
+        </select></div>
+      </div>
+      <div class="rfq-head-row">
+        <div class="modal-field"><label>Tipo di trasporto / resa</label>
+          <input list="odl-transport-opts" class="lock-contract" value="${esc(o.transport || '')}" placeholder="es. Porto franco, EXW…" onchange="odlSetField('${id}','transport',this.value)">
+          <datalist id="odl-transport-opts">${(db.settings.transportOptions || []).map(x => `<option value="${esc(x)}"></option>`).join('')}</datalist></div>
+        <div class="modal-field"><label>Tipo di pagamento</label>
+          <input list="odl-payment-opts" class="lock-contract" value="${esc(o.payment || '')}" placeholder="es. Bonifico 60gg…" onchange="odlSetField('${id}','payment',this.value)">
+          <datalist id="odl-payment-opts">${(db.settings.paymentOptions || []).map(x => `<option value="${esc(x)}"></option>`).join('')}</datalist></div>
+      </div>
+      <div class="rfq-head-row">
+        <div class="modal-field"><label>N° conferma del terzista</label><input value="${esc(o.supplierConfirmation || '')}" onchange="odlSetField('${id}','supplierConfirmation',this.value)"></div>
+      </div>
+      <div class="modal-field"><label>Note</label><textarea rows="2" onchange="odlSetField('${id}','notes',this.value)">${esc(o.notes || '')}</textarea></div>
+      <div class="modal-field"><label>${ico('lock', 'tinted', '')} Note interne (non stampate sui documenti)</label><textarea rows="2" class="notes-internal" onchange="odlSetField('${id}','notesInternal',this.value)">${esc(o.notesInternal || '')}</textarea></div>
+    </div>
+    ${ritardo != null ? `<div class="rfq-warn">${ico('clock', 'tinted', '')} Il terzista ha confermato con <strong>${ritardo} ${ritardo === 1 ? 'giorno' : 'giorni'}</strong> di ritardo sulla data richiesta.</div>` : ''}
+    <p class="empty-text" style="text-align:left;padding:0 0 8px">I <strong>pezzi rientrati</strong> portano l'ordine a parziale o evaso ma <strong>non caricano il magazzino</strong>: il materiale che esce e i pezzi che tornano si registrano come movimenti. È la stessa regola per cui queste righe non hanno un articolo — altrimenti la stessa merce verrebbe contata due volte.<br>Il materiale <strong>esce una volta sola</strong>, alla prima fase di ogni parte, ed è quello scritto nel suo <strong>ciclo</strong>; i pezzi rientrano una volta, all'ultima. Le fasi in mezzo non muovono niente: più fasi dallo stesso terzista sono più lavorazioni sullo <em>stesso</em> pezzo, non più pezzi.</p>
+    <h3 class="rfq-subhead">Lavorazioni
+      <span class="rfq-head-actions">
+        <button class="add-btn-sm lock-contract" onclick="odlAddPhaseModal('${id}')" title="Scegli una parte col suo ciclo e le fasi da commissionare">+ Lavorazione da ciclo</button>
+        <button class="btn-outline lock-contract" onclick="odlAddManualLineModal('${id}')">+ Riga manuale</button>
+        <button class="btn-outline lock-reception" onclick="odlMarkAllReceived('${id}')">✓ Segna tutto rientrato</button>
+      </span></h3>
+    <div class="table-wrap"><table class="rfq-table rfq-table-2">
+      <thead><tr>
+        <th scope="col" class="ln-idx">#</th>
+        ${th2('Parte', 'Lavorazione')}
+        ${th2('Pezzi', 'U.M.')}
+        ${th2(`Tariffa (${esc(cur())}/pz)`, `Importo (${esc(cur())})`, 'Quanto costa lavorare un pezzo; sotto, quanto fa per i pezzi di riga')}
+        ${th2('Richiesta', 'Confermata', 'Sopra la data che abbiamo chiesto, sotto quella che il terzista ha confermato')}
+        ${th2('Rientrati', 'Ancora fuori', 'Sopra quanti pezzi sono tornati, sotto quanti restano dal terzista')}
+        <th scope="col"></th></tr></thead>
+      <tbody>${lines}</tbody>
+      <tfoot><tr class="rfq-cmp-total"><td colspan="3" style="text-align:right">Totale imponibile</td><td>${fmtN(total)}</td><td colspan="3"></td></tr></tfoot>
+    </table></div>
+    <div class="rfq-export-bar">
+      <label>Documento d'ordine di lavoro:</label>
+      <button class="export-btn-pdf odl-export-btn" onclick="exportOdlPDF('${id}')" ${dis}>${ico('file', 'tinted', '')} PDF</button>
+      <button class="export-btn-xls odl-export-btn" onclick="exportOdlExcel('${id}')" ${dis}>${ico('sheet', 'tinted', '')} Excel</button>
+      ${odlDirty ? '<span class="rfq-dirty-hint">Salva per abilitare la generazione del documento</span>' : ''}
+    </div>
+  </div>`;
+}
+
+// ─── Documento dell'ordine di lavoro ───
+// Bilingue come l'ordine d'acquisto, e con le colonne che servono a un
+// terzista: la parte, la lavorazione, i pezzi. Nessuna colonna «codice presso
+// il fornitore»: una lavorazione non ha un codice a catalogo di nessuno.
+function exportOdlPDF(id) {
+  const o = getOdl(id); if (!o) return;
+  if (!(o.lines || []).length) { showToast('Nessuna riga da esportare', 'error'); return; }
+  const jsPDF = requirePdf(); if (!jsPDF) return;
+  const co = db.settings.company || {};
+  const sup = o.supplierId ? getSupplier(o.supplierId) : null;
+  const doc = new jsPDF({ orientation: 'landscape' });
+  doc.setFontSize(15); doc.setTextColor(30); doc.text(`Ordine di lavoro / Subcontract Order — ${o.number}`, 14, 16);
+  doc.setFontSize(9); doc.setTextColor(90);
+  doc.text(`Data / Date: ${fmtDateIt(o.date) || fmtDateIt(nowISO())}`, 14, 22);
+  if (o.title) doc.text(`Oggetto / Subject: ${o.title}`, 14, 27);
+  const yTop = 36;
+  const block = (x, title, rowsTxt) => {
+    doc.setFontSize(8); doc.setTextColor(130); doc.text(title, x, yTop);
+    doc.setFontSize(9); doc.setTextColor(40);
+    const rows = rowsTxt.filter(Boolean);
+    rows.forEach((t, i) => doc.text(String(t), x, yTop + 5 + i * 4.5));
+    return rows.length;
+  };
+  const n1 = block(14, 'COMMITTENTE / PRINCIPAL', docPartyLines(co, true));
+  const n2 = block(160, 'TERZISTA / SUBCONTRACTOR', sup ? docPartyLines(sup, true) : ['(terzista non selezionato / not selected)']);
+  const startY = yTop + 5 + Math.max(n1, n2) * 4.5 + 4;
+  const head = ['#', 'Parte\nPart', 'Lavorazione\nOperation', 'Pezzi\nQty', 'Tariffa\nUnit rate', 'Importo\nAmount', 'Data consegna\nDelivery date'];
+  const body = (o.lines || []).map((l, i) => {
+    const qty = Number(l.qty) || 0, price = (l.price === '' || l.price == null) ? null : Number(l.price);
+    return [i + 1, l.code || '', lineDescDoc(l), (qty + ' ' + (l.uom || '')).trim(),
+      price != null ? fmtN(price) + (l.uom ? '/' + l.uom : '') : '',
+      price != null ? fmtN(qty * price) : '', fmtDateIt(l.deliveryDate)];
+  });
+  const totLabel = { content: 'Totale / Total', styles: { halign: 'right', fontStyle: 'bold' } };
+  const totVal = { content: fmtN(odlTotal(o)), styles: { fontStyle: 'bold' } };
+  doc.autoTable({ startY, head: [head], body, foot: [['', '', '', '', totLabel, totVal, '']],
+    styles: { fontSize: 8 }, headStyles: { fillColor: [46, 164, 121] }, footStyles: { fillColor: [235, 242, 238], textColor: 20 } });
+  let fy = doc.lastAutoTable.finalY + 8;
+  doc.setTextColor(80); doc.setFontSize(9);
+  if (o.transport) { doc.text('Trasporto / Shipping: ' + o.transport, 14, fy); fy += 5; }
+  if (o.payment) { doc.text('Pagamento / Payment: ' + o.payment, 14, fy); fy += 5; }
+  if (o.supplierConfirmation) { doc.text('Conferma terzista / Order confirmation: ' + o.supplierConfirmation, 14, fy); fy += 5; }
+  // Solo o.notes: le note interne (notesInternal) non escono mai sul documento.
+  if (o.notes) { doc.text('Note / Notes: ' + o.notes, 14, fy); }
+  doc.save(`${o.number}${sup ? '_' + (sup.name || '').replace(/\s+/g, '_') : ''}.pdf`);
+  showToast('PDF esportato');
+  askMarkSent(o, `PDF generato.\nSegnare l'ordine di lavoro ${o.number} come inviato?`, 'inviato', renderOdl);
+}
+function exportOdlExcel(id) {
+  const o = getOdl(id); if (!o) return;
+  if (!(o.lines || []).length) { showToast('Nessuna riga da esportare', 'error'); return; }
+  const co = db.settings.company || {};
+  const sup = o.supplierId ? getSupplier(o.supplierId) : null;
+  const data = [['Ordine di lavoro / Subcontract Order', o.number], ['Data', fmtDateIt(o.date)]];
+  if (o.title) data.push(['Oggetto', o.title]);
+  if (o.rfqId && getRfq(o.rfqId)) data.push(['Da richiesta', getRfq(o.rfqId).number]);
+  if (o.transport) data.push(['Trasporto / Shipping', o.transport]);
+  if (o.payment) data.push(['Pagamento / Payment', o.payment]);
+  if (o.supplierConfirmation) data.push(['Conferma terzista / Order confirmation', o.supplierConfirmation]);
+  data.push([]);
+  data.push(['COMMITTENTE', '', 'TERZISTA']);
+  const coLines = docPartyLines(co), supLines = docPartyLines(sup);
+  for (let i = 0; i < Math.max(coLines.length, supLines.length); i++) data.push([coLines[i] || '', '', supLines[i] || '']);
+  data.push([]);
+  data.push(['#', 'Parte', 'Lavorazione', 'Pezzi', 'U.M.', `Tariffa (${cur()}/pz)`, `Importo (${cur()})`, 'Consegna', 'Rientrati', 'Ancora fuori', 'Nota']);
+  (o.lines || []).forEach((l, i) => {
+    const qty = Number(l.qty) || 0, price = (l.price === '' || l.price == null) ? '' : Number(l.price);
+    const amount = price === '' ? '' : qty * price;
+    const rec = Number(l.received) || 0;
+    data.push([i + 1, l.code || '', l.description, qty, l.uom || '', price, amount, fmtDateIt(l.deliveryDate), rec, qty - rec, l.note || '']);
+  });
+  data.push([]);
+  data.push(['', 'TOTALE IMPONIBILE / TOTAL', odlTotal(o)]);
+  if (o.notes) { data.push([]); data.push(['Note', o.notes]); }
+  if (!requireXlsx()) return;
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(data), 'Ordine di lavoro');
+  XLSX.writeFile(wb, `${o.number}${sup ? '_' + (sup.name || '').replace(/\s+/g, '_') : ''}.xlsx`);
+  showToast('Excel esportato');
+  askMarkSent(o, `Excel generato.\nSegnare l'ordine di lavoro ${o.number} come inviato?`, 'inviato', renderOdl);
 }
 
 function delOrder(id) {

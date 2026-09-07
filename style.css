@@ -166,7 +166,7 @@ input[type=date]::-webkit-calendar-picker-indicator,input[type=datetime-local]::
 .picker-row:hover{background:var(--card-hover)}
 .picker-row.is-sel{background:var(--accent-soft-hi)}
 .picker-row b{font-family:var(--mono);font-weight:600}
-.picker-type{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:var(--text-dim);background:var(--card);border:1px solid var(--border);border-radius:4px;padding:2px 6px;white-space:nowrap}
+.picker-type{display:inline-block;font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:var(--text-dim);background:var(--card);border:1px solid var(--border);border-radius:4px;padding:2px 6px;white-space:nowrap}
 .picker-empty{padding:10px 12px;font-size:12px;color:var(--text-dim);text-align:center}
 /* Righe del pannello "Aggiungi componenti": codice e descrizione impilati a
    sinistra, i comandi di quantità (±1, campo, U.M.) allineati a destra. */
@@ -342,7 +342,9 @@ input[type=date]::-webkit-calendar-picker-indicator,input[type=datetime-local]::
 /* Le lavorazioni hanno la fase in testa, il modo (fisso/orario) prima del
    costo — la cui cella si impila in due campi (ore, tariffa) quando è orario
    — e le frecce di riordino in coda. */
-.cycle-op-row{grid-template-columns:52px minmax(140px,2fr) minmax(100px,1fr) 72px 100px 88px 62px 32px}
+.cycle-op-row{grid-template-columns:52px minmax(126px,2fr) minmax(92px,1fr) 68px 76px 92px 80px 56px 32px}
+.cycle-op-time{display:flex;align-items:center;gap:4px}
+.cycle-op-time em{font-style:normal;font-size:11px;color:var(--text-dim)}
 .cycle-op-cost{display:flex;flex-direction:column;gap:3px}
 .cycle-row:last-child{border-bottom:none}
 .cycle-head{font-size:10px;font-weight:600;color:var(--text-dim);text-transform:uppercase;letter-spacing:.05em}
@@ -405,8 +407,21 @@ input[type=date]::-webkit-calendar-picker-indicator,input[type=datetime-local]::
 .plandoc-qty{margin-left:auto;font-family:var(--mono);font-size:12px;color:var(--text-dim);white-space:nowrap}
 .plandoc-head .plandoc-qty{margin-left:auto}
 .plandoc-links{display:flex;flex-wrap:wrap;gap:8px}
-.plandoc-link{border:1px solid var(--border);border-radius:6px;padding:6px 10px;font-size:12px;cursor:pointer}
+/* Tutte le classi che disegnano un riquadro dentro il testo (bordo + padding
+   verticale) dichiarano `display:inline-block`, e test/theme.test.js verifica
+   che nessuna se ne dimentichi. Sotto, il perche'. */
+/* inline-block e' obbligatorio, non estetica: un inline con padding verticale
+   non allarga la riga di testo, e il riquadro deborda sopra e sotto finendo
+   addosso alle righe vicine. Dentro .plandoc-links sono flex item e la
+   dichiarazione non cambia niente; fuori, e' cio' che li tiene nel loro spazio. */
+.plandoc-link{display:inline-block;border:1px solid var(--border);border-radius:6px;padding:6px 10px;font-size:12px;cursor:pointer}
 .plandoc-link:hover{border-color:var(--accent);color:var(--text)}
+/* Variante compatta per le azioni dentro una riga di documento, dove lo spazio
+   verticale e' quello di una cella di tabella. */
+.plandoc-link-sm{padding:2px 7px;font-size:11px;border-radius:5px}
+/* I comandi di conto lavoro sotto una riga: riga propria, non testo. In .line-note
+   erano inline dentro un blocco pensato per una nota, e si accavallavano. */
+.line-cl-actions{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:6px;font-size:11px;color:var(--text-dim)}
 
 /* Summary card */
 .cost-summary{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:20px}
@@ -612,9 +627,10 @@ textarea.notes-internal{border-style:dashed}
 .rfq-sup-chk{display:flex;align-items:center;gap:8px;background:var(--card);border:1px solid var(--border);border-radius:8px;padding:9px 12px;font-size:13px;cursor:pointer}
 .rfq-sup-chk:hover{border-color:var(--text-dim)}
 .rfq-sup-email{color:var(--text-dim);font-size:11px;font-family:var(--mono)}
-.rfq-manual-tag{font-size:10px;font-weight:600;text-transform:uppercase;color:var(--orange);border:1px solid var(--orange);border-radius:4px;padding:1px 5px;margin-left:4px}
+.rfq-manual-tag{display:inline-block;font-size:10px;font-weight:600;text-transform:uppercase;color:var(--orange);border:1px solid var(--orange);border-radius:4px;padding:1px 5px;margin-left:4px}
+.rfq-clavoro-tag{display:inline-block;font-size:10px;font-weight:600;text-transform:uppercase;color:var(--green);border:1px solid var(--green);border-radius:4px;padding:1px 5px;margin-left:4px}
 /* Badge di stato documento (RFQ / ODA) */
-.doc-badge{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;border-radius:5px;padding:3px 8px;white-space:nowrap;border:1px solid currentColor}
+.doc-badge{display:inline-block;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;border-radius:5px;padding:3px 8px;white-space:nowrap;border:1px solid currentColor}
 .doc-badge.st-bozza{color:var(--text-dim)}
 .doc-badge.st-inviata,.doc-badge.st-inviato{color:var(--accent)}
 .doc-badge.st-ricevuta,.doc-badge.st-confermato{color:var(--purple)}
@@ -674,6 +690,7 @@ button:disabled{opacity:.4;cursor:not-allowed}
 /* La nota e i riferimenti del fornitore stanno sotto la descrizione, cioè nel
    piano di sotto: non devono allargare la colonna oltre il leggibile. */
 .rfq-table-2 .ln-b .line-note,.rfq-table-2 .ln-b .rfq-cmp-sub{margin-top:0;flex-basis:100%}
+.rfq-table-2 .ln-b .line-cl-actions{flex-basis:100%}
 /* I due pulsanti stanno uno sopra l'altro come le altre coppie. */
 .rfq-table-2 .line-actions .ln-a,.rfq-table-2 .line-actions .ln-b{justify-content:flex-end}
 .rfq-table tfoot .rfq-cmp-total td{border-top:2px solid var(--border);font-weight:700;font-family:var(--mono);color:var(--text)}
@@ -687,7 +704,7 @@ button:disabled{opacity:.4;cursor:not-allowed}
 .rfq-pick-list{max-height:340px;overflow-y:auto;border:1px solid var(--border);border-radius:8px;background:var(--bg);margin-top:8px}
 .rfq-pick-row{display:flex;align-items:center;gap:8px;padding:8px 12px;font-size:13px;cursor:pointer;border-bottom:1px solid var(--border)}
 .rfq-pick-row:hover{background:var(--card-hover)}
-.rfq-pick-type{margin-left:auto;font-size:10px;font-weight:600;text-transform:uppercase;color:var(--text-dim);background:var(--card);border:1px solid var(--border);border-radius:4px;padding:2px 6px;white-space:nowrap}
+.rfq-pick-type{display:inline-block;margin-left:auto;font-size:10px;font-weight:600;text-transform:uppercase;color:var(--text-dim);background:var(--card);border:1px solid var(--border);border-radius:4px;padding:2px 6px;white-space:nowrap}
 /* Tabella confronto offerte */
 .rfq-cmp-table td{text-align:center}
 .rfq-cmp-table td:first-child,.rfq-cmp-table th:first-child{text-align:left}
@@ -891,7 +908,7 @@ body.insp-on .row-actions{display:none}
    sopra porta alla vista, queste al singolo documento o alla scheda. */
 .home-sig{display:flex;flex-direction:column;gap:0}
 .home-voci{display:flex;flex-wrap:wrap;gap:5px;padding:6px 0 10px 74px}
-.home-chip{background:var(--bg);border:1px solid var(--border);border-radius:6px;
+.home-chip{display:inline-block;background:var(--bg);border:1px solid var(--border);border-radius:6px;
   padding:2px 8px;font-family:var(--mono);font-size:11px;font-weight:600;color:var(--text);cursor:pointer}
 .home-chip:hover{border-color:var(--accent);color:var(--accent)}
 .home-chip:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
@@ -962,3 +979,18 @@ body.insp-on .row-actions{display:none}
 }
 /* In stampa esce il documento, non lo strumento per sceglierlo. */
 @media print{.wl{display:block}.wl-side{display:none!important}}
+
+/* ─── Carico centri: il grafico della saturazione ───
+   Un blocco per centro, che scorre in orizzontale se le settimane sono tante:
+   la pagina non deve scorrere per colpa di un grafico, e le barre non vanno
+   schiacciate fino a non distinguersi. L'SVG e' scritto a mano — vedi
+   loadChartOne — e prende i colori dal tema come tutto il resto. */
+.load-charts{display:flex;flex-wrap:wrap;gap:14px;margin:10px 0 4px}
+.load-chart{flex:1 1 320px;min-width:0;margin:0;padding:10px 12px;background:var(--card);
+  border:1px solid var(--border);border-radius:10px}
+.load-chart figcaption{font-size:12px;font-weight:600;color:var(--text);margin:0 0 6px;
+  display:flex;align-items:baseline;gap:8px}
+.load-chart svg{display:block;width:100%;height:130px;overflow:visible}
+.load-chart-lbl{font-size:9px;fill:var(--text-dim);font-family:var(--mono)}
+/* In stampa il grafico resta: e' la lettura che si porta in riunione. */
+@media print{.load-chart{break-inside:avoid}}

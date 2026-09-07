@@ -95,13 +95,20 @@ function homeSegnali() {
   agg(urgente.sort(perData), 'riga di fabbisogno da ordinare entro pochi giorni',
     'righe di fabbisogno da ordinare entro pochi giorni', 'mrp', 'media');
 
-  // Ordini che il fornitore ha confermato più tardi di quanto chiesto
-  const ordTardi = (db.orders || []).filter(o => o.status !== 'annullato' && o.status !== 'evaso' && orderWorstDelay(o) != null)
-    .sort((a, b) => orderWorstDelay(b) - orderWorstDelay(a));
-  agg(ordTardi.map(o => {
+  // Ordini confermati più tardi di quanto chiesto — d'acquisto e di lavoro
+  // insieme: la domanda è una sola — cosa
+  // arriva tardi — e separarli in due avvisi avrebbe costretto a leggerne due
+  // per farsi la stessa idea. Il tipo si vede dal numero (ODA/ODL) e il click
+  // porta ciascuno nel suo elenco.
+  const tardi = d => d.status !== 'annullato' && d.status !== 'evaso' && orderWorstDelay(d) != null;
+  const ordTardi = [].concat((db.orders || []).filter(tardi).map(o => ({ o, tipo: 'order' })),
+    (db.workOrders || []).filter(tardi).map(o => ({ o, tipo: 'odl' })))
+    .sort((a, b) => orderWorstDelay(b.o) - orderWorstDelay(a.o));
+  agg(ordTardi.map(({ o, tipo }) => {
     const g = orderWorstDelay(o);
-    return voce(o.number, `${supplierName(o.supplierId) || 'senza fornitore'} — confermato con ${g} ${g === 1 ? 'giorno' : 'giorni'} di ritardo`,
-      `homeApri('order','${o.id}')`);
+    const chi = supplierName(o.supplierId) || (tipo === 'odl' ? 'senza terzista' : 'senza fornitore');
+    return voce(o.number, `${chi} — confermato con ${g} ${g === 1 ? 'giorno' : 'giorni'} di ritardo`,
+      `homeApri('${tipo}','${o.id}')`);
   }), 'ordine confermato oltre la data richiesta', 'ordini confermati oltre la data richiesta', 'orders', 'media');
 
   // Richieste partite e mai richiuse
@@ -125,6 +132,29 @@ function homeSegnali() {
   agg(senzaPrezzo.map(it => voce(it.code, `${it.name} — ${typeLabel(it.type)}`, `itemInfoModal('${it.id}')`)),
     'articolo d\'acquisto senza prezzo', 'articoli d\'acquisto senza prezzo', 'buy', 'media');
 
+  // Fasi a costo orario rimaste senza ore. Fino alla 0.64.2 una normalizzazione
+  // cancellava le ore di ogni fase oraria a ogni caricamento; il recupero le
+  // ricostruisce dividendo il costo per la tariffa del centro, ma dove il centro
+  // manca o ha tariffa zero non c'è niente da cui ricostruirle. Quelle fasi
+  // valgono zero, e vanno **nominate**: sono un costo sparito, e un costo sparito
+  // non si scopre guardando il totale, che resta un numero plausibile.
+  const senzaOre = [];
+  (db.items || []).forEach(it => {
+    // La fase si numera fra le sole lavorazioni, non nell'array intero: è il
+    // numero che l'utente legge nella vista Cicli, e nominarne un altro
+    // manderebbe a cercare la riga sbagliata.
+    let k = 0;
+    (it.cycle || []).forEach(r => {
+      if (r.kind !== 'op') return;
+      const n = cyclePhaseNumber(k++);
+      if (r.costMode !== 'orario' || Number(r.hours) > 0) return;
+      const wc = getWorkCenter(r.workCenterId);
+      senzaOre.push(voce(it.code, `${it.name} — fase ${n} su ${wc ? wc.name : '(centro mancante)'}: ore a zero, la lavorazione non costa nulla`,
+        `homeApri('cycle','${it.id}')`));
+    });
+  });
+  agg(senzaOre, 'fase a costo orario senza ore', 'fasi a costo orario senza ore', 'cycles', 'media');
+
   // Codici duplicati: il controllo dati della Gestione, portato in evidenza.
   // Qui la voce è il codice ripetuto, non un articolo: aprirne uno dei due non
   // direbbe quale dei due è quello sbagliato. Si sbroglia in Gestione.
@@ -142,6 +172,8 @@ function homeApri(tipo, id) {
   else if (tipo === 'plan') { setView('mrp'); openPlanEdit(id); }
   else if (tipo === 'rfq') { setView('rfq'); openRfqEdit(id); }
   else if (tipo === 'order') { setView('orders'); openOrderEdit(id); }
+  else if (tipo === 'odl') { setView('odl'); openOdlEdit(id); }
+  else if (tipo === 'cycle') { setView('cycles'); openCycleFor(id); }
 }
 // Quante voci si scrivono per esteso. Oltre, l'elenco smetterebbe di essere un
 // dettaglio e diventerebbe la vista che si apre cliccando la riga.

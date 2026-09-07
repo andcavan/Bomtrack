@@ -321,3 +321,89 @@ describe('I campi data sono tutti vestiti', () => {
     assert.match(CSS, /:root\[data-theme=light\] input\[type=date\]::-webkit-calendar-picker-indicator/);
   });
 });
+
+// ═══════════════════════════════════════════════════════════
+//  Riquadri dentro il testo: inline con padding verticale
+// ═══════════════════════════════════════════════════════════
+// Un elemento **inline** con padding verticale non allarga la riga di testo che
+// lo contiene: il riquadro deborda sopra e sotto e finisce **addosso alle righe
+// vicine**. A schermo si vede come due comandi accavallati alla descrizione
+// della riga sopra, ed è successo davvero — i due comandi di conto lavoro sotto
+// una riga di ordine di lavoro (0.70.1).
+//
+// La regola non si può provare disegnando: la suite non ha un motore di layout.
+// Si prova sul **contratto** fra i due file — se una classe disegna un riquadro
+// (bordo più padding verticale) e viene usata su uno `<span>`, quella classe
+// deve dichiarare un `display` che il riquadro lo contenga. Le classi si
+// ricavano da style.css, non si elencano a mano: se domani ne nasce un'altra
+// con la stessa forma, la trova questo controllo invece dello schermo.
+describe('Nessun riquadro inline sborda sulle righe vicine', () => {
+  const VISTE = ['views-catalog.js', 'views-docs.js', 'views-jobs.js', 'views-mrp.js',
+    'views-stock.js', 'views-bom.js', 'views-item.js', 'views-home.js', 'worklist.js', 'inspector.js'];
+
+  // I corpi di tutte le regole che nominano quella classe. Serve perché
+  // `display` e `padding` possono stare in dichiarazioni diverse.
+  function corpiDi(classe) {
+    const out = [];
+    const re = /([^{}]+)\{([^}]*)\}/g;
+    let m;
+    while ((m = re.exec(CSS)) !== null) {
+      if (new RegExp('\\.' + classe + '(?![\\w-])').test(m[1])) out.push(m[2]);
+    }
+    return out;
+  }
+  // Padding verticale dichiarato dalla forma abbreviata: 1° valore (o 3°).
+  function paddingVerticale(corpo) {
+    const m = /(?:^|;)\s*padding\s*:\s*([^;]+)/.exec(corpo);
+    if (!m) return 0;
+    const v = m[1].trim().split(/\s+/)[0];
+    return parseFloat(v) || 0;
+  }
+  const disegnaRiquadro = c => {
+    const corpi = corpiDi(c);
+    const bordo = corpi.some(b => /(?:^|;)\s*border\s*:/.test(b));
+    return bordo && corpi.some(b => paddingVerticale(b) > 0);
+  };
+  const displayContiene = c => corpiDi(c).some(b => {
+    const m = /(?:^|;)\s*display\s*:\s*([^;]+)/.exec(b);
+    return !!m && m[1].trim() !== 'inline';
+  });
+
+  // Tutte le classi che compaiono su uno <span> nelle viste.
+  function classiSuSpan() {
+    const out = new Set();
+    VISTE.forEach(f => {
+      const s = fs.readFileSync(path.join(__dirname, '..', f), 'utf8');
+      const re = /<span[^>]*\bclass="([^"$]*)"/g;
+      let m;
+      while ((m = re.exec(s)) !== null) {
+        m[1].split(/\s+/).filter(Boolean).forEach(c => out.add(c));
+      }
+    });
+    return Array.from(out);
+  }
+
+  it('il controllo trova davvero le classi che disegnano un riquadro', () => {
+    // Se questa smette di valere, il caso qui sotto passerebbe a vuoto.
+    assert.ok(disegnaRiquadro('plandoc-link'),
+      'plandoc-link non risulta più un riquadro: il controllo non proverebbe niente');
+  });
+
+  it('ogni riquadro usato su uno span dichiara un display che lo contiene', () => {
+    const nudi = classiSuSpan().filter(c => disegnaRiquadro(c) && !displayContiene(c));
+    assert.deepEqual(nudi, [],
+      'inline con padding verticale: il riquadro sborda sulle righe vicine. '
+      + 'Serve display:inline-block (o flex/block) su: ' + nudi.join(', '));
+  });
+
+  it('i comandi di conto lavoro stanno su una riga propria, non dentro una nota', () => {
+    // .line-note e' un blocco di testo, e ci finivano dentro due riquadri. La
+    // riga delle azioni ha una classe sua, che le dispone in flex.
+    const s = fs.readFileSync(path.join(__dirname, '..', 'views-docs.js'), 'utf8');
+    assert.equal((s.match(/line-cl-actions/g) || []).length, 2,
+      'le due righe di comandi (ordine di lavoro e ordine d\'acquisto legacy)');
+    assert.ok(!/line-note[^`]*plandoc-link/.test(s),
+      'un comando a riquadro e\' tornato dentro una nota di riga');
+    assert.match(CSS, /\.line-cl-actions\{[^}]*display:flex/);
+  });
+});

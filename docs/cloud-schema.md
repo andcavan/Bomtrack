@@ -50,24 +50,26 @@ immaginarle.
 | `users` | `profiles` | id uuid PK → `auth.users(id)`, name, username unique, email, role (`admin`\|`acquisti`\|`progettazione`\|`lettore`), color, active bool |
 | `suppliers` | `suppliers` | id uuid PK, name, referente, email, phone, vat, street, street_number, zip, city, province, country, default_transport, default_payment, active bool, created_at, updated_at |
 | `customers` | `customers` | id uuid PK, name **unique** (case-insensitive), referente, email, phone, vat, street, street_number, zip, city, province, country, notes, active bool, created_at, updated_at |
-| `workCenters` | `work_centers` | id uuid PK, name, hourly_rate numeric, active, created_at, updated_at |
+| `workCenters` | `work_centers` | id uuid PK, name, hourly_rate numeric, capacity_hours numeric (ore a settimana), active, created_at, updated_at. **`suppliers` resta annidato** in un campo, non normalizzato: vedi la nota qui sotto |
 | `families` | `families` | id uuid PK, name, kind ('acquistato'\|'materiale'\|'parte'), sigla, created_at, updated_at |
 | `families[].subs` | `sub_families` | id uuid PK, family_id uuid FK, name, sigla, created_at, updated_at |
 | `items` | `items` | id uuid PK, code, name, type enum, uom, notes, active, favorite, obsolete, unit_cost, purchase_price, supplier_id FK, supplier_code, supplier_desc, active_price_id FK → `item_prices(id)`, sourcing ('make'\|'buy'), family_id FK, sub_family_id FK, machine_item_id FK, group_item_id FK, sigla, overhead_pct_override, margin_pct_override, created_at, updated_at |
 | `items[].components` | `item_components` | item_id uuid FK, child_item_id uuid FK, qty numeric, scrap_pct numeric |
 | `items[].operations` | `item_operations` | item_id uuid FK, work_center_id uuid FK, hours numeric, note |
-| `items[].cycle` | `item_cycle_rows` | item_id uuid FK, kind ('item'\|'op'), ref_item_id FK, work_center_id FK, supplier_id FK, qty, cost, cost_override |
+| `items[].cycle` | `item_cycle_rows` | item_id uuid FK, kind ('item'\|'op'), pos int. **Riga articolo** (`kind='item'`): item_id di riferimento, qty, cost_override nullable. **Riga lavorazione** (`kind='op'`): work_center_id FK, supplier_id FK **nullable** (nullo = interna, valorizzato = conto lavoro esterno), cost_mode ('fisso'\|'orario'), hours numeric, days int, rate numeric, cost numeric, note |
 | `items[].priceList` | `item_prices` | id uuid PK, item_id uuid FK, supplier_id FK **nullable** (quotazione inserita a mano), price numeric, min_qty numeric, lead_days int, code, desc, date, rfq_id FK nullable, line_id, note, created_at, updated_at |
 | `rfqs` | `rfqs` | id uuid PK, number unique per anno, title, date, status ('bozza'\|'inviata'\|'ricevuta'\|'chiusa'), supplier_id FK, transport, payment, plan_id FK nullable, notes, notes_internal, active, created_at, updated_at |
-| `rfqs[].lines` | `rfq_lines` | id uuid PK, rfq_id uuid FK, item_id FK nullable (riga manuale), code, description, uom, qty, price nullable, delivery_date, note |
+| `rfqs[].lines` | `rfq_lines` | id uuid PK, rfq_id uuid FK, item_id FK **nullable** (riga manuale, o riga di conto lavoro), phase_key text **nullable**, phase_keys text **nullable** (tutte le fasi della tratta, separate da virgola), code, description, uom, qty, price nullable, delivery_date, note |
 | `orders` | `orders` | id uuid PK, number unique per anno, title, date, status ('bozza'\|'inviato'\|'confermato'\|'parziale'\|'evaso'\|'annullato'), supplier_id FK, transport, payment, rfq_id FK nullable, plan_id FK nullable, supplier_confirmation, notes, notes_internal, active, created_at, updated_at |
-| `orders[].lines` | `order_lines` | id uuid PK, order_id uuid FK, item_id FK nullable, code, description, uom, qty, price nullable, delivery_date, received numeric, note |
+| `orders[].lines` | `order_lines` | id uuid PK, order_id uuid FK, item_id FK **nullable**, phase_key text **nullable**, phase_keys text **nullable**, code, description, uom, qty, price nullable, delivery_date, received numeric, note |
+| `workOrders` | `work_orders` | id uuid PK, number unique per anno (**ODL-**), title, date, status (stesso vocabolario di `orders`), supplier_id FK (il **terzista**), transport, payment, rfq_id FK nullable, plan_id FK nullable, job_id FK nullable, supplier_confirmation, notes, notes_internal, active, created_at, updated_at |
+| `workOrders[].lines` | `work_order_lines` | id uuid PK, work_order_id uuid FK, **item_id sempre NULL**, phase_key text (la **prima** fase della tratta), phase_keys text (tutte le fasi della tratta), code (della parte), description, uom, qty (pezzi), price (tariffa per pezzo) nullable, delivery_date, confirmed_date, received numeric, note |
 | `plans` | `production_plans` | id uuid PK, number unique per anno, title, date, notes, active, created_at, updated_at |
 | `plans[].lines` | `production_plan_lines` | id uuid PK, plan_id uuid FK, item_id uuid FK, qty numeric |
 | `revisions` | `item_revisions` | id uuid PK, item_id uuid FK, rev, date, motivo, **snapshot jsonb**, created_by, created_at |
 | `trash` | `trash` | id uuid PK, coll, deleted_at, deleted_by uuid FK, **record jsonb** — le eliminazioni recuperabili, ripulite dopo `TRASH_DAYS` |
 | `jobs` | `jobs` | id uuid PK, number unique per anno, customer, title, customer_ref, status ('aperta'\|'produzione'\|'chiusa'\|'annullata'), date, due_date, notes, active, created_at, updated_at |
-| `movements` | `stock_movements` | id uuid PK, item_id uuid FK, kind ('rettifica'\|'carico'\|'scarico'), qty numeric **con segno**, date, note, created_by, created_at |
+| `movements` | `stock_movements` | id uuid PK, item_id uuid FK, kind ('rettifica'\|'carico'\|'scarico'\|'clOut'\|'clIn'\|'clStep'), qty numeric **con segno** (positiva e senza effetto sulla giacenza su `clStep`), date, note, supplier_id uuid FK **nullable** (su `clStep`: **dove va**, nullo = torna da noi), from_supplier_id uuid FK **nullable** (solo `clStep`: **da dove viene**, nullo = parte da noi), order_id uuid FK **nullable**, line_id **nullable**, created_by, created_at |
 | `settings` | `settings` | una riga per team (o coppie chiave/valore). **Non è in `SCHEMA`**: è un oggetto solo, senza id né `updatedAt`, e `pendingChanges()` la segnala confrontando il contenuto (`settings: true`). `flattenDB()` non la esporta e `tablesForChanges()` non ne ricava nessuna tabella: l'adapter deve trattarla a parte, ed è il motivo per cui il flag è un booleano e non un elenco di id |
 
 **Vincoli che il modello locale dà per scontati** e che in cloud vanno scritti:
@@ -83,6 +85,71 @@ immaginarle.
   (`renameJobCustomer()`); un cliente citato da una commessa non si elimina. Il
   giorno in cui `jobs` prendesse una `customer_id`, la migrazione è un join per
   nome — ed è la ragione per cui il nome è tenuto unico da ora.
+- **`orders` e `work_orders` sono due tabelle e non una con un flag.** Un ordine
+  d'acquisto compra della merce, un ordine di lavoro manda dei pezzi a lavorare:
+  hanno numerazione, elenco e stampa distinti perché sono due documenti diversi
+  nella realtà. Con una tabella sola ogni conto — il totale acquistato, il carico
+  di magazzino, la copertura di commessa — avrebbe dovuto filtrare per un campo,
+  ed è il tipo di distinzione che prima o poi si dimentica in uno dei posti. La
+  **forma** è però la stessa, e le colonne vanno tenute allineate: in cloud
+  conviene una vista `supplier_documents` che le unisca per le domande che
+  riguardano entrambe (cosa arriva tardi, quanto è impegnato su una commessa).
+- **`work_order_lines.item_id` è sempre `NULL`**, e non per convenzione: è la
+  garanzia strutturale contro il doppio conteggio di magazzino. In cloud si
+  scrive come `check (item_id is null)` sulla tabella intera, che è più forte del
+  `check` condizionale su `order_lines`.
+- Una **richiesta d'offerta** può contenere insieme merce e lavorazioni dello
+  stesso fornitore — chiedere quanto costa il pezzo e quanto costa lavorarlo è
+  una domanda sola — ed è per questo che `rfq_lines` conserva sia `item_id` sia
+  `phase_key`. Alla conversione la richiesta **si divide**: le righe con una fase
+  vanno in un `work_order`, le altre in un `order`.
+- **Righe di conto lavoro** (`phase_key` valorizzata): sono le fasi di
+  lavorazione affidate a un terzista, generate dal fabbisogno. Due vincoli, ed è
+  meglio scriverli che riscoprirli.
+  - `item_id` **deve** essere `NULL` su queste righe. Non è una comodità: è la
+    garanzia strutturale contro il doppio conteggio di magazzino. L'esistente si
+    calcola come `Σ received` delle righe **con** articolo più `Σ movimenti`; il
+    rientro dei pezzi dal terzista è un movimento. Con un `item_id` le due strade
+    si sommerebbero e i pezzi risulterebbero il doppio. In cloud vale la pena
+    scriverlo come `check (phase_key is null or item_id is null)`.
+  - Una riga copre una **tratta**: le fasi *consecutive* dello stesso terzista
+    stanno in una riga sola, perché sono una lavorazione da commissionare e non
+    due. `phase_key` nomina la **prima** — è l'identità della riga, quella che
+    gli ancoraggi del conto lavoro leggono — e `phase_keys` le elenca **tutte**.
+    Indicizzando solo la prima, le fasi in mezzo risulterebbero ancora da
+    documentare e il fabbisogno le riproporrebbe in un ordine che le contiene
+    già. Su una riga a fase singola le due colonne dicono la stessa cosa, e la
+    ripetizione è voluta: chi legge non deve sapere quale delle due guardare.
+  - Fasi dello stesso terzista **non** consecutive (20 e 40, con la 30 in mezzo
+    altrove) vanno in **ordini di lavoro distinti**: fra le due il pezzo torna da
+    noi, e chiedergliele insieme sarebbe un ordine che non si può eseguire di
+    seguito. Il criterio è la *passata* — quante volte quel terzista ha già avuto
+    il pezzo. Una **richiesta d'offerta** invece le tiene insieme: chiedere non è
+    commissionare, e a un preventivo si risponde una volta.
+  - `phase_key` è `itemId#indice#workCenterId`, **congelata alla generazione**
+    come già lo sono `code` e `description`. L'indice conta fra le sole
+    lavorazioni del ciclo, non nell'array intero. **Non è un riferimento
+    integro**: riordinare le fasi la disallinea, e il fabbisogno ripropone quella
+    fase. È un falso negativo scelto — e visibile, perché il documento resta
+    nell'elenco di quelli generati dal piano. L'alternativa (ricalcolarla a ogni
+    lettura) bloccherebbe la fase *sbagliata*, e quello non si vedrebbe.
+    Contiene un `itemId` dentro una stringa, che nessuna rimappatura di id sa
+    seguire: vedi la nota su `REFS` in `store.js`.
+  - `received` su una di queste righe significa **pezzi rientrati dal terzista**:
+    porta l'ordine a parziale o evaso, e non carica il magazzino.
+- `work_centers.capacity_hours` = ore disponibili a settimana, e **zero
+  significa «non dichiarata», non «nessuna capacità»**. Serve al prospetto del
+  carico: un centro senza capacità mostra le ore e non il sovraccarico. Senza
+  questa distinzione ogni centro esistente risulterebbe sfondato al primo
+  caricamento, e il prospetto nascerebbe già da ignorare.
+- **`workCenters[].suppliers` non è dichiarato in `SCHEMA` né in `REFS`**, ed è
+  un difetto noto e non ancora corretto. Conseguenze: `flattenDB()` lo copia
+  come array dentro una colonna invece di esploderlo in `work_center_suppliers`
+  (il giro completo regge, ma la tabella cloud non è normalizzata), e la
+  rimappatura v1→v2 non riscrive `suppliers[].supplierId`. È la stessa famiglia
+  di `plans.jobId`. La correzione è un child def
+  `{ table: 'work_center_suppliers', rowId: 'id', merge: 'row' }` più una voce
+  in `REFS`, ed è una decisione a sé — scritta qui per non riscoprirla.
 - `item_prices` esiste solo per `type in ('acquistato','materiale','parte')`.
 - `item_prices (rfq_id, line_id)` è la chiave anti-duplicato usata da
   `rfqRecordPrices()`: registrare due volte la stessa offerta non deve creare due
@@ -91,6 +158,29 @@ immaginarle.
   valore proposto alle parti nuove sta in `settings.partSourcingDefault`
   (`'buy'` di serie): è un default di creazione, **non** un fallback di lettura —
   una parte senza il campo vale `'make'`, com'era prima che esistesse.
+- Su una riga di lavorazione **il tempo cambia unità con la natura della fase**,
+  e sono due colonne perché sono due grandezze:
+  - `hours` — ore di **occupazione di un centro**. Ha senso su una fase
+    **interna**, dove alimenta il carico dei centri; su una esterna esiste solo
+    come base del costo a modo `'orario'` (le ore che il terzista fattura).
+  - `days` — giorni di **attraversamento**, e ha senso solo su una fase in
+    **conto lavoro**. Un terzista non occupa una nostra macchina: il pezzo esce e
+    torna, e ciò che serve sapere è quando torna. Da `days` si ricava la data
+    entro cui mandare l'ordine di lavoro (`due − days`), esattamente come
+    `item_prices.lead_days` fa per il materiale.
+  Sulle fasi interne `days` resta `0` e non va letto; sulle esterne a costo fisso
+  `hours` resta `0` e non va letto. Tenerle in una colonna sola, con l'unità
+  decisa da `supplier_id`, renderebbe la colonna non sommabile e non
+  confrontabile — in un foglio di calcolo prima ancora che in SQL.
+- Su una riga di lavorazione, **`hours` e `cost_mode` rispondono a due domande
+  diverse** e vanno tenute separate: `hours` è il **tempo** che la fase occupa sul
+  centro ed esiste sempre; `cost_mode` dice da dove viene il **costo** — `'orario'`
+  lo calcola come `hours × rate`, `'fisso'` prende `cost` e le ore non ci entrano.
+  Sembra ridondante e non lo è: un prezzo concordato con un terzista è quello, e
+  farlo diventare `ore × tariffa` lo cambierebbe da sé; ma quella fase il centro
+  lo occupa lo stesso, e senza le ore il carico non si può calcolare. Fino alla
+  0.64.2 le ore esistevano solo in modo orario, e una normalizzazione le
+  cancellava a ogni caricamento.
 - Da `sourcing` dipende **anche il costo**, non solo il fabbisogno: `'make'` lo
   deriva da `item_cycle_rows`, `'buy'` usa `unit_cost` (che arriva da
   `item_prices`). Ha sostituito il campo `cost_mode` delle versioni fino alla
@@ -116,11 +206,72 @@ immaginarle.
   `uom`: è nell'unità del fornitore, e la conversione verso la giacenza si fa
   leggendo quella. Nessuna colonna in più.
 - **La giacenza non è una colonna.** Non esiste `items.on_hand`, e non va aggiunta:
-  l'esistente è `Σ order_lines.received + Σ stock_movements.qty`. Un campo
+  l'esistente è `Σ order_lines.received + Σ stock_movements.qty` **dei movimenti
+  che toccano il magazzino**, cioè tutti tranne `clStep` (vedi sotto). Un campo
   aggiornato a parte diventerebbe una seconda verità che diverge dalla prima, ed
   è l'errore già corretto una volta con i prezzi. In cloud conviene una **vista**
   (`item_stock`) e, se i numeri crescono, una materialized view — mai una colonna
   scrivibile dal client.
+- **Il magazzino si muove in due punti soli, e sono i due estremi del ciclo.**
+  Non quelli del documento: una parte con fasi 10 interna, 20 Beta, 30 interna,
+  40 Beta ha **due** ordini di lavoro da Beta, e ciascuno è prima e ultima riga
+  di sé stesso. Con gli ancoraggi letti dal documento il materiale uscirebbe due
+  volte e il pezzo finito si caricherebbe due volte.
+  - alla **prima tratta esterna** esce il materiale del ciclo (`clOut`), e
+    scarica;
+  - all'**ultima tratta esterna** entra il pezzo finito (`clIn`), e carica;
+  - a ogni altro estremo si sposta il pezzo stesso (`clStep`), e non carica né
+    scarica.
+
+  Quale materiale esce lo dice il **ciclo della parte** (`item_cycle_rows` con
+  `kind='item'`), moltiplicato per i pezzi: è lo stesso che il fabbisogno ha già
+  fatto comprare. Le fasi interne **dopo** l'ultima tratta esterna non spostano
+  il carico — il pezzo entra quando torna dal terzista, e la lavorazione che
+  resta la si fa su un pezzo già a scaffale. Non è un vincolo esprimibile in SQL:
+  i movimenti restano righe libere, ed è l'interfaccia a doverlo imporre.
+- **`clStep` è un movimento di luogo, non di quantità.** È l'unica eccezione alla
+  regola dell'esistente, e il codice la scrive in un predicato solo
+  (`movimentoToccaMagazzino`) invece che in un `if` sparso in ogni punto che
+  somma movimenti. Porta due estremi — `from_supplier_id` e `supplier_id`, uno
+  dei quali nullo perché fra due terzisti il pezzo passa sempre **da noi** — e in
+  cloud vale la pena scriverlo come un `check` che ne pretenda uno nullo quando
+  `kind = 'clStep'`. Lo stato «in casa, fra due fasi» non è una colonna e non è
+  la giacenza: sono pezzi che esistono, non sono a scaffale e non sono da nessun
+  terzista, e il prospetto li mostra come un luogo a sé.
+- **Un saldo negativo nel presso-terzi non è merce mancante**: è come si vede una
+  trasformazione, quando esce del materiale e torna un pezzo con un altro codice.
+  Il prospetto mostra i soli saldi **positivi**; sommare i negativi scalerebbe da
+  un articolo quello che sta fuori come un altro.
+  Il saldo si calcola **in ordine di data**, azzerando a ogni passo quel che
+  andrebbe sotto zero — non come differenza fra due totali. La differenza si vede
+  quando lo stesso terzista lavora un pezzo due volte: la prima volta i pezzi
+  *escono* dal suo registro senza esserci mai entrati (da lui erano arrivati come
+  materiale grezzo, e la trasformazione non la scrive nessuno), e quella partenza
+  senza arrivo annullerebbe il ritorno vero della seconda tratta.
+- **Il materiale presso i terzisti non è una colonna**, per la stessa ragione per
+  cui non lo è la giacenza: è `Σ clOut − Σ clIn` per coppia (fornitore,
+  articolo), calcolato dai soli movimenti. Nessun `items.at_supplier`, che
+  diventerebbe una seconda verità da tenere allineata a mano.
+  - `clOut` è **negativo**: il materiale che parte esce dal magazzino, perché
+    allo scaffale non c'è più. Non contraddice la regola sopra — un movimento
+    negativo è un addendo di quella somma, non un campo di saldo.
+  - I due movimenti portano l'articolo **che si muove davvero**: `clOut` quello
+    che esce, `clIn` quello che rientra. Quando coincidono (grezzo fuori,
+    lavorato dentro) il conto va a zero; quando differiscono (materiale fuori,
+    pezzi dentro) il consumo del materiale è implicito nella coppia. Nessuna
+    logica speciale in nessuno dei due casi.
+  - Il saldo è per **coppia (fornitore, articolo)** e non per articolo soltanto:
+    con codici diversi in uscita e in entrata, un saldo unico per articolo non
+    significherebbe niente.
+  - Il conto di quanto è **già stato registrato** su una riga si legge da
+    `order_id` + `line_id` + il verso del movimento: la scheda propone il
+    residuo, e a residuo zero lo dice. Superarlo resta possibile — una
+    rispedizione dopo uno scarto è legittima — perché vietarlo trasformerebbe un
+    caso vero in un motivo per registrare fuori dall'app.
+  - `order_id` su questi movimenti **non viola** la regola per cui i carichi da
+    ordine non stanno qui: la riga d'ordine che li giustifica non ha un
+    `item_id`, quindi non carica nulla da sé. Il movimento non duplica il
+    ricevimento — è l'unica scrittura che muove il magazzino.
 - `stock_movements` è concettualmente **append-only** come le revisioni, ma qui la
   cancellazione serve davvero (una rettifica sbagliata va tolta) e resta
   permessa. Il merge è **per riga**: due persone che registrano due movimenti
