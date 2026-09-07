@@ -553,11 +553,12 @@ function editCurrentItemModal() {
   if (!roleGuard('bom')) return;
   const it = getItem(currentBomId); if (!it) return;
   openModal(`<h3>${ico('edit', 'tinted pill', '')} Modifica testata — <span style="color:var(--text-dim);font-weight:500">${typeLabel(it.type)}</span></h3>
+    <p class="empty-text" style="text-align:left;padding:0 0 10px">Codice, nome e U.M. si modificano solo in Anagrafica → Progetto.</p>
     <div class="modal-grid">
-      <div class="modal-field"><label>Codice</label><input id="mac-code" value="${esc(it.code)}"></div>
-      <div class="modal-field"><label>U.M.</label><select id="mac-uom">${uomOptions(it.uom || defaultUom())}</select></div>
+      <div class="modal-field"><label>Codice</label><input value="${esc(it.code)}" disabled style="font-family:var(--mono);font-weight:700"></div>
+      <div class="modal-field"><label>U.M.</label><input value="${esc(it.uom || defaultUom())}" disabled></div>
     </div>
-    <div class="modal-field"><label>Nome</label><input id="mac-name" value="${esc(it.name)}"></div>
+    <div class="modal-field"><label>Nome</label><input value="${esc(it.name)}" disabled></div>
     <div class="modal-grid">
       <div class="modal-field"><label>Spese generali % (override)</label><input type="number" id="mac-ov" step="0.1" value="${it.overheadPctOverride != null ? it.overheadPctOverride : ''}" placeholder="default ${db.settings.overheadPct}%"></div>
       <div class="modal-field"><label>Margine % (override)</label><input type="number" id="mac-mg" step="0.1" value="${it.marginPctOverride != null ? it.marginPctOverride : ''}" placeholder="default ${db.settings.marginPct}%"></div>
@@ -569,7 +570,6 @@ function editCurrentItemModal() {
 function saveCurrentItem() {
   if (!roleGuard('bom')) return;
   const it = getItem(currentBomId); if (!it) return;
-  it.code = val('mac-code'); it.uom = val('mac-uom'); it.name = val('mac-name') || it.name;
   it.notes = val('mac-notes');
   // Vuoto = nessuna sovrascrittura (si usa l'impostazione globale); un valore
   // fuori scala viene riportato dentro l'intervallo, come per le impostazioni.
