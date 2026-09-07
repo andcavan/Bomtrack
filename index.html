@@ -146,13 +146,14 @@
     <div id="bom-cost-summary" class="cost-summary"></div>
 
     <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
-      <button class="add-btn-sm" id="bom-add-comp" onclick="addComponentModal()">+ Aggiungi componente</button>
+      <button class="add-btn-sm" id="bom-add-comp" onclick="toggleBomPanel()">+ Aggiungi componenti</button>
       <button class="btn-outline" id="bom-add-op" onclick="addOperationModal()">+ Aggiungi lavorazione</button>
       <button class="btn-outline" onclick="expandAllBom(true)">⊞ Espandi tutto</button>
       <button class="btn-outline" onclick="expandAllBom(false)">⊟ Comprimi tutto</button>
     </div>
 
     <div class="bom-tree" id="bom-tree"></div>
+    <aside id="bom-panel" class="bom-panel" aria-label="Aggiungi componenti"></aside>
   </div>
 
   <!-- ARTICOLI D'ACQUISTO (commerciali e materie prime) -->

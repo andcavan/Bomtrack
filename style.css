@@ -168,6 +168,12 @@ input[type=date]::-webkit-calendar-picker-indicator,input[type=datetime-local]::
 .picker-row b{font-family:var(--mono);font-weight:600}
 .picker-type{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:var(--text-dim);background:var(--card);border:1px solid var(--border);border-radius:4px;padding:2px 6px;white-space:nowrap}
 .picker-empty{padding:10px 12px;font-size:12px;color:var(--text-dim);text-align:center}
+/* Righe del pannello "Aggiungi componenti": non si clicca la riga (lo si fa
+   scrivendo una quantità), quindi niente cursore/sfondo da bottone. */
+#bom-panel .picker-row{cursor:default}
+#bom-panel .picker-row:hover{background:none}
+#bom-panel .bpn-qty{width:64px;margin-left:auto;flex:0 0 auto;background:var(--bg);border:1px solid var(--border);
+  border-radius:6px;padding:5px 8px;color:var(--text);font-size:13px}
 
 /* Header */
 /* Una riga sola: logo e comandi non si comprimono, il nav sì (scorre se non ci sta) */
@@ -769,6 +775,25 @@ body.insp-on .insp-resizer{display:block}
    cambiare passando sopra le righe. */
 body.insp-resizing{user-select:none;cursor:col-resize}
 body.insp-resizing #inspector{pointer-events:none}
+
+/* ─── Pannello "Aggiungi componenti" (Gestione DB) ───
+   Stesso principio di dock fisso a destra dell'Ispettore, ma indipendente da
+   esso (vedi commento in views-bom.js): qui non serve ridimensionamento né
+   collasso a barra, solo apri/chiudi a larghezza fissa. Colonna flex: solo
+   l'elenco risultati scorre, intestazione/pulsante Inserisci/filtri restano
+   fissi in alto. */
+#bom-panel{position:fixed;top:56px;right:0;bottom:0;width:360px;z-index:39;
+  background:var(--card);border-left:1px solid var(--border);
+  display:none;flex-direction:column;padding:14px 16px}
+#bom-panel.open{display:flex}
+#bom-panel .bpn-results{flex:1;min-height:0;overflow-y:auto;margin-top:10px}
+body.bom-panel-on #app-main{max-width:calc(1200px + 376px);padding-right:calc(16px + 376px)}
+body.bom-panel-on .subnav{padding-right:calc(376px + 16px)}
+@media(max-width:900px){
+  #bom-panel{width:92vw}
+  body.bom-panel-on #app-main{max-width:1200px;padding-right:16px}
+  body.bom-panel-on .subnav{padding-right:16px}
+}
 
 .insp-head{display:flex;align-items:center;gap:8px;margin-bottom:12px}
 .insp-title{font-size:15px;font-weight:800;font-family:var(--mono);letter-spacing:-.02em;flex:1;

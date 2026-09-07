@@ -83,6 +83,7 @@ function renderBom() {
   if (!it) {
     summary.innerHTML = '';
     tree.innerHTML = '<div class="empty-text">Nessun prodotto. Creane uno in <strong>Anagrafica → Progetto → + Nuovo articolo</strong>.</div>';
+    refreshBomPanelIfOpen();
     return;
   }
   const c = costOf(it.id);
@@ -107,7 +108,8 @@ function renderBom() {
   const rows = (it.components || []).map((comp, idx) =>
     renderBomNode(comp, 1, it.id, true, idx, it.id, [it.id], bomPos('', idx))).join('');
   const opsRow = renderOpsBlock(it, true);
-  tree.innerHTML = head + rootRow + (rows || `<div class="empty-text">Nessun componente. Usa "+ Aggiungi componente".</div>`) + opsRow;
+  tree.innerHTML = head + rootRow + (rows || `<div class="empty-text">Nessun componente. Usa "+ Aggiungi componenti".</div>`) + opsRow;
+  refreshBomPanelIfOpen();
 }
 function kpi(label, value, cls) {
   // L'unità appesa al numero (`€8951.50/pz`) è informazione di contorno: stampata
@@ -277,8 +279,10 @@ function itemPickerOptions(parentType, selectedId, excludeId) {
   }).join('');
 }
 // Picker a ricerca live: candidati ammessi dal tipo padre, filtrabili per codice/nome.
-// I candidati del picker vivono qui finché la scheda è aperta, e non oltre.
-onPanelClose('form', () => { window.__pickerCandidates = null; window.__pickerAllowedTypes = null; });
+// Motore condiviso da due consumatori con id distinti (prefisso `pfx`), così
+// possono stare aperti insieme senza pestarsi i piedi: la modale "Modifica
+// componente" (pfx 'cmp') e il pannello "Aggiungi componenti" (pfx 'bpn').
+onPanelClose('form', () => { window.__pickerCandidates = null; if (window.__pickerAllowed) window.__pickerAllowed.cmp = null; });
 function pickerCandidates(parentType, excludeId) {
   const allowed = ALLOWED_CHILDREN[parentType] || [];
   return db.items
@@ -289,28 +293,35 @@ function pickerCandidates(parentType, excludeId) {
 // gruppo può contenere sottogruppi/parti/materie/commerciali) e famiglia/
 // sottofamiglia (solo se tra i tipi ammessi ce n'è uno che le usa). Con
 // decine o centinaia di candidati la sola ricerca testuale non basta.
-function pickerFiltersHtml(allowed) {
+function pickerFiltersHtml(pfx, allowed) {
+  window.__pickerAllowed = window.__pickerAllowed || {};
+  window.__pickerAllowed[pfx] = allowed;
   const typeHtml = allowed.length > 1
     ? `<div class="modal-field"><label>Tipo</label>
-        <select id="cmp-type" onchange="onPickerTypeChange()">
+        <select id="${pfx}-type" onchange="onPickerTypeChange('${pfx}')">
           <option value="">Tutti i tipi</option>
           ${allowed.map(t => `<option value="${t}">${typeLabel(t)}</option>`).join('')}
         </select></div>` : '';
   const famHtml = allowed.some(usesFamily)
     ? `<div class="modal-grid">
-        <div class="modal-field"><label>Famiglia</label><select id="cmp-family" onchange="onPickerFamilyChange()"><option value="">Tutte le famiglie</option></select></div>
-        <div class="modal-field"><label>Sottofamiglia</label><select id="cmp-subfamily" onchange="renderPickerResults()"><option value="">Tutte le sottofamiglie</option></select></div>
+        <div class="modal-field"><label>Famiglia</label><select id="${pfx}-family" onchange="onPickerFamilyChange('${pfx}')"><option value="">Tutte le famiglie</option></select></div>
+        <div class="modal-field"><label>Sottofamiglia</label><select id="${pfx}-subfamily" onchange="onPickerResultsRefresh('${pfx}')"><option value="">Tutte le sottofamiglie</option></select></div>
       </div>` : '';
   return typeHtml + famHtml;
 }
-function onPickerTypeChange() { updatePickerFamilyOptions(); renderPickerResults(); }
-function onPickerFamilyChange() { updatePickerFamilyOptions(); renderPickerResults(); }
+// Ridisegna i soli risultati del consumatore che ha cambiato filtro (la modale
+// ha il suo elenco, il pannello il suo: non si ridisegnano a vicenda).
+function onPickerResultsRefresh(pfx) {
+  if (pfx === 'cmp') renderPickerResults(); else if (pfx === 'bpn') renderBomPanelResults();
+}
+function onPickerTypeChange(pfx) { updatePickerFamilyOptions(pfx); onPickerResultsRefresh(pfx); }
+function onPickerFamilyChange(pfx) { updatePickerFamilyOptions(pfx); onPickerResultsRefresh(pfx); }
 // Allinea famiglia/sottofamiglia al tipo scelto nel picker, come in Anagrafica (syncFamilyFilters)
-function updatePickerFamilyOptions() {
-  const famSel = document.getElementById('cmp-family'); if (!famSel) return;
-  const subSel = document.getElementById('cmp-subfamily');
-  const typeF = val('cmp-type');
-  const kinds = (typeF ? [typeF] : (window.__pickerAllowedTypes || [])).filter(usesFamily);
+function updatePickerFamilyOptions(pfx) {
+  const famSel = document.getElementById(pfx + '-family'); if (!famSel) return;
+  const subSel = document.getElementById(pfx + '-subfamily');
+  const typeF = val(pfx + '-type');
+  const kinds = (typeF ? [typeF] : ((window.__pickerAllowed && window.__pickerAllowed[pfx]) || [])).filter(usesFamily);
   famSel.disabled = !kinds.length; subSel.disabled = !kinds.length;
   const fams = (db.families || []).filter(f => kinds.includes(f.kind || 'acquistato'));
   const keepFam = fams.some(f => f.id === famSel.value) ? famSel.value : '';
@@ -322,10 +333,24 @@ function updatePickerFamilyOptions() {
   subSel.innerHTML = `<option value="">Tutte le sottofamiglie</option>` +
     subs.map(s => `<option value="${s.id}" ${s.id === keepSub ? 'selected' : ''}>${esc(s.name)}</option>`).join('');
 }
+// Applica ai candidati gli stessi filtri (testo + tipo + famiglia/sottofamiglia)
+// per il consumatore `pfx`: unica logica di filtro, due elenchi di risultati diversi.
+function pickerFilterRows(pfx, candidates) {
+  const q = (val(pfx + '-search') || '').toLowerCase();
+  const typeF = val(pfx + '-type');
+  const famF = val(pfx + '-family');
+  const subF = val(pfx + '-subfamily');
+  let rows = candidates || [];
+  if (typeF) rows = rows.filter(i => i.type === typeF);
+  if (famF) rows = rows.filter(i => i.familyId === famF);
+  if (subF) rows = rows.filter(i => i.subFamilyId === subF);
+  if (q) rows = rows.filter(i => (i.code + ' ' + i.name).toLowerCase().includes(q));
+  return rows;
+}
 // Markup del campo di selezione articolo (filtri + input ricerca + lista risultati + valore nascosto).
 function itemPickerField(selectedId, allowed) {
   const sel = selectedId ? getItem(selectedId) : null;
-  return `${pickerFiltersHtml(allowed)}
+  return `${pickerFiltersHtml('cmp', allowed)}
     <div class="modal-field"><label>Articolo</label>
       <input type="hidden" id="cmp-item" value="${selectedId ? esc(selectedId) : ''}">
       <input type="text" id="cmp-search" class="search" placeholder="Cerca codice o nome..."
@@ -335,15 +360,7 @@ function itemPickerField(selectedId, allowed) {
 }
 function renderPickerResults() {
   const box = document.getElementById('cmp-results'); if (!box) return;
-  const q = (val('cmp-search') || '').toLowerCase();
-  const typeF = val('cmp-type');
-  const famF = val('cmp-family');
-  const subF = val('cmp-subfamily');
-  let rows = (window.__pickerCandidates || []);
-  if (typeF) rows = rows.filter(i => i.type === typeF);
-  if (famF) rows = rows.filter(i => i.familyId === famF);
-  if (subF) rows = rows.filter(i => i.subFamilyId === subF);
-  if (q) rows = rows.filter(i => (i.code + ' ' + i.name).toLowerCase().includes(q));
+  let rows = pickerFilterRows('cmp', window.__pickerCandidates);
   const total = rows.length;
   rows = rows.slice(0, 50);
   const sel = val('cmp-item');
@@ -377,57 +394,25 @@ function allowedHint(parentType) {
   const allowed = (ALLOWED_CHILDREN[parentType] || []).map(typeLabel);
   return allowed.length ? `Tipi ammessi in un ${typeLabel(parentType).toLowerCase()}: ${allowed.join(', ')}.` : '';
 }
-function addComponentModal() {
-  if (!roleGuard('bom')) return;
-  const it = getItem(currentBomId); if (!it) return;
-  window.__pickerAllowedTypes = ALLOWED_CHILDREN[it.type] || [];
-  window.__pickerCandidates = pickerCandidates(it.type, it.id);
-  if (!window.__pickerCandidates.length) { showToast('Nessun articolo dei tipi ammessi. Crealo prima in Anagrafica (Acquisti o Progetto).', 'error'); return; }
-  openModal(`<h3>${ico('plus', 'tinted pill', '')} Aggiungi componente</h3>
-    <p class="empty-text" style="text-align:left;padding:0 0 10px">${allowedHint(it.type)}</p>
-    ${itemPickerField(null, window.__pickerAllowedTypes)}
-    <div class="modal-grid">
-      <div class="modal-field"><label id="cmp-qty-label">Quantità</label><input type="number" id="cmp-qty" min="0" step="0.001" value="1"></div>
-      <div class="modal-field"><label>Scarto %</label><input type="number" id="cmp-scrap" min="0" step="0.1" value="0"></div>
-    </div>
-    <div class="modal-actions"><button class="btn-ghost" onclick="closeModal()">Annulla</button>
-      <button class="add-btn-sm" onclick="saveNewComponent()">Aggiungi</button></div>`);
-  updatePickerFamilyOptions();
-  renderPickerResults();
-  cmpQtyLabelRefresh();
-}
 function isAllowedChild(parentType, childId) {
   const child = getItem(childId);
   return !!child && (ALLOWED_CHILDREN[parentType] || []).includes(child.type);
-}
-function saveNewComponent() {
-  if (!roleGuard('bom')) return;
-  const it = getItem(currentBomId); if (!it) return;
-  const itemId = val('cmp-item');
-  if (!itemId) { showToast('Seleziona un articolo', 'error'); return; }
-  if (!isAllowedChild(it.type, itemId)) { showToast('Tipo non ammesso in un ' + typeLabel(it.type).toLowerCase(), 'error'); return; }
-  if (createsCycle(it.id, itemId)) { showToast('Operazione annullata: creerebbe un ciclo', 'error'); return; }
-  if (isNeg('cmp-qty')) { showToast('La quantità non può essere negativa', 'error'); return; }
-  it.components.push({ itemId, qty: numVal('cmp-qty', 0), scrapPct: numVal('cmp-scrap', 0, 100) });
-  touch(it);
-  saveDB(); closeModal(); renderBom(); savedToast('Componente aggiunto');
 }
 function editComponentModal(idx) {
   if (!roleGuard('bom')) return;
   const it = getItem(currentBomId); if (!it) return;
   const comp = it.components[idx]; if (!comp) return;
-  window.__pickerAllowedTypes = ALLOWED_CHILDREN[it.type] || [];
   window.__pickerCandidates = pickerCandidates(it.type, it.id);
   openModal(`<h3>${ico('edit', 'tinted pill', '')} Modifica componente</h3>
     <p class="empty-text" style="text-align:left;padding:0 0 10px">${allowedHint(it.type)}</p>
-    ${itemPickerField(comp.itemId, window.__pickerAllowedTypes)}
+    ${itemPickerField(comp.itemId, ALLOWED_CHILDREN[it.type] || [])}
     <div class="modal-grid">
       <div class="modal-field"><label id="cmp-qty-label">${labelUom('Quantità', itemUom(getItem(comp.itemId)))}</label><input type="number" id="cmp-qty" min="0" step="0.001" value="${comp.qty}"></div>
       <div class="modal-field"><label>Scarto %</label><input type="number" id="cmp-scrap" min="0" step="0.1" value="${comp.scrapPct || 0}"></div>
     </div>
     <div class="modal-actions"><button class="btn-ghost" onclick="closeModal()">Annulla</button>
       <button class="add-btn-sm" onclick="saveComponentEdit(${idx})">Salva</button></div>`);
-  updatePickerFamilyOptions();
+  updatePickerFamilyOptions('cmp');
   renderPickerResults();
 }
 function saveComponentEdit(idx) {
@@ -435,9 +420,9 @@ function saveComponentEdit(idx) {
   const it = getItem(currentBomId); if (!it) return;
   const comp = it.components[idx]; if (!comp) return;
   const itemId = val('cmp-item');
-  // Stesso controllo di saveNewComponent: senza, il picker lasciato senza
-  // selezione salvava itemId '' e la distinta si ritrovava una riga orfana,
-  // che il report stampa vuota e il costo non sa valorizzare.
+  // Senza questo controllo, il picker lasciato senza selezione salvava
+  // itemId '' e la distinta si ritrovava una riga orfana, che il report
+  // stampa vuota e il costo non sa valorizzare.
   if (!itemId) { showToast('Seleziona un articolo', 'error'); return; }
   if (!isAllowedChild(it.type, itemId)) { showToast('Tipo non ammesso in un ' + typeLabel(it.type).toLowerCase(), 'error'); return; }
   if (createsCycle(it.id, itemId)) { showToast('Operazione annullata: creerebbe un ciclo', 'error'); return; }
@@ -453,6 +438,113 @@ function delComponent(idx) {
     it.components.splice(idx, 1); touch(it); saveDB(); renderBom(); savedToast('Componente eliminato');
   });
 }
+
+// ─── Pannello "Aggiungi componenti" ───
+// Pannello laterale fisso, sul modello visivo dell'Ispettore di Anagrafica ma
+// indipendente da esso: qui non si agisce sull'articolo selezionato nella
+// vista corrente, si cercano candidati e li si inserisce come componenti
+// della distinta aperta. Niente checkbox: ogni riga ha una quantità (0 =
+// non scelta) e un solo pulsante "Inserisci", sempre visibile in alto,
+// aggiunge in un colpo solo tutti gli articoli a cui è stata cambiata la
+// quantità — uno solo (inserimento rapido) o molti insieme (multiplo). Le
+// quantità restano impostate anche affinando la ricerca, finché non si
+// inserisce, si cambia distinta o si chiude il pannello.
+let bomPanelQty = new Map();   // itemId -> quantità impostata (solo voci > 0)
+function toggleBomPanel() {
+  if (!roleGuard('bom')) return;
+  const it = getItem(currentBomId);
+  if (!it) { showToast('Seleziona prima una macchina, un gruppo o un sottogruppo', 'error'); return; }
+  const panel = document.getElementById('bom-panel'); if (!panel) return;
+  if (panel.classList.contains('open')) closeBomPanel(); else openBomPanel();
+}
+function openBomPanel() {
+  const it = getItem(currentBomId); if (!it) return;
+  bomPanelQty = new Map();
+  document.getElementById('bom-panel').classList.add('open');
+  document.body.classList.add('bom-panel-on');
+  renderBomPanel();
+}
+function closeBomPanel() {
+  const panel = document.getElementById('bom-panel'); if (!panel) return;
+  panel.classList.remove('open');
+  document.body.classList.remove('bom-panel-on');
+}
+// Richiamata da renderBom() ad ogni ridisegno: tiene il pannello coerente con
+// la distinta aperta quando cambia (menu a tendina o click nell'albero).
+function refreshBomPanelIfOpen() {
+  const panel = document.getElementById('bom-panel');
+  if (!panel || !panel.classList.contains('open')) return;
+  const it = getItem(currentBomId);
+  if (!it) { closeBomPanel(); return; }
+  bomPanelQty = new Map();
+  renderBomPanel();
+}
+function renderBomPanel() {
+  const panel = document.getElementById('bom-panel'); if (!panel) return;
+  const it = getItem(currentBomId); if (!it) return;
+  const allowed = ALLOWED_CHILDREN[it.type] || [];
+  window.__bomPanelCandidates = pickerCandidates(it.type, it.id);
+  panel.innerHTML = `
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px">
+      <h3 style="margin:0">${ico('plus', 'tinted pill', '')} Aggiungi componenti</h3>
+      <button class="btn-ghost" onclick="closeBomPanel()" title="Chiudi">✕</button>
+    </div>
+    <button class="add-btn-sm" id="bpn-insert-btn" style="width:100%;margin-bottom:10px" onclick="bomPanelInsertAll()">Inserisci</button>
+    <p class="empty-text" style="text-align:left;padding:0 0 10px">${allowedHint(it.type)}</p>
+    ${pickerFiltersHtml('bpn', allowed)}
+    <input type="text" id="bpn-search" class="search" placeholder="Cerca codice o nome..."
+      oninput="debounced('bompanel', renderBomPanelResults)" autocomplete="off">
+    <div id="bpn-results" class="bpn-results"></div>`;
+  updatePickerFamilyOptions('bpn');
+  renderBomPanelResults();
+  bomPanelUpdateInsertBtn();
+}
+function renderBomPanelResults() {
+  const box = document.getElementById('bpn-results'); if (!box) return;
+  const base = window.__bomPanelCandidates || [];
+  let rows = pickerFilterRows('bpn', base);
+  const total = rows.length;
+  rows = rows.slice(0, 50);
+  let html = rows.map(i => `
+    <div class="picker-row">
+      <span class="picker-type">${typeLabel(i.type)}</span><b>${esc(i.code)}</b> — ${esc(i.name)}${itemBadges(i)}
+      <input type="number" class="bpn-qty" min="0" step="0.001" value="${bomPanelQty.get(i.id) || 0}"
+        title="Quantità da inserire" oninput="bomPanelQtyChange('${i.id}', this.value)">
+    </div>`).join('');
+  if (!html) {
+    html = base.length
+      ? `<div class="picker-empty">Nessun articolo trovato</div>`
+      : `<div class="picker-empty">Nessun articolo dei tipi ammessi. Crealo prima in Anagrafica (Acquisti o Progetto).</div>`;
+  } else if (total > rows.length) html += `<div class="picker-empty">+${total - rows.length} altri — affina la ricerca</div>`;
+  box.innerHTML = html;
+}
+function bomPanelQtyChange(id, v) {
+  const n = parseFloat(v);
+  if (isFinite(n) && n > 0) bomPanelQty.set(id, n); else bomPanelQty.delete(id);
+  bomPanelUpdateInsertBtn();
+}
+function bomPanelUpdateInsertBtn() {
+  const btn = document.getElementById('bpn-insert-btn'); if (!btn) return;
+  const n = bomPanelQty.size;
+  btn.textContent = n ? `Inserisci (${n})` : 'Inserisci';
+}
+function bomPanelInsertAll() {
+  if (!roleGuard('bom')) return;
+  const it = getItem(currentBomId); if (!it) return;
+  if (!bomPanelQty.size) { showToast('Imposta una quantità per almeno un articolo', 'error'); return; }
+  let added = 0, skipped = 0;
+  bomPanelQty.forEach((qty, itemId) => {
+    if (!isAllowedChild(it.type, itemId) || createsCycle(it.id, itemId)) { skipped++; return; }
+    it.components.push({ itemId, qty, scrapPct: 0 });
+    added++;
+  });
+  bomPanelQty = new Map();
+  if (added) { touch(it); saveDB(); }
+  renderBom();
+  if (added) savedToast(added + (added === 1 ? ' componente aggiunto' : ' componenti aggiunti') + (skipped ? `, ${skipped} scartati` : ''));
+  else showToast('Nessun componente aggiunto: tipi non ammessi o cicli', 'error');
+}
+
 // Verifica se aggiungere childId dentro parentId creerebbe un ciclo.
 //
 // La discesa segue entrambe le strade con cui un articolo ne contiene un altro:

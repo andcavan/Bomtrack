@@ -33,7 +33,7 @@
 // cosa. Sembra una sfumatura e non lo è. Un assieme la cui distinta è stata
 // svuotata a mano ha `components: []`; un commerciale non ha `components`
 // affatto. Se al ritorno dal server l'assieme si ritrovasse senza il campo,
-// `saveNewComponent()` — che fa `it.components.push(...)` — lancerebbe.
+// un `it.components.push(...)` (aggiunta componente) lancerebbe.
 // La riga padre porta quindi l'elenco degli array che aveva davvero. È una
 // colonna di testo in più, e risparmia di dover indovinare.
 const CHILD_KEY_SEP = '#';
