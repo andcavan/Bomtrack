@@ -29,6 +29,10 @@ const defaultDB = {
   rfqs: [],
   orders: [],
   plans: [],        // piani di produzione (fabbisogno materiali)
+  // `suppliers` (opzionale, assente sui centri esistenti finché non se ne
+  // registra uno): fornitori conto lavoro abituali per quel centro, ciascuno
+  // con la propria tariffa — { id, supplierId, rate, note }. Vedi wcRateFor
+  // in costing.js e wcSupplierOptions in views-catalog.js.
   workCenters: [
     { id: 'w1', name: 'Taglio laser', hourlyRate: 45, active: true },
     { id: 'w2', name: 'Saldatura', hourlyRate: 38, active: true },

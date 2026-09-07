@@ -322,3 +322,34 @@ describe('cancellazione di un fornitore ancora citato', () => {
     assert.deepEqual(usi(app), ['1 articolo', '1 listino', '1 ordine']);
   });
 });
+
+describe('cancellazione di un centro di lavoro ancora citato', () => {
+  // Il controllo di utilizzo guardava solo le vecchie "operazioni" degli
+  // assiemi: un centro citato solo da una lavorazione di ciclo si poteva
+  // eliminare senza avviso, lasciando la riga orfana.
+  const { makeDb: mkw, wc, parte: prtw, asm: asmw } = require('./fixtures.js');
+  function conCentro(over) {
+    const app = loadApp({ silent: true });
+    app.asRole('admin');
+    app.setDb(mkw(Object.assign({ workCenters: [wc('w1', 40)] }, over || {})));
+    return app;
+  }
+
+  it('un centro non usato si cancella', () => {
+    const app = conCentro();
+    app.eval('delWc("w1"); confirmYes();');
+    assert.equal(app.snapshot().workCenters.length, 0);
+  });
+
+  it('citato da una lavorazione di assieme: bloccato', () => {
+    const app = conCentro({ items: [asmw('g', 'gruppo', { operations: [{ workCenterId: 'w1', hours: 1 }] })] });
+    app.eval('delWc("w1"); confirmYes();');
+    assert.equal(app.snapshot().workCenters.length, 1);
+  });
+
+  it('citato solo da una lavorazione di ciclo: bloccato', () => {
+    const app = conCentro({ items: [prtw('p', { cycle: [{ kind: 'op', workCenterId: 'w1', cost: 10 }] })] });
+    app.eval('delWc("w1"); confirmYes();');
+    assert.equal(app.snapshot().workCenters.length, 1);
+  });
+});

@@ -128,7 +128,7 @@ function revRowsOf(snapshot) {
     if (r.kind === 'op') {
       const w = getWorkCenter(r.workCenterId);
       somma('c:' + r.workCenterId + ':' + (r.note || ''), '🔧 ' + (w ? w.name : '(centro eliminato)') + (r.note ? ' · ' + r.note : ''),
-        1, { tipo: 'Fase ciclo', cost: Number(r.cost) || 0 });
+        1, { tipo: 'Fase ciclo', cost: cycleRowCost(r) });
     } else {
       const ci = getItem(r.itemId);
       somma('c:' + r.itemId, ci ? ci.code + ' — ' + ci.name : '(articolo eliminato)', r.qty, { tipo: 'Distinta parte', uom: itemUom(ci) });

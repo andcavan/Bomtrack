@@ -623,7 +623,7 @@ function delSubFamily(familyId, subId) {
 function renderWorkCenters() {
   const list = db.workCenters.map(w => `<div class="mgmt-item">
     <span class="mgmt-item-name">${esc(w.name)}</span>
-    <span class="mgmt-item-meta">${fmtN(w.hourlyRate)}/h</span>
+    <span class="mgmt-item-meta">${fmtN(w.hourlyRate)}/h${(w.suppliers || []).length ? ' · ' + (w.suppliers || []).length + ((w.suppliers || []).length === 1 ? ' fornitore conto lavoro' : ' fornitori conto lavoro') : ''}</span>
     ${activeBadge(w)}
     <div class="mgmt-item-actions">
       ${activeBtn('workCenters', w, 'Centro di lavoro')}
@@ -645,12 +645,17 @@ function addWc() {
 function editWcModal(id) {
   if (!roleGuard('manage')) return;
   const w = db.workCenters.find(x => x.id === id); if (!w) return;
+  window.__wcEditId = id;
   openModal(`<h3>${ico('edit', 'tinted pill', '')} Modifica centro di lavoro</h3>
     <div class="modal-field"><label>Nome</label><input id="ew-name" value="${esc(w.name)}"></div>
     <div class="modal-field"><label>Tariffa (${cur()}/h)</label><input id="ew-rate" type="number" min="0" step="0.5" value="${w.hourlyRate}"></div>
     <div class="modal-actions"><button class="btn-ghost" onclick="closeModal()">Annulla</button>
-      <button class="add-btn-sm" onclick="saveWc('${id}')">Salva</button></div>`);
+      <button class="add-btn-sm" onclick="saveWc('${id}')">Salva</button></div>
+    <div class="settings-group-title">${ico('factory', 'tinted', '')} Fornitori conto lavoro</div>
+    <p style="color:var(--text-dim);margin-bottom:10px">Chi esegue questa lavorazione all'esterno, con la propria tariffa — proposta (e modificabile) quando si sceglie il fornitore in un ciclo.</p>
+    <div id="wc-sup-body">${wcSuppliersBody(id)}</div>`, true, 'wc-edit');
 }
+onPanelClose('wc-edit', () => { window.__wcEditId = null; });
 function saveWc(id) {
   if (!roleGuard('manage')) return;
   const w = db.workCenters.find(x => x.id === id); if (!w) return;
@@ -658,15 +663,62 @@ function saveWc(id) {
   if (isNeg('ew-rate')) { showToast('La tariffa non può essere negativa', 'error'); return; }
   w.name = nome; w.hourlyRate = numVal('ew-rate', 0);
   touch(w);
-  saveDB(); closeModal(); renderManage(); savedToast('Aggiornato');
+  saveDB(); renderManage(); savedToast('Aggiornato');
 }
 function delWc(id) {
   if (!roleGuard('manage')) return;
-  const used = db.items.filter(i => (i.operations || []).some(o => o.workCenterId === id));
-  if (used.length) { showToast('Usato in ' + used.length + ' distinte', 'error'); return; }
+  const usedAssiemi = db.items.filter(i => (i.operations || []).some(o => o.workCenterId === id));
+  const usedCicli = db.items.filter(i => (i.cycle || []).some(r => r.kind === 'op' && r.workCenterId === id));
+  const used = usedAssiemi.length + usedCicli.length;
+  if (used) { showToast('Usato in ' + used + ' distinte', 'error'); return; }
   askConfirm('Eliminare il centro di lavoro?', () => {
     removeConUndo('workCenters', id, 'Centro di lavoro eliminato', renderManage);
   });
+}
+// ─── Fornitori conto lavoro di un centro di lavoro ───
+// Stesso schema del listino prezzi articoli (views-catalog.js): un elenco di
+// righe fornitore-tariffa sull'entità che le possiede, senza il concetto di
+// "quotazione in uso" che lì serve e qui no — la scelta di quale fornitore
+// usare si fa riga per riga nel ciclo, non qui.
+function wcSuppliersBody(wcId) {
+  const w = db.workCenters.find(x => x.id === wcId); if (!w) return '';
+  const righe = (w.suppliers || []).map(s => `<tr>
+    <td><select onchange="wcSupplierSetField('${wcId}','${s.id}','supplierId',this.value)">${supplierOptions(s.supplierId || '')}</select></td>
+    <td><input type="number" class="num" min="0" step="0.5" value="${s.rate || 0}" onchange="wcSupplierSetField('${wcId}','${s.id}','rate',this.value)"></td>
+    <td><input type="text" value="${esc(s.note || '')}" placeholder="opzionale" onchange="wcSupplierSetField('${wcId}','${s.id}','note',this.value)"></td>
+    <td><button class="mini-btn danger" title="Rimuovi" onclick="wcSupplierDelRow('${wcId}','${s.id}')">${ico('trash', 'tinted', 'Rimuovi')}</button></td>
+  </tr>`).join('');
+  const vuoto = `<tr><td colspan="4" class="empty-text">Nessun fornitore conto lavoro registrato.</td></tr>`;
+  return `<div class="table-wrap"><table>
+      <thead><tr><th scope="col">Fornitore</th><th scope="col">Tariffa (${esc(cur())}/h)</th><th scope="col">Nota</th><th scope="col"></th></tr></thead>
+      <tbody>${righe || vuoto}</tbody></table></div>
+    <div style="margin-top:10px"><button class="add-btn-sm" onclick="wcSupplierAddRow('${wcId}')">+ Aggiungi fornitore</button></div>`;
+}
+function wcSuppliersRefresh() {
+  const host = document.getElementById('wc-sup-body');
+  if (host && window.__wcEditId) host.innerHTML = wcSuppliersBody(window.__wcEditId);
+}
+function wcSupplierAddRow(wcId) {
+  if (!roleGuard('manage')) return;
+  const w = db.workCenters.find(x => x.id === wcId); if (!w) return;
+  if (!Array.isArray(w.suppliers)) w.suppliers = [];
+  w.suppliers.push({ id: gid(), supplierId: null, rate: 0, note: '' });
+  touch(w); saveDB(); wcSuppliersRefresh(); renderManage();
+}
+function wcSupplierSetField(wcId, rowId, field, value) {
+  if (!roleGuard('manage')) { wcSuppliersRefresh(); return; }
+  const w = db.workCenters.find(x => x.id === wcId); if (!w) return;
+  const row = (w.suppliers || []).find(x => x.id === rowId); if (!row) return;
+  if (field === 'rate') row.rate = clampNum(parseFloat(value), 0);
+  else if (field === 'supplierId') row.supplierId = value || null;
+  else row.note = value;
+  touch(w); saveDB(); wcSuppliersRefresh(); renderManage();
+}
+function wcSupplierDelRow(wcId, rowId) {
+  if (!roleGuard('manage')) return;
+  const w = db.workCenters.find(x => x.id === wcId); if (!w) return;
+  w.suppliers = (w.suppliers || []).filter(x => x.id !== rowId);
+  touch(w); saveDB(); wcSuppliersRefresh(); renderManage();
 }
 
 // ─── Unità di misura ───

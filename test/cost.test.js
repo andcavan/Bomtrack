@@ -234,6 +234,42 @@ describe('cycleRowCost — override di riga', () => {
   });
 });
 
+// Una lavorazione di ciclo è a costo fisso di default (costMode assente =
+// comportamento di sempre); costMode:'orario' la fa costare ore × tariffa.
+describe('cycleRowCost — lavorazione a costo orario', () => {
+  const conLavorazione = op => makeDb({ items: [
+    parte('p', { sourcing: 'make', cycle: [Object.assign({ kind: 'op', workCenterId: 'w1' }, op)] }),
+  ] });
+
+  it('senza costMode: resta il costo fisso di sempre', () => {
+    approx(withDb(conLavorazione({ cost: 15 })).ref('costOf')('p').total, 15);
+  });
+  it('costMode fisso esplicito: uguale', () => {
+    approx(withDb(conLavorazione({ costMode: 'fisso', cost: 15 })).ref('costOf')('p').total, 15);
+  });
+  it('costMode orario: ore × tariffa, il campo "cost" non conta', () => {
+    approx(withDb(conLavorazione({ costMode: 'orario', hours: 2, rate: 40, cost: 999 })).ref('costOf')('p').total, 80);
+  });
+  it('costMode orario senza ore o tariffa: 0, non NaN', () => {
+    approx(withDb(conLavorazione({ costMode: 'orario' })).ref('costOf')('p').total, 0);
+  });
+});
+
+describe('wcRateFor — tariffa proposta per una lavorazione oraria', () => {
+  it('fornitore registrato sul centro: la sua tariffa', () => {
+    const wc = { hourlyRate: 40, suppliers: [{ id: 'x', supplierId: 's1', rate: 55 }] };
+    assert.equal(withDb(makeDb({})).ref('wcRateFor')(wc, 's1'), 55);
+  });
+  it('fornitore non registrato lì, o nessun fornitore (interna): tariffa del centro', () => {
+    const wc = { hourlyRate: 40, suppliers: [{ id: 'x', supplierId: 's1', rate: 55 }] };
+    assert.equal(withDb(makeDb({})).ref('wcRateFor')(wc, 's2'), 40);
+    assert.equal(withDb(makeDb({})).ref('wcRateFor')(wc, ''), 40);
+  });
+  it('nessun centro: 0', () => {
+    assert.equal(withDb(makeDb({})).ref('wcRateFor')(null, 's1'), 0);
+  });
+});
+
 describe('costOf — rilevamento cicli', () => {
   it('auto-anello: segnalato, nessuno stack overflow', () => {
     const app = withDb(makeDb({ items: [asm('g', 'gruppo', { components: [comp('g', 1)] })] }));

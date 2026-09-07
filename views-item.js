@@ -281,10 +281,11 @@ function itemInfoComposizione(it) {
     if (r.kind === 'op') {
       fase++;
       const wc = getWorkCenter(r.workCenterId);
+      const sup = supplierName(r.supplierId);
       return `<tr><td style="font-family:var(--mono)">${cyclePhaseNumber(fase - 1)}</td>
-        <td>${ico('wrench', 'tinted')} ${esc(wc ? wc.name : '?')}${r.note ? ' — ' + esc(r.note) : ''}</td>
+        <td>${ico('wrench', 'tinted')} ${esc(wc ? wc.name : '?')}${sup ? ' · ' + esc(sup) : ''}${r.note ? ' — ' + esc(r.note) : ''}</td>
         <td style="text-align:right">—</td>
-        <td style="font-family:var(--mono);text-align:right">${fmtN(r.cost)}</td></tr>`;
+        <td style="font-family:var(--mono);text-align:right">${fmtN(cycleRowCost(r))}</td></tr>`;
     }
     const ci = getItem(r.itemId);
     if (!ci) return `<tr><td colspan="4" class="empty-text">${ico('warning', 'tinted', '')} articolo mancante</td></tr>`;

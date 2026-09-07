@@ -1153,22 +1153,37 @@ function cycleBomTable(bomRows) {
 function cycleOpsTable(opRows) {
   if (!opRows.length) return '<div class="empty-text" style="padding:8px 0">Nessuna lavorazione. Usa "+ Lavorazione" per aggiungere una fase.</div>';
   const head = `<div class="cycle-row cycle-op-row cycle-head">
-    <span>Fase</span><span>Lavorazione</span><span>Fornitore</span>
+    <span>Fase</span><span>Lavorazione</span><span>Fornitore</span><span>Modo</span>
     <span class="num">Costo (${esc(cur())})</span><span class="num">Costo riga (${esc(cur())})</span><span>Ordine</span><span></span></div>`;
   const last = opRows.length - 1;
-  return head + opRows.map(({ r, i }, k) => `<div class="cycle-row cycle-op-row">
+  return head + opRows.map(({ r, i }, k) => {
+    const orario = r.costMode === 'orario';
+    const costoCell = orario
+      ? `<span class="cycle-op-cost">
+          <input class="num" type="number" min="0" step="0.25" value="${Number(r.hours) || 0}" title="Ore" placeholder="ore"
+            onchange="updateCycleRow(${i})" id="cyc-ophours-${i}">
+          <input class="num" type="number" min="0" step="0.5" value="${Number(r.rate) || 0}" title="Tariffa ${esc(cur())}/h" placeholder="${esc(cur())}/h"
+            onchange="updateCycleRow(${i})" id="cyc-oprate-${i}">
+        </span>`
+      : `<input class="num" type="number" min="0" step="0.01" value="${Number(r.cost) || 0}"
+          title="Costo fisso della lavorazione" onchange="updateCycleRow(${i})" id="cyc-cost-in-${i}">`;
+    return `<div class="cycle-row cycle-op-row">
       <span class="cycle-phase">${cyclePhaseNumber(k)}</span>
       <span class="cycle-name">${cycleRowLabel(r)}</span>
-      <select class="cycle-sup" onchange="updateCycleRow(${i})" id="cyc-sup-${i}">${supplierOptions(r.supplierId || '')}</select>
-      <input class="num" type="number" min="0" step="0.01" value="${Number(r.cost) || 0}"
-        title="Costo fisso della lavorazione" onchange="updateCycleRow(${i})" id="cyc-cost-in-${i}">
+      <select class="cycle-sup" title="Interna, o conto lavoro se si sceglie un fornitore" onchange="onCycleRowSupplierChange(${i})" id="cyc-sup-${i}">${wcSupplierOptions(getWorkCenter(r.workCenterId), r.supplierId || '')}</select>
+      <select onchange="onCycleRowModeChange(${i})" id="cyc-opmode-${i}">
+        <option value="fisso" ${!orario ? 'selected' : ''}>Fisso</option>
+        <option value="orario" ${orario ? 'selected' : ''}>Orario</option>
+      </select>
+      ${costoCell}
       <span class="num cost" id="cyc-cost-${i}">${fmtN(cycleRowCost(r))}</span>
       <span class="cycle-move">
         <button class="mini-btn" title="Sposta su" onclick="moveCycleOp(${k},-1)" ${k === 0 ? 'disabled' : ''}>↑</button>
         <button class="mini-btn" title="Sposta giù" onclick="moveCycleOp(${k},1)" ${k === last ? 'disabled' : ''}>↓</button>
       </span>
       <button class="mini-btn danger" title="Elimina" onclick="delCycleRow(${i})">${ico('trash', 'tinted', 'Elimina')}</button>
-    </div>`).join('');
+    </div>`;
+  }).join('');
 }
 // ─── Export del ciclo aperto ───
 // I Cicli non sono un elenco ma una scheda: si esporta la parte che si sta
@@ -1247,8 +1262,13 @@ function updateCycleRow(idx) {
   if (!roleGuard('catalog')) { renderCycles(); return; }
   const row = (it.cycle || [])[idx]; if (!row) return;
   if (row.kind === 'op') {
-    row.cost = numVal('cyc-cost-in-' + idx, 0);
     row.supplierId = val('cyc-sup-' + idx);
+    if (row.costMode === 'orario') {
+      row.hours = numVal('cyc-ophours-' + idx, 0);
+      row.rate = numVal('cyc-oprate-' + idx, 0);
+    } else {
+      row.cost = numVal('cyc-cost-in-' + idx, 0);
+    }
   } else {
     row.qty = numVal('cyc-qty-' + idx, 0);
     // Vuoto = nessun override, si usa il costo calcolato. Un negativo si corregge
@@ -1258,6 +1278,32 @@ function updateCycleRow(idx) {
   }
   touch(it); saveDB();
   refreshCycleCosts(it);
+}
+// Cambiare il fornitore di una lavorazione a costo orario ripropone la
+// tariffa (quella registrata per quel fornitore sul centro di lavoro, o
+// quella del centro) prima di salvare — resta comunque un campo modificabile.
+function onCycleRowSupplierChange(idx) {
+  const it = currentCycleItem(); if (!it) return;
+  const row = (it.cycle || [])[idx]; if (!row) return;
+  if (row.costMode === 'orario') {
+    const wc = getWorkCenter(row.workCenterId);
+    const rateEl = document.getElementById('cyc-oprate-' + idx);
+    if (rateEl) rateEl.value = wcRateFor(wc, val('cyc-sup-' + idx));
+  }
+  updateCycleRow(idx);
+}
+// Passare da fisso a orario (o viceversa) cambia quali campi contano per il
+// costo: si ridisegna la riga così i campi giusti compaiono subito.
+function onCycleRowModeChange(idx) {
+  const it = currentCycleItem(); if (!it) return;
+  if (!roleGuard('catalog')) { renderCycles(); return; }
+  const row = (it.cycle || [])[idx]; if (!row) return;
+  row.costMode = val('cyc-opmode-' + idx) === 'orario' ? 'orario' : 'fisso';
+  if (row.costMode === 'orario') {
+    if (!row.hours) row.hours = 1;
+    if (!row.rate) row.rate = wcRateFor(getWorkCenter(row.workCenterId), row.supplierId);
+  }
+  touch(it); saveDB(); renderCycles();
 }
 function delCycleRow(idx) {
   const it = currentCycleItem(); if (!it) return;
@@ -1325,16 +1371,27 @@ function pickCycleItem(id) {
   closeCyclePicker();
   touch(it); saveDB(); renderCycles(); savedToast('Articolo aggiunto alla distinta parte');
 }
-// Selettore inline di una lavorazione da un centro di lavoro esistente (costo fisso, non orario).
+// Selettore inline di una lavorazione da un centro di lavoro esistente:
+// interna o conto lavoro (a seconda del fornitore scelto), a costo fisso o
+// orario (ore × tariffa, proposta dal fornitore/centro e poi modificabile).
 function addCycleOpRow() {
   if (!roleGuard('catalog')) return;
   const box = document.getElementById('picker-op'); if (!box) return;
   if (!db.workCenters.length) { showToast('Aggiungi prima un centro di lavoro in Gestione', 'error'); return; }
+  const wc = db.workCenters.filter(w => w.active !== false)[0] || null;
   box.innerHTML = `<div class="cycle-picker-box">
     <div class="modal-grid">
-      <div class="modal-field"><label>Centro di lavoro</label><select id="cyc-wc">${wcOptionsNoRate(null)}</select></div>
-      <div class="modal-field"><label>Fornitore</label><select id="cyc-opsup">${supplierOptions('')}</select></div>
+      <div class="modal-field"><label>Centro di lavoro</label><select id="cyc-wc" onchange="onCycleOpWcChange()">${wcOptionsNoRate(null)}</select></div>
+      <div class="modal-field"><label>Interna / Conto lavoro</label><select id="cyc-opsup" onchange="onCycleOpModeChange()">${wcSupplierOptions(wc, '')}</select></div>
+    </div>
+    <div class="modal-field"><label>Costo</label><select id="cyc-opmode" onchange="onCycleOpModeChange()">
+      <option value="fisso">Fisso</option><option value="orario">Orario</option></select></div>
+    <div class="modal-grid" id="cyc-opmode-fisso">
       <div class="modal-field"><label>Costo (${cur()})</label><input type="number" id="cyc-opcost" min="0" step="0.01" value="0"></div>
+    </div>
+    <div class="modal-grid" id="cyc-opmode-orario" style="display:none">
+      <div class="modal-field"><label>Ore (h)</label><input type="number" id="cyc-ophours" min="0" step="0.25" value="1"></div>
+      <div class="modal-field"><label>Tariffa (${cur()}/h)</label><input type="number" id="cyc-oprate" min="0" step="0.5" value="0"></div>
     </div>
     <div class="cycle-actions">
       <button class="btn-ghost" onclick="closeCyclePicker()">Annulla</button>
@@ -1342,14 +1399,37 @@ function addCycleOpRow() {
     </div>
   </div>`;
 }
+// Cambiare centro di lavoro ricostruisce l'elenco fornitori (i "conto lavoro
+// abituali" dipendono dal centro scelto), stesso schema a cascata delle
+// famiglie/sottofamiglie (syncFamilyFilters).
+function onCycleOpWcChange() {
+  const supSel = document.getElementById('cyc-opsup');
+  if (supSel) supSel.innerHTML = wcSupplierOptions(getWorkCenter(val('cyc-wc')), '');
+  onCycleOpModeChange();
+}
+function onCycleOpModeChange() {
+  const orario = val('cyc-opmode') === 'orario';
+  const fissoBox = document.getElementById('cyc-opmode-fisso');
+  const orarioBox = document.getElementById('cyc-opmode-orario');
+  if (fissoBox) fissoBox.style.display = orario ? 'none' : '';
+  if (orarioBox) orarioBox.style.display = orario ? '' : 'none';
+  if (orario) {
+    const rateEl = document.getElementById('cyc-oprate');
+    if (rateEl) rateEl.value = wcRateFor(getWorkCenter(val('cyc-wc')), val('cyc-opsup'));
+  }
+}
 function pickCycleOp() {
   const it = currentCycleItem(); if (!it) return;
   if (!roleGuard('catalog')) return;
   const wcId = val('cyc-wc');
   if (!wcId) { showToast('Seleziona un centro di lavoro', 'error'); return; }
   if (!Array.isArray(it.cycle)) it.cycle = [];
+  const orario = val('cyc-opmode') === 'orario';
   // In fondo all'elenco: l'ultima fase aggiunta è l'ultima del ciclo, poi si sposta con ↑↓
-  it.cycle.push({ kind: 'op', workCenterId: wcId, supplierId: val('cyc-opsup'), cost: numVal('cyc-opcost', 0), note: '' });
+  const row = { kind: 'op', workCenterId: wcId, supplierId: val('cyc-opsup'), costMode: orario ? 'orario' : 'fisso', note: '' };
+  if (orario) { row.hours = numVal('cyc-ophours', 0); row.rate = numVal('cyc-oprate', 0); }
+  else row.cost = numVal('cyc-opcost', 0);
+  it.cycle.push(row);
   closeCyclePicker();
   touch(it); saveDB(); renderCycles(); savedToast('Lavorazione aggiunta');
 }

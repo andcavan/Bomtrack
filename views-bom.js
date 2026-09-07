@@ -652,7 +652,23 @@ function supplierOptions(selectedId) {
   return `<option value="">—</option>` + db.suppliers
     .map(s => `<option value="${s.id}" ${s.id === selectedId ? 'selected' : ''}>${esc(s.name)}</option>`).join('');
 }
-// Solo il nome del centro: nel ciclo di una Parte il costo è fisso, la tariffa oraria non si applica.
+// Selettore fornitore per una riga di ciclo: la prima voce è "Interna" (nessun
+// fornitore, valore vuoto — la lavorazione si fa in casa), poi i fornitori
+// conto lavoro già registrati su quel centro con la loro tariffa in etichetta
+// (così si riconoscono a colpo d'occhio), poi gli altri fornitori a catalogo,
+// scelta comunque libera se quello che serve non è ancora registrato lì.
+function wcSupplierOptions(wc, selectedId) {
+  const noti = new Set((wc && wc.suppliers || []).map(s => s.supplierId));
+  const opt = (s, extra) => `<option value="${s.id}" ${s.id === selectedId ? 'selected' : ''}>${esc(s.name)}${extra || ''}</option>`;
+  const abituali = (wc && wc.suppliers || [])
+    .map(s => db.suppliers.find(x => x.id === s.supplierId) && { sup: db.suppliers.find(x => x.id === s.supplierId), rate: s.rate })
+    .filter(Boolean)
+    .map(({ sup, rate }) => opt(sup, ` — ${fmtN(rate)}/h`));
+  const altri = db.suppliers.filter(s => !noti.has(s.id)).map(s => opt(s));
+  return `<option value="">— Interna —</option>` + abituali.join('') + altri.join('');
+}
+// Solo il nome del centro: la tariffa oraria del centro non si applica da sé
+// alle righe di ciclo, ci sono anche quelle a costo fisso (vedi cycleOpsTable).
 function wcOptionsNoRate(selectedId) {
   return db.workCenters.filter(w => w.active !== false)
     .map(w => `<option value="${w.id}" ${w.id === selectedId ? 'selected' : ''}>${esc(w.name)}</option>`).join('');

@@ -339,8 +339,11 @@ input[type=date]::-webkit-calendar-picker-indicator,input[type=datetime-local]::
 /* Ciclo di lavorazione (parte) */
 .cycle-box{background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:10px 12px;overflow-x:auto}
 .cycle-row{display:grid;grid-template-columns:minmax(150px,2fr) minmax(110px,1fr) 56px 74px 92px 88px 32px;align-items:center;gap:8px;padding:6px 0;font-size:13px;border-bottom:1px solid var(--hairline)}
-/* Le lavorazioni hanno la fase in testa e le frecce di riordino in coda */
-.cycle-op-row{grid-template-columns:52px minmax(150px,2fr) minmax(110px,1fr) 92px 88px 62px 32px}
+/* Le lavorazioni hanno la fase in testa, il modo (fisso/orario) prima del
+   costo — la cui cella si impila in due campi (ore, tariffa) quando è orario
+   — e le frecce di riordino in coda. */
+.cycle-op-row{grid-template-columns:52px minmax(140px,2fr) minmax(100px,1fr) 72px 100px 88px 62px 32px}
+.cycle-op-cost{display:flex;flex-direction:column;gap:3px}
 .cycle-row:last-child{border-bottom:none}
 .cycle-head{font-size:10px;font-weight:600;color:var(--text-dim);text-transform:uppercase;letter-spacing:.05em}
 .cycle-row .num{font-family:var(--mono);text-align:right}
