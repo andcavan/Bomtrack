@@ -313,7 +313,7 @@ input[type=date]::-webkit-calendar-picker-indicator,input[type=datetime-local]::
 .bom-name .nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .bom-toggle{width:18px;flex-shrink:0;cursor:pointer;color:var(--text-dim);font-size:11px;text-align:center;user-select:none}
 .bom-toggle.leaf{cursor:default;visibility:hidden}
-.bom-code{font-family:var(--mono);font-size:11px;color:var(--text-dim);flex-shrink:0}
+.bom-code{flex-shrink:0}
 /* Posizione gerarchica (1, 1.1, 1.1.1…): min-width per allineare i numeri corti a quelli lunghi */
 .bom-pos{font-family:var(--mono);font-size:11px;color:var(--text-dim);flex-shrink:0;min-width:34px}
 .bom-type-tag{font-size:9px;padding:2px 6px;border-radius:8px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;flex-shrink:0}
