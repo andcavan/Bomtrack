@@ -168,12 +168,19 @@ input[type=date]::-webkit-calendar-picker-indicator,input[type=datetime-local]::
 .picker-row b{font-family:var(--mono);font-weight:600}
 .picker-type{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:var(--text-dim);background:var(--card);border:1px solid var(--border);border-radius:4px;padding:2px 6px;white-space:nowrap}
 .picker-empty{padding:10px 12px;font-size:12px;color:var(--text-dim);text-align:center}
-/* Righe del pannello "Aggiungi componenti": non si clicca la riga (lo si fa
-   scrivendo una quantità), quindi niente cursore/sfondo da bottone. */
-#bom-panel .picker-row{cursor:default}
-#bom-panel .picker-row:hover{background:none}
-#bom-panel .bpn-qty{width:64px;margin-left:auto;flex:0 0 auto;background:var(--bg);border:1px solid var(--border);
-  border-radius:6px;padding:5px 8px;color:var(--text);font-size:13px}
+/* Righe del pannello "Aggiungi componenti": codice e descrizione impilati a
+   sinistra, i comandi di quantità (±1, campo, U.M.) allineati a destra. */
+.bpn-row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 10px;border-bottom:1px solid var(--border)}
+.bpn-row:last-child{border-bottom:none}
+.bpn-info{min-width:0;flex:1;display:flex;flex-direction:column;gap:1px}
+.bpn-code{font-family:var(--mono);font-weight:600;font-size:12px}
+.bpn-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text-dim);font-size:12px}
+.bpn-stepper{display:flex;align-items:center;gap:4px;flex-shrink:0}
+.bpn-step{width:22px;height:22px;border-radius:6px;border:1px solid var(--border);background:var(--bg);
+  color:var(--text);cursor:pointer;font-size:14px;line-height:1;display:flex;align-items:center;justify-content:center;padding:0}
+.bpn-step:hover{border-color:var(--accent);color:var(--accent)}
+.bpn-qty{width:42px;text-align:center;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:3px 2px;color:var(--text);font-size:13px}
+.bpn-uom{font-size:11px;color:var(--text-dim);min-width:18px}
 
 /* Header */
 /* Una riga sola: logo e comandi non si comprimono, il nav sì (scorre se non ci sta) */
@@ -778,21 +785,30 @@ body.insp-resizing #inspector{pointer-events:none}
 
 /* ─── Pannello "Aggiungi componenti" (Gestione DB) ───
    Stesso principio di dock fisso a destra dell'Ispettore, ma indipendente da
-   esso (vedi commento in views-bom.js): qui non serve ridimensionamento né
-   collasso a barra, solo apri/chiudi a larghezza fissa. Colonna flex: solo
+   esso (vedi commento in views-bom.js) e ridimensionabile allo stesso modo
+   (variabile CSS --bpn-w, maniglia .bpn-resizer). Colonna flex: solo
    l'elenco risultati scorre, intestazione/pulsante Inserisci/filtri restano
    fissi in alto. */
-#bom-panel{position:fixed;top:56px;right:0;bottom:0;width:360px;z-index:39;
+#bom-panel{position:fixed;top:56px;right:0;bottom:0;width:var(--bpn-w,360px);z-index:39;
   background:var(--card);border-left:1px solid var(--border);
   display:none;flex-direction:column;padding:14px 16px}
 #bom-panel.open{display:flex}
 #bom-panel .bpn-results{flex:1;min-height:0;overflow-y:auto;margin-top:10px}
-body.bom-panel-on #app-main{max-width:calc(1200px + 376px);padding-right:calc(16px + 376px)}
-body.bom-panel-on .subnav{padding-right:calc(376px + 16px)}
+body.bom-panel-on #app-main{max-width:calc(1200px + var(--bpn-w,360px));padding-right:calc(16px + var(--bpn-w,360px))}
+body.bom-panel-on .subnav{padding-right:calc(var(--bpn-w,360px) + 16px)}
+/* Stessa maniglia dell'Ispettore: dodici pixel sensibili a cavallo del bordo,
+   pointer event così funziona anche col dito. */
+.bpn-resizer{touch-action:none;display:none;position:fixed;top:56px;bottom:0;right:var(--bpn-w,360px);
+  width:12px;margin-right:-6px;z-index:41;cursor:col-resize}
+body.bom-panel-on .bpn-resizer{display:block}
+.bpn-resizer:hover{background:linear-gradient(90deg,transparent,var(--accent-line),transparent)}
+body.bpn-resizing{user-select:none;cursor:col-resize}
+body.bpn-resizing #bom-panel{pointer-events:none}
 @media(max-width:900px){
-  #bom-panel{width:92vw}
+  #bom-panel{width:min(var(--bpn-w,360px),92vw)}
   body.bom-panel-on #app-main{max-width:1200px;padding-right:16px}
   body.bom-panel-on .subnav{padding-right:16px}
+  body.bom-panel-on .bpn-resizer{display:none}
 }
 
 .insp-head{display:flex;align-items:center;gap:8px;margin-bottom:12px}

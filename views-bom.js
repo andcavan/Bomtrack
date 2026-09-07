@@ -450,6 +450,58 @@ function delComponent(idx) {
 // quantità restano impostate anche affinando la ricerca, finché non si
 // inserisce, si cambia distinta o si chiude il pannello.
 let bomPanelQty = new Map();   // itemId -> quantità impostata (solo voci > 0)
+
+// ─── Ridimensionamento del pannello ───
+// Stesso schema dell'Ispettore di Anagrafica (inspector.js): variabili e
+// chiave di preferenze proprie, per non toccarne una riga.
+const BPN_KEY = 'bomtrack_bom_panel';
+const BPN_MIN = 260, BPN_MAX = 720, BPN_DEF = 360;
+let bomPanelWidth = BPN_DEF;
+function bpnClampWidth(w) {
+  const n = Number(w) || BPN_DEF;
+  return Math.min(BPN_MAX, Math.max(BPN_MIN, Math.round(n)));
+}
+function bpnPrefsLoad() {
+  try {
+    const p = JSON.parse(localPref(BPN_KEY) || 'null');
+    if (p && p.width) bomPanelWidth = bpnClampWidth(p.width);
+  } catch (e) { /* preferenze illeggibili: si riparte da quella di serie */ }
+}
+function bpnPrefsSave() {
+  try { localStorage.setItem(BPN_KEY, JSON.stringify({ width: bomPanelWidth })); } catch (e) { /* niente da salvare, niente da rompere */ }
+}
+function bpnApplyWidth() {
+  const r = typeof document !== 'undefined' && document.documentElement;
+  if (r && r.style && r.style.setProperty) r.style.setProperty('--bpn-w', bomPanelWidth + 'px');
+}
+let _bpnDrag = null;
+function bpnResizeStart(e) {
+  if (!e.target || !e.target.classList || !e.target.classList.contains('bpn-resizer')) return;
+  _bpnDrag = { x: e.clientX, w: bomPanelWidth };
+  document.body.classList.add('bpn-resizing');
+  e.preventDefault();
+}
+function bpnResizeMove(e) {
+  if (!_bpnDrag) return;
+  // Il pannello sta a destra: trascinando verso sinistra si allarga, quindi il
+  // segno è invertito rispetto al movimento del mouse.
+  bomPanelWidth = bpnClampWidth(_bpnDrag.w + (_bpnDrag.x - e.clientX));
+  bpnApplyWidth();
+}
+function bpnResizeEnd() {
+  if (!_bpnDrag) return;
+  _bpnDrag = null;
+  document.body.classList.remove('bpn-resizing');
+  bpnPrefsSave();
+}
+if (typeof document !== 'undefined' && document.addEventListener) {
+  bpnPrefsLoad();
+  document.addEventListener('pointerdown', bpnResizeStart);
+  document.addEventListener('pointermove', bpnResizeMove);
+  document.addEventListener('pointerup', bpnResizeEnd);
+  document.addEventListener('pointercancel', bpnResizeEnd);
+}
+
 function toggleBomPanel() {
   if (!roleGuard('bom')) return;
   const it = getItem(currentBomId);
@@ -462,6 +514,7 @@ function openBomPanel() {
   bomPanelQty = new Map();
   document.getElementById('bom-panel').classList.add('open');
   document.body.classList.add('bom-panel-on');
+  bpnApplyWidth();
   renderBomPanel();
 }
 function closeBomPanel() {
@@ -492,8 +545,10 @@ function renderBomPanel() {
     <button class="add-btn-sm" id="bpn-insert-btn" style="width:100%;margin-bottom:10px" onclick="bomPanelInsertAll()">Inserisci</button>
     <p class="empty-text" style="text-align:left;padding:0 0 10px">${allowedHint(it.type)}</p>
     ${pickerFiltersHtml('bpn', allowed)}
-    <input type="text" id="bpn-search" class="search" placeholder="Cerca codice o nome..."
-      oninput="debounced('bompanel', renderBomPanelResults)" autocomplete="off">
+    <div class="modal-field">
+      <input type="text" id="bpn-search" class="search" placeholder="Cerca codice o nome..."
+        oninput="debounced('bompanel', renderBomPanelResults)" autocomplete="off">
+    </div>
     <div id="bpn-results" class="bpn-results"></div>`;
   updatePickerFamilyOptions('bpn');
   renderBomPanelResults();
@@ -506,10 +561,18 @@ function renderBomPanelResults() {
   const total = rows.length;
   rows = rows.slice(0, 50);
   let html = rows.map(i => `
-    <div class="picker-row">
-      <span class="picker-type">${typeLabel(i.type)}</span><b>${esc(i.code)}</b> — ${esc(i.name)}${itemBadges(i)}
-      <input type="number" class="bpn-qty" min="0" step="0.001" value="${bomPanelQty.get(i.id) || 0}"
-        title="Quantità da inserire" oninput="bomPanelQtyChange('${i.id}', this.value)">
+    <div class="bpn-row">
+      <div class="bpn-info">
+        <span class="bpn-code">${esc(i.code)}</span>
+        <span class="bpn-name" title="${esc(i.name)}">${esc(i.name)}</span>
+      </div>
+      <div class="bpn-stepper">
+        <button type="button" class="bpn-step" onclick="bomPanelStep('${i.id}', -1)" title="Diminuisci di 1">−</button>
+        <input type="number" class="bpn-qty" id="bpn-qty-${i.id}" min="0" step="1" value="${bomPanelQty.get(i.id) || 0}"
+          title="Quantità da inserire" oninput="bomPanelQtyChange('${i.id}', this.value)">
+        <button type="button" class="bpn-step" onclick="bomPanelStep('${i.id}', 1)" title="Aumenta di 1">+</button>
+        <span class="bpn-uom">${esc(itemUom(i))}</span>
+      </div>
     </div>`).join('');
   if (!html) {
     html = base.length
@@ -521,6 +584,15 @@ function renderBomPanelResults() {
 function bomPanelQtyChange(id, v) {
   const n = parseFloat(v);
   if (isFinite(n) && n > 0) bomPanelQty.set(id, n); else bomPanelQty.delete(id);
+  bomPanelUpdateInsertBtn();
+}
+// Frecce ±1: la digitazione libera resta possibile (utile per una quantità come
+// 2.5 kg), ma il gesto rapido è cliccare, non calcolare a mente lo scarto.
+function bomPanelStep(id, delta) {
+  const next = Math.max(0, (bomPanelQty.get(id) || 0) + delta);
+  if (next > 0) bomPanelQty.set(id, next); else bomPanelQty.delete(id);
+  const input = document.getElementById('bpn-qty-' + id);
+  if (input) input.value = next;
   bomPanelUpdateInsertBtn();
 }
 function bomPanelUpdateInsertBtn() {
