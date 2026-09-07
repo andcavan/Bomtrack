@@ -278,17 +278,55 @@ function itemPickerOptions(parentType, selectedId, excludeId) {
 }
 // Picker a ricerca live: candidati ammessi dal tipo padre, filtrabili per codice/nome.
 // I candidati del picker vivono qui finché la scheda è aperta, e non oltre.
-onPanelClose('form', () => { window.__pickerCandidates = null; });
+onPanelClose('form', () => { window.__pickerCandidates = null; window.__pickerAllowedTypes = null; });
 function pickerCandidates(parentType, excludeId) {
   const allowed = ALLOWED_CHILDREN[parentType] || [];
   return db.items
     .filter(i => allowed.includes(i.type) && i.id !== excludeId)
     .sort((a, b) => String(a.code).localeCompare(String(b.code)));
 }
-// Markup del campo di selezione articolo (input ricerca + lista risultati + valore nascosto).
-function itemPickerField(selectedId) {
+// Filtri del picker: tipo (solo se il padre ne ammette più di uno, es. un
+// gruppo può contenere sottogruppi/parti/materie/commerciali) e famiglia/
+// sottofamiglia (solo se tra i tipi ammessi ce n'è uno che le usa). Con
+// decine o centinaia di candidati la sola ricerca testuale non basta.
+function pickerFiltersHtml(allowed) {
+  const typeHtml = allowed.length > 1
+    ? `<div class="modal-field"><label>Tipo</label>
+        <select id="cmp-type" onchange="onPickerTypeChange()">
+          <option value="">Tutti i tipi</option>
+          ${allowed.map(t => `<option value="${t}">${typeLabel(t)}</option>`).join('')}
+        </select></div>` : '';
+  const famHtml = allowed.some(usesFamily)
+    ? `<div class="modal-grid">
+        <div class="modal-field"><label>Famiglia</label><select id="cmp-family" onchange="onPickerFamilyChange()"><option value="">Tutte le famiglie</option></select></div>
+        <div class="modal-field"><label>Sottofamiglia</label><select id="cmp-subfamily" onchange="renderPickerResults()"><option value="">Tutte le sottofamiglie</option></select></div>
+      </div>` : '';
+  return typeHtml + famHtml;
+}
+function onPickerTypeChange() { updatePickerFamilyOptions(); renderPickerResults(); }
+function onPickerFamilyChange() { updatePickerFamilyOptions(); renderPickerResults(); }
+// Allinea famiglia/sottofamiglia al tipo scelto nel picker, come in Anagrafica (syncFamilyFilters)
+function updatePickerFamilyOptions() {
+  const famSel = document.getElementById('cmp-family'); if (!famSel) return;
+  const subSel = document.getElementById('cmp-subfamily');
+  const typeF = val('cmp-type');
+  const kinds = (typeF ? [typeF] : (window.__pickerAllowedTypes || [])).filter(usesFamily);
+  famSel.disabled = !kinds.length; subSel.disabled = !kinds.length;
+  const fams = (db.families || []).filter(f => kinds.includes(f.kind || 'acquistato'));
+  const keepFam = fams.some(f => f.id === famSel.value) ? famSel.value : '';
+  famSel.innerHTML = `<option value="">Tutte le famiglie</option>` +
+    fams.map(f => `<option value="${f.id}" ${f.id === keepFam ? 'selected' : ''}>${esc(f.name)}</option>`).join('');
+  const f = getFamily(keepFam);
+  const subs = (f && f.subs) || [];
+  const keepSub = subs.some(s => s.id === subSel.value) ? subSel.value : '';
+  subSel.innerHTML = `<option value="">Tutte le sottofamiglie</option>` +
+    subs.map(s => `<option value="${s.id}" ${s.id === keepSub ? 'selected' : ''}>${esc(s.name)}</option>`).join('');
+}
+// Markup del campo di selezione articolo (filtri + input ricerca + lista risultati + valore nascosto).
+function itemPickerField(selectedId, allowed) {
   const sel = selectedId ? getItem(selectedId) : null;
-  return `<div class="modal-field"><label>Articolo</label>
+  return `${pickerFiltersHtml(allowed)}
+    <div class="modal-field"><label>Articolo</label>
       <input type="hidden" id="cmp-item" value="${selectedId ? esc(selectedId) : ''}">
       <input type="text" id="cmp-search" class="search" placeholder="Cerca codice o nome..."
         value="${sel ? esc(sel.code + ' — ' + sel.name) : ''}" oninput="debounced('picker', renderPickerResults)" autocomplete="off">
@@ -298,7 +336,13 @@ function itemPickerField(selectedId) {
 function renderPickerResults() {
   const box = document.getElementById('cmp-results'); if (!box) return;
   const q = (val('cmp-search') || '').toLowerCase();
+  const typeF = val('cmp-type');
+  const famF = val('cmp-family');
+  const subF = val('cmp-subfamily');
   let rows = (window.__pickerCandidates || []);
+  if (typeF) rows = rows.filter(i => i.type === typeF);
+  if (famF) rows = rows.filter(i => i.familyId === famF);
+  if (subF) rows = rows.filter(i => i.subFamilyId === subF);
   if (q) rows = rows.filter(i => (i.code + ' ' + i.name).toLowerCase().includes(q));
   const total = rows.length;
   rows = rows.slice(0, 50);
@@ -336,17 +380,19 @@ function allowedHint(parentType) {
 function addComponentModal() {
   if (!roleGuard('bom')) return;
   const it = getItem(currentBomId); if (!it) return;
+  window.__pickerAllowedTypes = ALLOWED_CHILDREN[it.type] || [];
   window.__pickerCandidates = pickerCandidates(it.type, it.id);
   if (!window.__pickerCandidates.length) { showToast('Nessun articolo dei tipi ammessi. Crealo prima in Anagrafica (Acquisti o Progetto).', 'error'); return; }
   openModal(`<h3>${ico('plus', 'tinted pill', '')} Aggiungi componente</h3>
     <p class="empty-text" style="text-align:left;padding:0 0 10px">${allowedHint(it.type)}</p>
-    ${itemPickerField(null)}
+    ${itemPickerField(null, window.__pickerAllowedTypes)}
     <div class="modal-grid">
       <div class="modal-field"><label id="cmp-qty-label">Quantità</label><input type="number" id="cmp-qty" min="0" step="0.001" value="1"></div>
       <div class="modal-field"><label>Scarto %</label><input type="number" id="cmp-scrap" min="0" step="0.1" value="0"></div>
     </div>
     <div class="modal-actions"><button class="btn-ghost" onclick="closeModal()">Annulla</button>
       <button class="add-btn-sm" onclick="saveNewComponent()">Aggiungi</button></div>`);
+  updatePickerFamilyOptions();
   renderPickerResults();
   cmpQtyLabelRefresh();
 }
@@ -370,16 +416,18 @@ function editComponentModal(idx) {
   if (!roleGuard('bom')) return;
   const it = getItem(currentBomId); if (!it) return;
   const comp = it.components[idx]; if (!comp) return;
+  window.__pickerAllowedTypes = ALLOWED_CHILDREN[it.type] || [];
   window.__pickerCandidates = pickerCandidates(it.type, it.id);
   openModal(`<h3>${ico('edit', 'tinted pill', '')} Modifica componente</h3>
     <p class="empty-text" style="text-align:left;padding:0 0 10px">${allowedHint(it.type)}</p>
-    ${itemPickerField(comp.itemId)}
+    ${itemPickerField(comp.itemId, window.__pickerAllowedTypes)}
     <div class="modal-grid">
       <div class="modal-field"><label id="cmp-qty-label">${labelUom('Quantità', itemUom(getItem(comp.itemId)))}</label><input type="number" id="cmp-qty" min="0" step="0.001" value="${comp.qty}"></div>
       <div class="modal-field"><label>Scarto %</label><input type="number" id="cmp-scrap" min="0" step="0.1" value="${comp.scrapPct || 0}"></div>
     </div>
     <div class="modal-actions"><button class="btn-ghost" onclick="closeModal()">Annulla</button>
       <button class="add-btn-sm" onclick="saveComponentEdit(${idx})">Salva</button></div>`);
+  updatePickerFamilyOptions();
   renderPickerResults();
 }
 function saveComponentEdit(idx) {
