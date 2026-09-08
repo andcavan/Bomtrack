@@ -1555,18 +1555,22 @@ function renderPlanEdit(id) {
 
   return `<div class="manage-wrap">
     <div class="bom-toolbar">
-      ${worklistCloseBtn('planBackToList()', 'il piano')}
-      <h2 class="section-title" style="margin:0">${ico('list', 'tinted pill', 'Piano di fabbisogno')} ${esc(p.number)}</h2>
-      <button class="btn-outline" onclick="planToggleActive('${id}')" title="${p.active === false
-        ? 'Chiuso: non impegna materiale. Riaprendolo tornerà a riservarsi quello che gli serve.'
-        : 'Aperto: impegna a magazzino il materiale che gli serve, e gli altri piani non se lo contano. Chiudendolo quella quota torna libera.'}">${p.active === false ? ico('unlock', 'tinted', '') + ' Chiuso — riapri' : ico('lock', 'tinted', '') + ' Aperto — chiudi'}</button>
-      ${planDocButton(p, 'rfq', ico('mail', 'tinted', '') + ' Genera richieste')}
-      ${planDocButton(p, 'order', ico('receipt', 'tinted', '') + ' Genera ordini')}
-      ${planDocButton(p, 'odl', ico('wrench', 'tinted', '') + ' Genera ordini di lavoro')}
-      <button class="btn-outline" onclick="duplicatePlan('${id}')" title="Duplica il piano">${ico('copy', 'tinted', '')} Duplica</button>
-      <button class="btn-outline" style="color:var(--red);border-color:var(--red)" onclick="delPlan('${id}')" title="Elimina il piano">${ico('trash', 'tinted', '')} Elimina</button>
-      <button class="export-btn-xls" onclick="exportMrpExcel('${id}')">${ico('sheet', 'tinted', '')} Esporta Excel</button>
-      <button class="export-btn-pdf" onclick="exportMrpPDF('${id}')">${ico('file', 'tinted', '')} Esporta PDF</button>
+      <div class="bom-toolbar-left">
+        ${worklistCloseBtn('planBackToList()', 'il piano')}
+        <h2 class="section-title" style="margin:0">${ico('list', 'tinted pill', 'Piano di fabbisogno')} ${esc(p.number)}</h2>
+        <button class="btn-outline" onclick="planToggleActive('${id}')" title="${p.active === false
+          ? 'Chiuso: non impegna materiale. Riaprendolo tornerà a riservarsi quello che gli serve.'
+          : 'Aperto: impegna a magazzino il materiale che gli serve, e gli altri piani non se lo contano. Chiudendolo quella quota torna libera.'}">${p.active === false ? ico('unlock', 'tinted', '') + ' Chiuso — riapri' : ico('lock', 'tinted', '') + ' Aperto — chiudi'}</button>
+        <button class="btn-outline" onclick="duplicatePlan('${id}')" title="Duplica il piano">${ico('copy', 'tinted', '')} Duplica</button>
+        <button class="btn-outline" style="color:var(--red);border-color:var(--red)" onclick="delPlan('${id}')" title="Elimina il piano">${ico('trash', 'tinted', '')} Elimina</button>
+      </div>
+      <div class="bom-toolbar-right">
+        ${planDocButton(p, 'rfq', ico('mail', 'tinted', '') + ' Genera richieste')}
+        ${planDocButton(p, 'order', ico('receipt', 'tinted', '') + ' Genera ordini')}
+        ${planDocButton(p, 'odl', ico('wrench', 'tinted', '') + ' Genera ordini di lavoro')}
+        <button class="export-btn-xls" onclick="exportMrpExcel('${id}')">${ico('sheet', 'tinted', '')} Esporta Excel</button>
+        <button class="export-btn-pdf" onclick="exportMrpPDF('${id}')">${ico('file', 'tinted', '')} Esporta PDF</button>
+      </div>
     </div>
     <div class="modal-grid">
       <div class="modal-field"><label>Titolo</label>

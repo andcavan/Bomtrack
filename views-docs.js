@@ -949,12 +949,16 @@ function renderRfqEdit(id) {
   const lockBanner = docLockBanner(mode, 'Richiesta ' + (RFQ_STATUS[r.status] || r.status).toLowerCase(), 'rfq', id);
   return `<div class="manage-wrap">
     <div class="bom-toolbar">
-      ${worklistCloseBtn('rfqBackToList()', 'la richiesta')}
-      <h2 class="section-title" style="font-family:var(--mono)">${esc(r.number)}</h2>
-      ${statusBadge(RFQ_STATUS, r.status)}
-      <button class="add-btn-sm rfq-save-btn ${rfqDirty ? 'dirty' : ''}" id="rfq-save-btn" onclick="rfqSave('${id}')">${ico('save', 'tinted', '')} Salva</button>
-      <button class="btn-outline" onclick="orderFromRfq('${id}')" title="Crea un ordine a fornitore da questa richiesta">${ico('receipt', 'tinted', '')} Crea ordine</button>
-      <button class="btn-outline" style="color:var(--red);border-color:var(--red)" onclick="delRfq('${id}')" title="Elimina la richiesta">${ico('trash', 'tinted', '')} Elimina</button>
+      <div class="bom-toolbar-left">
+        ${worklistCloseBtn('rfqBackToList()', 'la richiesta')}
+        <h2 class="section-title" style="font-family:var(--mono)">${esc(r.number)}</h2>
+        ${statusBadge(RFQ_STATUS, r.status)}
+        <button class="add-btn-sm rfq-save-btn ${rfqDirty ? 'dirty' : ''}" id="rfq-save-btn" onclick="rfqSave('${id}')">${ico('save', 'tinted', '')} Salva</button>
+        <button class="btn-outline" style="color:var(--red);border-color:var(--red)" onclick="delRfq('${id}')" title="Elimina la richiesta">${ico('trash', 'tinted', '')} Elimina</button>
+      </div>
+      <div class="bom-toolbar-right">
+        <button class="btn-outline" onclick="orderFromRfq('${id}')" title="Crea un ordine a fornitore da questa richiesta">${ico('receipt', 'tinted', '')} Crea ordine</button>
+      </div>
     </div>
     ${coWarn}${lockBanner}${docOriginRef(r)}${stampLine(r)}
     <div class="rfq-head">
@@ -1437,11 +1441,13 @@ function renderOrderEdit(id) {
   const lockBanner = docLockBanner(mode, 'Ordine ' + (ORDER_STATUS[o.status] || o.status).toLowerCase(), 'order', id);
   return `<div class="manage-wrap">
     <div class="bom-toolbar">
-      ${worklistCloseBtn('orderBackToList()', "l'ordine")}
-      <h2 class="section-title" style="font-family:var(--mono)">${esc(o.number)}</h2>
-      ${statusBadge(ORDER_STATUS, o.status)}
-      <button class="add-btn-sm rfq-save-btn ${orderDirty ? 'dirty' : ''}" id="order-save-btn" onclick="ordSave('${id}')">${ico('save', 'tinted', '')} Salva</button>
-      <button class="btn-outline" style="color:var(--red);border-color:var(--red)" onclick="delOrder('${id}')" title="Elimina l'ordine">${ico('trash', 'tinted', '')} Elimina</button>
+      <div class="bom-toolbar-left">
+        ${worklistCloseBtn('orderBackToList()', "l'ordine")}
+        <h2 class="section-title" style="font-family:var(--mono)">${esc(o.number)}</h2>
+        ${statusBadge(ORDER_STATUS, o.status)}
+        <button class="add-btn-sm rfq-save-btn ${orderDirty ? 'dirty' : ''}" id="order-save-btn" onclick="ordSave('${id}')">${ico('save', 'tinted', '')} Salva</button>
+        <button class="btn-outline" style="color:var(--red);border-color:var(--red)" onclick="delOrder('${id}')" title="Elimina l'ordine">${ico('trash', 'tinted', '')} Elimina</button>
+      </div>
     </div>
     ${coWarn}${rfqRef}${lockBanner}${stampLine(o)}
     <div class="rfq-head">
@@ -1824,11 +1830,13 @@ function renderOdlEdit(id) {
   const lockBanner = docLockBanner(odlMode(o), 'Ordine di lavoro ' + (ORDER_STATUS[o.status] || o.status).toLowerCase(), 'odl', id);
   return `<div class="manage-wrap">
     <div class="bom-toolbar">
-      ${worklistCloseBtn('odlBackToList()', "l'ordine di lavoro")}
-      <h2 class="section-title" style="font-family:var(--mono)">${esc(o.number)}</h2>
-      ${statusBadge(ORDER_STATUS, o.status)}
-      <button class="add-btn-sm rfq-save-btn ${odlDirty ? 'dirty' : ''}" id="odl-save-btn" onclick="odlSave('${id}')">${ico('save', 'tinted', '')} Salva</button>
-      <button class="btn-outline" style="color:var(--red);border-color:var(--red)" onclick="delOdl('${id}')" title="Elimina l'ordine di lavoro">${ico('trash', 'tinted', '')} Elimina</button>
+      <div class="bom-toolbar-left">
+        ${worklistCloseBtn('odlBackToList()', "l'ordine di lavoro")}
+        <h2 class="section-title" style="font-family:var(--mono)">${esc(o.number)}</h2>
+        ${statusBadge(ORDER_STATUS, o.status)}
+        <button class="add-btn-sm rfq-save-btn ${odlDirty ? 'dirty' : ''}" id="odl-save-btn" onclick="odlSave('${id}')">${ico('save', 'tinted', '')} Salva</button>
+        <button class="btn-outline" style="color:var(--red);border-color:var(--red)" onclick="delOdl('${id}')" title="Elimina l'ordine di lavoro">${ico('trash', 'tinted', '')} Elimina</button>
+      </div>
     </div>
     ${coWarn}${rfqRef}${lockBanner}${stampLine(o)}
     <div class="rfq-head">

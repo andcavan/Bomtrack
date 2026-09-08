@@ -305,6 +305,17 @@ input[type=date]::-webkit-calendar-picker-indicator,input[type=datetime-local]::
    margine inferiore di `.section-title` alzava la barra di 20px a vuoto.
    Alcune pagine lo azzeravano con uno style inline: ora vale per tutte. */
 .bom-toolbar .section-title{margin:0}
+/* Due metà dentro la barra: a sinistra identità e comandi sul documento
+   (Chiudi, nome, stato, Duplica, Elimina...), a destra le azioni che
+   producono qualcosa (Genera..., Esporta...). Ciascuna metà va a capo per
+   conto proprio, invece di mescolare le due famiglie in un'unica fila. */
+.bom-toolbar-left,.bom-toolbar-right{display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap}
+.bom-toolbar-right{margin-left:auto}
+/* La posizione a destra la dà già il contenitore: un margine automatico
+   anche sul singolo pulsante export (necessario altrove, dove l'export è
+   solo nella fila) qui raddoppierebbe la spinta e aprirebbe un vuoto a
+   metà gruppo. */
+.bom-toolbar-right .export-btn-xls,.bom-toolbar-right .export-btn-pdf{margin-left:0}
 
 /* Distinta tree */
 .bom-tree{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:8px 0;overflow-x:auto}

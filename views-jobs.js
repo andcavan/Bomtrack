@@ -374,9 +374,11 @@ function renderJobEdit(id) {
       <button class="btn-ghost" onclick="${{ rfq: `apriRfqDaCommessa('${d.id}')`, order: `apriOrdineDaCommessa('${d.id}')`, odl: `apriOdlDaCommessa('${d.id}')` }[tipo]}">Apri →</button></div>`;
   return `<div class="manage-wrap">
     <div class="bom-toolbar">
-      ${worklistCloseBtn('jobBackToList()', 'la commessa')}
-      <h2 class="section-title" style="margin:0">${ico('clipboard', 'tinted pill', 'Commessa')} ${esc(j.number)}</h2>
-      <button class="btn-outline" style="color:var(--red);border-color:var(--red)" onclick="delJob('${id}')">${ico('trash', 'tinted', '')} Elimina</button>
+      <div class="bom-toolbar-left">
+        ${worklistCloseBtn('jobBackToList()', 'la commessa')}
+        <h2 class="section-title" style="margin:0">${ico('clipboard', 'tinted pill', 'Commessa')} ${esc(j.number)}</h2>
+        <button class="btn-outline" style="color:var(--red);border-color:var(--red)" onclick="delJob('${id}')">${ico('trash', 'tinted', '')} Elimina</button>
+      </div>
     </div>
     <div class="modal-grid">
       <div class="modal-field"><label>Cliente</label>
