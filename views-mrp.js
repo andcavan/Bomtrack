@@ -1568,8 +1568,10 @@ function renderPlanEdit(id) {
         ${planDocButton(p, 'rfq', ico('mail', 'tinted', '') + ' Genera richieste')}
         ${planDocButton(p, 'order', ico('receipt', 'tinted', '') + ' Genera ordini')}
         ${planDocButton(p, 'odl', ico('wrench', 'tinted', '') + ' Genera ordini di lavoro')}
-        <button class="export-btn-xls" onclick="exportMrpExcel('${id}')">${ico('sheet', 'tinted', '')} Esporta Excel</button>
-        <button class="export-btn-pdf" onclick="exportMrpPDF('${id}')">${ico('file', 'tinted', '')} Esporta PDF</button>
+        <div class="export-pair">
+          <button class="export-btn-xls" onclick="exportMrpExcel('${id}')">${ico('sheet', 'tinted', '')} Esporta Excel</button>
+          <button class="export-btn-pdf" onclick="exportMrpPDF('${id}')">${ico('file', 'tinted', '')} Esporta PDF</button>
+        </div>
       </div>
     </div>
     <div class="modal-grid">

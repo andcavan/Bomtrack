@@ -161,8 +161,10 @@
   <div id="view-buy" class="view-panel">
     <div class="bom-toolbar">
       <h2 class="section-title"><svg class="ico ic-cart tinted pill" aria-hidden="true"><use href="#ic-cart"></use></svg> Commerciali &amp; Materie prime</h2>
-      <button class="export-btn-xls" onclick="exportListXlsx(catalogExportSpec('buy'))"><svg class="ico ic-sheet tinted" aria-hidden="true"><use href="#ic-sheet"></use></svg> Esporta Excel</button>
-      <button class="export-btn-pdf" onclick="exportListPdf(catalogExportSpec('buy'))"><svg class="ico ic-file tinted" aria-hidden="true"><use href="#ic-file"></use></svg> Esporta PDF</button>
+      <div class="export-pair">
+        <button class="export-btn-xls" onclick="exportListXlsx(catalogExportSpec('buy'))"><svg class="ico ic-sheet tinted" aria-hidden="true"><use href="#ic-sheet"></use></svg> Esporta Excel</button>
+        <button class="export-btn-pdf" onclick="exportListPdf(catalogExportSpec('buy'))"><svg class="ico ic-file tinted" aria-hidden="true"><use href="#ic-file"></use></svg> Esporta PDF</button>
+      </div>
     </div>
     <div class="catalog-filters">
       <input type="text" class="search" id="buy-search" placeholder="Cerca codice o nome..." oninput="catalogSearchInput('buy')">
@@ -188,8 +190,10 @@
   <div id="view-design" class="view-panel">
     <div class="bom-toolbar">
       <h2 class="section-title"><svg class="ico ic-tree tinted pill" aria-hidden="true"><use href="#ic-tree"></use></svg> Macchine, Gruppi &amp; Parti</h2>
-      <button class="export-btn-xls" onclick="exportListXlsx(catalogExportSpec('design'))"><svg class="ico ic-sheet tinted" aria-hidden="true"><use href="#ic-sheet"></use></svg> Esporta Excel</button>
-      <button class="export-btn-pdf" onclick="exportListPdf(catalogExportSpec('design'))"><svg class="ico ic-file tinted" aria-hidden="true"><use href="#ic-file"></use></svg> Esporta PDF</button>
+      <div class="export-pair">
+        <button class="export-btn-xls" onclick="exportListXlsx(catalogExportSpec('design'))"><svg class="ico ic-sheet tinted" aria-hidden="true"><use href="#ic-sheet"></use></svg> Esporta Excel</button>
+        <button class="export-btn-pdf" onclick="exportListPdf(catalogExportSpec('design'))"><svg class="ico ic-file tinted" aria-hidden="true"><use href="#ic-file"></use></svg> Esporta PDF</button>
+      </div>
     </div>
     <div class="catalog-filters">
       <input type="text" class="search" id="des-search" placeholder="Cerca codice o nome..." oninput="catalogSearchInput('design')">
@@ -216,8 +220,10 @@
   <div id="view-stock" class="view-panel">
     <div class="bom-toolbar">
       <h2 class="section-title"><svg class="ico ic-package tinted pill" aria-hidden="true"><use href="#ic-package"></use></svg> Magazzino</h2>
-      <button class="export-btn-xls" onclick="exportListXlsx(stockExportSpec())"><svg class="ico ic-sheet tinted" aria-hidden="true"><use href="#ic-sheet"></use></svg> Esporta Excel</button>
-      <button class="export-btn-pdf" onclick="exportListPdf(stockExportSpec())"><svg class="ico ic-file tinted" aria-hidden="true"><use href="#ic-file"></use></svg> Esporta PDF</button>
+      <div class="export-pair">
+        <button class="export-btn-xls" onclick="exportListXlsx(stockExportSpec())"><svg class="ico ic-sheet tinted" aria-hidden="true"><use href="#ic-sheet"></use></svg> Esporta Excel</button>
+        <button class="export-btn-pdf" onclick="exportListPdf(stockExportSpec())"><svg class="ico ic-file tinted" aria-hidden="true"><use href="#ic-file"></use></svg> Esporta PDF</button>
+      </div>
       <span id="stk-cl-btn"></span>
     </div>
     <div class="catalog-filters">
@@ -252,8 +258,10 @@
   <div id="view-cycles" class="view-panel">
     <div class="bom-toolbar">
       <h2 class="section-title"><svg class="ico ic-wrench tinted pill" aria-hidden="true"><use href="#ic-wrench"></use></svg> Cicli di lavorazione</h2>
-      <button class="export-btn-xls" onclick="exportListXlsx(cycleExportSpec())"><svg class="ico ic-sheet tinted" aria-hidden="true"><use href="#ic-sheet"></use></svg> Esporta Excel</button>
-      <button class="export-btn-pdf" onclick="exportListPdf(cycleExportSpec())"><svg class="ico ic-file tinted" aria-hidden="true"><use href="#ic-file"></use></svg> Esporta PDF</button>
+      <div class="export-pair">
+        <button class="export-btn-xls" onclick="exportListXlsx(cycleExportSpec())"><svg class="ico ic-sheet tinted" aria-hidden="true"><use href="#ic-sheet"></use></svg> Esporta Excel</button>
+        <button class="export-btn-pdf" onclick="exportListPdf(cycleExportSpec())"><svg class="ico ic-file tinted" aria-hidden="true"><use href="#ic-file"></use></svg> Esporta PDF</button>
+      </div>
     </div>
     <div class="catalog-filters">
       <input type="text" class="search" id="cyc-search" placeholder="Cerca codice o nome..." oninput="cycleSearchInput()">
@@ -279,8 +287,10 @@
         <label>Macchina / Prodotto</label>
         <select id="report-select" onchange="renderReport()"></select>
       </div>
-      <button class="export-btn-xls" onclick="exportBomExcel()"><svg class="ico ic-sheet tinted" aria-hidden="true"><use href="#ic-sheet"></use></svg> Esporta Excel</button>
-      <button class="export-btn-pdf" onclick="exportBomPDF()"><svg class="ico ic-file tinted" aria-hidden="true"><use href="#ic-file"></use></svg> Esporta PDF</button>
+      <div class="export-pair">
+        <button class="export-btn-xls" onclick="exportBomExcel()"><svg class="ico ic-sheet tinted" aria-hidden="true"><use href="#ic-sheet"></use></svg> Esporta Excel</button>
+        <button class="export-btn-pdf" onclick="exportBomPDF()"><svg class="ico ic-file tinted" aria-hidden="true"><use href="#ic-file"></use></svg> Esporta PDF</button>
+      </div>
     </div>
     <div id="report-content"></div>
   </div>

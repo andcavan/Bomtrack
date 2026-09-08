@@ -612,15 +612,16 @@ textarea.notes-internal{border-style:dashed}
 /* Rosso Acrobat e verde Excel: sono i colori dei due formati, non del tema.
    Cambiarli col fondo li renderebbe irriconoscibili proprio dove servono a
    distinguere due pulsanti gemelli. Il bianco sopra regge su entrambi. */
-.export-btn-pdf{background:#E41C1C;border:none;color:#fff;padding:10px 20px;border-radius:8px;cursor:pointer;font-size:13px;font-weight:600;display:inline-flex;align-items:center;gap:6px;transition:opacity .15s}
+.export-btn-pdf{background:#E41C1C;border:none;color:#fff;padding:6px 12px;border-radius:7px;cursor:pointer;font-size:12px;font-weight:600;display:inline-flex;align-items:center;gap:5px;transition:opacity .15s}
 .export-btn-pdf:hover{opacity:.85}
-.export-btn-xls{background:#217346;border:none;color:#fff;padding:10px 20px;border-radius:8px;cursor:pointer;font-size:13px;font-weight:600;display:inline-flex;align-items:center;gap:6px;transition:opacity .15s}
+.export-btn-xls{background:#217346;border:none;color:#fff;padding:6px 12px;border-radius:7px;cursor:pointer;font-size:12px;font-weight:600;display:inline-flex;align-items:center;gap:5px;transition:opacity .15s}
 .export-btn-xls:hover{opacity:.85}
-/* Nella barra di sezione i due export vanno a destra, staccati dal titolo e
-   dai comandi che agiscono sui dati: sono l’uscita, non un’azione di lavoro.
-   Basta spingere il primo dei due, il secondo gli resta attaccato. */
-.bom-toolbar .export-btn-xls,.bom-toolbar .export-btn-pdf{margin-left:auto}
-.bom-toolbar .export-btn-xls + .export-btn-pdf{margin-left:0}
+/* La coppia Excel/PDF sta impilata, non affiancata: meno larga, e si
+   allinea da sola a destra del box che la contiene invece di dipendere
+   dall'ordine degli altri pulsanti intorno — anche quando quel box va a
+   capo, la coppia resta un blocco solo. */
+.export-pair{display:flex;flex-direction:column;gap:6px;margin-left:auto}
+.export-pair .export-btn-xls,.export-pair .export-btn-pdf{margin-left:0}
 
 /* Richieste di offerta (RFQ) */
 .rfq-head{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px 16px;margin:0;display:flex;flex-direction:column;gap:10px}

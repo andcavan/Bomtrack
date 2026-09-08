@@ -222,6 +222,8 @@ function exportListPdf(spec) {
 // Una coppia sola, resa da una funzione: otto viste che scrivono a mano lo
 // stesso markup sono otto occasioni di dimenticare una classe.
 function listExportButtons(fnSpec) {
-  return `<button class="export-btn-xls" onclick="exportListXlsx(${fnSpec}())">${ico('sheet', 'tinted', '')} Esporta Excel</button>
-    <button class="export-btn-pdf" onclick="exportListPdf(${fnSpec}())">${ico('file', 'tinted', '')} Esporta PDF</button>`;
+  return `<div class="export-pair">
+    <button class="export-btn-xls" onclick="exportListXlsx(${fnSpec}())">${ico('sheet', 'tinted', '')} Esporta Excel</button>
+    <button class="export-btn-pdf" onclick="exportListPdf(${fnSpec}())">${ico('file', 'tinted', '')} Esporta PDF</button>
+  </div>`;
 }
