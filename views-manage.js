@@ -693,10 +693,14 @@ function wcSuppliersBody(wcId) {
     <td><select onchange="wcSupplierSetField('${wcId}','${s.id}','supplierId',this.value)">${supplierOptions(s.supplierId || '')}</select></td>
     <td><input type="number" class="num" min="0" step="0.5" value="${s.rate || 0}" onchange="wcSupplierSetField('${wcId}','${s.id}','rate',this.value)"></td>
     <td><input type="text" value="${esc(s.note || '')}" placeholder="opzionale" onchange="wcSupplierSetField('${wcId}','${s.id}','note',this.value)"></td>
-    <td><button class="mini-btn danger" title="Rimuovi" onclick="wcSupplierDelRow('${wcId}','${s.id}')">${ico('trash', 'tinted', 'Rimuovi')}</button></td>
+    <td class="pl-act"><button class="mini-btn danger" title="Rimuovi" onclick="wcSupplierDelRow('${wcId}','${s.id}')">${ico('trash', 'tinted', 'Rimuovi')}</button></td>
   </tr>`).join('');
   const vuoto = `<tr><td colspan="4" class="empty-text">Nessun fornitore conto lavoro registrato.</td></tr>`;
-  return `<div class="table-wrap"><table>
+  // price-table: stessa classe del listino prezzi articoli, non solo lo stesso
+  // schema — senza, select e input restavano alla loro larghezza nativa
+  // (diversa riga per riga, secondo il testo scelto) invece di riempire la
+  // colonna: è la disallineatura che si vedeva a schermo.
+  return `<div class="table-wrap"><table class="price-table">
       <thead><tr><th scope="col">Fornitore</th><th scope="col">Tariffa (${esc(cur())}/h)</th><th scope="col">Nota</th><th scope="col"></th></tr></thead>
       <tbody>${righe || vuoto}</tbody></table></div>
     <div style="margin-top:10px"><button class="add-btn-sm" onclick="wcSupplierAddRow('${wcId}')">+ Aggiungi fornitore</button></div>`;
