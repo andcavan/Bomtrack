@@ -696,6 +696,10 @@ button:disabled{opacity:.4;cursor:not-allowed}
 .rfq-table tfoot .rfq-cmp-total td{border-top:2px solid var(--border);font-weight:700;font-family:var(--mono);color:var(--text)}
 .rfq-export-bar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:18px;padding-top:16px;border-top:1px solid var(--border)}
 .rfq-export-bar label{font-size:12px;color:var(--text-dim);font-weight:600}
+/* I due generatori di documento (PDF/Excel) sono il gesto che chiude una
+   richiesta, un ordine o un ordine di lavoro: più grandi degli altri pulsanti
+   della barra, per essere il primo bersaglio dell'occhio. */
+.rfq-export-bar .export-btn-pdf,.rfq-export-bar .export-btn-xls{padding:14px 26px;font-size:15px;gap:8px;border-radius:10px}
 .rfq-export-bar select{background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:9px 12px;color:var(--text);font-size:13px;outline:none}
 .rfq-pick-filters{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
 .rfq-pick-filters .search{flex:1 1 160px;min-width:140px}

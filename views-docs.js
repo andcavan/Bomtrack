@@ -994,8 +994,8 @@ function renderRfqEdit(id) {
       <tbody>${lines}</tbody></table></div>
     <div class="rfq-export-bar">
       <label>Documento di richiesta:</label>
-      <button class="export-btn-pdf rfq-export-btn" onclick="exportRfqPDF('${id}')" ${dis}>${ico('file', 'tinted', '')} PDF</button>
-      <button class="export-btn-xls rfq-export-btn" onclick="exportRfqExcel('${id}')" ${dis}>${ico('sheet', 'tinted', '')} Excel</button>
+      <button class="export-btn-pdf rfq-export-btn" onclick="exportRfqPDF('${id}')" ${dis}>${ico('file', 'tinted', '')} Genera documento PDF</button>
+      <button class="export-btn-xls rfq-export-btn" onclick="exportRfqExcel('${id}')" ${dis}>${ico('sheet', 'tinted', '')} Genera documento Excel</button>
       ${rfqDirty ? '<span class="rfq-dirty-hint">Salva per abilitare la generazione del documento</span>' : ''}
     </div>
     ${rfqPriceBar(r)}
@@ -1488,8 +1488,8 @@ function renderOrderEdit(id) {
     </table></div>
     <div class="rfq-export-bar">
       <label>Documento d'ordine:</label>
-      <button class="export-btn-pdf order-export-btn" onclick="exportOrderPDF('${id}')" ${dis}>${ico('file', 'tinted', '')} PDF</button>
-      <button class="export-btn-xls order-export-btn" onclick="exportOrderExcel('${id}')" ${dis}>${ico('sheet', 'tinted', '')} Excel</button>
+      <button class="export-btn-pdf order-export-btn" onclick="exportOrderPDF('${id}')" ${dis}>${ico('file', 'tinted', '')} Genera documento PDF</button>
+      <button class="export-btn-xls order-export-btn" onclick="exportOrderExcel('${id}')" ${dis}>${ico('sheet', 'tinted', '')} Genera documento Excel</button>
       ${orderDirty ? '<span class="rfq-dirty-hint">Salva per abilitare la generazione del documento</span>' : ''}
     </div>
   </div>`;
@@ -1876,8 +1876,8 @@ function renderOdlEdit(id) {
     </table></div>
     <div class="rfq-export-bar">
       <label>Documento d'ordine di lavoro:</label>
-      <button class="export-btn-pdf odl-export-btn" onclick="exportOdlPDF('${id}')" ${dis}>${ico('file', 'tinted', '')} PDF</button>
-      <button class="export-btn-xls odl-export-btn" onclick="exportOdlExcel('${id}')" ${dis}>${ico('sheet', 'tinted', '')} Excel</button>
+      <button class="export-btn-pdf odl-export-btn" onclick="exportOdlPDF('${id}')" ${dis}>${ico('file', 'tinted', '')} Genera documento PDF</button>
+      <button class="export-btn-xls odl-export-btn" onclick="exportOdlExcel('${id}')" ${dis}>${ico('sheet', 'tinted', '')} Genera documento Excel</button>
       ${odlDirty ? '<span class="rfq-dirty-hint">Salva per abilitare la generazione del documento</span>' : ''}
     </div>
   </div>`;
