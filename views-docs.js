@@ -616,13 +616,13 @@ function docFilterChange(kind) {
   f.to = val(kind + 'f-to');
   // Solo la lista: la barra filtri resta com'è, altrimenti il campo perde il focus
   const count = document.getElementById(kind + 'f-count');
-  const all = kind === 'rfq' ? db.rfqs : db.orders;
-  renderInto(kind + '-list', () => kind === 'rfq' ? rfqListRows() : orderListRows());
+  const all = docKind(kind).all();
+  renderInto(kind + '-list', () => kind === 'rfq' ? rfqListRows() : kind === 'odl' ? odlListRows() : orderListRows());
   if (count) count.textContent = docFilterCountText(docFilterApply(kind, all).length, all.length);
 }
 function docFilterReset(kind) {
   docFilters[kind] = docFiltersVuoti();
-  if (kind === 'rfq') renderRfq(); else renderOrders();
+  docKind(kind).render();
 }
 // Testo cercabile di un documento, righe comprese. Costruirlo significa
 // scorrere tutte le righe: senza memoria si rifarebbe per ogni documento a

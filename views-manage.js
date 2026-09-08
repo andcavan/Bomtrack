@@ -352,6 +352,10 @@ function supplierUses(id) {
   if (n(rfqs)) usi.push(rfqs.length + (rfqs.length === 1 ? ' richiesta' : ' richieste'));
   const ordini = (db.orders || []).filter(o => o.supplierId === id);
   if (n(ordini)) usi.push(ordini.length + (ordini.length === 1 ? ' ordine' : ' ordini'));
+  const odl = (db.workOrders || []).filter(o => o.supplierId === id);
+  if (n(odl)) usi.push(odl.length + (odl.length === 1 ? ' ordine di lavoro' : ' ordini di lavoro'));
+  const contoLavoro = (db.workCenters || []).filter(w => (w.suppliers || []).some(s => s.supplierId === id));
+  if (n(contoLavoro)) usi.push(contoLavoro.length + (contoLavoro.length === 1 ? ' centro di lavoro (conto lavoro)' : ' centri di lavoro (conto lavoro)'));
   return usi;
 }
 function delSupplier(id) {
@@ -799,6 +803,7 @@ function uomUsage(code) {
   (db.items || []).forEach(i => { if (i.uom === code) n++; });
   (db.rfqs || []).forEach(r => (r.lines || []).forEach(l => { if (l.uom === code) n++; }));
   (db.orders || []).forEach(o => (o.lines || []).forEach(l => { if (l.uom === code) n++; }));
+  (db.workOrders || []).forEach(o => (o.lines || []).forEach(l => { if (l.uom === code) n++; }));
   return n;
 }
 function renderUoms() {
@@ -855,6 +860,7 @@ function renameUom(oldCode, newCode) {
   (db.items || []).forEach(it => { if (it.uom === oldCode) { it.uom = newCode; touch(it); } });
   (db.rfqs || []).forEach(r => (r.lines || []).forEach(l => { if (l.uom === oldCode) l.uom = newCode; }));
   (db.orders || []).forEach(o => (o.lines || []).forEach(l => { if (l.uom === oldCode) l.uom = newCode; }));
+  (db.workOrders || []).forEach(o => (o.lines || []).forEach(l => { if (l.uom === oldCode) l.uom = newCode; }));
   if (db.settings.uomDefault === oldCode) db.settings.uomDefault = newCode;
 }
 function delUom(i) {

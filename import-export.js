@@ -993,7 +993,7 @@ function renderBackup() {
 // ne vanno da sole al caricamento successivo. L'annulla nel toast copre il
 // pentimento immediato; questo copre quello di domani mattina.
 const TRASH_LABELS = { items: 'Articolo', suppliers: 'Fornitore', customers: 'Cliente', workCenters: 'Centro di lavoro',
-  families: 'Macrofamiglia', rfqs: 'Richiesta', orders: 'Ordine', plans: 'Piano', users: 'Utente',
+  families: 'Macrofamiglia', rfqs: 'Richiesta', orders: 'Ordine', workOrders: 'Ordine di lavoro', plans: 'Piano', users: 'Utente',
   jobs: 'Commessa', movements: 'Movimento', revisions: 'Revisione' };
 function trashDescr(t) {
   const r = t.record || {};

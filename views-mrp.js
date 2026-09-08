@@ -1090,9 +1090,10 @@ function planDocsModal(id, kind) {
 // peggio di uno spento, perché costringe a scoprirlo aprendo.
 function planDocButton(p, kind, label) {
   const n = planDocsAvailable(p, kind);
+  const doc = kind === 'rfq' ? 'una richiesta' : kind === 'odl' ? 'un ordine di lavoro' : 'un ordine';
   const titolo = n
-    ? `${n} ${n === 1 ? 'riga ancora da mettere' : 'righe ancora da mettere'} in ${kind === 'rfq' ? 'una richiesta' : 'un ordine'}`
-    : `Tutte le righe di questo fabbisogno sono già in ${kind === 'rfq' ? 'una richiesta' : 'un ordine'}`;
+    ? `${n} ${n === 1 ? 'riga ancora da mettere' : 'righe ancora da mettere'} in ${doc}`
+    : `Tutte le righe di questo fabbisogno sono già in ${doc}`;
   return `<button class="${kind === 'order' ? 'add-btn-sm' : 'btn-outline'}" onclick="planDocsModal('${p.id}','${kind}')"
     ${n ? '' : 'disabled'} title="${esc(titolo)}">${label}${n ? ` (${n})` : ''}</button>`;
 }
@@ -1183,13 +1184,13 @@ function planDocsBody(gruppi, planId, kind) {
       <label class="plandoc-head">
         <input type="checkbox" class="plandoc-sup" data-sup="${esc(key)}" ${disponibili.length ? 'checked' : 'disabled'} onchange="planDocsToggleGroup(this)">
         ${ico('factory', 'tinted', '')} <strong>${esc(g.name)}</strong>
-        <span class="plandoc-qty">${disponibili.length ? `${disponibili.length} ${disponibili.length === 1 ? 'riga' : 'righe'} · ${fmtN(totDisp)}` : 'tutto già documentato'}${disponibili.length < g.rows.length ? ` <span style="opacity:.6">(${g.rows.length - disponibili.length} già ${kind === 'rfq' ? 'in richiesta' : 'in ordine'})</span>` : ''}</span>
+        <span class="plandoc-qty">${disponibili.length ? `${disponibili.length} ${disponibili.length === 1 ? 'riga' : 'righe'} · ${fmtN(totDisp)}` : 'tutto già documentato'}${disponibili.length < g.rows.length ? ` <span style="opacity:.6">(${g.rows.length - disponibili.length} già ${kind === 'rfq' ? 'in richiesta' : kind === 'odl' ? 'in ordine di lavoro' : 'in ordine'})</span>` : ''}</span>
         ${g.supplierId ? '' : '<span class="mrp-warn" title="Nessun fornitore: il documento nasce da intestare">' + ico('warning', 'tinted', '') + ' da assegnare</span>'}
       </label>
       ${righe}</div>`;
   }).join('');
   const nDisp = gruppi.reduce((s, g) => s + g.rows.filter(r => !usati(r).length).length, 0);
-  const avviso = nDisp ? '' : `<div class="rfq-warn">Tutte le righe di questo fabbisogno sono già finite in ${kind === 'rfq' ? 'una richiesta' : 'un ordine'}. Per cambiare quantità o fornitore si modifica il documento, oppure lo si elimina e si rigenera.</div>`;
+  const avviso = nDisp ? '' : `<div class="rfq-warn">Tutte le righe di questo fabbisogno sono già finite in ${kind === 'rfq' ? 'una richiesta' : kind === 'odl' ? 'un ordine di lavoro' : 'un ordine'}. Per cambiare quantità o fornitore si modifica il documento, oppure lo si elimina e si rigenera.</div>`;
   return `${avviso}${corpo}<p class="empty-text" style="text-align:left;padding:8px 0 0" id="plandoc-count"></p>`;
 }
 // Spunta di gruppo: trascina le sue righe, ed è il modo rapido di escludere un
