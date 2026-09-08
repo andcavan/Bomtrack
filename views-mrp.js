@@ -502,7 +502,15 @@ function loadChartOne(r, settimane) {
     </svg>
   </figure>`;
 }
-function loadTableHtml(tab) {
+// `planId`: assente per la vista Carico centri (i click restano nel giro dei
+// filtri globali già scritti sopra); valorizzato per la tavola dentro la
+// scheda di un piano — lì i numeri sono quelli **di quel piano soltanto**, e
+// il dettaglio di una cella deve rispondere con lo stesso conto, non con la
+// somma di tutti i piani aperti (che è un numero diverso, ed è quello
+// dichiarato dal testo appena sopra la tavola). Il nome del centro perde
+// anche il link: «solo questo centro» è un filtro della vista Carico centri,
+// e da qui cambierebbe un filtro altrove senza che nulla si muova a video.
+function loadTableHtml(tab, planId) {
   if (!tab.righe.length) return '<div class="empty-text">Nessuna ora di lavorazione nei piani considerati. Le fasi in conto lavoro non caricano i centri interni: stanno nel fabbisogno, sotto «Da far lavorare fuori».</div>';
   const head = `<thead><tr><th scope="col">Centro</th><th scope="col" style="text-align:right">Capacità</th>
     ${tab.settimane.map(wk => `<th scope="col" style="text-align:right">${esc(settimanaLabel(wk))}</th>`).join('')}
@@ -515,13 +523,15 @@ function loadTableHtml(tab) {
       // dichiarata nessun colore: non c'è niente con cui confrontare le ore.
       const col = c.sat == null ? '' : (c.sat > 1 ? 'var(--red)' : (c.sat >= 0.85 ? 'var(--orange)' : ''));
       const tit = c.sat == null ? 'Capacità non dichiarata' : `Saturazione ${Math.round(c.sat * 100)}%`;
-      const apri = clickAttrs(`loadCellModal('${r.workCenterId}','${wk}')`, 'Dettaglio del carico');
+      const apri = clickAttrs(`loadCellModal('${r.workCenterId}','${wk}'${planId ? `,'${planId}'` : ''})`, 'Dettaglio del carico');
       return `<td style="font-family:var(--mono);text-align:right${col ? ';color:' + col : ''}" title="${esc(tit)}">
         <span class="plandoc-link plandoc-link-sm" ${apri}>${fmtQty(+c.hours.toFixed(2))}</span>${c.sat != null ? `<div class="empty-text" style="padding:0;font-size:11px">${Math.round(c.sat * 100)}%</div>` : ''}</td>`;
     }).join('');
     const cap = r.capacity > 0 ? fmtQty(r.capacity) + ' h'
       : '<span class="empty-text" style="padding:0" title="Capacità non dichiarata: il carico si vede, il sovraccarico no">—</span>';
-    return `<tr><td><span class="plandoc-link plandoc-link-sm" ${clickAttrs(`loadSetCentro('${r.workCenterId}')`, 'Mostra solo i codici di questo centro')}>${esc(r.name)}</span></td>
+    const nome = planId ? esc(r.name)
+      : `<span class="plandoc-link plandoc-link-sm" ${clickAttrs(`loadSetCentro('${r.workCenterId}')`, 'Mostra solo i codici di questo centro')}>${esc(r.name)}</span>`;
+    return `<tr><td>${nome}</td>
       <td style="font-family:var(--mono);text-align:right">${cap}</td>
       ${celle}
       <td style="font-family:var(--mono);text-align:right"><strong>${fmtQty(+r.totale.toFixed(2))}</strong></td></tr>`;
@@ -560,8 +570,14 @@ function loadItemsHtml(entries) {
 // Il dettaglio di una cella non è un vezzo: vale la stessa regola già scritta
 // per gli impegni di magazzino — un numero che non dice da dove viene non si può
 // contestare, e quindi neanche credere.
-function loadCellModal(wcId, week) {
-  const tab = mrpLoadTable(loadEntries());
+function loadCellModal(wcId, week, planId) {
+  // Con un piano indicato il conto è quello del piano soltanto, coerente con
+  // la tavola da cui si è aperta la cella (vedi loadTableHtml). Un piano
+  // sparito nel frattempo non apre nulla, invece di ricadere sul conto
+  // globale e mostrare un dettaglio che non risponde più alla cella cliccata.
+  const plan = planId ? getPlan(planId) : null;
+  if (planId && !plan) return;
+  const tab = mrpLoadTable(planId ? mrpLoadEntries([plan]) : loadEntries());
   const riga = tab.righe.find(r => r.workCenterId === wcId);
   const cella = riga && riga.celle.get(week);
   if (!cella) return;
@@ -1611,7 +1627,7 @@ function renderPlanEdit(id) {
     <div class="mrp-section">
       <div class="cycle-section-head"><h3>${ico('wrench', 'tinted pill', '')} Carico dei centri</h3></div>
       <p class="empty-text" style="text-align:left;padding:0 0 8px">Le ore che <strong>questo piano</strong> chiede ai centri interni, per settimana. Il carico vero è la somma di tutti i piani aperti: si guarda in <em>Cicli di lavorazione → Carico centri</em>, perché il centro è condiviso e un piano solo non dice se regge.</p>
-      ${loadTableHtml(mrpLoad(p))}
+      ${loadTableHtml(mrpLoad(p), id)}
     </div>
     ${planDocsList(id)}</div>`;
 }

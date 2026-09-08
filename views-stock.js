@@ -648,14 +648,26 @@ function clLineRole(o, l) {
   const prima = sorelle.reduce((a, b) => (clPhaseIndex(b) < clPhaseIndex(a) ? b : a));
   const ultima = sorelle.reduce((a, b) => (clPhaseIndex(b) > clPhaseIndex(a) ? b : a));
   const run = clRunAt(part, clPhaseIndex(l));
-  const primaEst = clFirstExternalRun(part);
-  const ultimaEst = clLastExternalRun(part);
-  const ePrimaDelCiclo = !!run && !!primaEst && run.from === primaEst.from;
-  const eUltimaDelCiclo = !!run && !!ultimaEst && run.from === ultimaEst.from;
+  let outKind, inKind;
+  if (run && !run.esterna) {
+    // Una fase che il ciclo fa in casa, messa qui apposta per mandarla fuori
+    // questa volta (vedi odlPhasePickModal): è una gita a sé, non incatenata
+    // alle tratte esterne del ciclo — esce e rientra qui, ai suoi due estremi,
+    // non a quelli di un giro conto lavoro che non la riguarda. Senza questo
+    // caso una fase così non toccava mai il magazzino: non essendo una tratta
+    // esterna del ciclo, non coincideva mai con la prima o l'ultima.
+    outKind = 'clOut'; inKind = 'clIn';
+  } else {
+    const primaEst = clFirstExternalRun(part);
+    const ultimaEst = clLastExternalRun(part);
+    const ePrimaDelCiclo = !!run && !!primaEst && run.from === primaEst.from;
+    const eUltimaDelCiclo = !!run && !!ultimaEst && run.from === ultimaEst.from;
+    outKind = ePrimaDelCiclo ? 'clOut' : 'clStep';
+    inKind = eUltimaDelCiclo ? 'clIn' : 'clStep';
+  }
   return {
     out: prima.id === l.id, in: ultima.id === l.id,
-    outKind: ePrimaDelCiclo ? 'clOut' : 'clStep',
-    inKind: eUltimaDelCiclo ? 'clIn' : 'clStep',
+    outKind, inKind,
     prima, ultima, part, run,
   };
 }

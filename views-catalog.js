@@ -1295,18 +1295,24 @@ function updateCycleRow(idx) {
   if (!roleGuard('catalog')) { renderCycles(); return; }
   const row = (it.cycle || [])[idx]; if (!row) return;
   if (row.kind === 'op') {
-    row.supplierId = val('cyc-sup-' + idx);
     // Il tempo cambia unità con la natura della fase: ore su una lavorazione
     // interna, giorni di attraversamento su una in conto lavoro. I due campi
     // esistono entrambi sulla riga, ma solo uno per volta è a video — leggere
     // quello assente riporterebbe zero e cancellerebbe l'altro.
-    if (row.supplierId) row.days = numVal('cyc-opdays-' + idx, 0);
+    // La domanda giusta è cosa mostra il DOM **adesso**, cioè prima di questo
+    // salvataggio: se questa chiamata arriva da un cambio di fornitore, la riga
+    // non si è ancora ridisegnata, e `row.supplierId` già nuovo direbbe il
+    // contrario di ciò che l'utente ha davanti (leggendo un campo che non c'è
+    // si azzererebbe in silenzio quello vero).
+    const eraEsterna = !!row.supplierId;
+    row.supplierId = val('cyc-sup-' + idx);
+    if (eraEsterna) row.days = numVal('cyc-opdays-' + idx, 0);
     else row.hours = numVal('cyc-ophours-' + idx, 0);
     if (row.costMode === 'orario') {
       row.rate = numVal('cyc-oprate-' + idx, 0);
       // Su una fase esterna a costo orario le ore sono quelle **fatturate**, e
       // stanno con la tariffa: è l'unico punto in cui compaiono.
-      if (row.supplierId) row.hours = numVal('cyc-ophours-' + idx, 0);
+      if (eraEsterna) row.hours = numVal('cyc-ophours-' + idx, 0);
     } else row.cost = numVal('cyc-cost-in-' + idx, 0);
   } else {
     row.qty = numVal('cyc-qty-' + idx, 0);
@@ -1481,10 +1487,17 @@ function pickCycleOp() {
   if (!wcId) { showToast('Seleziona un centro di lavoro', 'error'); return; }
   if (!Array.isArray(it.cycle)) it.cycle = [];
   const orario = val('cyc-opmode') === 'orario';
+  const supplierId = val('cyc-opsup');
+  const esterna = !!supplierId;
   // In fondo all'elenco: l'ultima fase aggiunta è l'ultima del ciclo, poi si sposta con ↑↓
-  const row = { kind: 'op', workCenterId: wcId, supplierId: val('cyc-opsup'),
+  // Ore e giorni: si legge solo il campo che era davvero a video (stessa
+  // condizione di onCycleOpModeChange) — altrimenti il valore proposto di
+  // serie nel campo nascosto (le "Ore" nascono a 1) entrerebbe come se
+  // qualcuno l'avesse scritto.
+  const row = { kind: 'op', workCenterId: wcId, supplierId,
     costMode: orario ? 'orario' : 'fisso',
-    hours: numVal('cyc-ophours', 0), days: numVal('cyc-opdays', 0), note: '' };
+    hours: (!esterna || orario) ? numVal('cyc-ophours', 0) : 0,
+    days: esterna ? numVal('cyc-opdays', 0) : 0, note: '' };
   if (orario) row.rate = numVal('cyc-oprate', 0);
   else row.cost = numVal('cyc-opcost', 0);
   it.cycle.push(row);

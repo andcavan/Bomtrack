@@ -243,4 +243,56 @@ describe('Ciclo: ore e giorni sono due tempi diversi', () => {
       costMode: 'fisso', cost: 3, hours: 0, note: '' }]));
     assert.equal(riga(app).days, 0);
   });
+
+  // Cambiare il fornitore nella stessa chiamata che salva ore/giorni: al
+  // momento del cambio il campo a video è ancora quello di prima (la riga si
+  // ridisegna un istante dopo), e la lettura deve seguire quello che si vede,
+  // non il nuovo stato appena scritto — altrimenti si legge un campo assente
+  // e si azzera in silenzio quello vero.
+  it('passando da interna a conto lavoro le ore già scritte non si perdono', () => {
+    const app = caricato(conCiclo([{ kind: 'op', workCenterId: 'w1', supplierId: '',
+      costMode: 'fisso', cost: 10, hours: 3, days: 0, note: '' }]));
+    app.asRole('admin');
+    app.eval('currentCycleItemId = "p"');
+    // Il campo "Ore" era quello a video (fase interna): il valore c'è ancora,
+    // anche se la riga non si è ancora ridisegnata dopo il cambio.
+    app.el('cyc-ophours-0').value = '3';
+    app.el('cyc-sup-0').value = 'beta';
+    app.el('cyc-cost-in-0').value = '10';
+    app.eval('onCycleRowSupplierChange(0)');
+    const r = riga(app);
+    assert.equal(r.supplierId, 'beta');
+    assert.equal(r.hours, 3, 'le ore scritte per la fase interna non devono sparire');
+  });
+
+  it('passando da conto lavoro a interna i giorni già scritti non si perdono', () => {
+    const app = caricato(conCiclo([{ kind: 'op', workCenterId: 'w1', supplierId: 'beta',
+      costMode: 'fisso', cost: 10, hours: 0, days: 6, note: '' }]));
+    app.asRole('admin');
+    app.eval('currentCycleItemId = "p"');
+    app.el('cyc-opdays-0').value = '6';
+    app.el('cyc-sup-0').value = '';
+    app.el('cyc-cost-in-0').value = '10';
+    app.eval('onCycleRowSupplierChange(0)');
+    const r = riga(app);
+    assert.equal(r.supplierId, '');
+    assert.equal(r.days, 6, 'i giorni scritti per la fase esterna non devono sparire');
+  });
+
+  it('una fase esterna a costo fisso non nasce con un\'ora mai scritta da nessuno', () => {
+    const app = caricato(conCiclo([]));
+    app.asRole('admin');
+    app.eval('currentCycleItemId = "p"');
+    app.el('cyc-wc').value = 'w1';
+    app.el('cyc-opsup').value = 'beta';
+    app.el('cyc-opmode').value = 'fisso';
+    app.el('cyc-opdays').value = '4';
+    app.el('cyc-opcost').value = '15';
+    // "Ore" resta al valore proposto di serie (1): a costo fisso su un
+    // centro esterno il campo non è nemmeno a video.
+    app.eval('pickCycleOp()');
+    const r = riga(app);
+    assert.equal(r.hours, 0, 'il campo Ore era nascosto: non deve entrare comunque');
+    assert.equal(r.days, 4);
+  });
 });

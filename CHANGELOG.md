@@ -2,6 +2,22 @@
 
 Le revisioni seguono il versionamento semantico `0.MINOR.PATCH`: **MINOR** per nuove funzionalità, **PATCH** per correzioni. La versione in cima è quella in `APP_VERSION` (`core.js`) e mostrata nell'header dell'app.
 
+### 0.72.1 — 2026-09-08
+
+Controllo mirato sul conto lavoro e sugli ordini di lavoro, dopo la segnalazione di una tabella disallineata in Gestione (già corretta a parte). Tre punti rimasti aperti da quel controllo, tutti chiusi qui.
+
+**Corretto: una fase interna mandata fuori apposta non muoveva mai il magazzino**
+L'app permette di mettere in un ordine di lavoro anche una fase che il ciclo fa in casa ("il ciclo la fa in casa: mettendola qui la si manda fuori questa volta") — un caso vero, non un errore da impedire. Ma quella fase non coincideva mai con la prima o l'ultima tratta **esterna del ciclo**, semplicemente perché non lo è: restava sempre un passaggio, e né la spedizione né il rientro toccavano mai la giacenza. Ora una fase così, non incatenata alle tratte esterne che il ciclo dichiara, esce e rientra ai suoi due estremi come qualunque lavorazione esterna — senza cambiare nulla per le tratte che il ciclo dichiara davvero esterne, singole o a più passate.
+
+**Corretto: cambiare Interna/Conto lavoro su una fase di ciclo poteva azzerare ore o giorni**
+Il tempo di una fase si misura in due unità diverse — ore su una interna, giorni di attraversamento su una in conto lavoro — e i due campi non stanno mai a video insieme. Cambiando il fornitore, la riga si ridisegna un istante dopo il salvataggio: il salvataggio guardava però il fornitore **appena scritto** invece di quello che il campo a video rifletteva ancora, leggeva quindi un input che non c'era e azzerava in silenzio ore o giorni già inseriti. Stesso meccanismo, un'ora mai digitata da nessuno finiva su una fase esterna a costo fisso appena creata, perché il campo Ore (nascosto, a costo fisso su un centro esterno) nasceva con un valore proposto di serie invece che a zero.
+
+**Corretto: nella scheda di un piano, il dettaglio del carico centri mostrava un altro conto**
+La tavola "Carico dei centri" dentro la scheda di un piano dichiara esplicitamente di contare solo quel piano — c'è la frase sopra la tavola che lo dice. Cliccando una cella, però, il dettaglio veniva ricalcolato sui filtri globali della vista Carico centri (di norma: tutti i piani aperti insieme), un numero diverso da quello appena letto in tabella; se il piano era chiuso, poteva anche non trovare nulla. Ora il dettaglio aperto da dentro un piano usa lo stesso conto della tavola che lo ha aperto; dalla vista Carico centri il comportamento resta quello di sempre. Anche il nome del centro, dentro la scheda di un piano, ha smesso di essere un link che cambiava un filtro di un'altra vista senza muovere nulla a video.
+
+**Copertura di test**
+21 casi nuovi fra `test/contolavoro.test.js`, `test/cycle-op.test.js` e `test/carico.test.js`: la fase interna mandata fuori scarica e carica come una vera esterna senza toccare le tratte genuinamente esterne (singole o a più passate); ore e giorni sopravvivono al cambio di fornitore in entrambe le direzioni, e una fase esterna a costo fisso non nasce più con un'ora fantasma; il dettaglio di una cella nella scheda di un piano risponde con lo stesso conto della tavola, un piano cancellato non apre nulla, e la vista Carico centri conserva link e somma su tutti i piani.
+
 ### 0.72.0 — 2026-09-08
 
 **Un ordine di lavoro è una tratta, non una fase — e il magazzino si muove ai due estremi del ciclo, non a quelli del documento.**

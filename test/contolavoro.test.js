@@ -508,6 +508,72 @@ describe('Conto lavoro: il magazzino si muove ai due estremi del ciclo', () => {
   });
 });
 
+// L'app permette di mettere in un ordine di lavoro anche una fase che il
+// ciclo fa in casa (odlPhasePickModal, "il ciclo la fa in casa: mettendola
+// qui la si manda fuori questa volta") — un caso vero, non un errore da
+// impedire. Prima di questo giro quella fase non coincideva mai con la prima
+// o l'ultima tratta esterna del ciclo (non essendo affatto una tratta
+// esterna), e restava sempre un passaggio: il pezzo usciva "sulla carta" ma
+// il magazzino non si muoveva né alla spedizione né al rientro.
+describe('Conto lavoro: mandare fuori apposta una fase che il ciclo fa in casa', () => {
+  function conFaseInterna(over) {
+    const app = conDb(over);
+    app.eval(`getItem('perno').cycle = [
+      { kind: 'item', itemId: 'tondo', qty: 2, costOverride: null },
+      { kind: 'op', workCenterId: 'zin', supplierId: '', costMode: 'fisso', cost: 3, hours: 0.1, days: 0, note: '' },
+    ];
+    db.workOrders.push({ id: 'w3', number: 'ODL-2026-003', title: '', date: '2026-07-01', status: 'confermato',
+      supplierId: 'beta', transport: '', payment: '', rfqId: null, planId: null, jobId: null,
+      supplierConfirmation: '', notes: '', notesInternal: '', active: true,
+      lines: [{ id: 'L3', itemId: null, phaseKey: 'perno#0#zin', phaseKeys: 'perno#0#zin', code: 'PERNO',
+        description: 'Zincatura una tantum', uom: 'pz', qty: 4, price: 3, received: 0, deliveryDate: '', note: '' }] });
+    invalidateCaches();`);
+    return app;
+  }
+  const ruolo = (app, docId, lineId) => JSON.parse(app.eval(`(() => {
+    const o = getOdl(${JSON.stringify(docId)});
+    const l = o.lines.find(x => x.id === ${JSON.stringify(lineId)});
+    const r = clLineRole(o, l);
+    return JSON.stringify({ out: r.out, dentro: r.in, outKind: r.outKind, inKind: r.inKind });
+  })()`));
+
+  it('la fase interna mandata fuori muove il magazzino ai suoi due estremi', () => {
+    const app = conFaseInterna();
+    assert.deepEqual(ruolo(app, 'w3', 'L3'), { out: true, dentro: true, outKind: 'clOut', inKind: 'clIn' },
+      'non è più un passaggio: il pezzo esce davvero e torna davvero');
+  });
+
+  it('spedizione e rientro caricano e scaricano come per una fase davvero esterna', () => {
+    const app = conFaseInterna();
+    app.eval("addMovement('tondo', 'carico', 20, 'giacenza iniziale'); invalidateCaches();");
+    gesto(app, 'w3', 'L3', 'out', [8]);
+    approx(app.eval("onHandOf('tondo')"), 12, 'il materiale del ciclo è uscito');
+    gesto(app, 'w3', 'L3', 'in', [4]);
+    approx(app.eval("onHandOf('perno')"), 4, 'i pezzi lavorati sono rientrati a magazzino');
+  });
+
+  it('una tratta genuinamente esterna del ciclo non cambia comportamento', () => {
+    // Il caso ordinario, di sempre: una sola fase esterna nel ciclo è sia la
+    // prima che l'ultima tratta, quindi carica e scarica già da prima di
+    // questo fix — qui si conferma che non è cambiato.
+    const app = conDb();
+    app.eval(`db.workOrders.push({ id: 'w4', number: 'ODL-2026-004', status: 'confermato', supplierId: 'beta',
+      active: true, planId: null, jobId: null,
+      lines: [{ id: 'L4', itemId: null, phaseKey: 'perno#0#zin', code: 'PERNO', description: 'Zincatura',
+        uom: 'pz', qty: 4, price: 3, received: 0 }] });
+      invalidateCaches();`);
+    assert.deepEqual(ruolo(app, 'w4', 'L4'), { out: true, dentro: true, outKind: 'clOut', inKind: 'clIn' });
+  });
+
+  it('la fase interna in mezzo a due tratte esterne resta un passaggio se nessuno la manda fuori apposta', () => {
+    // Nessuna riga di documento la cita: clLineRole su di lei non si calcola
+    // affatto, e le due tratte esterne del ciclo restano quelle di sempre.
+    const app = conDueTratte();
+    assert.deepEqual(ruolo(app, 'w1', 'L1'), { out: true, dentro: true, outKind: 'clOut', inKind: 'clStep' });
+    assert.deepEqual(ruolo(app, 'w2', 'L2'), { out: true, dentro: true, outKind: 'clStep', inKind: 'clIn' });
+  });
+});
+
 describe('Conto lavoro: una volta sola, per davvero', () => {
   // Il valore si legge dal disegno della scheda, non dall'elemento: il DOM
   // finto non ricostruisce gli elementi dall'innerHTML, e `cl-q-0` si porta

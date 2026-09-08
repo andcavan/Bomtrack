@@ -389,3 +389,59 @@ describe('Carico: resta un prospetto in sola lettura', () => {
     assert.deepEqual(f[1], ['Centro', 'CDL tor']);
   });
 });
+
+// La tavola dentro la scheda di un piano dice «solo questo piano» (è scritto
+// sopra la tavola stessa): il dettaglio di una cella deve rispondere con lo
+// stesso conto, non con la somma di tutti i piani aperti.
+describe('Carico dentro la scheda di un piano: gli stessi numeri della tavola', () => {
+  function pannelloCarico(app) {
+    return Array.from(app.el('modal-root').children).find(p => p.dataset.panelKey === 'carico');
+  }
+  function dbDuePiani() {
+    return conDb({ plans: [
+      { id: 'pl1', number: 'FAB-2026-001', title: 'Lotto', date: '2026-07-01', notes: '',
+        lines: [{ id: 'l1', itemId: 'grp', qty: 2, dueDate: '2026-09-30' }], active: true },
+      { id: 'pl2', number: 'FAB-2026-002', title: 'Lotto due', date: '2026-07-01', notes: '',
+        lines: [{ id: 'l1', itemId: 'grp', qty: 10, dueDate: '2026-09-30' }], active: true },
+    ] });
+  }
+
+  it('la tavola del piano genera un click legato a quel piano soltanto', () => {
+    const app = dbDuePiani();
+    const html = app.eval("loadTableHtml(mrpLoad(getPlan('pl1')), 'pl1')");
+    assert.match(html, /loadCellModal\('tor','2026-W40','pl1'\)/);
+  });
+
+  it('il dettaglio aperto dalla scheda del piano conta solo quel piano, non la somma di tutti', () => {
+    const app = dbDuePiani();
+    // pl1 monta 2 gruppi (2h ciascuno = 4h su "mon"), pl2 ne monta 10 (20h): 24h in tutto.
+    app.eval("loadCellModal('mon', '2026-W40', 'pl1')");
+    const soloUno = pannelloCarico(app).innerHTML;
+    assert.match(soloUno, /4(,0+)?\s*h\b/, 'il piano pl1 da solo pesa 4 ore su "mon"');
+    assert.doesNotMatch(soloUno, /24(,0+)?\s*h\b/, 'non deve comparire la somma dei due piani');
+  });
+
+  it('senza planId il dettaglio somma tutti i piani aperti, come nella vista Carico centri', () => {
+    const app = dbDuePiani();
+    app.eval("loadCellModal('mon', '2026-W40')");
+    assert.match(pannelloCarico(app).innerHTML, /24(,0+)?\s*h\b/);
+  });
+
+  it('un piano non più esistente non apre nessun dettaglio', () => {
+    const app = dbDuePiani();
+    app.eval("loadCellModal('mon', '2026-W40', 'non-esiste')");
+    assert.equal(pannelloCarico(app), undefined);
+  });
+
+  it('il nome del centro, dentro la scheda del piano, non è un link al filtro globale', () => {
+    const app = dbDuePiani();
+    const html = app.eval("loadTableHtml(mrpLoad(getPlan('pl1')), 'pl1')");
+    assert.ok(!html.includes("loadSetCentro('mon')"), 'da qui non deve muovere un filtro di un-altra vista');
+  });
+
+  it('nella vista Carico centri il nome resta un link, come prima', () => {
+    const app = dbDuePiani();
+    const html = app.eval("loadTableHtml(mrpLoadTable(loadEntries()))");
+    assert.ok(html.includes("loadSetCentro('mon')"));
+  });
+});
