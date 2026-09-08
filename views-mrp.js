@@ -423,16 +423,18 @@ function renderLoad() {
   const senzaCap = tab.righe.filter(r => !(r.capacity > 0)).length;
   host.innerHTML = `<div class="manage-wrap">
     <div class="bom-toolbar">
-      <h2 class="section-title">${ico('wrench', 'tinted pill', '')} Carico centri di lavoro</h2>
-      <select id="load-plan" onchange="loadSetPlan(this.value)" title="Quali piani entrano nel conto">
-        <option value="">Tutti i piani aperti (${aperti.length})</option>
-        ${aperti.map(p => `<option value="${esc(p.id)}" ${p.id === loadSoloPiano ? 'selected' : ''}>${esc(p.number)}${p.title ? ' — ' + esc(p.title) : ''}</option>`).join('')}
-      </select>
-      <select id="load-wc" onchange="loadSetCentro(this.value)" title="Restringe i codici da produrre a un centro">
-        <option value="">Tutti i centri</option>
-        ${tab.righe.map(r => `<option value="${esc(r.workCenterId)}" ${r.workCenterId === loadSoloCentro ? 'selected' : ''}>${esc(r.name)}</option>`).join('')}
-      </select>
-      ${listExportButtons('loadExportSpec')}
+      <div class="bom-toolbar-left">
+        <h2 class="section-title">${ico('wrench', 'tinted pill', '')} Carico centri di lavoro</h2>
+        <select id="load-plan" onchange="loadSetPlan(this.value)" title="Quali piani entrano nel conto">
+          <option value="">Tutti i piani aperti (${aperti.length})</option>
+          ${aperti.map(p => `<option value="${esc(p.id)}" ${p.id === loadSoloPiano ? 'selected' : ''}>${esc(p.number)}${p.title ? ' — ' + esc(p.title) : ''}</option>`).join('')}
+        </select>
+        <select id="load-wc" onchange="loadSetCentro(this.value)" title="Restringe i codici da produrre a un centro">
+          <option value="">Tutti i centri</option>
+          ${tab.righe.map(r => `<option value="${esc(r.workCenterId)}" ${r.workCenterId === loadSoloCentro ? 'selected' : ''}>${esc(r.name)}</option>`).join('')}
+        </select>
+      </div>
+      <div class="bom-toolbar-right">${listExportButtons('loadExportSpec')}</div>
     </div>
     <p class="empty-text" style="text-align:left;padding:0 0 8px">Le ore che i piani chiedono a ciascun centro, settimana per settimana, contro la capacità dichiarata in <em>Gestione → Centri di lavoro</em>. Le ore stanno nella settimana in cui <strong>il pezzo serve pronto</strong>, non in quella in cui si lavora: è una lettura della domanda, <strong>non una programmazione</strong>, e non dice quando ciascuna fase vada avviata. La capacità è <strong>infinita</strong>: il sovraccarico si vede, non si sposta.</p>
     ${senzaCap ? `<p class="empty-text" style="text-align:left;padding:0 0 8px">${ico('warning', 'tinted', '')} ${senzaCap} ${senzaCap === 1 ? 'centro non ha' : 'centri non hanno'} una capacità dichiarata: le ore si vedono, il sovraccarico no. Si imposta in <em>Gestione → Centri di lavoro</em>.</p>` : ''}
