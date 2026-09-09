@@ -118,6 +118,17 @@ function printHeadFill() {
 }
 function printView() { printHeadFill(); window.print(); }
 
+// ─── Manuale d'uso ───
+// `manuale.html` sta nella cartella dell'app, accanto a index.html: si apre
+// senza rete, come tutto il resto, e viaggia con la cartella quando la si copia
+// su un altro PC. In una scheda nuova, perché il manuale si consulta **mentre**
+// si lavora — chi cerca come si registra un rientro da conto lavoro ha l'ordine
+// di lavoro aperto davanti, e non deve perderlo per leggere come si fa.
+// Il manuale legge `bomtrack_theme` e si apre nel tema scelto qui.
+function openManual() {
+  window.open('manuale.html', 'bomtrack-manuale');
+}
+
 // ═══════════════════════════════════════════════════════════
 //  NAVIGAZIONE
 // ═══════════════════════════════════════════════════════════

@@ -2,6 +2,41 @@
 
 Le revisioni seguono il versionamento semantico `0.MINOR.PATCH`: **MINOR** per nuove funzionalità, **PATCH** per correzioni. La versione in cima è quella in `APP_VERSION` (`core.js`) e mostrata nell'header dell'app.
 
+### 0.73.0 — 2026-09-09
+
+**Manuale d'uso**
+Nasce `MANUALE.md`: il manuale operativo dell'app, scritto per chi la usa invece che per chi la sviluppa. Trentaquattro capitoli più un'appendice tecnica, con indice cliccabile.
+
+Il README raccontava già quasi ogni funzione, ma la raccontava **per funzione e per motivo**: perché il passaggio di lavorazione non muove la giacenza, perché il netto non si applica alle lavorazioni. Chi arriva nuovo ha però un'altra domanda — *da dove comincio, e poi cosa faccio* — e a quella il README non rispondeva da nessuna parte. Il manuale è organizzato **per compito**, e il suo capitolo portante è il **flusso di lavoro**: lo schema del giro completo, dagli archivi di Gestione alla merce che entra a magazzino, e ogni tappa in prosa con il rimando al capitolo di dettaglio (preparare gli archivi → costruire il prodotto dal basso → costificare → commessa e piano → comprare → far lavorare fuori → chiudere il giro).
+
+Ogni capitolo di schermata segue la stessa griglia — *a cosa serve, come ci si arriva, cosa si vede, comandi, filtri, finestre, da sapere* — così la risposta sta sempre nello stesso punto della pagina. I pulsanti sono chiamati **con il nome esatto che hanno a video**: un manuale che li chiama in un altro modo è peggio di nessun manuale.
+
+Sono documentati per esteso i punti su cui si sbaglia davvero: i **sei tipi di movimento** con il loro effetto sulla giacenza, i **due soli punti in cui il conto lavoro muove il magazzino** (e perché gli estremi sono quelli del ciclo, non quelli del documento), la differenza fra *Rientrati* su un ODL e il carico vero, la tabella di **cosa resta modificabile in ciascuno stato** con le transizioni automatiche, e i quattro avvertimenti del Carico centri. Chiudono un **glossario** di trenta voci (tratta, passata, impegnato, libero, saturazione, concetto…) e una sezione di **domande frequenti** che parte dai sintomi — «il costo di una parte è zero», «non trovo un fornitore nel menu», «ho perso i dati».
+
+L'**appendice tecnica** raccoglie quello che serve a chi installa, sposta o sviluppa: stack e assenza di build, le chiavi di `localStorage` con la distinzione fra archivio e preferenze personali, le collezioni del modello dati, la mappa dei file sorgente, i test e i limiti architetturali.
+
+I limiti dichiarati stanno **nel primo capitolo**, non in fondo: nessuna schedulazione, nessun avanzamento di produzione, un archivio per browser, e i ruoli che separano le responsabilità senza essere sicurezza. Un manuale che li nasconde in appendice fa cercare per mezz'ora una funzione che non esiste.
+
+**Il manuale dice già come si lavorerà con l'archivio condiviso**
+Nuovo capitolo 30, «Quando l'archivio è condiviso (Supabase)», in fondo alla parte Amministrazione. Si apre dichiarando che **non è ancora attivo** — chi legge il resto del manuale non deve cercare funzioni che non troverà — e poi risponde alle domande che si fanno prima di passare, non dopo.
+
+Il cuore del capitolo è **chi vince quando due persone toccano la stessa cosa**, perché in squadra è l'unica domanda che conta e la risposta non è la stessa dappertutto: due quotazioni sullo stesso articolo **convivono**, una distinta salvata da due persone no — l'ultimo sostituisce l'insieme, perché metà distinta di uno e metà dell'altro è un prodotto che nessuno ha progettato. Da lì la regola pratica: sulle righe di un listino o di un ordine si lavora insieme senza pensarci, su una distinta ci si mette d'accordo.
+
+Poi le cose che vanno **decise prima e preparate adesso**: un solo archivio di verità (due archivi divergenti non si fondono, e uno dei due lavori va rifatto), le password che non migrano, i codici duplicati da ripulire finché sono un fastidio di uno solo, il backup fuori sede — che il piano gratuito non fa — e il ping contro la sospensione dopo sette giorni d'inattività, da predisporre prima di agosto e non il 25 agosto. Chiude con quanto regge il piano gratuito (il primo limite è la banda, non lo spazio) e con l'avviso che **gli allegati cambiano il conto di colpo**: 1 GB sono circa mille PDF da 1 MB.
+
+Una sezione dice **cosa non cambia**, ed è quasi tutto: schermate, comandi, flusso di lavoro, codici, ruoli, cestino, export. È il motivo per cui il manuale non andrà riscritto.
+
+Sei rimandi nei punti dove l'uso cambia davvero — i limiti dichiarati al capitolo 1, l'avviso sui dati nel browser, i ruoli che non sono sicurezza, il backup, le domande frequenti e l'appendice tecnica — più tre voci di glossario. La parte Riferimenti scala di uno.
+
+**Il manuale sta dentro l'app**
+Un pulsante 📖 nell'intestazione, accanto a Stampa, apre `manuale.html` in una scheda sua. Il manuale si consulta **mentre** si lavora — chi cerca come si registra un rientro da conto lavoro ha l'ordine di lavoro aperto davanti, e non deve perderlo per leggere come si fa.
+
+`manuale.html` sta nella cartella accanto a `index.html` e **non chiede niente alla rete**: il markdown è già impaginato nel file, indice e ancore compresi, quindi la pagina resta leggibile e navigabile anche **senza JavaScript** — che aggiunge soltanto il filtro dei capitoli, l'evidenziazione di dove si è e il cassetto dell'indice sugli schermi stretti. Come tutto il resto dell'app viaggia con la cartella, quindi il manuale c'è anche sul PC in officina che la rete non ce l'ha. Usa i token di tema e i font di Bomtrack, e legge `bomtrack_theme`: chi ha scelto il chiaro nell'app apre il manuale in chiaro.
+
+`genera-manuale.py` rigenera `manuale.html` da `MANUALE.md` con un comando solo (`python genera-manuale.py`), guscio della pagina incluso nello script. Il markdown resta **l'unica fonte**: due copie da aggiornare a mano avrebbero cominciato a divergere il giorno dopo. Nuova icona `book`, tracciata sulla stessa griglia 24×24 delle altre.
+
+Il README rimanda al manuale in testa, e resta quello che era: la documentazione funzionale, orientata al perché delle scelte.
+
 ### 0.72.1 — 2026-09-08
 
 Controllo mirato sul conto lavoro e sugli ordini di lavoro, dopo la segnalazione di una tabella disallineata in Gestione (già corretta a parte). Tre punti rimasti aperti da quel controllo, tutti chiusi qui.

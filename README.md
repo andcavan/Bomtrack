@@ -4,6 +4,8 @@ App per creare e gestire **distinte base (BOM) multi-livello** di macchine mecca
 
 Costruita con lo stesso stile di TimeTrack: vanilla JavaScript + HTML + CSS, nessun build, tema dark. **Database solo locale** (`localStorage`) — nessun server, nessun Supabase.
 
+➡️ **[MANUALE D'USO](MANUALE.md)** — il manuale operativo completo: cosa fa ogni schermata, come si compilano i campi, e il **flusso di lavoro** dalla commessa del cliente alla merce a magazzino. Dentro l'app si apre con il pulsante 📖 nell'intestazione (`manuale.html`, offline come tutto il resto); `genera-manuale.py` lo rigenera da `MANUALE.md`, che resta l'unica fonte. Questo README è invece la documentazione funzionale, orientata al perché delle scelte.
+
 ## Avvio
 
 Aprire `index.html` in un browser (doppio click, oppure usare l'estensione "Live Server" di VS Code). Al primo avvio l'app chiede di creare l'**amministratore** (nome, email, password) e carica dei dati di esempio (macchina "Nastro Trasportatore NT-100"). Agli avvii successivi si entra con email e password; "Ricordami" conserva l'email e la sessione resta aperta fino a **Esci**.

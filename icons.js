@@ -74,6 +74,7 @@ const ICONS = {
   key: '<circle cx="7.8" cy="15.8" r="3.8"/><path d="m10.6 13.1 9.6-9.6"/><path d="m17.4 6.3 2.4 2.4M15 8.7l2.4 2.4"/>',
   logout: '<path d="M9 20.6H5.4a1.9 1.9 0 0 1-1.9-1.9V5.3a1.9 1.9 0 0 1 1.9-1.9H9"/><path d="m16 16.8 4.8-4.8L16 7.2"/><path d="M20.5 12H9"/>',
   logo: '<path d="M3 7l9-4 9 4-9 4-9-4z"/><path d="M3 7v10l9 4 9-4V7"/><path d="M12 11v10"/>',
+  book: '<path d="M4.4 4.8a1.8 1.8 0 0 1 1.8-1.8h11.4a1.8 1.8 0 0 1 1.8 1.8v14.4a1.8 1.8 0 0 1-1.8 1.8H6.2a1.8 1.8 0 0 1-1.8-1.8z"/><path d="M7.8 3v18"/><path d="M10.8 7.8h5.4M10.8 11.2h5.4M10.8 14.6h3.4"/>',
 };
 
 // ─── Colore ───
@@ -106,7 +107,7 @@ const ICON_TINT = {
   building: 'accent', folder: 'orange', card: 'green', pause: 'orange',
   save: 'accent', download: 'green', upload: 'accent', users: 'accent', ruler: 'purple',
   // Header
-  printer: 'text-dim', key: 'orange', logout: 'red', logo: 'accent',
+  printer: 'text-dim', key: 'orange', logout: 'red', logo: 'accent', book: 'text-dim',
 };
 
 // Le regole di tinta si generano dalla mappa qui sopra: la tavolozza resta in

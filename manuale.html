@@ -1,0 +1,995 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Manuale d'uso — Bomtrack</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+/* ─── Temi ───
+   Gli stessi tre stati dell'app e gli stessi nomi di token, cosi' il manuale
+   non sembra una pagina di un altro programma. Lo scuro e' il :root di
+   partenza, com'e' in style.css; il chiaro arriva dalla media query e
+   dall'attributo `data-theme`, che vince sul sistema.
+   Il manuale legge la chiave `bomtrack_theme` in fondo alla pagina: chi ha
+   scelto il chiaro nell'app apre il manuale in chiaro. */
+:root{
+  color-scheme:dark;
+  --bg:#0F1117;--card:#181B24;--card-hover:#1E2230;--border:#2A2E3B;
+  --text:#E8E9ED;--text-dim:#8B8FA3;
+  --accent:#4583E9;--accent-h:#77A6F0;
+  --red:#E85D3A;--orange:#E8A33A;
+  --shadow:rgba(0,0,0,.45);
+  --font:'DM Sans','Segoe UI',system-ui,sans-serif;
+  --mono:'JetBrains Mono','SF Mono',Consolas,monospace;
+}
+@media(prefers-color-scheme:light){
+  :root:not([data-theme=dark]){
+    color-scheme:light;
+    --bg:#F5F6F8;--card:#FFFFFF;--card-hover:#EDEFF3;--border:#DCE0E8;
+    --text:#171A21;--text-dim:#5D6472;
+    --accent:#2563C7;--accent-h:#1B4CA0;
+    --red:#C4381A;--orange:#95610D;
+    --shadow:rgba(23,26,33,.16);
+  }
+}
+:root[data-theme=light]{
+  color-scheme:light;
+  --bg:#F5F6F8;--card:#FFFFFF;--card-hover:#EDEFF3;--border:#DCE0E8;
+  --text:#171A21;--text-dim:#5D6472;
+  --accent:#2563C7;--accent-h:#1B4CA0;
+  --red:#C4381A;--orange:#95610D;
+  --shadow:rgba(23,26,33,.16);
+}
+:root{
+  --accent-soft:color-mix(in srgb,var(--accent) 12%,transparent);
+  --accent-line:color-mix(in srgb,var(--accent) 32%,transparent);
+  --red-soft:color-mix(in srgb,var(--red) 13%,transparent);
+  --orange-soft:color-mix(in srgb,var(--orange) 13%,transparent);
+  --hairline:color-mix(in srgb,var(--border) 55%,transparent);
+}
+
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--bg);color:var(--text);font-family:var(--font);
+  font-size:15.5px;line-height:1.68;-webkit-font-smoothing:antialiased}
+a{color:var(--accent);text-underline-offset:2px}
+a:hover{color:var(--accent-h)}
+a:focus-visible,button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:4px}
+
+/* ─── Telaio ─── */
+.wrap{display:grid;grid-template-columns:292px minmax(0,1fr);min-height:100vh}
+.rail{position:sticky;top:0;height:100vh;display:flex;flex-direction:column;
+  background:var(--card);border-right:1px solid var(--border)}
+.main{min-width:0;padding:0 clamp(20px,5vw,68px) 120px}
+
+.brand{padding:20px 22px 15px;border-bottom:1px solid var(--hairline);flex:none}
+.brand-top{display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+.brand-name{font-weight:800;font-size:19px;letter-spacing:-.02em;line-height:1}
+.chip{font-family:var(--mono);font-size:10px;font-weight:600;color:var(--text-dim);
+  border:1px solid var(--border);border-radius:4px;padding:1.5px 5px;line-height:1.5}
+.brand-sub{font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;
+  color:var(--text-dim);margin-top:7px}
+
+.find{padding:13px 18px;flex:none}
+.find input{width:100%;font-family:var(--font);font-size:13.5px;color:var(--text);
+  background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:8px 10px}
+.find input::placeholder{color:var(--text-dim)}
+
+.toc{overflow-y:auto;padding:0 10px 26px;flex:1;scrollbar-width:thin}
+.toc-part{font-size:10.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--text-dim);padding:17px 12px 6px;border-top:1px solid var(--hairline);margin-top:7px}
+.toc-part.first{border-top:0;margin-top:0;padding-top:5px}
+.toc a{display:grid;grid-template-columns:22px 1fr;gap:5px;align-items:baseline;
+  font-size:13.5px;line-height:1.36;color:var(--text-dim);text-decoration:none;
+  padding:5.5px 12px;border-radius:6px;border-left:2px solid transparent}
+.toc a:hover{background:var(--card-hover);color:var(--text)}
+.toc a .n{font-family:var(--mono);font-size:10.5px;font-variant-numeric:tabular-nums;
+  color:color-mix(in srgb,var(--text-dim) 75%,transparent)}
+.toc a.on{background:var(--accent-soft);color:var(--accent);font-weight:600;border-left-color:var(--accent)}
+.toc a.on .n{color:var(--accent)}
+.toc a.hide,.toc-part.hide{display:none}
+.toc .empty{font-size:13px;color:var(--text-dim);padding:14px 12px}
+
+/* ─── Testata ─── */
+.mast{padding:clamp(36px,6vw,68px) 0 30px;max-width:72ch;border-bottom:1px solid var(--border)}
+.mast .kick{display:flex;gap:7px;flex-wrap:wrap;margin-bottom:20px}
+.mast h1{font-weight:800;font-size:clamp(30px,4.6vw,44px);line-height:1.06;
+  letter-spacing:-.03em;margin:0 0 16px;text-wrap:balance}
+.mast .lede{font-size:18px;line-height:1.6;color:var(--text);margin:0;max-width:64ch}
+.mast .lede2{margin-top:12px;font-size:15.5px;color:var(--text-dim)}
+.back{display:inline-block;margin-top:24px;font-size:13.5px;font-weight:600;
+  color:var(--text-dim);text-decoration:none;border:1px solid var(--border);
+  border-radius:6px;padding:7px 13px;background:var(--card)}
+.back:hover{background:var(--card-hover);color:var(--text)}
+
+/* ─── Corpo ─── */
+.doc{max-width:72ch;padding-top:6px}
+.doc h1{font-size:12px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;
+  color:var(--accent);margin:74px 0 0;padding-bottom:8px;
+  border-bottom:2px solid var(--accent-line);scroll-margin-top:20px}
+.doc h2{font-weight:800;font-size:clamp(24px,3vw,29px);line-height:1.18;letter-spacing:-.025em;
+  margin:48px 0 16px;scroll-margin-top:20px;text-wrap:balance}
+.doc h1 + h2{margin-top:28px}
+.doc h3{font-weight:700;font-size:17.5px;line-height:1.32;letter-spacing:-.01em;
+  margin:34px 0 11px;scroll-margin-top:20px}
+.doc p{margin:0 0 14px}
+.doc ul,.doc ol{margin:0 0 16px;padding-left:21px}
+.doc li{margin-bottom:5px}
+.doc li::marker{color:var(--text-dim)}
+.doc hr{border:0;border-top:1px solid var(--border);margin:40px 0}
+.doc strong{font-weight:700}
+.doc em{color:var(--text-dim)}
+
+.doc code{font-family:var(--mono);font-size:.85em;background:var(--card);
+  border:1px solid var(--hairline);border-radius:4px;padding:.12em .34em}
+.doc pre{background:var(--card);border:1px solid var(--border);border-radius:8px;
+  padding:17px 19px;overflow-x:auto;margin:0 0 20px}
+.doc pre code{font-family:var(--mono);font-size:12px;line-height:1.6;background:none;
+  border:0;padding:0;color:var(--text-dim);white-space:pre}
+
+.tw{overflow-x:auto;margin:0 0 22px;border:1px solid var(--border);border-radius:8px;
+  background:var(--card)}
+.doc table{border-collapse:collapse;width:100%;font-size:13.5px;line-height:1.5}
+.doc th{font-weight:700;text-align:left;color:var(--text-dim);font-size:10.5px;
+  letter-spacing:.07em;text-transform:uppercase;padding:10px 14px;
+  border-bottom:1px solid var(--border);white-space:nowrap;background:var(--card-hover)}
+.doc td{padding:10px 14px;border-bottom:1px solid var(--hairline);vertical-align:top;
+  color:var(--text-dim)}
+.doc tr:last-child td{border-bottom:0}
+.doc td strong{color:var(--text)}
+.doc td code{font-size:11.5px}
+.doc th[align=center],.doc td[align=center]{text-align:center}
+
+.doc blockquote{margin:0 0 22px;padding:14px 18px;border-radius:0 8px 8px 0;
+  background:var(--card);border-left:3px solid var(--border);font-size:14.5px;color:var(--text-dim)}
+.doc blockquote p{margin:0 0 9px}
+.doc blockquote p:last-child{margin:0}
+.doc blockquote.warn{background:var(--orange-soft);border-left-color:var(--orange)}
+.doc blockquote.warn strong{color:var(--orange)}
+.doc blockquote.crit{background:var(--red-soft);border-left-color:var(--red)}
+.doc blockquote.crit strong{color:var(--red)}
+
+.colophon{max-width:72ch;margin-top:52px;padding-top:20px;border-top:1px solid var(--border);
+  font-size:12.5px;color:var(--text-dim)}
+
+/* ─── Barra sugli schermi stretti ─── */
+.bar{display:none;position:sticky;top:0;z-index:20;align-items:center;gap:11px;
+  padding:10px 15px;background:var(--card);border-bottom:1px solid var(--border)}
+.bar button{font-family:var(--font);font-size:13px;font-weight:600;color:var(--text);
+  background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:7px 12px;cursor:pointer}
+.bar .brand-name{font-size:16px}
+.scrim{position:fixed;inset:0;z-index:25;background:rgba(0,0,0,.45);display:none}
+
+@media(max-width:980px){
+  .wrap{grid-template-columns:1fr}
+  .bar{display:flex}
+  .rail{position:fixed;inset:0 auto 0 0;width:292px;z-index:30;transform:translateX(-100%);
+    transition:transform .2s ease;box-shadow:0 0 40px var(--shadow)}
+  .rail.open{transform:none}
+  .scrim.on{display:block}
+  .main{padding:0 18px 96px}
+  .mast{padding-top:32px}
+}
+@media(prefers-reduced-motion:reduce){*{transition:none!important}html{scroll-behavior:auto}}
+@media print{
+  :root{color-scheme:light;--bg:#fff;--card:#fff;--card-hover:#fff;--border:#c9ced8;
+    --text:#171A21;--text-dim:#4a5261;--accent:#2563C7}
+  .rail,.bar,.scrim,.back{display:none}
+  .wrap{display:block}.main{padding:0}
+  .doc h2{page-break-after:avoid}.tw,.doc pre,.doc blockquote{page-break-inside:avoid}
+}
+</style>
+</head>
+<body>
+
+<div class="bar">
+  <button id="menu" aria-expanded="false">Indice</button>
+  <span class="brand-name">Manuale</span>
+</div>
+<div class="scrim" id="scrim"></div>
+
+<div class="wrap">
+  <aside class="rail" id="rail">
+    <div class="brand">
+      <div class="brand-top">
+        <span class="brand-name">Bomtrack</span>
+        <span class="chip">v0.73.0</span>
+      </div>
+      <div class="brand-sub">Manuale d&rsquo;uso</div>
+    </div>
+    <div class="find">
+      <input id="q" type="search" placeholder="Filtra i capitoli&hellip;" aria-label="Filtra i capitoli">
+    </div>
+    <nav class="toc" id="toc" aria-label="Indice del manuale">
+<div class="toc-part first">Parte I · Iniziare</div><div class="toc-grp">
+<a href="#1-che-cosè-bomtrack"><span class="n">1</span><span>Che cos'è Bomtrack</span></a>
+<a href="#2-avvio-e-primo-accesso"><span class="n">2</span><span>Avvio e primo accesso</span></a>
+<a href="#3-linterfaccia"><span class="n">3</span><span>L'interfaccia</span></a>
+</div>
+<div class="toc-part">Parte II · Il flusso di lavoro</div><div class="toc-grp">
+<a href="#4-come-si-lavora-con-bomtrack--il-giro-completo"><span class="n">4</span><span>Come si lavora con Bomtrack — il giro completo</span></a>
+<a href="#5-riepilogo--richiede-attenzione"><span class="n">5</span><span>Riepilogo — «Richiede attenzione»</span></a>
+</div>
+<div class="toc-part">Parte III · Gli archivi</div><div class="toc-grp">
+<a href="#6-anagrafica--acquisti"><span class="n">6</span><span>Anagrafica → Acquisti</span></a>
+<a href="#7-anagrafica--progetto"><span class="n">7</span><span>Anagrafica → Progetto</span></a>
+<a href="#8-la-scheda-articolo-campo-per-campo"><span class="n">8</span><span>La scheda articolo, campo per campo</span></a>
+<a href="#9-i-codici-automatici"><span class="n">9</span><span>I codici automatici</span></a>
+<a href="#10-listino-fornitori"><span class="n">10</span><span>Listino fornitori</span></a>
+<a href="#11-dove-è-usato-e-simulazione-del-costo"><span class="n">11</span><span>Dove è usato e simulazione del costo</span></a>
+<a href="#12-pannello-laterale-e-selezione-multipla"><span class="n">12</span><span>Pannello laterale e selezione multipla</span></a>
+</div>
+<div class="toc-part">Parte IV · Il prodotto</div><div class="toc-grp">
+<a href="#13-distinta-base--gestione-db"><span class="n">13</span><span>Distinta base → Gestione DB</span></a>
+<a href="#14-cicli-di-lavorazione"><span class="n">14</span><span>Cicli di lavorazione</span></a>
+<a href="#15-revisioni"><span class="n">15</span><span>Revisioni</span></a>
+<a href="#16-costificazione--visualizza-db"><span class="n">16</span><span>Costificazione — Visualizza DB</span></a>
+</div>
+<div class="toc-part">Parte V · Le operazioni</div><div class="toc-grp">
+<a href="#17-magazzino"><span class="n">17</span><span>Magazzino</span></a>
+<a href="#18-commesse"><span class="n">18</span><span>Commesse</span></a>
+<a href="#19-fabbisogno-materiali"><span class="n">19</span><span>Fabbisogno materiali</span></a>
+<a href="#20-richieste-di-offerta-rfq"><span class="n">20</span><span>Richieste di offerta (RFQ)</span></a>
+<a href="#21-ordini-a-fornitore-oda"><span class="n">21</span><span>Ordini a fornitore (ODA)</span></a>
+<a href="#22-ordini-di-lavoro-odl-e-conto-lavoro"><span class="n">22</span><span>Ordini di lavoro (ODL) e conto lavoro</span></a>
+<a href="#23-carico-dei-centri-di-lavoro"><span class="n">23</span><span>Carico dei centri di lavoro</span></a>
+</div>
+<div class="toc-part">Parte VI · Amministrazione</div><div class="toc-grp">
+<a href="#24-gestione"><span class="n">24</span><span>Gestione</span></a>
+<a href="#25-utenti-e-ruoli"><span class="n">25</span><span>Utenti e ruoli</span></a>
+<a href="#26-import-ed-export-da-excel"><span class="n">26</span><span>Import ed export da Excel</span></a>
+<a href="#27-export-di-elenchi-e-documenti"><span class="n">27</span><span>Export di elenchi e documenti</span></a>
+<a href="#28-stampa"><span class="n">28</span><span>Stampa</span></a>
+<a href="#29-backup-e-manutenzione"><span class="n">29</span><span>Backup e manutenzione</span></a>
+<a href="#30-quando-larchivio-è-condiviso-supabase"><span class="n">30</span><span>Quando l'archivio è condiviso (Supabase)</span></a>
+</div>
+<div class="toc-part">Parte VII · Riferimenti</div><div class="toc-grp">
+<a href="#31-scorciatoie-da-tastiera"><span class="n">31</span><span>Scorciatoie da tastiera</span></a>
+<a href="#32-stati-dei-documenti"><span class="n">32</span><span>Stati dei documenti</span></a>
+<a href="#33-glossario"><span class="n">33</span><span>Glossario</span></a>
+<a href="#34-domande-frequenti"><span class="n">34</span><span>Domande frequenti</span></a>
+</div>
+<div class="toc-part">Appendice A · Come funziona sotto</div><div class="toc-grp">
+<a href="#a1-lo-stack"><span class="n">·</span><span>A.1 Lo stack</span></a>
+<a href="#a2-dove-risiedono-i-dati"><span class="n">·</span><span>A.2 Dove risiedono i dati</span></a>
+<a href="#a3-le-collezioni"><span class="n">·</span><span>A.3 Le collezioni</span></a>
+<a href="#a4-i-file-sorgente"><span class="n">·</span><span>A.4 I file sorgente</span></a>
+<a href="#a5-i-test"><span class="n">·</span><span>A.5 I test</span></a>
+<a href="#a6-i-limiti-architetturali"><span class="n">·</span><span>A.6 I limiti architetturali</span></a>
+</div>
+      <div class="empty" id="empty" hidden>Nessun capitolo con questo testo.</div>
+    </nav>
+  </aside>
+
+  <main class="main">
+    <header class="mast">
+      <div class="kick">
+        <span class="chip">Distinte base</span>
+        <span class="chip">Costificazione</span>
+        <span class="chip">Acquisti e conto lavoro</span>
+      </div>
+      <h1>Manuale d&rsquo;uso di Bomtrack</h1>
+      <p class="lede">Cosa fa ogni schermata, come si compilano i campi e &mdash; soprattutto &mdash;
+        in che ordine si lavora: dalla commessa del cliente fino alla merce che entra a magazzino.</p>
+      <p class="lede lede2">Se &egrave; il primo giorno, leggi nell&rsquo;ordine il capitolo 1, il 2 e
+        poi tutto il 4: il capitolo 4 &egrave; il giro completo del lavoro, e gli altri sono il
+        dettaglio di ciascuna sua tappa.</p>
+      <a class="back" href="index.html">&larr; Torna all&rsquo;app</a>
+    </header>
+
+    <article class="doc" id="doc">
+<h1 id="parte-i--iniziare">Parte I — Iniziare</h1>
+<h2 id="1-che-cosè-bomtrack">1. Che cos'è Bomtrack</h2>
+<p>Bomtrack è l'applicazione con cui si tiene il <strong>prodotto</strong> e il <strong>lavoro che ci gira intorno</strong> in un'officina meccanica:</p>
+<ul><li>le <strong>distinte base multi-livello</strong> delle macchine — macchina, gruppi, sottogruppi, parti, senza limite di profondità;</li><li>la <strong>costificazione automatica</strong> di ogni assieme, dalla vite alla macchina finita;</li><li>il <strong>magazzino</strong> di quello che si tiene a scaffale;</li><li>i <strong>cicli di lavorazione</strong> delle parti, con le fasi interne e quelle affidate fuori;</li><li>il <strong>fabbisogno materiali</strong> che nasce dalle commesse dei clienti;</li><li>il ciclo acquisti completo: <strong>richieste di offerta</strong>, <strong>ordini a fornitore</strong>, <strong>ordini di lavoro</strong> al terzista, ricevimenti e <strong>conto lavoro</strong>.</li></ul>
+<p>È pensata per chi progetta, chi compra e chi manda in produzione, e tiene queste tre viste sullo stesso archivio: la parte che il progettista disegna è la stessa che l'ufficio acquisti ordina ed è la stessa che il magazziniere trova sullo scaffale.</p>
+<h3 id="cosa-bomtrack-non-fa">Cosa Bomtrack non fa</h3>
+<p>Vale la pena dirlo subito, perché evita di cercare funzioni che non ci sono.</p>
+<ul><li><strong>Non schedula la produzione.</strong> Il <em>Carico centri</em> mostra le ore che i piani chiedono a ciascun centro settimana per settimana, e segnala il sovraccarico. Non lo risolve: non c'è calendario, non c'è data di avvio di una fase, la capacità è <strong>infinita</strong>.</li><li><strong>Non ha l'avanzamento di produzione.</strong> Non si dichiara «pezzo fatto». Il magazzino si muove con i movimenti e con i ricevimenti degli ordini, non con dei versamenti di produzione.</li><li><strong>Non è un gestionale amministrativo.</strong> Niente fatture, niente contabilità, niente DDT.</li><li><strong>Non è multi-utente in tempo reale.</strong> Ogni PC ha il suo archivio. Due colleghi che lavorano su due PC lavorano su due copie diverse: si allineano con un backup (→ <a href="#29-backup-e-manutenzione">cap. 29</a>). L'archivio condiviso è progettato ma non ancora attivo: cosa cambierà, e cosa conviene già fare adesso, sta nel <a href="#30-quando-larchivio-è-condiviso-supabase">cap. 30</a>.</li><li><strong>I ruoli non sono sicurezza.</strong> Servono a separare le responsabilità tra colleghi, non a proteggere i dati (→ <a href="#25-utenti-e-ruoli">cap. 25</a>).</li></ul>
+<blockquote class="crit"><p>⚠️ <strong>I dati risiedono in questo browser, su questo PC.</strong> Non c'è un server. Svuotare i dati del sito, cambiare browser o cambiare PC significa non trovare più l'archivio. Fai backup regolari: <em>Gestione → Backup → Esporta JSON</em>. È l'unica cosa di questo manuale che, se la salti, ti costa davvero cara — e resterà vera anche il giorno in cui l'archivio sarà condiviso (→ <a href="#30-quando-larchivio-è-condiviso-supabase">cap. 30</a>).</p></blockquote>
+<hr>
+<h2 id="2-avvio-e-primo-accesso">2. Avvio e primo accesso</h2>
+<h3 id="aprire-lapp">Aprire l'app</h3>
+<p>Bomtrack è una cartella di file. Si apre facendo <strong>doppio click su <code>index.html</code></strong>, oppure — se lavori in VS Code — con l'estensione <em>Live Server</em>. Non c'è nulla da installare e nulla da compilare.</p>
+<p><strong>Non serve la rete, mai.</strong> Le librerie che generano i PDF e gli Excel stanno dentro la cartella dell'app: copiando la cartella su un altro PC funziona tutto, export compresi.</p>
+<h3 id="il-primo-avvio">Il primo avvio</h3>
+<p>La prima volta Bomtrack chiede di creare l'<strong>amministratore</strong>: nome e cognome, email e password. Quello che si scrive lì è il primo utente, ed è l'unico che all'inizio può entrare in <em>Gestione</em>.</p>
+<p>Insieme all'amministratore l'app carica dei <strong>dati di esempio</strong> — la macchina «Nastro Trasportatore NT-100» con i suoi gruppi, le sue parti e qualche fornitore. Servono a guardarsi intorno senza partire dal vuoto. Quando si comincia a lavorare sul serio si azzerano da <em>Gestione → Backup → AZZERA TUTTO</em>.</p>
+<h3 id="gli-avvii-successivi">Gli avvii successivi</h3>
+<p>Si entra con <strong>email e password</strong>. La casella <strong>Ricordami su questo PC</strong> conserva l'email e tiene la sessione aperta fino a <strong>Esci</strong>; quanto duri lo decide l'amministratore in <em>Gestione → Impostazioni → Accesso</em> (0 giorni = non scade mai).</p>
+<h3 id="la-versione">La versione</h3>
+<p>Il numero di versione si legge <strong>accanto al logo, in alto a sinistra</strong> (es. <code>v0.73.0</code>). Corrisponde alla voce in cima al changelog: serve quando si segnala un problema.</p>
+<h3 id="dove-sta-questo-manuale">Dove sta questo manuale</h3>
+<p>Il pulsante 📖 <strong>Manuale d'uso</strong> nell'intestazione lo apre in una scheda nuova, da qualunque schermata. È il file <code>manuale.html</code>, che sta nella cartella dell'app accanto a <code>index.html</code>: funziona <strong>senza rete</strong> come tutto il resto, e viaggia con la cartella quando la si copia su un altro PC. Si apre nel tema scelto nell'app, e si stampa con <code>Ctrl+P</code>.</p>
+<p>Nella cartella c'è anche <code>MANUALE.md</code>, lo stesso testo in formato Markdown: è la versione che si legge in un editor o su GitHub.</p>
+<h3 id="portare-lapp-su-un-altro-pc">Portare l'app su un altro PC</h3>
+<ol><li>Sul PC di partenza: <em>Gestione → Backup → <strong>Esporta JSON</strong></em>. Si scarica un file.</li><li>Copia l'intera cartella di Bomtrack sul PC di arrivo.</li><li>Apri <code>index.html</code>, crea l'amministratore, poi <em>Gestione → Backup → <strong>Importa JSON</strong></em>.</li></ol>
+<blockquote class="crit"><p>⚠️ <strong>Importa JSON sovrascrive l'archivio corrente.</strong> Se sul PC di arrivo c'era già del lavoro, esportalo prima.</p></blockquote>
+<hr>
+<h2 id="3-linterfaccia">3. L'interfaccia</h2>
+<h3 id="lintestazione">L'intestazione</h3>
+<p>In alto, da sinistra a destra:</p>
+<div class="tw"><table><thead><tr><th>Elemento</th><th>A cosa serve</th></tr></thead><tbody><tr><td><strong>Logo e versione</strong></td><td>Identità dell'app e revisione in esecuzione</td></tr><tr><td><strong>Barra di navigazione</strong></td><td>I sette gruppi di funzioni (vedi sotto)</td></tr><tr><td><strong>Badge modifiche non salvate</strong></td><td>Compare quando un documento aperto ha modifiche in sospeso</td></tr><tr><td><strong>Orologio</strong></td><td>Data e ora correnti</td></tr><tr><td><strong>Pillola utente</strong></td><td>Chi è connesso, con il suo colore</td></tr><tr><td>🔎 <strong>Cerca ovunque</strong></td><td>Ricerca globale — <code>Ctrl+K</code></td></tr><tr><td>🖨 <strong>Stampa questa vista</strong></td><td>Stampa pulita della schermata — <code>Ctrl+P</code></td></tr><tr><td>📖 <strong>Manuale d'uso</strong></td><td><strong>Questo manuale.</strong> Si apre in una scheda nuova, così resta consultabile mentre si lavora, senza perdere il documento aperto</td></tr><tr><td>🌗 <strong>Cambia tema</strong></td><td>Gira su tre stati: <em>come il sistema</em>, <em>chiaro</em>, <em>scuro</em></td></tr><tr><td>🔑 <strong>Cambia password</strong></td><td>La propria password</td></tr><tr><td><strong>Esci</strong></td><td>Chiude la sessione</td></tr></tbody></table></div>
+<h3 id="la-navigazione-a-due-livelli">La navigazione a due livelli</h3>
+<p>La barra dei comandi ha <strong>sette gruppi</strong>. Cliccando un gruppo, le sue voci compaiono su una seconda riga; il gruppo con una voce sola non mostra la seconda riga. <strong>Ogni gruppo ricorda l'ultima voce usata</strong>: tornando su <em>Documenti</em> si riapre dove si era rimasti.</p>
+<div class="tw"><table><thead><tr><th>Gruppo</th><th>Voci</th></tr></thead><tbody><tr><td>🏠 <strong>Riepilogo</strong></td><td><em>(voce unica)</em></td></tr><tr><td>📇 <strong>Anagrafica</strong></td><td>Acquisti · Progetto</td></tr><tr><td>📦 <strong>Magazzino</strong></td><td><em>(voce unica)</em></td></tr><tr><td>🔧 <strong>Cicli di lavorazione</strong></td><td>Cicli di lavorazione · Carico centri</td></tr><tr><td>🌳 <strong>Distinta base</strong></td><td>Gestione DB · Visualizza DB</td></tr><tr><td>📨 <strong>Documenti</strong></td><td>Commesse · Fabbisogno · Richieste offerta · Ordini · Ordini di lavoro</td></tr><tr><td>⚙️ <strong>Gestione</strong></td><td><em>(voce unica — solo amministratori)</em></td></tr></tbody></table></div>
+<p>La vista aperta finisce <strong>nell'indirizzo del browser</strong> (<code>…index.html#mrp</code>). Ne segue che i tasti <em>Indietro</em> e <em>Avanti</em> del browser funzionano, e che un indirizzo si può salvare tra i preferiti o mandare a un collega che ha la stessa app.</p>
+<h3 id="le-due-forme-di-schermata">Le due forme di schermata</h3>
+<p>Bomtrack usa due impaginazioni, e riconoscerle aiuta a orientarsi.</p>
+<p><strong>Elenco a tutta pagina</strong> — Anagrafiche, Magazzino, Cicli, Distinta base, Carico centri. Toolbar in alto, barra dei filtri sotto, elenco al centro. A destra si può aprire il <strong>pannello laterale</strong> (<code>Ctrl+I</code>, → <a href="#12-pannello-laterale-e-selezione-multipla">cap. 12</a>).</p>
+<p><strong>Elenco a destra, documento al centro</strong> — Commesse, Fabbisogno, Richieste, Ordini, Ordini di lavoro. L'elenco sta in una colonna a destra e <strong>resta visibile mentre si lavora un documento</strong>, che occupa il centro. Si passa da un documento all'altro con un click, senza tornare indietro e ricercare la riga; la riga aperta resta marcata e i documenti chiusi o annullati si vedono spenti. I filtri stanno impilati nella colonna dell'elenco, e i comandi che agiscono sul documento stanno nella sua testata. <strong>Le modifiche in sospeso si salvano da sole</strong> quando si apre un altro documento. In stampa esce il documento, non l'elenco.</p>
+<h3 id="le-schede-mobili">Le schede mobili</h3>
+<p>Le finestre di dialogo <strong>non bloccano la pagina</strong>: si spostano trascinandole per il titolo, si ridimensionano dall'angolo in basso a destra e si chiudono con ✕ o con <code>Esc</code>. Dietro si continua a navigare, e più schede possono restare aperte insieme — per esempio il listino di un articolo e <em>Dove è usato</em> dello stesso, per confrontarli.</p>
+<h3 id="il-tema">Il tema</h3>
+<p>Il pulsante 🌗 nell'intestazione gira su tre stati: <strong>come il sistema</strong> (quello di partenza), <strong>chiaro</strong>, <strong>scuro</strong>. La scelta resta su questo browser e non viene condivisa con i colleghi: è una preferenza personale, non un dato aziendale. <strong>In stampa la carta resta bianca</strong> in tutti e tre i casi.</p>
+<hr>
+<h1 id="parte-ii--il-flusso-di-lavoro">Parte II — Il flusso di lavoro</h1>
+<h2 id="4-come-si-lavora-con-bomtrack--il-giro-completo">4. Come si lavora con Bomtrack — il giro completo</h2>
+<p>Questo è il capitolo che dà senso a tutti gli altri. Bomtrack non è un insieme di schermate indipendenti: è <strong>una catena</strong>, e ogni anello ha bisogno di quello prima.</p>
+<h3 id="lo-schema">Lo schema</h3>
+<pre><code>    ┌──────────────────────────────────────────────────────────────┐
+ 0. │  GESTIONE — gli archivi di base                              │
+    │  U.M. · famiglie · concetti · fornitori · clienti            │
+    │  centri di lavoro · impostazioni (costi, codifica)           │
+    └────────────────────────────┬─────────────────────────────────┘
+                                 │
+    ┌────────────────────────────▼─────────────────────────────────┐
+ 1. │  ANAGRAFICA ACQUISTI          ANAGRAFICA PROGETTO            │
+    │  commerciali, materie prime   macchine, gruppi, sottogruppi, │
+    │  + LISTINO FORNITORI          parti                          │
+    └──────────┬────────────────────────────┬──────────────────────┘
+               │                            │
+               ▼                            ▼
+ 2.   CICLI DI LAVORAZIONE          DISTINTA BASE (albero)
+      distinta parte + fasi   ────▶  macchina › gruppi › parti
+               │                            │
+               └────────────┬───────────────┘
+                            ▼
+ 3.                  COSTIFICAZIONE
+                  «quanto costa la macchina»
+                            │
+    ────────────────────────┼────────────────────────────────────────
+                            │
+ 4.   COMMESSA CLIENTE ─────▶ PIANO DI FABBISOGNO
+      (chi, cosa, quando)     (quante macchine, per quando)
+                                       │
+                    ┌──────────────────┼───────────────────┐
+                    ▼                  ▼                   ▼
+ 5.        DA ACQUISTARE      DA FAR LAVORARE      DA FABBRICARE
+                    │            FUORI                     │
+                    │                  │                   ▼
+                    │                  │            CARICO CENTRI
+                    │                  │            (ore interne)
+         ┌──────────┴──────┐           │
+         ▼                 ▼           ▼
+ 6.  RICHIESTA         ORDINE      ORDINE DI LAVORO
+     OFFERTA (RFQ)     (ODA)       (ODL)
+         │                 │           │
+         │ prezzi          │ ricevi    │ conto lavoro
+         ▼                 ▼           ▼
+     LISTINO ──────▶  MAGAZZINO ◀──────┘</code></pre>
+<h3 id="41-prima-di-tutto-preparare-gli-archivi">4.1 Prima di tutto: preparare gli archivi</h3>
+<p><em>(→ <a href="#24-gestione">cap. 24</a>)</em></p>
+<p>Si comincia da <strong>⚙️ Gestione</strong>, e conviene farlo in quest'ordine, perché ogni voce serve a compilare la successiva:</p>
+<ol><li><strong>Unità di misura</strong> — pz, kg, m, h… Con una ★ predefinita, proposta alle nuove righe.</li><li><strong>Famiglie</strong> — tre elenchi separati (commerciali, materie prime, parti), ciascuno con macrofamiglie e sottofamiglie. Le sigle delle famiglie entrano nei codici automatici.</li><li><strong>Concetti</strong> — la nomenclatura delle parti: <code>ALBERO</code>, <code>FLANGIA</code>, <code>STAFFA</code>… Il nome di una parte non è testo libero, è <strong>concetto + descrizione</strong>.</li><li><strong>Fornitori</strong> — con pagamento e trasporto predefiniti, che si riproporranno su ogni documento.</li><li><strong>Clienti</strong> — l'anagrafica a monte delle commesse.</li><li><strong>Centri di lavoro</strong> — nome, <strong>tariffa €/h</strong> e <strong>capacità in ore/settimana</strong>; sotto ciascuno, i <strong>fornitori di conto lavoro</strong> che sanno fare quella lavorazione, con la loro tariffa.</li><li><strong>Impostazioni</strong> — spese generali %, margine %, valuta, approvvigionamento predefinito delle parti, e i prefissi della codifica automatica.</li></ol>
+<blockquote><p>Saltare questo passo non blocca niente, ma costringe a tornare indietro: si scopre di non poter scegliere l'unità di misura mentre si crea il primo articolo, o di non avere il centro di lavoro mentre si scrive la prima fase di ciclo.</p></blockquote>
+<h3 id="42-costruire-il-prodotto">4.2 Costruire il prodotto</h3>
+<p><em>(→ capitoli <a href="#6-anagrafica--acquisti">6</a>, <a href="#7-anagrafica--progetto">7</a>, <a href="#14-cicli-di-lavorazione">14</a>, <a href="#13-distinta-base--gestione-db">13</a>)</em></p>
+<p>Si costruisce <strong>dal basso verso l'alto</strong>, perché il costo di un assieme è la somma di ciò che contiene: finché le foglie non hanno un prezzo, il ramo non ha un costo.</p>
+<p><strong>a) Quello che si compra</strong> — <em>Anagrafica → Acquisti</em>. Materie prime (barra d'acciaio a €/kg, lamiera a €/kg) e componenti commerciali (cuscinetti, motori, viteria). Per ognuno, il prezzo si inserisce <strong>dal listino fornitori</strong> (→ <a href="#10-listino-fornitori">cap. 10</a>): è l'unico posto dove nasce un prezzo d'acquisto, e il campo nella scheda articolo è di sola lettura apposta.</p>
+<p><strong>b) Le parti</strong> — <em>Anagrafica → Progetto</em>, tipo <strong>Parte</strong>. Ogni parte dichiara il suo <strong>approvvigionamento</strong>:</p>
+<ul><li><strong>Acquisto da fornitore</strong> — la parte si compra già fatta. Il suo costo è il prezzo a listino, e nel fabbisogno è una foglia d'acquisto come un commerciale.</li><li><strong>Produzione interna</strong> — la parte si fa in casa. Il suo costo è la somma della <strong>distinta parte</strong> (il materiale) più il <strong>ciclo di lavorazione</strong> (le fasi), e nel fabbisogno l'app scende dentro e compra il materiale invece della parte.</li></ul>
+<p><strong>c) I cicli</strong> — <em>Cicli di lavorazione</em>. Per ogni parte a produzione interna: la <strong>distinta parte</strong> (cosa serve: 2,4 kg di quella barra) e il <strong>ciclo</strong> (fasi 10, 20, 30…: tornitura al centro Torni, 2 ore; zincatura da Beta, 5 giorni). Una fase <strong>senza fornitore</strong> è interna e carica un centro; una fase <strong>con fornitore</strong> è conto lavoro e diventerà un ordine di lavoro.</p>
+<p><strong>d) Gli assiemi</strong> — <em>Distinta base → Gestione DB</em>. Si apre la macchina e le si appendono i gruppi, ai gruppi i sottogruppi, ai sottogruppi le parti e i commerciali. Ogni riga ha una <strong>quantità</strong> e una <strong>percentuale di scarto</strong>. Gli assiemi possono avere anche lavorazioni proprie (il montaggio).</p>
+<h3 id="43-sapere-quanto-costa">4.3 Sapere quanto costa</h3>
+<p><em>(→ <a href="#16-costificazione--visualizza-db">cap. 16</a>)</em></p>
+<p><em>Distinta base → <strong>Visualizza DB</strong></em>: si sceglie la macchina e si legge il costo, diviso per voci (materiale, commerciali, parti, lavorazioni, spese generali) con l'<strong>incidenza</strong> di ciascuna e il <strong>prezzo di vendita</strong> che ne segue. Il pulsante <strong>Da dove viene questo costo</strong> apre l'elenco degli articoli che pesano di più: è la risposta alla domanda «perché costa così tanto».</p>
+<p>Da qui si esce con il PDF e l'Excel della distinta esplosa, che è quello che si manda a chi fa il preventivo.</p>
+<h3 id="44-dal-cliente-al-fabbisogno">4.4 Dal cliente al fabbisogno</h3>
+<p><em>(→ capitoli <a href="#18-commesse">18</a> e <a href="#19-fabbisogno-materiali">19</a>)</em></p>
+<p>Fin qui si è descritto <strong>il prodotto</strong>. Da qui in poi si lavora su <strong>un lavoro concreto</strong>.</p>
+<p><strong>a) La commessa</strong> — <em>Documenti → Commesse → <strong>+ Nuova commessa</strong></em>. Cliente, descrizione, riferimento del cliente, data di apertura e <strong>consegna al cliente</strong>. La commessa è il contenitore: ci si agganciano i piani, le richieste e gli ordini, e la sua scheda dirà in ogni momento se il materiale c'è.</p>
+<p><strong>b) Il piano di fabbisogno</strong> — <em>Documenti → Fabbisogno → <strong>+ Nuovo piano</strong></em>. Si mette il piano sotto la sua commessa, si dichiara la <strong>consegna richiesta</strong>, e nella sezione <strong>Da produrre</strong> si scrive cosa e quanto: <em>3 × Nastro NT-100</em>, <em>2 × Nastro NT-200</em>.</p>
+<p><strong>c) L'esplosione</strong> — l'app scende in tutte le distinte, moltiplica per le quantità, somma gli articoli che ricorrono in più punti e produce quattro sezioni:</p>
+<ul><li><strong>Da acquistare</strong> — la lista d'acquisto consolidata;</li><li><strong>Da far lavorare fuori</strong> — le fasi di ciclo affidate a un terzista;</li><li><strong>Da fabbricare</strong> — le parti che si fanno in casa;</li><li><strong>Carico dei centri</strong> — le ore che le fasi interne chiedono ai centri.</li></ul>
+<p><strong>d) Il netto</strong> — con la casella <strong>Fabbisogno netto</strong> attiva, l'app toglie da ogni riga quello che è già a magazzino, quello già ordinato, e aggiunge quello che gli <strong>altri piani aperti</strong> hanno già impegnato:</p>
+<pre><code>netto = lordo + scorta minima + impegnato − esistente − in arrivo</code></pre>
+<p>arrotondato al <strong>lotto di riordino</strong> dell'articolo. Così due piani non si dichiarano coperti con la stessa merce. <strong>Il netto non si applica alle lavorazioni</strong>: una fase non sta a scaffale.</p>
+<h3 id="45-comprare">4.5 Comprare</h3>
+<p><em>(→ capitoli <a href="#20-richieste-di-offerta-rfq">20</a> e <a href="#21-ordini-a-fornitore-oda">21</a>)</em></p>
+<p>Dal piano, tre pulsanti: <strong>Genera richieste</strong>, <strong>Genera ordini</strong>, <strong>Genera ordini di lavoro</strong>. Ognuno apre una finestra con le righe raggruppate per fornitore e le caselle per scegliere cosa includere; ne esce <strong>un documento per fornitore</strong>.</p>
+<p><strong>Il percorso lungo — quando il prezzo non c'è:</strong></p>
+<ol><li><strong>Genera richieste</strong> → nascono le RFQ (<code>RFQ-2026-001</code>…), una per fornitore.</li><li>Si genera il <strong>documento PDF</strong> (bilingue italiano/inglese) e lo si manda. Alla generazione l'app propone di passare lo stato a <em>Inviata</em>.</li><li>Torna l'offerta: si scrivono i <strong>prezzi</strong> nelle righe. Quando ci sono tutti, lo stato passa da solo a <em>Offerta ricevuta</em>.</li><li><strong>Registra a listino</strong> trasforma quei prezzi in <strong>quotazioni</strong> nel listino degli articoli: da quel momento la costificazione li conosce.</li><li>Con più richieste sullo stesso materiale, <strong>Confronta offerte</strong> le mette a fianco.</li><li><strong>Crea ordine</strong> converte la richiesta in ordine. La richiesta passa a <em>Chiusa</em>.</li></ol>
+<p><strong>Il percorso corto — quando il prezzo c'è già:</strong> dal piano, <strong>Genera ordini</strong> direttamente.</p>
+<p><strong>Poi, quando la merce arriva:</strong> si apre l'ordine e si scrive quanto è arrivato nella colonna <strong>Ricevuto</strong> (o si usa <strong>✓ Segna tutto ricevuto</strong>). Il ricevimento <strong>carica il magazzino da solo</strong>: non serve registrare anche un movimento. Lo stato dell'ordine passa a <em>Parziale</em> o a <em>Evaso</em>.</p>
+<blockquote class="warn"><p>⚠️ Ne segue una conseguenza da conoscere: <strong>cancellare un ordine già ricevuto toglie la sua merce dal magazzino.</strong> È coerente — quel carico esisteva perché esisteva quell'ordine — ma chi cancella un ordine vecchio deve saperlo.</p></blockquote>
+<h3 id="46-far-lavorare-fuori">4.6 Far lavorare fuori</h3>
+<p><em>(→ <a href="#22-ordini-di-lavoro-odl-e-conto-lavoro">cap. 22</a>)</em></p>
+<p>Le fasi di ciclo affidate a un terzista sono denaro che esce come qualunque acquisto, e hanno il loro documento: l'<strong>ordine di lavoro</strong> (<code>ODL-2026-001</code>).</p>
+<ol><li>Dal piano, <strong>Genera ordini di lavoro</strong>: un ODL per terzista <strong>e per passata</strong> (se un pezzo torna dallo stesso terzista una seconda volta, dopo essere passato altrove, sono due ODL — fra le due il pezzo torna da noi).</li><li>Ogni riga è una <strong>tratta</strong>: le fasi <em>consecutive</em> dello stesso terzista stanno insieme («fasi 20-30»), col prezzo e i giorni sommati.</li><li><strong>Si spedisce il materiale</strong> — dalla riga dell'ODL, il comando di uscita a conto lavoro. Esce il materiale scritto nel ciclo della parte, con le quantità proposte in automatico (<em>q.tà del ciclo × pezzi dell'ordine</em>). Il magazzino <strong>scarica</strong>.</li><li><strong>Fra due terzisti</strong> — se il pezzo passa da Beta a Gamma, si registra un <strong>passaggio di lavorazione</strong>: cambia il luogo, <strong>la giacenza non si muove</strong>.</li><li><strong>Rientrano i pezzi</strong> — all'ultima fase, il rientro da conto lavoro <strong>carica</strong> il pezzo finito.</li></ol>
+<p><strong>Il magazzino si muove in due punti soli</strong>, e sono i due estremi del <em>ciclo</em>, non quelli del documento: esce il materiale alla prima fase esterna, entra il pezzo finito all'ultima. Ogni altro estremo è un passaggio. Senza questa distinzione, una parte lavorata due volte dallo stesso terzista farebbe uscire il materiale due volte e caricare il pezzo due volte.</p>
+<p>Il campo <strong>Rientrati</strong> sull'ODL significa <em>pezzi tornati</em>: porta l'ordine a evaso, <strong>non carica il magazzino</strong> — quello lo fanno i movimenti di conto lavoro.</p>
+<p>In ogni momento, il pulsante <strong>Presso terzi</strong> in Magazzino dice cosa sta fuori e da chi.</p>
+<h3 id="47-guardare-la-produzione-interna">4.7 Guardare la produzione interna</h3>
+<p><em>(→ <a href="#23-carico-dei-centri-di-lavoro">cap. 23</a>)</em></p>
+<p><em>Cicli di lavorazione → <strong>Carico centri</strong></em>: le ore che i piani aperti chiedono a ciascun centro, settimana per settimana, contro la capacità dichiarata. Il sovraccarico si vede in rosso, con le settimane e i centri nominati. Sotto, <strong>i codici da produrre</strong> ordinati per settimana e per ore: la risposta a «cosa lancio per primo».</p>
+<h3 id="48-chiudere-il-giro">4.8 Chiudere il giro</h3>
+<ul><li>Quando la commessa parte, la si mette <strong>In produzione</strong>: l'app chiede conferma nominando i codici ancora mancanti e la data di consegna. <strong>Avvisa, non blocca.</strong></li><li>Un piano che non serve più si <strong>chiude</strong>: la sua quota di merce impegnata torna libera per gli altri piani. Un piano chiuso non sparisce, smette solo di impegnare.</li><li>La commessa finita si mette <strong>Chiusa</strong>.</li></ul>
+<h3 id="49-il-ciclo-quotidiano">4.9 Il ciclo quotidiano</h3>
+<p>Ogni mattina si apre il <strong>🏠 Riepilogo</strong>: commesse in ritardo, righe da ordinare che scadono, ordini confermati oltre la data, richieste senza risposta, articoli sotto scorta o senza prezzo. Ogni voce è cliccabile e porta esattamente dove si risolve.</p>
+<hr>
+<h2 id="5-riepilogo--richiede-attenzione">5. Riepilogo — «Richiede attenzione»</h2>
+<p><strong>A cosa serve.</strong> È la pagina di atterraggio: cosa c'è da fare <em>adesso</em>.</p>
+<p><strong>Come ci si arriva.</strong> 🏠 <em>Riepilogo</em>. È la vista che si apre al primo accesso.</p>
+<p><strong>Cosa si vede.</strong> Un elenco di segnali ordinati per gravità — <strong>alta</strong>, <strong>media</strong>, <strong>informativa</strong>. Ogni segnale <strong>nomina i codici e i numeri che lo riguardano</strong> (fino a otto, poi «+N altri in <em>sezione</em>»), spiega il perché nel suggerimento, e ogni voce è cliccabile e porta dove si risolve.</p>
+<div class="tw"><table><thead><tr><th>#</th><th>Segnale</th><th>Gravità</th><th>Dove porta</th></tr></thead><tbody><tr><td>1</td><td>Commesse oltre la data di consegna</td><td>🔴 alta</td><td>alla commessa</td></tr><tr><td>2</td><td>Commesse in produzione con materiale da ordinare</td><td>🔴 alta</td><td>alla commessa</td></tr><tr><td>3</td><td>Righe di fabbisogno da ordinare, <strong>già oltre la data</strong></td><td>🔴 alta</td><td>al piano</td></tr><tr><td>4</td><td>Righe di fabbisogno da ordinare <strong>entro 7 giorni</strong></td><td>🟠 media</td><td>al piano</td></tr><tr><td>5</td><td>Ordini confermati oltre la data richiesta (ODA e ODL)</td><td>🟠 media</td><td>all'ordine</td></tr><tr><td>6</td><td>Richieste inviate in attesa di risposta</td><td>🔵 info</td><td>alla richiesta</td></tr><tr><td>7</td><td>Articoli sotto la scorta minima</td><td>🟠 media</td><td>alla scheda articolo</td></tr><tr><td>8</td><td>Articoli d'acquisto senza prezzo</td><td>🟠 media</td><td>alla scheda articolo</td></tr><tr><td>9</td><td>Fasi a costo orario senza ore dichiarate</td><td>🟠 media</td><td>al ciclo</td></tr><tr><td>10</td><td>Codici articolo duplicati</td><td>🟠 media</td><td>a Gestione</td></tr></tbody></table></div>
+<p><strong>Il risparmio potenziale.</strong> In fondo la pagina calcola quanto si risparmierebbe scegliendo ovunque la quotazione più bassa già presente a listino. Non cambia niente da solo: è un invito a rivedere i prezzi in uso.</p>
+<p><strong>Da sapere.</strong> Il Riepilogo è <strong>derivato</strong>: non c'è niente da compilare e niente da spuntare. Un segnale sparisce quando sparisce la sua causa.</p>
+<hr>
+<h1 id="parte-iii--gli-archivi">Parte III — Gli archivi</h1>
+<p>I capitoli di questa parte e delle due successive seguono tutti la stessa griglia: <em>A cosa serve</em> → <em>Come ci si arriva</em> → <em>Cosa si vede</em> → <em>Comandi</em> → <em>Filtri</em> → <em>Finestre</em> → <em>Da sapere</em>.</p>
+<h2 id="6-anagrafica--acquisti">6. Anagrafica → Acquisti</h2>
+<p><strong>A cosa serve.</strong> L'archivio di <strong>ciò che si compra</strong>: componenti commerciali (cuscinetti, motori, viteria) e materie prime (barre, lamiere, profilati). La schermata si intitola <strong>«Commerciali &amp; Materie prime»</strong>.</p>
+<p><strong>Come ci si arriva.</strong> 📇 <em>Anagrafica → Acquisti</em>.</p>
+<p><strong>Cosa si vede.</strong> L'elenco degli articoli, <strong>200 per volta</strong> (in fondo, <em>Mostra altri</em> e <em>Mostra tutti</em>: i cataloghi grandi restano scorrevoli).</p>
+<p><strong>Comandi.</strong> In alto a destra la coppia <strong>Esporta Excel</strong> / <strong>Esporta PDF</strong>. Nella barra dei filtri, a destra: <strong>Colonne</strong> e <strong>+ Nuovo articolo</strong>.</p>
+<p><strong>Filtri.</strong></p>
+<div class="tw"><table><thead><tr><th>Filtro</th><th>Valori</th></tr></thead><tbody><tr><td>Ricerca</td><td>«Cerca codice o nome…»</td></tr><tr><td>Tipo</td><td>Tutti i tipi · Componente commerciale · Materia prima</td></tr><tr><td>Famiglia</td><td>Tutte le famiglie · <em>(le macrofamiglie definite)</em></td></tr><tr><td>Sottofamiglia</td><td>Tutte le sottofamiglie · <em>(quelle della famiglia scelta)</em></td></tr><tr><td>★ Solo preferiti</td><td>Interruttore: mostra solo gli articoli marcati preferiti</td></tr></tbody></table></div>
+<p><strong>Colonne disponibili</strong> (pulsante <strong>Colonne</strong>): Indicatori, <strong>Codice</strong>, <strong>Nome</strong>, Tipo, Famiglia, U.M., Costo unitario, Dettaglio. Codice e nome non si nascondono: sono l'identità della riga. La scelta resta anche domani, ed è <strong>separata</strong> da quella di <em>Progetto</em> — le due anagrafiche hanno le stesse colonne ma si guardano per motivi diversi.</p>
+<p><strong>Da sapere.</strong></p>
+<ul><li><strong>★ Preferito</strong> marca gli articoli che si usano spesso, e ha un filtro dedicato.</li><li><strong>⛔ Obsoleto</strong> marca quelli che non si devono più usare: restano negli archivi e nei documenti che li citano, ma si vedono spenti.</li><li><strong>Fornitore e prezzo non si scrivono qui.</strong> La scheda li mostra in sola lettura e rimanda al <strong>listino fornitori</strong> (→ <a href="#10-listino-fornitori">cap. 10</a>).</li><li>L'export <strong>esporta l'elenco, non la vista</strong>: le colonne nascoste ci sono comunque, e la paginazione non taglia niente.</li></ul>
+<hr>
+<h2 id="7-anagrafica--progetto">7. Anagrafica → Progetto</h2>
+<p><strong>A cosa serve.</strong> L'archivio di <strong>ciò che si costruisce</strong>. La schermata si intitola <strong>«Macchine, Gruppi &amp; Parti»</strong>.</p>
+<p><strong>Come ci si arriva.</strong> 📇 <em>Anagrafica → Progetto</em>.</p>
+<p><strong>I quattro tipi.</strong></p>
+<div class="tw"><table><thead><tr><th>Tipo</th><th>Che cos'è</th><th>Ha una distinta?</th></tr></thead><tbody><tr><td><strong>Macchina</strong></td><td>Il prodotto finito</td><td>Sì, l'albero completo</td></tr><tr><td><strong>Gruppo</strong></td><td>Un assieme di primo livello</td><td>Sì</td></tr><tr><td><strong>Sottogruppo</strong></td><td>Un assieme dentro un gruppo; può contenerne altri, senza limite</td><td>Sì</td></tr><tr><td><strong>Parte (lavorato)</strong></td><td>La foglia: il pezzo che si fa o si compra</td><td>Sì: <strong>distinta parte + ciclo</strong></td></tr></tbody></table></div>
+<p><strong>Comandi.</strong> <strong>Esporta Excel</strong> / <strong>Esporta PDF</strong>; nella barra filtri, <strong>Colonne</strong> e <strong>+ Nuovo articolo</strong>.</p>
+<p><strong>Filtri.</strong> Ricerca, tipo (i quattro qui sopra), famiglia, sottofamiglia.</p>
+<p><strong>Da sapere — l'approvvigionamento delle parti.</strong> Ogni parte dichiara come si ottiene, e la scelta cambia due cose insieme:</p>
+<div class="tw"><table><thead><tr><th>Approvvigionamento</th><th>Il costo viene da…</th><th>Nel fabbisogno…</th></tr></thead><tbody><tr><td><strong>Produzione interna</strong></td><td>distinta parte + ciclo di lavorazione</td><td>l'app <strong>scende dentro</strong> e compra il materiale</td></tr><tr><td><strong>Acquisto da fornitore</strong></td><td>il prezzo scelto a listino</td><td>la parte è una <strong>foglia d'acquisto</strong>, la distinta non si esplode</td></tr></tbody></table></div>
+<p>Le parti <strong>nuove</strong> nascono con l'impostazione predefinita (<em>Gestione → Impostazioni → Approvvigionamento parte</em>; di serie: <em>Acquisto da fornitore</em>). Cambiare quell'impostazione vale <strong>solo per le prossime</strong>: le parti già a catalogo restano come sono, perché cambiare retroattivamente riscriverebbe il fabbisogno di lavori già avviati.</p>
+<p>Una parte a <em>Produzione interna</em> <strong>senza righe di ciclo</strong> vale il prezzo a listino: non si finge un costo che non c'è.</p>
+<hr>
+<h2 id="8-la-scheda-articolo-campo-per-campo">8. La scheda articolo, campo per campo</h2>
+<p><strong>Come ci si arriva.</strong> <strong>+ Nuovo articolo</strong> in una delle due anagrafiche, oppure il comando <em>Modifica articolo</em> su una riga esistente.</p>
+<h3 id="i-campi">I campi</h3>
+<div class="tw"><table><thead><tr><th>Campo</th><th>Quando serve</th><th>Note</th></tr></thead><tbody><tr><td><strong>Parti da</strong></td><td>solo in creazione</td><td>Ricerca live: si sceglie un articolo esistente e la scheda si precompila con i suoi dati. Facoltativo.</td></tr><tr><td><strong>Tipo</strong></td><td>sempre</td><td><strong>Bloccato in modifica</strong>: un commerciale non diventa una parte.</td></tr><tr><td><strong>Codice</strong></td><td>sempre</td><td>Proposto automaticamente (→ <a href="#9-i-codici-automatici">cap. 9</a>). <strong>Appena lo si edita a mano, l'app smette di rigenerarlo.</strong></td></tr><tr><td><strong>Nome</strong></td><td>tutti i tipi tranne le parti</td><td>Testo libero.</td></tr><tr><td><strong>Concetto</strong> + <strong>Descrizione</strong></td><td><strong>solo parti</strong></td><td>Il nome di una parte è composto: <code>ALBERO</code> + <code>motore 20×100</code> → <code>ALBERO motore 20×100</code>. Il concetto è <strong>obbligatorio</strong> e si sceglie dall'elenco di <em>Gestione → Concetti</em>. Sotto i due campi c'è l'anteprima del nome che ne esce.</td></tr><tr><td><strong>Unità di misura</strong></td><td>sempre</td><td>Dall'elenco di <em>Gestione → Unità di misura</em>.</td></tr><tr><td><strong>Approvvigionamento</strong></td><td>solo parti</td><td><em>Produzione interna</em> / <em>Acquisto da fornitore</em> (→ <a href="#7-anagrafica--progetto">cap. 7</a>).</td></tr><tr><td><strong>Fornitore e prezzo d'acquisto</strong></td><td>—</td><td><strong>Riquadro in sola lettura.</strong> Mostra la quotazione in uso; il pulsante accanto apre il <strong>listino</strong>.</td></tr><tr><td><strong>Macrofamiglia</strong> / <strong>Sottofamiglia</strong></td><td>consigliato</td><td>Servono ai filtri, ai raggruppamenti e ai codici automatici.</td></tr><tr><td><strong>Macchina di appartenenza</strong> / <strong>Gruppo</strong> / <strong>Sigla</strong></td><td>codifica gerarchica</td><td>Dicono dove sta l'articolo nella struttura di prodotto, e da lì nasce il suo codice.</td></tr><tr><td><strong>Distinta parte e ciclo</strong></td><td>solo parti</td><td>Non si compila qui: c'è la nota e il pulsante <strong>Apri il ciclo</strong>.</td></tr><tr><td><strong>★ Preferito</strong></td><td>facoltativo</td><td>Ha un filtro dedicato nelle anagrafiche.</td></tr><tr><td><strong>⛔ Obsoleto</strong></td><td>facoltativo</td><td>Non più utilizzabile; resta visibile, spento.</td></tr><tr><td><strong>U.M. d'acquisto (se diversa)</strong> + <strong>Fattore di conversione</strong></td><td>quando si compra in un'unità e si usa in un'altra</td><td>Si compra la barra a pezzi da 6 m e la si consuma a metri.</td></tr><tr><td><strong>Scorta minima</strong></td><td>magazzino</td><td>Sotto questa quantità l'articolo compare fra i segnali del Riepilogo, e il netto la ricostituisce.</td></tr><tr><td><strong>Lotto di riordino</strong></td><td>magazzino</td><td>La quantità a cui si arrotondano gli acquisti.</td></tr><tr><td><strong>Il lotto è</strong></td><td>magazzino</td><td><em>un multiplo esatto</em> (si ordina 100, 200, 300) oppure <em>una quantità minima</em> (sotto 100 non si ordina, sopra si ordina il fabbisogno esatto).</td></tr><tr><td><strong>Note</strong></td><td>facoltativo</td><td>Testo libero interno.</td></tr></tbody></table></div>
+<p>In modifica, la scheda mostra anche un <strong>pannello giacenza</strong> con la situazione a magazzino, e in fondo la <strong>riga autore</strong>: chi ha creato il record e chi l'ha aggiornato per ultimo, con data e ora.</p>
+<h3 id="le-finestre-che-si-aprono-da-qui">Le finestre che si aprono da qui</h3>
+<div class="tw"><table><thead><tr><th>Finestra</th><th>Cosa fa</th></tr></thead><tbody><tr><td><strong>Listino fornitori</strong></td><td>Le quotazioni dell'articolo (→ <a href="#10-listino-fornitori">cap. 10</a>)</td></tr><tr><td><strong>Dove è usato</strong></td><td>Chi lo contiene, con simulazione del costo (→ <a href="#11-dove-è-usato-e-simulazione-del-costo">cap. 11</a>)</td></tr><tr><td><strong>Scheda completa</strong></td><td>La scheda di sola lettura, tutto insieme</td></tr><tr><td><strong>Duplica</strong></td><td>Crea un nuovo articolo copiando questo</td></tr></tbody></table></div>
+<hr>
+<h2 id="9-i-codici-automatici">9. I codici automatici</h2>
+<p>Bomtrack propone il codice di ogni nuovo articolo. Il codice proposto <strong>resta modificabile</strong>: si può scrivere il proprio, e appena lo si tocca l'app smette di rigenerarlo mentre si compila il resto della scheda.</p>
+<p>Gli schemi sono due.</p>
+<h3 id="schema-gerarchico--la-struttura-di-prodotto">Schema gerarchico — la struttura di prodotto</h3>
+<p>Si usa per macchine, gruppi, sottogruppi e parti che appartengono a una macchina. Ogni macchina ha una <strong>sigla</strong> e definisce lo schema dei codici sotto di sé.</p>
+<pre><code>Macchina:      TRN-S00        progressivo a SALIRE da 0
+Gruppo:        TRN-BAS-S00    progressivo a SALIRE da 0
+Sottogruppo:   TRN-BAS-999    a SCENDERE da 999
+Parte:         TRN-BAS-001    a SALIRE da 001</code></pre>
+<p>Sottogruppi e parti condividono lo stesso spazio di numerazione ma partono dai due estremi: i sottogruppi scendono da 999, le parti salgono da 001. Così non si scontrano mai, e a colpo d'occhio si distinguono.</p>
+<p>Le <strong>sigle sono univoche</strong> nel loro ambito: due gruppi della stessa macchina non possono chiamarsi entrambi <code>BAS</code>.</p>
+<h3 id="schema-per-famiglia--quello-che-si-compra">Schema per famiglia — quello che si compra</h3>
+<p>Si usa per materie prime, commerciali, e per le parti non legate a una macchina.</p>
+<pre><code>MAT-ACC-LAM-001     materia prima · famiglia ACC(iaio) · sottofamiglia LAM(iere)
+CMM-MEC-CUS-001     commerciale   · famiglia MEC(canica) · sottofamiglia CUS(cinetti)
+PRT-…               parte non legata a una macchina</code></pre>
+<p>I <strong>prefissi</strong> e il <strong>numero di cifre</strong> si cambiano in <em>Gestione → Impostazioni → Codifica automatica articoli</em>: di serie <code>CMM</code> per i commerciali, <code>MAT</code> per le materie prime, <code>PRT</code> per le parti, con 3 cifre.</p>
+<hr>
+<h2 id="10-listino-fornitori">10. Listino fornitori</h2>
+<p><strong>A cosa serve.</strong> È <strong>l'unico posto dove nasce un prezzo d'acquisto</strong>. Non si scrive un prezzo nella scheda articolo: si registra una <strong>quotazione</strong> nel listino, e poi si sceglie quale delle quotazioni è quella in uso.</p>
+<p><strong>Come ci si arriva.</strong> Dal pulsante nel riquadro <em>Fornitore e prezzo d'acquisto</em> della scheda articolo, dal pannello laterale (<em>Listino fornitori</em>), o dalla scheda di sola lettura.</p>
+<p><strong>Cosa si vede.</strong> Le quotazioni dell'articolo, una per riga:</p>
+<div class="tw"><table><thead><tr><th>Campo</th><th>Significato</th></tr></thead><tbody><tr><td><strong>Fornitore</strong></td><td>Chi la offre</td></tr><tr><td><strong>Codice presso il fornitore</strong></td><td>Come lo chiama lui: serve a scriverlo giusto sull'ordine</td></tr><tr><td><strong>Descrizione presso il fornitore</strong></td><td>Idem</td></tr><tr><td><strong>Prezzo</strong></td><td>L'importo</td></tr><tr><td><strong>U.M. del prezzo</strong></td><td>A che unità si riferisce</td></tr><tr><td><strong>Q.tà minima</strong></td><td>Sotto la quale il prezzo non vale</td></tr><tr><td><strong>Giorni di consegna</strong></td><td>Il lead time dichiarato</td></tr><tr><td><strong>Data</strong></td><td>Quando la quotazione è stata raccolta</td></tr></tbody></table></div>
+<p><strong>Da sapere.</strong></p>
+<ul><li><strong>Vale per tutto</strong>: commerciali, materie prime <strong>e parti</strong> acquistate.</li><li><strong>Le richieste di offerta alimentano il listino</strong>: il pulsante <strong>Registra a listino</strong> di una RFQ trasforma i prezzi tornati in quotazioni, con il riferimento alla richiesta da cui vengono.</li><li><strong>Il prezzo che entra nella costificazione si sceglie esplicitamente.</strong> Più quotazioni possono convivere; una sola è quella in uso. Il Riepilogo segnala quanto si risparmierebbe scegliendo ovunque la più bassa.</li><li>Un articolo senza nessuna quotazione compare fra i segnali «articoli d'acquisto senza prezzo».</li></ul>
+<hr>
+<h2 id="11-dove-è-usato-e-simulazione-del-costo">11. Dove è usato e simulazione del costo</h2>
+<p><strong>A cosa serve.</strong> Rispondere a due domande: «se cambio questo articolo, chi ne risente?» e «se questo prezzo cambiasse, quanto costerebbe la macchina?».</p>
+<p><strong>Come ci si arriva.</strong> Dal pannello laterale (<em>Dove è usato e impatto costi</em>), dalla scheda articolo, o dalla scheda di sola lettura.</p>
+<p><strong>Cosa si vede.</strong> L'elenco degli assiemi che contengono l'articolo, e sopra di quelli le <strong>macchine impattate</strong>, con il costo attuale di ciascuna.</p>
+<p><strong>La simulazione.</strong> Il campo <strong>Simula un costo diverso</strong>: si scrive un prezzo e si vede subito l'effetto sul costo delle macchine, riga per riga.</p>
+<blockquote><p><strong>Non salva niente.</strong> Chiudendo la finestra il costo simulato sparisce e l'articolo resta al suo prezzo. È esattamente il motivo per cui si può aprire in mezzo a qualunque lavoro.</p></blockquote>
+<hr>
+<h2 id="12-pannello-laterale-e-selezione-multipla">12. Pannello laterale e selezione multipla</h2>
+<p><strong>A cosa serve.</strong> Tenere sotto mano i comandi e le schede dell'articolo scelto nell'elenco, senza aprire e chiudere finestre.</p>
+<p><strong>Come ci si arriva.</strong> <code>Ctrl+I</code> (⌘I), oppure il comando nell'intestazione dell'elenco. Vale per <strong>Acquisti, Progetto e Magazzino</strong>.</p>
+<p><strong>Cosa si vede.</strong> Una colonna a destra, <strong>ridimensionabile trascinandone il bordo</strong>, con un riepilogo dell'articolo scelto (costo, giacenza, impieghi) e sotto i comandi e le schede.</p>
+<p><strong>I comandi — su un articolo (Acquisti, Progetto):</strong></p>
+<ul><li>Modifica articolo · Duplica · Listino fornitori · <strong>Distinta parte e ciclo</strong> (solo parti) · Dove è usato e impatto costi · Scheda completa · Elimina articolo.</li></ul>
+<p><strong>I comandi — su una giacenza (Magazzino):</strong></p>
+<ul><li>Rettifica giacenza · Movimenti (N) · Dove è usato e impatto costi · Modifica articolo · Scheda completa.</li></ul>
+<p><strong>Le schede:</strong> <strong>Scheda</strong> (l'anagrafica) · <strong>Listino</strong> · <strong>Dove è usato</strong>.</p>
+<p><strong>La selezione multipla.</strong></p>
+<div class="tw"><table><thead><tr><th>Gesto</th><th>Effetto</th></tr></thead><tbody><tr><td>Click</td><td>Sceglie una riga</td></tr><tr><td><strong>Ctrl+click</strong></td><td>Aggiunge una riga alla scelta</td></tr><tr><td><strong>Maiusc+click</strong></td><td>Prende tutto quello che sta in mezzo</td></tr><tr><td><strong>↑ ↓</strong></td><td>Scorre le righe</td></tr><tr><td><strong>Maiusc+↑ ↓</strong></td><td>Estende la scelta</td></tr><tr><td><strong>Invio</strong></td><td>Apre la scheda completa</td></tr><tr><td><strong>Esc</strong></td><td>Deseleziona</td></tr></tbody></table></div>
+<p>Con <strong>più righe scelte</strong> il pannello passa alle <strong>azioni di massa</strong>, e mostra l'elenco di ciò su cui sta per agire:</p>
+<ul><li><em>Segna come non più utilizzabili</em> / <em>Rendi di nuovo utilizzabili</em></li><li><em>Segna preferiti (N)</em> / <em>Togli dai preferiti</em></li><li>Esporta la selezione in <strong>Excel</strong> o <strong>PDF</strong></li><li><em>Elimina N articoli</em></li></ul>
+<p><strong>Da sapere.</strong> Con il pannello aperto <strong>la colonna dei pulsanti sparisce dall'elenco</strong>: i suoi comandi sono nel pannello, scritti per esteso invece che a icone. Chiudendolo torna dov'era. Larghezza, apertura e scheda scelta restano fra una sessione e l'altra.</p>
+<hr>
+<h1 id="parte-iv--il-prodotto">Parte IV — Il prodotto</h1>
+<h2 id="13-distinta-base--gestione-db">13. Distinta base → Gestione DB</h2>
+<p><strong>A cosa serve.</strong> Costruire l'albero della macchina: cosa contiene, in che quantità, con quali lavorazioni. La schermata si intitola <strong>«Distinta Base &amp; Costificazione»</strong>.</p>
+<p><strong>Come ci si arriva.</strong> 🌳 <em>Distinta base → Gestione DB</em>.</p>
+<p><strong>Cosa si vede.</strong></p>
+<ul><li>In alto la <strong>barra revisioni</strong>: il badge <code>Rev. X · N rilasciate</code>, <strong>Nuova revisione</strong>, <strong>Storico revisioni</strong> (→ <a href="#15-revisioni">cap. 15</a>).</li><li>Le <strong>card di costo</strong> unitario: Materiale · Commerciali · Parti · Lavorazioni · Spese generali · <strong>Costo totale</strong> · <strong>Prezzo vendita</strong>.</li><li>L'<strong>albero</strong> multi-livello, con la <strong>numerazione di posizione</strong>: <code>1</code>, <code>1.1</code>, <code>1.1.1</code>, <code>1.2</code>, <code>2</code>… Colonne: Articolo, Q.tà, U.M., Costo un., <strong>Scarto %</strong>, Costo riga, Azioni.</li></ul>
+<p><strong>Comandi.</strong></p>
+<div class="tw"><table><thead><tr><th>Comando</th><th>Cosa fa</th></tr></thead><tbody><tr><td><strong>Modifica testata</strong></td><td>Le proprietà della distinta (vedi sotto)</td></tr><tr><td><strong>Elimina</strong></td><td>Cancella la distinta</td></tr><tr><td><strong>+ Aggiungi componenti</strong></td><td>Apre il pannello laterale ridimensionabile per pescare dagli archivi</td></tr><tr><td><strong>+ Aggiungi lavorazione</strong></td><td>Aggiunge una fase all'assieme (il montaggio)</td></tr><tr><td><strong>⊞ Espandi tutto</strong> / <strong>⊟ Comprimi tutto</strong></td><td>Apre e chiude tutti i rami</td></tr></tbody></table></div>
+<p><strong>Filtri.</strong> Ricerca «Cerca codice o nome distinta…»; <strong>livello</strong> (Tutti i livelli · Macchine · Gruppi · Sottogruppi); <strong>macchina di appartenenza</strong>; il menu della distinta aperta; il contatore.</p>
+<blockquote><p><strong>La distinta aperta resta sempre raggiungibile</strong>, anche quando il filtro la escluderebbe: non sparisce sotto le mani mentre ci si lavora.</p></blockquote>
+<p><strong>La finestra «Modifica testata».</strong></p>
+<div class="tw"><table><thead><tr><th>Campo</th><th>Note</th></tr></thead><tbody><tr><td>Codice · U.M. · Nome</td><td><strong>Bloccati</strong>: si modificano in <em>Anagrafica → Progetto</em></td></tr><tr><td><strong>Spese generali % (override)</strong></td><td>Sostituisce la percentuale globale, solo per questa macchina</td></tr><tr><td><strong>Margine % (override)</strong></td><td>Idem</td></tr><tr><td>Note</td><td>Testo libero</td></tr></tbody></table></div>
+<p><strong>Da sapere.</strong></p>
+<ul><li>I sottogruppi possono contenere altri sottogruppi, <strong>senza limite di profondità</strong>.</li><li>La <strong>percentuale di scarto</strong> di una riga aumenta la quantità che serve davvero: 10 pezzi con 5% di scarto sono 10,5 pezzi di materiale.</li><li>I <strong>riferimenti ciclici</strong> (A contiene B che contiene A) sono rilevati e impediti, sia nella distinta sia nel ciclo. Se ne resta uno, un <strong>avviso rosso</strong> nomina l'articolo coinvolto invece di far comparire un costo tronco che sembrerebbe buono.</li></ul>
+<hr>
+<h2 id="14-cicli-di-lavorazione">14. Cicli di lavorazione</h2>
+<p><strong>A cosa serve.</strong> Dire come si fa una <strong>parte</strong>: che materiale consuma e quali fasi attraversa. È da qui che nasce il costo di una parte a produzione interna, il carico dei centri e gli ordini di lavoro ai terzisti.</p>
+<p><strong>Come ci si arriva.</strong> 🔧 <em>Cicli di lavorazione → Cicli di lavorazione</em>.</p>
+<p><strong>Cosa si vede.</strong></p>
+<ul><li>I filtri e il <strong>menu di scelta della parte</strong>;</li><li>la <strong>barra revisioni</strong> della parte;</li><li>le card: <em>Distinta parte</em> · <em>Lavorazioni</em> · <em>Costo unitario a mano</em> · <strong>Costo parte</strong>;</li><li>una nota in testa che dice <strong>da dove viene il costo</strong> di quella parte, secondo il suo approvvigionamento;</li><li>le due sezioni: <strong>Distinta parte</strong> e <strong>Ciclo di lavorazione</strong>.</li></ul>
+<p><strong>Filtri.</strong> Ricerca, famiglia, sottofamiglia, e il menu della parte.</p>
+<h3 id="la-distinta-parte">La distinta parte</h3>
+<p>Il materiale e i commerciali che servono a fare il pezzo. Pulsante <strong>+ Articolo</strong>.</p>
+<div class="tw"><table><thead><tr><th>Colonna</th><th>Note</th></tr></thead><tbody><tr><td>Voce</td><td>L'articolo</td></tr><tr><td>Fornitore</td><td>Da chi si compra</td></tr><tr><td>U.M. · Q.tà</td><td>Quanto ne serve per <strong>un</strong> pezzo</td></tr><tr><td><strong>Costo (€/U.M.)</strong></td><td>Il costo a listino, <strong>sovrascrivibile</strong> sulla riga</td></tr><tr><td>Costo riga</td><td>Q.tà × costo</td></tr></tbody></table></div>
+<h3 id="il-ciclo-di-lavorazione">Il ciclo di lavorazione</h3>
+<p>Le fasi, numerate <strong>10, 20, 30…</strong> e riordinabili con le frecce ↑ ↓ (la numerazione a decine lascia posto per infilarne una in mezzo).</p>
+<div class="tw"><table><thead><tr><th>Campo della fase</th><th>Note</th></tr></thead><tbody><tr><td><strong>Centro di lavoro</strong></td><td>Dall'elenco di <em>Gestione → Centri di lavoro</em></td></tr><tr><td><strong>Interna / Conto lavoro</strong></td><td>Se conto lavoro, si sceglie il <strong>fornitore</strong></td></tr><tr><td><strong>Costo</strong></td><td><em>Fisso</em> oppure <em>Orario</em></td></tr><tr><td><strong>Ore (h)</strong></td><td>Fase <strong>interna</strong>: le ore che il pezzo occupa il centro</td></tr><tr><td><strong>Giorni (gg)</strong></td><td>Fase in <strong>conto lavoro</strong>: i giorni di attraversamento dal terzista</td></tr><tr><td><strong>Costo (€)</strong> o <strong>Tariffa (€/h)</strong></td><td>Secondo il modo scelto</td></tr><tr><td>Nota</td><td>Testo libero, finisce sull'ordine di lavoro</td></tr></tbody></table></div>
+<p><strong>Da sapere — la differenza che conta di più.</strong></p>
+<div class="tw"><table><thead><tr><th></th><th>Fase <strong>interna</strong> (senza fornitore)</th><th>Fase in <strong>conto lavoro</strong> (con fornitore)</th></tr></thead><tbody><tr><td>Si dichiara</td><td><strong>ore</strong></td><td><strong>giorni di attraversamento</strong></td></tr><tr><td>Nel costo</td><td>ore × tariffa del centro</td><td>il prezzo del terzista</td></tr><tr><td>Nel fabbisogno</td><td>non compare: non si compra</td><td>compare in <em>Da far lavorare fuori</em></td></tr><tr><td>Nel Carico centri</td><td><strong>carica il centro</strong></td><td>non carica nessun centro</td></tr><tr><td>Genera</td><td>—</td><td>un <strong>ordine di lavoro</strong></td></tr></tbody></table></div>
+<p>Una fase interna a <strong>costo fisso</strong> dichiara comunque le ore, e quelle ore caricano il centro: il prezzo è una cosa, l'occupazione della macchina è un'altra. Una fase in conto lavoro a <strong>costo orario</strong> dichiara anche le ore, che lì sono le ore che il terzista fattura.</p>
+<p><strong>Ogni modifica si salva subito.</strong> Non c'è un pulsante Salva in questa vista.</p>
+<hr>
+<h2 id="15-revisioni">15. Revisioni</h2>
+<p><strong>A cosa serve.</strong> Congelare com'era una distinta in un certo momento, e poterci tornare.</p>
+<p><strong>Come ci si arriva.</strong> Dalla barra revisioni, in cima a <em>Gestione DB</em> (per gli assiemi) e a <em>Cicli di lavorazione</em> (per le parti).</p>
+<p><strong>Come funziona.</strong> Ogni assieme e ogni parte ha una <strong>revisione in lavorazione</strong>, identificata da una lettera che parte da <code>A</code>. Ci si lavora liberamente.</p>
+<p><strong>Rilascia revisione</strong> (pulsante <strong>Nuova revisione</strong>) fa tre cose:</p>
+<ol><li>chiede il <strong>motivo</strong> del rilascio;</li><li><strong>congela</strong> la distinta com'è adesso, con il costo di oggi;</li><li>passa alla lettera successiva, che diventa quella in lavorazione.</li></ol>
+<p><strong>Storico revisioni</strong> mostra le revisioni rilasciate, con data, autore e motivo. <strong>Confronta revisioni</strong> mette due revisioni a fianco e dice cosa è <strong>aggiunto</strong>, cosa <strong>rimosso</strong> e cosa <strong>modificato</strong>.</p>
+<p><strong>Da sapere.</strong> Se dall'ultimo rilascio non è cambiato niente, l'app lo dice invece di creare una revisione identica alla precedente.</p>
+<hr>
+<h2 id="16-costificazione--visualizza-db">16. Costificazione — Visualizza DB</h2>
+<p><strong>A cosa serve.</strong> Leggere quanto costa una macchina e perché. La schermata si intitola <strong>«Costificazione &amp; Report»</strong>.</p>
+<p><strong>Come ci si arriva.</strong> 🌳 <em>Distinta base → Visualizza DB</em>.</p>
+<p><strong>Comandi.</strong> Il menu <strong>Macchina / Prodotto</strong> per scegliere cosa costificare; <strong>Esporta Excel</strong> e <strong>Esporta PDF</strong>.</p>
+<p><strong>Cosa si vede.</strong></p>
+<ol><li>Le <strong>card di costo</strong>: Materiale · Commerciali · Parti · Lavorazioni · Spese generali · <strong>Costo totale</strong> · <strong>Prezzo vendita</strong>.</li><li><strong>Incidenza voci di costo</strong> — barre proporzionali con importo e percentuale, e il pulsante <strong>Da dove viene questo costo</strong>, che apre l'elenco degli articoli che pesano di più, sommati per articolo.</li><li><strong>Distinta base esplosa</strong> — Pos. · Codice · Articolo · Tipo · Q.tà · Costo un. · Costo riga.</li></ol>
+<h3 id="la-formula">La formula</h3>
+<pre><code>costo         = Σ (componenti × q.tà × (1 + scarto%))     ← materiale, commerciali, sotto-assiemi
+              + Σ (lavorazioni: ore × tariffa €/h)        ← manodopera interna
+              + Σ (lavorazioni in conto lavoro)           ← quello che si paga fuori
+
+costo totale  = costo + spese generali (overhead %)
+
+prezzo vendita = costo totale × (1 + margine %)</code></pre>
+<p>Le due percentuali stanno in <em>Gestione → Impostazioni</em> (di serie: <strong>12%</strong> di spese generali, <strong>20%</strong> di margine), e si possono sovrascrivere per singola macchina da <em>Modifica testata</em>. Sono ammessi valori da 0 a 1000%.</p>
+<p><strong>Il costo si calcola per ricorsione</strong>: il costo di un gruppo è la somma dei suoi figli, e il costo di una parte è la somma della sua distinta parte più il suo ciclo. Non ci sono costi «congelati» da aggiornare a mano: cambiando il prezzo di una vite, il costo della macchina cambia subito.</p>
+<hr>
+<h1 id="parte-v--le-operazioni">Parte V — Le operazioni</h1>
+<h2 id="17-magazzino">17. Magazzino</h2>
+<p><strong>A cosa serve.</strong> Lo stato delle giacenze di tutto ciò che si tiene a scaffale.</p>
+<p><strong>Come ci si arriva.</strong> 📦 <em>Magazzino</em>.</p>
+<p><strong>Cosa si vede.</strong> <strong>Commerciali, materie prime e parti insieme, in una lista sola</strong>: il magazzino non conosce la divisione fra acquisti e progetto. Gli <strong>assiemi restano fuori</strong> — si producono, non si stoccano.</p>
+<p>In testa quattro <strong>KPI</strong>: <em>Articoli a magazzino</em> · <em>Sotto scorta minima</em> · <em>Con merce in arrivo</em> · <strong>Valore giacenza (€)</strong>.</p>
+<p><strong>Le colonne, e come si calcolano.</strong></p>
+<div class="tw"><table><thead><tr><th>Colonna</th><th>Significato</th><th>Da dove viene</th></tr></thead><tbody><tr><td><strong>Esistente</strong></td><td>Quello che c'è adesso a scaffale</td><td>ricevuto sugli ordini <strong>+</strong> movimenti</td></tr><tr><td><strong>In arrivo</strong></td><td>Ordinato e non ancora entrato</td><td>ordini aperti</td></tr><tr><td><strong>Impegnato</strong></td><td>Promesso ai piani aperti</td><td>fabbisogno dei piani aperti</td></tr><tr><td><strong>Libero</strong></td><td>Quello di cui si può davvero disporre</td><td><code>esistente + in arrivo − impegnato</code></td></tr><tr><td><strong>Scorta min.</strong></td><td>La soglia sotto cui si avvisa</td><td>dalla scheda articolo</td></tr><tr><td><strong>Lotto</strong></td><td>Il lotto di riordino</td><td>dalla scheda articolo</td></tr></tbody></table></div>
+<blockquote><p><strong>Nessuno di questi campi è scrivibile.</strong> Sono tutti calcolati. Per cambiare l'esistente si registra un <strong>movimento</strong>.</p></blockquote>
+<p><strong>Comandi.</strong> <strong>Presso terzi (N)</strong> (compare solo se c'è qualcosa fuori) · <strong>Esporta Excel</strong> · <strong>Esporta PDF</strong>. Nella barra filtri, <strong>Colonne</strong>.</p>
+<p><strong>Filtri.</strong> Ricerca, tipo (Componente commerciale · Materia prima · Parte), famiglia, sottofamiglia, e il filtro di <strong>stato</strong>:</p>
+<ul><li><em>Sotto la scorta minima</em></li><li><em>Giacenza a zero</em></li><li><em>Con giacenza</em></li><li><em>Libero negativo</em> — si è promesso più di quanto si abbia e si aspetti</li><li><em>Presso terzi o in lavorazione</em></li></ul>
+<h3 id="i-movimenti">I movimenti</h3>
+<p><strong>La finestra «Rettifica giacenza»</strong> — dalla riga o dal pannello laterale. Campi: <strong>Tipo movimento</strong>, <strong>Quantità</strong>, (per il conto lavoro) <strong>Terzista</strong> e <strong>Ordine di conto lavoro</strong>, <strong>Nota</strong>, e il pulsante <strong>Registra</strong>. Ogni tipo porta il suo suggerimento contestuale.</p>
+<p><strong>I sei tipi di movimento:</strong></p>
+<div class="tw"><table><thead><tr><th>Tipo</th><th>Effetto sulla giacenza</th><th>Quando si usa</th></tr></thead><tbody><tr><td><strong>Rettifica inventario</strong></td><td>si scrive la quantità <strong>contata</strong>, l'app registra la differenza</td><td>dopo l'inventario</td></tr><tr><td><strong>Carico manuale</strong></td><td><strong>+</strong> somma</td><td>merce entrata senza un ordine</td></tr><tr><td><strong>Consumo di produzione</strong></td><td><strong>−</strong> sottrae</td><td>materiale prelevato per produrre</td></tr><tr><td><strong>Uscita a conto lavoro</strong></td><td><strong>−</strong> sottrae</td><td>materiale spedito a un terzista</td></tr><tr><td><strong>Rientro da conto lavoro</strong></td><td><strong>+</strong> somma</td><td>il pezzo finito che torna</td></tr><tr><td><strong>Passaggio di lavorazione</strong></td><td><strong>nessuno</strong></td><td>il pezzo va da un terzista al successivo</td></tr></tbody></table></div>
+<p><strong>Perché il passaggio non muove niente.</strong> Un pezzo che torna da Beta per andare da Gamma <strong>cambia luogo a quantità invariata</strong>. Contarlo come carico e poi come scarico farebbe comparire a scaffale un semilavorato che a scaffale non c'è mai stato, e il codice prodotto si caricherebbe una volta per ogni terzista che l'ha toccato. Il passaggio si registra solo dalla riga di un ODL, e porta due fornitori: <em>dove va</em> e <em>da dove viene</em>.</p>
+<p><strong>La finestra «Movimenti»</strong> mostra lo storico dell'articolo, con la possibilità di eliminare una riga sbagliata.</p>
+<h3 id="materiale-presso-terzi">Materiale presso terzi</h3>
+<p>Il pulsante <strong>Presso terzi (N)</strong> apre il prospetto di cosa sta fuori, <strong>raggruppato per fornitore</strong>, con <em>Uscito</em> / <em>Rientrato</em> / <strong>Ancora fuori</strong> e il riferimento all'ordine. Ha il suo export Excel e PDF.</p>
+<p>In fondo c'è il blocco <strong>«in casa, fra due fasi»</strong>: i pezzi tornati da un terzista e non ancora ripartiti per il successivo. È <strong>un luogo a sé</strong> — esistono, non sono a scaffale, e non sono da nessuno.</p>
+<blockquote><p>Anche questo prospetto è <strong>calcolato dai movimenti</strong>, non un saldo scritto da qualche parte.</p></blockquote>
+<h3 id="i-ricevimenti">I ricevimenti</h3>
+<p>Attenzione a una cosa: <strong>il magazzino si carica anche dai ricevimenti degli ordini</strong>, senza movimenti. Quando si scrive <em>ricevuto 50</em> su una riga d'ordine, quei 50 entrano nell'esistente. È comodo — un ricevimento sbagliato si corregge in un posto solo — e ha una conseguenza:</p>
+<blockquote class="warn"><p>⚠️ <strong>Cancellare un ordine già ricevuto toglie la sua merce dal magazzino.</strong> È coerente, ma chi cancella un ordine vecchio va avvisato.</p></blockquote>
+<hr>
+<h2 id="18-commesse">18. Commesse</h2>
+<p><strong>A cosa serve.</strong> La commessa è <strong>il cliente e la data a monte del lavoro</strong>. Ci si agganciano piani di fabbisogno, richieste e ordini, e la sua scheda dice in ogni momento se il materiale c'è.</p>
+<p><strong>Come ci si arriva.</strong> 📨 <em>Documenti → Commesse</em>.</p>
+<p><strong>Comandi dell'elenco.</strong> <strong>+ Nuova commessa</strong> · <strong>Esporta Excel</strong> · <strong>Esporta PDF</strong>.</p>
+<p><strong>Filtri.</strong> Ricerca «Numero, cliente o descrizione…»; <strong>filtro per periodo</strong> sulla data di apertura (<em>dal … al …</em>, aperto anche da un lato solo); il contatore.</p>
+<p><strong>I campi della commessa.</strong></p>
+<div class="tw"><table><thead><tr><th>Campo</th><th>Note</th></tr></thead><tbody><tr><td><strong>Cliente</strong></td><td>Con i suggerimenti dall'anagrafica di <em>Gestione → Clienti</em>: due commesse dello stesso cliente non si chiamano più «Rossi Srl» e «Rossi S.r.l.»</td></tr><tr><td><strong>Descrizione</strong></td><td>Che lavoro è</td></tr><tr><td><strong>Riferimento cliente</strong></td><td>Il numero d'ordine del cliente</td></tr><tr><td><strong>Stato</strong></td><td>I quattro qui sotto</td></tr><tr><td><strong>Data apertura</strong></td><td>Quando è entrata</td></tr><tr><td><strong>Consegna al cliente</strong></td><td>La data che conta</td></tr><tr><td><strong>Note</strong></td><td>Testo libero</td></tr></tbody></table></div>
+<p><strong>I quattro stati.</strong></p>
+<div class="tw"><table><thead><tr><th>Stato</th><th>Significato</th></tr></thead><tbody><tr><td><strong>Aperta</strong></td><td>Acquisita, non ancora avviata</td></tr><tr><td><strong>In produzione</strong></td><td>Si sta facendo</td></tr><tr><td><strong>Chiusa</strong></td><td>Consegnata</td></tr><tr><td><strong>Annullata</strong></td><td>Non si fa più</td></tr></tbody></table></div>
+<p>Mettendola <strong>In produzione</strong>, l'app chiede conferma <strong>nominando i codici mancanti e la data di consegna</strong>. Avvisa, non blocca: la decisione resta a chi la prende.</p>
+<p><strong>Cosa si vede nella scheda.</strong></p>
+<ul><li>I <strong>KPI</strong>: Ordinato · Già ricevuto · Ancora atteso · Piani di fabbisogno · l'indicatore di copertura.</li><li><strong>Copertura materiale</strong> — la sezione che risponde a «il materiale c'è?», divisa in tre: cosa è ancora <strong>da ordinare</strong>, cosa sta in un documento <strong>non ancora inviato</strong>, cosa <strong>arriva dopo la data in cui serve</strong>.</li><li><strong>Fabbisogni</strong>, <strong>Richieste di offerta</strong>, <strong>Ordini a fornitore</strong>, <strong>Ordini di lavoro</strong> — le quattro liste di quello che pende sotto la commessa, ogni riga con <strong>Apri →</strong>.</li></ul>
+<p><strong>Da sapere.</strong> I piani della stessa commessa <strong>si sommano prima di guardare il magazzino</strong>: due piani della stessa commessa non si contendono la stessa merce. Se non ci sono piani aperti, la scheda lo dice, invece di dichiarare tutto coperto.</p>
+<hr>
+<h2 id="19-fabbisogno-materiali">19. Fabbisogno materiali</h2>
+<p><strong>A cosa serve.</strong> Trasformare «tre macchine per il 15 marzo» in una lista d'acquisto, un elenco di parti da fare e un elenco di lavorazioni da commissionare.</p>
+<p><strong>Come ci si arriva.</strong> 📨 <em>Documenti → Fabbisogno</em>.</p>
+<p><strong>Comandi dell'elenco.</strong> <strong>+ Nuovo piano</strong> · <strong>Esporta Excel</strong> · <strong>Esporta PDF</strong>. I badge di riga dicono <code>aperto</code> o <code>chiuso</code>.</p>
+<p><strong>Filtri.</strong> Ricerca «Numero o titolo…»; periodo; contatore.</p>
+<p><strong>La toolbar del piano.</strong></p>
+<div class="tw"><table><thead><tr><th>A sinistra</th><th>A destra</th></tr></thead><tbody><tr><td>chiudi · numero del piano · <strong>Aperto — chiudi</strong> / <strong>Chiuso — riapri</strong> · <strong>Duplica</strong> · <strong>Elimina</strong></td><td><strong>Genera richieste (N)</strong> · <strong>Genera ordini (N)</strong> · <strong>Genera ordini di lavoro (N)</strong> · <strong>Esporta Excel</strong> · <strong>Esporta PDF</strong></td></tr></tbody></table></div>
+<p><strong>I campi di testata.</strong> Titolo · Data · <strong>Consegna richiesta</strong> · <strong>Commessa</strong> · Note.</p>
+<h3 id="le-sezioni">Le sezioni</h3>
+<p><strong>Da produrre</strong> — quello che si chiede al piano. Pulsante <strong>+ Aggiungi al piano</strong>; colonne Codice, Articolo, U.M., <strong>Q.tà</strong>, <strong>Serve per</strong> (la data), elimina.</p>
+<p><strong>I KPI</strong> — Totale acquisti · Articoli da comprare · Fornitori coinvolti · Parti da fabbricare · Conto lavoro.</p>
+<p><strong>Da acquistare</strong> — la lista consolidata, con due interruttori:</p>
+<ul><li><strong>☑ Fabbisogno netto</strong> — toglie quello che c'è già (vedi sotto);</li><li><strong>☑ Raggruppa per fornitore</strong> — riordina la lista per chi la deve vendere.</li></ul>
+<p>Gli <strong>indicatori di riga</strong>:</p>
+<div class="tw"><table><thead><tr><th>Indicatore</th><th>Significato</th></tr></thead><tbody><tr><td><code>↓ risparmio</code></td><td>Esiste a listino una quotazione più bassa di quella in uso</td></tr><tr><td><code>⚠ sotto il minimo</code></td><td>La quantità è sotto la q.tà minima del fornitore</td></tr><tr><td><code>⚠ senza prezzo</code></td><td>L'articolo non ha nessuna quotazione</td></tr><tr><td><code>↑ lotto</code> / <code>↑ minimo</code></td><td>La quantità è stata alzata al lotto di riordino</td></tr><tr><td><code>✓ coperto</code></td><td>Non serve ordinare niente</td></tr><tr><td><em>(impegno)</em></td><td>Quanta parte è impegnata da altri piani</td></tr></tbody></table></div>
+<p><strong>Da far lavorare fuori</strong> — le fasi di ciclo affidate a un terzista. <strong>Il netto non si applica qui</strong>, ed è dichiarato in pagina: una fase non sta a scaffale, e sapere quanti pezzi sono già stati lavorati richiederebbe un avanzamento di produzione che l'app non ha.</p>
+<p><strong>Da fabbricare</strong> — le parti a produzione interna che il piano richiede.</p>
+<p><strong>Carico dei centri</strong> — la stessa tavola del <a href="#23-carico-dei-centri-di-lavoro">cap. 23</a>, ristretta a questo piano.</p>
+<p>In fondo, l'elenco dei <strong>documenti generati</strong> dal piano.</p>
+<h3 id="il-fabbisogno-netto">Il fabbisogno netto</h3>
+<pre><code>netto = lordo + scorta minima + impegnato − esistente − in arrivo</code></pre>
+<p>poi arrotondato al <strong>lotto di riordino</strong> dell'articolo, secondo il suo modo (<em>multiplo esatto</em> o <em>quantità minima</em>).</p>
+<p>Il termine <strong>impegnato</strong> è quello che fa la differenza: è la merce che <strong>gli altri piani aperti</strong> hanno già promesso a sé. Senza quel termine, due piani si dichiarerebbero coperti con lo stesso pezzo, e uno dei due resterebbe a mani vuote.</p>
+<p><strong>Piano aperto e piano chiuso.</strong> Finché un piano è <strong>aperto</strong>, impegna. Un piano che non serve più si <strong>chiude</strong>, e la sua quota torna libera per gli altri. Un piano chiuso non sparisce: resta consultabile, smette solo di impegnare. Si riapre quando serve.</p>
+<h3 id="generare-i-documenti">Generare i documenti</h3>
+<p>I tre pulsanti <strong>Genera richieste / ordini / ordini di lavoro</strong> aprono la stessa finestra: le righe <strong>raggruppate per fornitore</strong>, ciascuna con la sua casella di selezione e la quantità — dichiarata come netta o lorda secondo l'interruttore attivo. Si spunta cosa includere e si conferma. Ne esce <strong>un documento per fornitore</strong>.</p>
+<hr>
+<h2 id="20-richieste-di-offerta-rfq">20. Richieste di offerta (RFQ)</h2>
+<p><strong>A cosa serve.</strong> Chiedere un prezzo. Numerazione <strong><code>RFQ-&lt;anno&gt;-NNN</code></strong>.</p>
+<p><strong>Come ci si arriva.</strong> 📨 <em>Documenti → Richieste offerta</em>.</p>
+<p><strong>Comandi dell'elenco.</strong> <strong>+ Nuova richiesta</strong> · <strong>Confronta offerte</strong> · <strong>Esporta Excel</strong> · <strong>Esporta PDF</strong>.</p>
+<p><strong>Filtri.</strong> Ricerca «Cerca numero, oggetto, fornitore o riga…» (cerca <strong>anche dentro le righe</strong> del documento); <strong>Tutti gli stati</strong>; <strong>Tutti i fornitori</strong> (con la voce «senza fornitore»); <strong>periodo</strong>; contatore; <strong>✕ Azzera filtri</strong>, che compare solo quando c'è un filtro attivo.</p>
+<p><strong>La toolbar del documento.</strong></p>
+<div class="tw"><table><thead><tr><th>A sinistra</th><th>A destra</th></tr></thead><tbody><tr><td>chiudi · numero · badge di stato · <strong>Salva</strong> · <strong>Elimina</strong></td><td><strong>Crea ordine</strong></td></tr></tbody></table></div>
+<p><strong>I campi di testata.</strong></p>
+<div class="tw"><table><thead><tr><th>Campo</th><th>Note</th></tr></thead><tbody><tr><td><strong>Titolo / oggetto</strong></td><td>Di cosa si tratta</td></tr><tr><td><strong>Fornitore</strong></td><td>A chi si chiede</td></tr><tr><td><strong>Data</strong></td><td>Del documento</td></tr><tr><td><strong>Stato</strong></td><td>Bozza · Inviata · Offerta ricevuta · Chiusa</td></tr><tr><td><strong>Tipo di trasporto / resa</strong></td><td>Con i suggerimenti da <em>Gestione → Condizioni offerta</em>; si precompila con quello predefinito del fornitore</td></tr><tr><td><strong>Tipo di pagamento</strong></td><td>Idem</td></tr><tr><td><strong>Note per il fornitore</strong></td><td>Escono sul documento</td></tr><tr><td>🔒 <strong>Note interne</strong></td><td><strong>Non compaiono mai su PDF ed Excel.</strong> Restano nell'app, passano alla richiesta convertita in ordine, e sono modificabili in qualunque stato</td></tr></tbody></table></div>
+<p><strong>Le righe.</strong> Pulsanti <strong>+ Da catalogo</strong> (con i filtri per tipo e famiglia) e <strong>+ Riga manuale</strong> (Descrizione, Codice opzionale, U.M., Quantità, Nota — per quello che non è a catalogo).</p>
+<p>La tabella è <strong>a due piani</strong>: le colonne sono coppie, una sopra l'altra — Codice/Descrizione · Q.tà/U.M. · Prezzo unit./Importo · Data consegna · Modifica/Elimina. Dodici colonne su una riga sola costringerebbero a scorrere in orizzontale, e il codice uscirebbe di vista; così le due metà si leggono insieme. <strong>Una riga di documento resta un solo rigo.</strong></p>
+<p><strong>Il documento.</strong> La barra <strong>Documento di richiesta</strong> ha <strong>Genera documento PDF</strong> e <strong>Genera documento Excel</strong>. Sono <strong>disabilitati finché ci sono modifiche non salvate</strong>: non si manda a un fornitore un documento diverso da quello che si ha in archivio. Il <strong>PDF è bilingue italiano/inglese</strong>.</p>
+<p><strong>I prezzi di ritorno.</strong> Quando arriva l'offerta si scrivono i prezzi nelle righe. La barra <strong>Prezzi d'offerta</strong> ha il pulsante <strong>Registra a listino (N)</strong>, che trasforma quei prezzi in quotazioni negli articoli (→ <a href="#10-listino-fornitori">cap. 10</a>).</p>
+<p><strong>Confronta offerte.</strong> Sotto-vista che mette a fianco i prezzi di più richieste sullo stesso materiale.</p>
+<p><strong>Da sapere.</strong> Una richiesta può contenere <strong>insieme materiale e lavorazioni</strong> dello stesso fornitore — chiedere quanto costa il pezzo e quanto costa lavorarlo è una domanda sola. Convertendola, la richiesta <strong>si divide</strong> nei due ordini: l'ODA per la merce, l'ODL per le lavorazioni.</p>
+<hr>
+<h2 id="21-ordini-a-fornitore-oda">21. Ordini a fornitore (ODA)</h2>
+<p><strong>A cosa serve.</strong> Comprare merce. <strong>Gli ODA non contengono lavorazioni</strong>: quelle stanno negli ODL.</p>
+<p><strong>Come ci si arriva.</strong> 📨 <em>Documenti → Ordini</em>.</p>
+<p><strong>Da dove nasce un ordine.</strong> Da una <strong>richiesta di offerta</strong> (pulsante <em>Crea ordine</em>), da un <strong>piano di fabbisogno</strong> (<em>Genera ordini</em>), oppure <strong>da zero</strong> con <strong>+ Nuovo ordine</strong>.</p>
+<p><strong>Comandi dell'elenco.</strong> <strong>+ Nuovo ordine</strong> · <strong>Esporta Excel</strong> · <strong>Esporta PDF</strong>. Stessi filtri delle richieste.</p>
+<p><strong>La toolbar del documento.</strong> chiudi · numero · badge di stato · <strong>Salva</strong> · <strong>Elimina</strong>.</p>
+<p><strong>I campi di testata.</strong> Come la richiesta, più:</p>
+<div class="tw"><table><thead><tr><th>Campo</th><th>Note</th></tr></thead><tbody><tr><td><strong>N° conferma d'ordine fornitore</strong></td><td>Il numero che il fornitore restituisce. <strong>Compilandolo, lo stato passa a <em>Confermato</em>.</strong></td></tr></tbody></table></div>
+<p><strong>Le righe.</strong> <strong>+ Da catalogo</strong> · <strong>+ Riga manuale</strong> · <strong>✓ Segna tutto ricevuto</strong>. Tabella a due piani: # · Codice/Descrizione · Q.tà/U.M. · Prezzo unit./Importo · <strong>Richiesta/Confermata</strong> (le due date) · <strong>Ricevuto/Residuo</strong> · azioni. In fondo il <strong>Totale imponibile</strong>.</p>
+<p><strong>Il documento.</strong> La barra <strong>Documento d'ordine</strong>: <strong>Genera documento PDF</strong> / <strong>Genera documento Excel</strong>.</p>
+<p><strong>Da sapere.</strong></p>
+<ul><li>Se il fornitore conferma una data <strong>oltre</strong> quella richiesta, l'app lo dice <strong>in rosso</strong> sulla riga, con i giorni di ritardo.</li><li><strong>Il ricevimento carica il magazzino.</strong> Non serve registrare anche un movimento; anzi, farlo raddoppierebbe la merce.</li><li>Lo stato passa da solo a <strong>Parziale</strong> e poi a <strong>Evaso</strong> man mano che si registrano i ricevimenti.</li></ul>
+<hr>
+<h2 id="22-ordini-di-lavoro-odl-e-conto-lavoro">22. Ordini di lavoro (ODL) e conto lavoro</h2>
+<p>Questo è il capitolo più delicato, e conviene leggerlo per intero prima di registrare il primo movimento di conto lavoro. Numerazione <strong><code>ODL-&lt;anno&gt;-NNN</code></strong>.</p>
+<p><strong>A cosa serve.</strong> Una fase del ciclo con un <strong>fornitore</strong> è una lavorazione affidata a un terzista, ed è denaro che esce come qualunque acquisto. L'ODL è il suo documento: elenco proprio, numerazione propria, stampa propria.</p>
+<p><strong>Come ci si arriva.</strong> 📨 <em>Documenti → Ordini di lavoro</em>.</p>
+<h3 id="uno-per-terzista-e-per-passata">Uno per terzista <em>e per passata</em></h3>
+<p>Le fasi affidate a Beta finiscono in un ODL solo, anche se sono di parti diverse. Ma un pezzo che torna da Beta una <strong>seconda</strong> volta — fasi 20 e 40, con la 30 in mezzo altrove — finisce in un <strong>secondo</strong> ODL: fra le due il pezzo torna da noi, e chiedergliele insieme sarebbe un ordine che non si può eseguire di seguito.</p>
+<p><em>(La <strong>richiesta d'offerta</strong> invece le tiene insieme: chiedere non è commissionare.)</em></p>
+<h3 id="la-tratta">La tratta</h3>
+<p>Una riga di ODL è una <strong>tratta</strong>: le fasi <strong>consecutive</strong> dello stesso terzista stanno insieme — «fasi 20-30» — perché sono <strong>una</strong> lavorazione da commissionare e non due. Prezzo e giorni sono sommati, e il dettaglio di ciascuna fase sta nella nota.</p>
+<p>La riga porta il <strong>codice della parte</strong> (è il pezzo che il terzista riceve e rispedisce), i <strong>pezzi</strong> come quantità, e la tariffa del ciclo come prezzo. A costo orario la nota dice <em>ore/pezzo × tariffa</em>.</p>
+<h3 id="i-campi">I campi</h3>
+<p><strong>Testata</strong>: Titolo/oggetto · <strong>Terzista</strong> · Data ordine · Stato · Trasporto · Pagamento · <strong>N° conferma del terzista</strong> · Note · 🔒 Note interne.</p>
+<p><strong>Righe — «Lavorazioni»</strong>: <strong>+ Lavorazione da ciclo</strong> · <strong>+ Riga manuale</strong> · <strong>✓ Segna tutto rientrato</strong>. Tabella a due piani: # · <strong>Parte/Lavorazione</strong> · <strong>Pezzi/U.M.</strong> · <strong>Tariffa (€/pz)/Importo</strong> · <strong>Richiesta/Confermata</strong> · <strong>Rientrati/Ancora fuori</strong>.</p>
+<p><strong>Scrivere un ODL a mano.</strong> <em>+ Lavorazione da ciclo</em> fa scegliere la parte fra quelle che un ciclo ce l'hanno, poi la tratta, poi i pezzi. Si vedono <strong>tutte</strong> le fasi — anche quelle di un altro terzista e quelle interne, marcate — perché mandare fuori una lavorazione che di solito si fa in casa è un caso vero. La riga che ne esce è identica a quella generata dal fabbisogno; l'ordine però <strong>non è legato a nessun piano</strong>, e lì la fase continuerà a risultare da ordinare.</p>
+<p>Le fasi <strong>senza</strong> fornitore sono interne e restano fuori dagli ODL: non si comprano, si vedono nel Carico centri.</p>
+<h3 id="il-magazzino-si-muove-in-due-punti-soli">Il magazzino si muove in due punti soli</h3>
+<p>E sono i <strong>due estremi del ciclo</strong>, non quelli del documento.</p>
+<pre><code>   MAGAZZINO                                                    MAGAZZINO
+       │                                                            ▲
+       │ ── SCARICO ──▶  Beta  ──passaggio──▶  Gamma  ── CARICO ────┘
+       │  materiale del    fase 20            fase 30    pezzo finito
+       │  ciclo                                          (in casa)
+   (fase 10 interna)</code></pre>
+<div class="tw"><table><thead><tr><th>Momento</th><th>Movimento</th><th>Effetto</th></tr></thead><tbody><tr><td><strong>Prima tratta esterna</strong></td><td>Uscita a conto lavoro</td><td><strong>−</strong> esce il materiale del ciclo</td></tr><tr><td><strong>Ogni estremo in mezzo</strong></td><td>Passaggio di lavorazione</td><td><strong>nessuno</strong>: cambia il luogo</td></tr><tr><td><strong>Ultima tratta</strong></td><td>Rientro da conto lavoro</td><td><strong>+</strong> entra il pezzo finito</td></tr></tbody></table></div>
+<p><strong>Perché.</strong> Senza questa distinzione, una parte lavorata due volte dallo stesso terzista farebbe uscire il materiale due volte e caricare il pezzo due volte. Due fasi dallo stesso terzista sono <strong>due lavorazioni sullo stesso pezzo</strong>, non due pezzi.</p>
+<p><strong>Il materiale esce una volta sola</strong>, alla prima fase di ogni parte, ed è quello scritto nel suo <strong>ciclo di lavorazione</strong> — le stesse righe che il fabbisogno ha già fatto comprare — con le quantità proposte in automatico: <em>q.tà del ciclo × pezzi dell'ordine</em>. <strong>I pezzi rientrano una volta</strong>, all'ultima fase. Le fasi in mezzo <strong>non muovono il magazzino e lo dicono</strong>, invece di offrire un comando che farebbe uscire la stessa merce due volte.</p>
+<p>La scheda propone sempre il <strong>residuo</strong> — quanto resta da spedire o da far rientrare — e a residuo zero lo dice, invece di riproporre il modulo come se niente fosse.</p>
+<h3 id="rientrati--caricato">Rientrati ≠ caricato</h3>
+<blockquote><p>Il campo <strong>Rientrati</strong> sull'ODL significa <strong>pezzi tornati</strong>: porta l'ordine a <em>Parziale</em> e poi a <em>Evaso</em>, ma <strong>non carica il magazzino</strong>. Quello lo fanno i movimenti di conto lavoro. Sono due domande diverse — «l'ordine è finito?» e «il pezzo è a scaffale?» — e hanno due risposte diverse.</p></blockquote>
+<hr>
+<h2 id="23-carico-dei-centri-di-lavoro">23. Carico dei centri di lavoro</h2>
+<p><strong>A cosa serve.</strong> Sapere quante ore i piani stanno chiedendo a ciascun centro, settimana per settimana, e se il centro regge. La schermata si intitola <strong>«Carico centri di lavoro»</strong>.</p>
+<p><strong>Come ci si arriva.</strong> 🔧 <em>Cicli di lavorazione → Carico centri</em>. La stessa tavola, ristretta a un solo piano, sta anche in fondo alla scheda di ogni piano.</p>
+<p><strong>È un prospetto derivato, in sola lettura.</strong> Non c'è niente da compilare.</p>
+<p><strong>Comandi.</strong> <strong>Esporta Excel</strong> · <strong>Esporta PDF</strong>.</p>
+<p><strong>Filtri.</strong> <strong>Tutti i piani aperti (N)</strong> oppure un piano solo; <strong>Tutti i centri</strong> oppure un centro solo. Cliccando il nome di un centro, le letture si restringono a quello.</p>
+<p><strong>Cosa si vede.</strong></p>
+<ol><li><strong>L'avviso di sovraccarico</strong> in testa, con le settimane sfondate e i centri nominati.</li><li>Il <strong>grafico a barre</strong> per centro — una barra per settimana, la capacità come linea:</li></ol>
+<div class="tw"><table><thead><tr><th>Colore</th><th>Saturazione</th></tr></thead><tbody><tr><td>neutro</td><td>sotto l'85%</td></tr><tr><td>arancio</td><td>85–100%</td></tr><tr><td>rosso</td><td>oltre il 100%</td></tr></tbody></table></div>
+<p>Il grafico serve a dire <strong>dove guardare</strong>: ogni barra porta comunque il suo numero, e la tavola resta la lettura esatta.</p>
+<ol><li>La <strong>tavola centro × settimana</strong> con la saturazione in percentuale.</li><li><strong>I codici da produrre</strong>: codice, pezzi, settimana, e le fasi interne con ore/pezzo e ore totali, ordinati per settimana e per ore decrescenti. È la risposta a «cosa lancio per primo».</li></ol>
+<p><strong>Il dettaglio di cella.</strong> Cliccando una cella si apre <strong>chi</strong> ha portato quelle ore: parte, fase, piano.</p>
+<p><strong>Da sapere — quattro avvertimenti</strong>, perché il prospetto non prometta più di quel che dà:</p>
+<ol><li><strong>La capacità è infinita.</strong> Il sovraccarico <strong>si vede, non si sposta</strong>: non c'è schedulazione, né calendario, né data di avvio di una fase.</li><li><strong>Le ore stanno nella settimana in cui il pezzo serve pronto</strong>, non in quella in cui si lavora. È una lettura della <strong>domanda</strong>, non una programmazione.</li><li><strong>Le fasi in conto lavoro non caricano nessun centro interno</strong>: quelle si comprano, e stanno nel fabbisogno.</li><li><strong>Capacità 0 = «non dichiarata»</strong>, non «nessuna capacità». Un centro senza capacità mostra le ore e non il sovraccarico.</li></ol>
+<p>E una regola di lettura: <strong>i pezzi di un codice non si sommano fra le sue fasi</strong> — ogni fase lavora gli stessi pezzi — <strong>mentre le ore sì</strong>.</p>
+<hr>
+<h1 id="parte-vi--amministrazione">Parte VI — Amministrazione</h1>
+<h2 id="24-gestione">24. Gestione</h2>
+<p><strong>Come ci si arriva.</strong> ⚙️ <em>Gestione</em>. <strong>La voce è visibile ai soli amministratori.</strong></p>
+<p>Quattordici schede. Sono gli archivi che alimentano i menu a tendina di tutto il resto dell'app.</p>
+<h3 id="-utenti">👥 Utenti</h3>
+<p>Elenco con nome, email, ruolo e stato <em>Attivo / Sospeso</em>. Azioni per riga: <strong>Modifica</strong>, <strong>Imposta password</strong>, <strong>Sospendi / Riattiva</strong>, <strong>Elimina</strong>. Form del nuovo utente: Nome e cognome · Email · Username (facoltativo) · <strong>Ruolo</strong> · <strong>Colore</strong> · Password iniziale. → <a href="#25-utenti-e-ruoli">cap. 25</a></p>
+<h3 id="-dati-azienda">🏢 Dati azienda</h3>
+<p>Ragione sociale · Referente · Email · Telefono · P.IVA/C.F. · indirizzo. <strong>Vengono stampati come intestazione su tutti i documenti</strong> e su tutti gli export PDF.</p>
+<h3 id="-fornitori">🏭 Fornitori</h3>
+<p>Nome · Referente · Email · Telefono · P.IVA/C.F. · <strong>Pagamento predefinito</strong> · <strong>Trasporto predefinito</strong> · indirizzo. I due predefiniti si riproporranno su ogni richiesta e ogni ordine a quel fornitore. Si possono <strong>sospendere</strong> (⏸).</p>
+<h3 id="-clienti">📇 Clienti</h3>
+<p>Nome (<strong>unico</strong>) · Referente · Email · Telefono · P.IVA/C.F. · indirizzo · Note. I nomi si <strong>propongono nel campo Cliente della commessa</strong>. <strong>Rinominare un cliente allinea le commesse</strong> che lo citavano; un cliente citato da una commessa <strong>non si elimina</strong>.</p>
+<h3 id="-condizioni-offerta">🚚 Condizioni offerta</h3>
+<p>Due elenchi: <strong>Tipi di trasporto / resa</strong> e <strong>Tipi di pagamento</strong>, ciascuno con una ★ predefinita. Sono i valori proposti nei campi omonimi di richieste e ordini.</p>
+<h3 id="-famiglie-commerciali---famiglie-materie-prime---famiglie-parti">🛒 Famiglie commerciali · 📦 Famiglie materie prime · 🔧 Famiglie parti</h3>
+<p>Tre elenchi separati, ciascuno con <strong>macrofamiglie</strong> e le loro <strong>sottofamiglie</strong>, con <strong>sigla</strong>. Le sigle entrano nei codici automatici (→ <a href="#9-i-codici-automatici">cap. 9</a>).</p>
+<h3 id="-concetti">🏷 Concetti</h3>
+<p>La nomenclatura delle parti: <code>ALBERO</code>, <code>FLANGIA</code>, <code>STAFFA</code>, <code>PIASTRA</code>, <code>DISTANZIALE</code>, <code>PERNO</code>, <code>BOCCOLA</code>, <code>COPERCHIO</code>, <code>SUPPORTO</code>, <code>GHIERA</code>… <strong>Sempre in maiuscolo.</strong></p>
+<p>Un concetto <strong>in uso non si rinomina né si elimina</strong> (il pannello mostra quante parti lo usano), così i nomi già composti non cambiano da soli.</p>
+<h3 id="-centri-di-lavoro">🔧 Centri di lavoro</h3>
+<div class="tw"><table><thead><tr><th>Campo</th><th>Note</th></tr></thead><tbody><tr><td><strong>Nome</strong></td><td>Torni, Fresatura, Saldatura…</td></tr><tr><td><strong>Tariffa (€/h)</strong></td><td>Entra nel costo delle fasi interne a costo orario</td></tr><tr><td><strong>Capacità (h/settimana)</strong></td><td>Il metro del Carico centri. <strong>0 = non dichiarata</strong></td></tr></tbody></table></div>
+<p>Sotto ogni centro, il sotto-elenco <strong>Fornitori conto lavoro</strong>: fornitore, tariffa, nota — chi sa fare quella lavorazione fuori, e a quanto. Si possono sospendere.</p>
+<h3 id="-unità-di-misura">📏 Unità di misura</h3>
+<p>Codice + descrizione, con una ★ <strong>predefinita</strong> proposta alle nuove righe. Di serie: <code>pz, n, set, conf, kg, g, t, m, mm, m2, m3, l, h</code>.</p>
+<p><strong>Rinominare un codice propaga</strong> la modifica a tutti gli articoli e documenti che lo usano; una U.M. <strong>in uso non si elimina</strong> (il pannello mostra il numero di utilizzi). Le U.M. incontrate nell'import da Excel vengono registrate automaticamente.</p>
+<h3 id="-impostazioni">⚙️ Impostazioni</h3>
+<p><strong>Costi e margini</strong></p>
+<div class="tw"><table><thead><tr><th>Campo</th><th>Di serie</th></tr></thead><tbody><tr><td>Spese generali / overhead (%)</td><td>12</td></tr><tr><td>Margine / markup (%)</td><td>20</td></tr><tr><td>Simbolo valuta</td><td>€</td></tr><tr><td>Approvvigionamento parte (predefinito)</td><td>Acquisto da fornitore</td></tr></tbody></table></div>
+<p><strong>Codifica automatica articoli</strong></p>
+<div class="tw"><table><thead><tr><th>Campo</th><th>Di serie</th></tr></thead><tbody><tr><td>Cifre della parte incrementale</td><td>3</td></tr><tr><td>Prefisso Commerciali</td><td><code>CMM</code></td></tr><tr><td>Prefisso Materie prime</td><td><code>MAT</code></td></tr><tr><td>Prefisso Parti</td><td><code>PRT</code></td></tr></tbody></table></div>
+<p><strong>Accesso</strong></p>
+<div class="tw"><table><thead><tr><th>Campo</th><th>Di serie</th></tr></thead><tbody><tr><td>Durata della sessione salvata (giorni)</td><td>30 — <strong>0 = non scade mai</strong></td></tr></tbody></table></div>
+<h3 id="-import---backup">⬆️ Import · 💾 Backup</h3>
+<p>→ <a href="#26-import-ed-export-da-excel">cap. 26</a> e <a href="#29-backup-e-manutenzione">cap. 29</a>.</p>
+<h3 id="sospendere-invece-di-eliminare">Sospendere invece di eliminare</h3>
+<p>Fornitori, clienti e centri di lavoro si possono <strong>sospendere</strong> (⏸) invece di cancellarli: restano negli archivi e nei documenti che li citano, ma <strong>spariscono dai menu a tendina e dai suggerimenti</strong>. È la risposta a chi non si può cancellare — un fornitore citato da ordini di tre anni fa — ma non deve nemmeno continuare a comparire ovunque.</p>
+<p>Il riquadro accanto al nome dice sempre se una voce è attiva o sospesa, e lo stato viaggia nell'export e nell'import Excel.</p>
+<hr>
+<h2 id="25-utenti-e-ruoli">25. Utenti e ruoli</h2>
+<p>Ogni persona ha un utente, con nome, email, ruolo, colore e stato attivo/sospeso.</p>
+<p><strong>I ruoli limitano la scrittura, non la lettura: tutti vedono tutto.</strong></p>
+<div class="tw"><table><thead><tr><th>Ruolo</th><th align="center">Articoli</th><th align="center">Distinte</th><th align="center">Richieste e ordini</th><th align="center">Gestione</th></tr></thead><tbody><tr><td><strong>Amministratore</strong></td><td align="center">✔</td><td align="center">✔</td><td align="center">✔</td><td align="center">✔</td></tr><tr><td><strong>Ufficio acquisti</strong></td><td align="center">—</td><td align="center">—</td><td align="center">✔</td><td align="center">—</td></tr><tr><td><strong>Progettazione</strong></td><td align="center">✔</td><td align="center">✔</td><td align="center">—</td><td align="center">—</td></tr><tr><td><strong>Lettore</strong></td><td align="center">—</td><td align="center">—</td><td align="center">—</td><td align="center">—</td></tr></tbody></table></div>
+<p>Nelle sezioni non scrivibili compare un <strong>banner di sola lettura</strong> e i pulsanti di creazione ed eliminazione spariscono; ogni tentativo di modifica viene comunque fermato con un messaggio. La voce <strong>Gestione</strong> — e con essa il backup — è visibile ai soli amministratori.</p>
+<p><strong>Deve restare almeno un amministratore attivo.</strong> L'app impedisce di declassare, sospendere o eliminare l'ultimo, e impedisce di agire su se stessi.</p>
+<p><strong>Le password</strong> si conservano come <strong>hash SHA-256 con salt</strong>. L'amministratore non le legge: le può solo reimpostare (<em>Imposta password</em>). Ciascuno cambia la propria dall'intestazione (🔑 <em>Cambia password</em>).</p>
+<p><strong>La riga autore.</strong> In fondo a schede articolo, richieste, ordini e piani si legge <strong>chi ha creato il record e chi l'ha aggiornato per ultimo</strong>, con data e ora.</p>
+<blockquote class="crit"><p>⚠️ <strong>Questa non è sicurezza.</strong> Finché i dati stanno nel browser, chiunque apra gli strumenti di sviluppo può leggere l'archivio, cambiarsi ruolo o saltare l'accesso: il controllo è tutto sul PC dell'utente. Serve a <strong>separare le responsabilità tra colleghi che si fidano</strong>, non a proteggere i dati da chi non si fida.</p><p>Di conseguenza: <strong>il backup JSON contiene gli utenti con i loro hash.</strong> Trattalo come un file riservato.</p><p>I permessi diventeranno reali quando l'archivio sarà condiviso, perché lì vivranno sul server e non su questo PC. La matrice qui sopra è già quella che verrà applicata: assegnare i ruoli con criterio adesso non è un esercizio a vuoto (→ <a href="#30-quando-larchivio-è-condiviso-supabase">cap. 30</a>).</p></blockquote>
+<hr>
+<h2 id="26-import-ed-export-da-excel">26. Import ed export da Excel</h2>
+<p><strong>Come ci si arriva.</strong> ⚙️ <em>Gestione → Import</em>.</p>
+<p>Quattro blocchi. <strong>In tutti, l'export è anche il template</strong>: si esporta quello che c'è, si modifica il file, lo si ricarica. Ogni file porta un foglio <strong>Istruzioni</strong> e un foglio <strong>Liste</strong> con i valori ammessi.</p>
+<h3 id="i-quattro-blocchi">I quattro blocchi</h3>
+<p><strong>1. Articoli — Acquisti</strong> Fogli: <code>Commerciali</code> · <code>Materie prime</code> · <code>Listino</code>. Pulsanti: <em>Esporta Acquisti</em> · <em>🔍 Verifica un file</em> · <em>Carica Acquisti</em>.</p>
+<p><strong>2. Articoli — Progetto</strong> Fogli: <code>Macchine</code> · <code>Gruppi</code> · <code>Sottogruppi</code> · <code>Parti</code> · <code>Listino</code>. <strong>Il tipo è il foglio</strong>: non c'è una colonna «tipo». I fogli si applicano in quest'ordine, così i padri esistono prima dei figli. <strong>La distinta non è in questi file</strong> — sta nel blocco 3.</p>
+<p><strong>3. Import Distinte</strong> Un foglio padre-figlio, colonne: <code>CodicePadre</code> · <code>CodiceFiglio</code> · <code>Qta</code> · <code>Scarto%</code>. Gli articoli <strong>devono già esistere</strong>. Per ogni padre i componenti vengono <strong>sostituiti</strong> — quindi ricaricare lo stesso file due volte dà lo stesso risultato. Le relazioni cicliche sono segnalate e saltate. Pulsanti: <em>Scarica template Distinte</em> · <em>Carica file Distinte</em>.</p>
+<p><strong>4. Impostazioni di Gestione</strong> Un foglio per scheda: <code>Azienda</code> · <code>Utenti</code> · <code>Fornitori</code> · <code>Clienti</code> · <code>Condizioni offerta</code> · <code>Famiglie commerciali</code> · <code>Famiglie materie prime</code> · <code>Famiglie parti</code> · <code>Concetti</code> · <code>Centri di lavoro</code> · <code>Unità di misura</code> · <code>Impostazioni</code>. <strong>Le password non sono nel file.</strong></p>
+<h3 id="le-regole-comuni">Le regole comuni</h3>
+<div class="tw"><table><thead><tr><th>Regola</th><th>Dettaglio</th></tr></thead><tbody><tr><td><strong>Il Codice è la chiave</strong></td><td>Esiste → <strong>aggiorna</strong>. Non esiste → <strong>crea</strong>. Vuoto → <strong>genera</strong> il codice automatico</td></tr><tr><td><strong>L'import è additivo</strong></td><td>Non cancella mai niente. Quello che non è nel file resta com'è</td></tr><tr><td><strong>Fornitori e famiglie mancanti si creano al volo</strong></td><td>I <strong>concetti no</strong>: quelli si aggiungono a mano, perché la nomenclatura non deve crescere per distrazione</td></tr><tr><td><strong>Fornitore + prezzo</strong></td><td>Creano una <strong>quotazione a listino</strong>, che diventa il prezzo in uso</td></tr><tr><td><strong>U.M. sconosciute</strong></td><td>Vengono registrate automaticamente nell'elenco</td></tr><tr><td><strong>CSV</strong></td><td>I <code>.csv</code> in UTF-8 nudo vengono riconosciuti da soli</td></tr></tbody></table></div>
+<h3 id="-verifica-un-file">🔍 Verifica un file</h3>
+<p><strong>Esegue l'import per intero, mostra il report, e poi annulla tutto.</strong> È il modo di sapere cosa succederebbe senza che succeda. Da usare sempre, la prima volta che si carica un file nuovo.</p>
+<p>Il <strong>report</strong> è per foglio, e dice quanti record sono stati <em>creati</em>, <em>aggiornati</em>, <em>invariati</em>, con gli <strong>avvisi</strong> e gli <strong>errori</strong>, ciascuno con il foglio e il numero di riga.</p>
+<hr>
+<h2 id="27-export-di-elenchi-e-documenti">27. Export di elenchi e documenti</h2>
+<p>Bomtrack ha due famiglie di export, e vale la pena distinguerle.</p>
+<h3 id="gli-export-di-elenco">Gli export di elenco</h3>
+<p>Hanno i pulsanti <strong>Esporta Excel</strong> ed <strong>Esporta PDF</strong>: Magazzino · Acquisti · Progetto · Cicli · Carico centri · Commesse · Richieste · Ordini · Ordini di lavoro · elenco Piani · Materiale presso terzi.</p>
+<p><strong>Si esporta quello che si vede</strong>: i filtri attivi sono applicati e le colonne sono le stesse. La paginazione a schermo (i 200 articoli per volta) <strong>non taglia niente</strong>.</p>
+<p><strong>I filtri finiscono scritti nel file</strong> — un foglio <strong>Estrazione</strong> nell'Excel (Estrazione, Azienda, Data, filtri attivi), una riga sotto il titolo nel PDF — così a distanza di tempo si sa ancora cosa contiene quel file.</p>
+<div class="tw"><table><thead><tr><th>Formato</th><th>Cosa porta</th></tr></thead><tbody><tr><td><strong>PDF</strong></td><td>Testata azienda e numero di pagina su ogni pagina</td></tr><tr><td><strong>Excel</strong></td><td><strong>Autofiltro</strong> sull'intestazione, i numeri come numeri e <strong>le date come date</strong> — quindi si ordinano e si filtrano per periodo dentro Excel, non come testo</td></tr></tbody></table></div>
+<p>Nome del file: <code>bomtrack_&lt;sezione&gt;_&lt;data&gt;.xlsx</code> o <code>.pdf</code>.</p>
+<blockquote><p>Il pannello laterale, con più righe selezionate, esporta <strong>solo la selezione</strong>.</p></blockquote>
+<h3 id="gli-export-di-documento">Gli export di documento</h3>
+<p>Sono i documenti veri e propri: la <strong>richiesta di offerta</strong> (PDF bilingue IT/EN), l'<strong>ordine</strong>, l'<strong>ordine di lavoro</strong>, il <strong>piano di fabbisogno</strong>, la <strong>distinta esplosa</strong>. Hanno il pulsante <strong>Genera documento PDF</strong> / <strong>Genera documento Excel</strong> nella loro barra dedicata.</p>
+<p>Per richieste e ordini, quei pulsanti sono <strong>disabilitati finché ci sono modifiche non salvate</strong>, e alla generazione l'app propone di far passare lo stato da <em>Bozza</em> a <em>Inviata</em> / <em>Inviato</em>. Rifiutando, il file si scarica lo stesso e lo stato non cambia.</p>
+<hr>
+<h2 id="28-stampa">28. Stampa</h2>
+<p><code>Ctrl+P</code>, o il pulsante 🖨 nell'intestazione. Anche il <code>Ctrl+P</code> del browser è agganciato: si ottiene la stampa pulita, non la pagina grezza.</p>
+<p>Esce <strong>la vista aperta</strong> — distinta, costificazione, fabbisogno, richiesta, ordine — ripulita di navigazione, filtri e pulsanti, con intestazione, data e autore. Nelle viste a documento <strong>esce il documento, non l'elenco</strong>.</p>
+<p><strong>La carta resta bianca</strong> anche con il tema scuro attivo.</p>
+<hr>
+<h2 id="29-backup-e-manutenzione">29. Backup e manutenzione</h2>
+<p><strong>Come ci si arriva.</strong> ⚙️ <em>Gestione → Backup</em>. <strong>Solo amministratori.</strong></p>
+<h3 id="backup-locale">Backup locale</h3>
+<div class="tw"><table><thead><tr><th>Comando</th><th>Cosa fa</th></tr></thead><tbody><tr><td><em>(in testa)</em></td><td>La <strong>dimensione</strong> dell'archivio</td></tr><tr><td><strong>Esporta JSON</strong></td><td>Scarica l'intero archivio in un file</td></tr><tr><td><strong>Importa JSON</strong></td><td>Carica un file <strong>sovrascrivendo i dati attuali</strong></td></tr><tr><td><strong>↺ Ripristina dati esempio</strong></td><td>Rimette la macchina dimostrativa</td></tr></tbody></table></div>
+<blockquote class="crit"><p>⚠️ <strong>Fai backup regolari.</strong> I dati stanno in questo browser: non esiste una copia da nessun'altra parte. Un backup a fine giornata costa dieci secondi.</p><p>⚠️ <strong>Il backup contiene gli utenti con i loro hash di password.</strong> È un file riservato.</p></blockquote>
+<p>I backup di versioni vecchie si <strong>migrano da soli</strong> all'import: un file esportato mesi fa si ricarica senza conversioni.</p>
+<p>Questo comando non andrà in pensione con l'archivio condiviso: lì servirà a tenere una copia <strong>fuori</strong> dal servizio che ospita i dati, che è l'unico backup che protegga davvero (→ <a href="#30-quando-larchivio-è-condiviso-supabase">cap. 30</a>).</p>
+<h3 id="cestino">Cestino</h3>
+<p>Le eliminazioni restano recuperabili <strong>30 giorni</strong>. Per ogni riga: <strong>↶ Ripristina</strong> e <strong>Elimina definitivamente</strong>; in fondo <strong>Svuota il cestino</strong>. Passata la finestra dei 30 giorni, le voci spariscono da sole al caricamento successivo.</p>
+<p>Cosa ci finisce: Articolo · Fornitore · Cliente · Centro di lavoro · Macrofamiglia · Richiesta · Ordine · Ordine di lavoro · Piano · Utente · Commessa · Movimento · Revisione.</p>
+<h3 id="codici-articolo-duplicati">Codici articolo duplicati</h3>
+<p>Un controllo dati che elenca i codici assegnati a più di un articolo — di solito il residuo di un import fatto male. Lo stesso controllo alimenta un segnale del Riepilogo.</p>
+<h3 id="registro-errori">Registro errori</h3>
+<p>Gli errori imprevisti incontrati <strong>in questa sessione</strong> (si azzera ricaricando la pagina), con <strong>Scarica registro errori</strong>: è il file da allegare quando si segnala un problema.</p>
+<h3 id="azzera-tutto">AZZERA TUTTO</h3>
+<p>Svuota completamente l'archivio, dati di esempio compresi.</p>
+<blockquote class="crit"><p>⚠️ <strong>Irreversibile.</strong> Non passa dal cestino. Esporta un backup prima, sempre.</p></blockquote>
+<hr>
+<h2 id="30-quando-larchivio-è-condiviso-supabase">30. Quando l'archivio è condiviso (Supabase)</h2>
+<blockquote class="warn"><p>⚠️ <strong>Questo capitolo descrive una condizione che non è ancora attiva.</strong> Oggi Bomtrack lavora <strong>solo in locale</strong>: ogni PC ha il suo archivio, e non c'è nessun collegamento a un server. Sta qui perché quello che si fa adesso conta già: i codici puliti, i ruoli assegnati davvero, l'abitudine al backup e la disciplina dei piani aperti sono le stesse cose che reggeranno il lavoro in squadra. Chi legge il resto del manuale non deve cercare queste funzioni: non le troverà.</p></blockquote>
+<h3 id="cosa-cambia">Cosa cambia</h3>
+<div class="tw"><table><thead><tr><th></th><th>Oggi (locale)</th><th>Con l'archivio condiviso</th></tr></thead><tbody><tr><td><strong>Dove stanno i dati</strong></td><td>Nel browser di questo PC</td><td>In un database condiviso, uno per azienda</td></tr><tr><td><strong>I colleghi</strong></td><td>Ognuno la sua copia; ci si allinea passandosi il backup</td><td>Tutti sullo stesso archivio, ciascuno dal suo PC</td></tr><tr><td><strong>L'accesso</strong></td><td>Separa le responsabilità, non protegge i dati</td><td>Autenticazione vera; i permessi vivono <strong>sul server</strong></td></tr><tr><td><strong>I ruoli</strong></td><td>Chi apre gli strumenti di sviluppo li aggira</td><td>Il server rifiuta la scrittura, e non c'è modo di convincerlo</td></tr><tr><td><strong>Le password</strong></td><td>Conservate qui come hash</td><td>Le possiede il servizio di autenticazione</td></tr><tr><td><strong>Nuovo utente</strong></td><td>L'amministratore digita una password iniziale</td><td>L'amministratore <strong>invita</strong>, e la password se la fa la persona</td></tr><tr><td><strong>Il backup</strong></td><td>L'unica copia che esiste</td><td>Resta, e serve ancora: fuori sede</td></tr><tr><td><strong>Senza rete</strong></td><td>Non serve mai</td><td>Si continua a lavorare; le modifiche partono al ritorno</td></tr></tbody></table></div>
+<h3 id="come-si-lavorerà">Come si lavorerà</h3>
+<p><strong>L'app non diventa più lenta.</strong> Si continua a scrivere sul proprio PC e il salvataggio parte da solo, in sottofondo: nessuna schermata che aspetta la rete. Il badge <strong>modifiche non salvate</strong> nell'intestazione dice se c'è ancora qualcosa da mandare.</p>
+<p><strong>Le modifiche dei colleghi arrivano da sole</strong>, ogni venti o trenta secondi e quando si torna sulla finestra. Non arrivano mai in mezzo a una scheda aperta a metà: se stai compilando un ordine, l'aggiornamento aspetta che tu abbia finito.</p>
+<p><strong>Senza rete si continua a lavorare.</strong> L'archivio locale non sparisce: diventa lo specchio di quello condiviso e la coda di quello che non è ancora partito. Tornata la linea, parte tutto.</p>
+<h3 id="chi-vince-quando-due-persone-toccano-la-stessa-cosa">Chi vince quando due persone toccano la stessa cosa</h3>
+<p>È la domanda che conta davvero in una squadra, e la risposta non è la stessa dappertutto.</p>
+<div class="tw"><table><thead><tr><th>Cosa</th><th>Cosa succede</th></tr></thead><tbody><tr><td><strong>Aggiunte a un elenco</strong> — quotazioni di listino, righe di documento, movimenti, righe di piano, sottofamiglie</td><td><strong>Convivono.</strong> Due colleghi che registrano due quotazioni sullo stesso articolo non sono in conflitto: restano entrambe</td></tr><tr><td><strong>Distinta base, ciclo e lavorazioni di un articolo</strong></td><td><strong>L'ultimo che salva sostituisce tutto</strong>, e l'altro viene avvisato. Metà distinta di uno e metà dell'altro sarebbe un prodotto che nessuno ha progettato</td></tr><tr><td><strong>Il prezzo in uso di un articolo</strong></td><td>Vince l'ultimo che salva, e <strong>l'app avvisa</strong>: cambiando il prezzo in uso cambia il costo di ogni macchina che lo contiene</td></tr><tr><td><strong>Cancellazione contro modifica</strong></td><td>Vince la <strong>cancellazione</strong>: un articolo mezzo cancellato non esiste</td></tr></tbody></table></div>
+<blockquote><p><strong>La regola pratica</strong>: mettersi d'accordo su chi tiene in mano una distinta. Non perché l'app si rompa — non si rompe, e avvisa — ma perché su una distinta il lavoro di due persone non si somma. Sulle righe di un listino o di un ordine sì, e lì si può lavorare insieme senza pensarci.</p></blockquote>
+<h3 id="cosa-non-cambia">Cosa non cambia</h3>
+<p>Quasi tutto. Vale la pena dirlo, perché è il motivo per cui questo manuale non andrà riscritto:</p>
+<ul><li><strong>Le schermate, i comandi e il flusso di lavoro</strong> sono gli stessi. Tutto quello che sta nei capitoli da 1 a 29 continua a valere parola per parola.</li><li><strong>I codici articolo, le famiglie, i concetti, le unità di misura</strong>: restano quelli. Niente si rinumera.</li><li><strong>I quattro ruoli</strong> — Amministratore, Ufficio acquisti, Progettazione, Lettore — restano quelli, con la stessa matrice di permessi. Cambia solo che diventano veri.</li><li><strong>Il cestino a 30 giorni</strong>, l'export JSON, gli export Excel e PDF, la stampa.</li><li><strong>La giacenza e il materiale presso terzi restano calcolati</strong>, non scritti da nessuna parte: è la stessa regola, applicata su un database invece che su un file.</li></ul>
+<h3 id="quello-che-va-deciso-prima-di-passare">Quello che va deciso prima di passare</h3>
+<p>Sono cinque cose, e quattro si possono già preparare oggi.</p>
+<ol><li><strong>Un archivio solo.</strong> Si sceglie quale PC porta i dati buoni, si esporta il suo JSON, e da lì si riparte. <strong>Due archivi divergenti non si fondono</strong>: se in due officine si è lavorato in parallelo per mesi, uno dei due lavori va rifatto. Meglio saperlo prima.</li><li><strong>Le password non migrano.</strong> Ognuno rifà la sua al primo accesso, su invito. Gli utenti, i nomi, le email e i ruoli invece passano.</li><li><strong>I codici duplicati vanno ripuliti prima.</strong> <em>Gestione → Backup → Codici articolo duplicati</em>. Su un PC solo sono un fastidio; in condivisione diventano il problema di tutti.</li><li><strong>Il backup fuori sede.</strong> Il piano gratuito <strong>non ha backup automatici</strong>: se il progetto si perde, si perde. L'export JSON resta l'unica risposta, e va fatto con regolarità <strong>fuori</strong> dal servizio che si sta cercando di proteggere.</li><li><strong>La chiusura estiva.</strong> Un progetto lasciato inattivo sette giorni viene sospeso, e va riacceso a mano. Un'officina che chiude due settimane ad agosto lo scopre il 25 agosto, con l'app che non risponde. Si predispone prima.</li></ol>
+<h3 id="quanto-regge-il-piano-gratuito">Quanto regge il piano gratuito</h3>
+<div class="tw"><table><thead><tr><th></th><th></th></tr></thead><tbody><tr><td><strong>Spazio utile</strong></td><td>~430 MB dei 500 dichiarati (il resto lo occupa il servizio)</td></tr><tr><td><strong>Officina piccola, 3 anni</strong></td><td>~25% dello spazio: sta larga</td></tr><tr><td><strong>Il primo limite che si incontra</strong></td><td>Non è lo spazio, è la <strong>banda</strong>. Si risolve scaricando a ogni giro solo quello che è cambiato, non tutto</td></tr><tr><td><strong>Cosa cresce davvero</strong></td><td>I <strong>movimenti di magazzino</strong> e le <strong>revisioni</strong> rilasciate. Il catalogo, per quanto grande, pesa poco</td></tr></tbody></table></div>
+<blockquote class="warn"><p>⚠️ <strong>Gli allegati cambiano il conto di colpo.</strong> Oggi l'app non ha disegni, PDF né foto. Il giorno in cui una richiesta d'offerta portasse con sé il disegno, 1 GB sono circa <strong>mille PDF da 1 MB</strong>: poche centinaia di articoli con un disegno e due revisioni. È la funzione che, più di ogni crescita del catalogo, porta Bomtrack fuori dal piano gratuito.</p></blockquote>
+<h3 id="fino-ad-allora">Fino ad allora</h3>
+<p>Quattro abitudini che valgono già adesso e che il giorno del passaggio si riveleranno le uniche che contavano:</p>
+<ul><li><strong>un PC solo è quello «di verità»</strong>, e gli altri lo consultano;</li><li><strong>l'export JSON a fine giornata</strong>, tenuto fuori da quel PC;</li><li><strong>i ruoli assegnati davvero</strong>, non tutti amministratori;</li><li><strong>i codici puliti</strong>, controllati ogni tanto dal pannello dei duplicati.</li></ul>
+<hr>
+<h1 id="parte-vii--riferimenti">Parte VII — Riferimenti</h1>
+<h2 id="31-scorciatoie-da-tastiera">31. Scorciatoie da tastiera</h2>
+<div class="tw"><table><thead><tr><th>Tasti</th><th>Effetto</th></tr></thead><tbody><tr><td><strong>Ctrl+K</strong> (⌘K)</td><td><strong>Ricerca globale</strong> — articoli, richieste, ordini, ordini di lavoro, piani. Si scrive un codice o un numero e si salta dove serve, senza passare dalla vista giusta e dai suoi filtri</td></tr><tr><td><strong>Ctrl+I</strong> (⌘I)</td><td>Apre e chiude il <strong>pannello laterale</strong></td></tr><tr><td><strong>Ctrl+P</strong></td><td><strong>Stampa</strong> della vista aperta</td></tr><tr><td><strong>Esc</strong></td><td>Chiude la finestra in cima; nell'elenco con pannello aperto, deseleziona</td></tr><tr><td><strong>↑ ↓</strong></td><td>Scorre le righe dell'elenco, o i risultati della ricerca globale</td></tr><tr><td><strong>Invio</strong></td><td>Apre la scheda completa dell'articolo scelto, o il risultato della ricerca</td></tr><tr><td><strong>Ctrl+click</strong></td><td>Aggiunge una riga alla selezione</td></tr><tr><td><strong>Maiusc+click</strong></td><td>Seleziona l'intervallo fra la riga corrente e quella cliccata</td></tr><tr><td><strong>Maiusc+↑ ↓</strong></td><td>Estende la selezione</td></tr></tbody></table></div>
+<hr>
+<h2 id="32-stati-dei-documenti">32. Stati dei documenti</h2>
+<h3 id="gli-stati">Gli stati</h3>
+<div class="tw"><table><thead><tr><th>Documento</th><th>Stati</th></tr></thead><tbody><tr><td><strong>Richiesta di offerta</strong></td><td>Bozza · Inviata · Offerta ricevuta · Chiusa</td></tr><tr><td><strong>Ordine</strong> (ODA) e <strong>Ordine di lavoro</strong> (ODL)</td><td>Bozza · Inviato · Confermato · Parziale · Evaso · Annullato</td></tr><tr><td><strong>Commessa</strong></td><td>Aperta · In produzione · Chiusa · Annullata</td></tr><tr><td><strong>Piano di fabbisogno</strong></td><td>Aperto · Chiuso</td></tr></tbody></table></div>
+<h3 id="cosa-resta-modificabile">Cosa resta modificabile</h3>
+<div class="tw"><table><thead><tr><th>Documento</th><th>Stato</th><th>Modificabile</th></tr></thead><tbody><tr><td>RFQ</td><td><strong>Bozza</strong></td><td>tutto</td></tr><tr><td>RFQ</td><td><strong>Inviata</strong> · <strong>Offerta ricevuta</strong></td><td>prezzo unitario e data di consegna</td></tr><tr><td>RFQ</td><td><strong>Chiusa</strong></td><td>nulla</td></tr><tr><td>ODA / ODL</td><td><strong>Bozza</strong></td><td>tutto</td></tr><tr><td>ODA / ODL</td><td><strong>Inviato</strong> · <strong>Confermato</strong> · <strong>Parziale</strong> · <strong>Evaso</strong></td><td>la colonna Ricevuto (Rientrati)</td></tr><tr><td>ODA / ODL</td><td><strong>Annullato</strong></td><td>nulla</td></tr></tbody></table></div>
+<p><strong>In ogni stato</strong> restano sempre modificabili: le note del documento, le 🔒 note interne, le note di riga, e <strong>lo stato stesso</strong>.</p>
+<p><strong>🔓 Sblocca per modifica</strong> riapre un documento bloccato. Lo sblocco vale <strong>finché si resta dentro</strong>: uscendo e rientrando, il documento torna bloccato.</p>
+<h3 id="le-transizioni-automatiche">Le transizioni automatiche</h3>
+<div class="tw"><table><thead><tr><th>Da</th><th>A</th><th>Quando</th></tr></thead><tbody><tr><td>Bozza</td><td>Inviata / Inviato</td><td>alla <strong>generazione del PDF o dell'Excel</strong> (previa conferma; rifiutando, il file si scarica e lo stato non cambia)</td></tr><tr><td>Inviata</td><td>Offerta ricevuta</td><td>quando <strong>tutte</strong> le righe hanno un prezzo <em>(torna indietro se un prezzo si svuota)</em></td></tr><tr><td><em>(RFQ)</em></td><td>Chiusa</td><td>quando dalla richiesta <strong>nasce un ordine</strong></td></tr><tr><td>Inviato</td><td>Confermato</td><td>quando si compila il <strong>n° di conferma</strong> del fornitore</td></tr><tr><td>Confermato</td><td>Parziale → Evaso</td><td>man mano che si registrano i <strong>ricevimenti</strong> (o i rientri)</td></tr></tbody></table></div>
+<blockquote><p><strong>Bozza e Annullato non vengono mai toccati automaticamente.</strong></p></blockquote>
+<hr>
+<h2 id="33-glossario">33. Glossario</h2>
+<div class="tw"><table><thead><tr><th>Termine</th><th>Significato</th></tr></thead><tbody><tr><td><strong>BOM</strong></td><td><em>Bill of Materials</em>, distinta base: l'elenco di cosa contiene un prodotto</td></tr><tr><td><strong>RFQ</strong> / RDO</td><td><em>Request For Quotation</em>, richiesta di offerta: si chiede un prezzo, non si compra</td></tr><tr><td><strong>ODA</strong></td><td>Ordine d'acquisto: si compra <strong>merce</strong></td></tr><tr><td><strong>ODL</strong></td><td>Ordine di lavoro: si commissiona una <strong>lavorazione</strong> a un terzista</td></tr><tr><td><strong>Conto lavoro</strong></td><td>Mandare un pezzo fuori a lavorare e riaverlo indietro. La merce resta nostra</td></tr><tr><td><strong>Terzista</strong></td><td>Il fornitore che esegue una lavorazione in conto lavoro</td></tr><tr><td><strong>Tratta</strong></td><td>Le fasi <strong>consecutive</strong> dello stesso terzista, commissionate come una sola lavorazione</td></tr><tr><td><strong>Passata</strong></td><td>Un giro di uscita e rientro dallo stesso terzista. Due passate dallo stesso terzista = due ODL</td></tr><tr><td><strong>Fase</strong></td><td>Un passo del ciclo di lavorazione (10, 20, 30…)</td></tr><tr><td><strong>Ciclo di lavorazione</strong></td><td>La sequenza di fasi che trasforma il materiale in una parte</td></tr><tr><td><strong>Distinta parte</strong></td><td>Il materiale che una parte consuma (non i suoi sotto-assiemi: una parte è una foglia)</td></tr><tr><td><strong>Concetto</strong></td><td>L'oggetto nel nome di una parte: <code>ALBERO</code>, <code>FLANGIA</code>. Sempre maiuscolo, scelto da un elenco</td></tr><tr><td><strong>Sigla</strong></td><td>L'abbreviazione di una macchina o di un gruppo, che entra nei codici</td></tr><tr><td><strong>Approvvigionamento</strong></td><td>Come si ottiene una parte: <em>Produzione interna</em> o <em>Acquisto da fornitore</em></td></tr><tr><td><strong>Quotazione</strong></td><td>Un prezzo offerto da un fornitore per un articolo. Più quotazioni per articolo; una sola è quella in uso</td></tr><tr><td><strong>Scarto %</strong></td><td>La quota di materiale che si perde: 10 pezzi con 5% di scarto consumano materiale per 10,5</td></tr><tr><td><strong>Overhead / spese generali</strong></td><td>La percentuale che si aggiunge al costo per coprire i costi non diretti</td></tr><tr><td><strong>Margine / markup</strong></td><td>La percentuale che si aggiunge al costo totale per ottenere il prezzo di vendita</td></tr><tr><td><strong>Fabbisogno lordo</strong></td><td>Quanto serve, senza guardare cosa c'è</td></tr><tr><td><strong>Fabbisogno netto</strong></td><td>Quanto serve <strong>comprare</strong>: lordo + scorta minima + impegnato − esistente − in arrivo</td></tr><tr><td><strong>Esistente</strong></td><td>Quello che c'è adesso a scaffale</td></tr><tr><td><strong>In arrivo</strong></td><td>Ordinato e non ancora entrato</td></tr><tr><td><strong>Impegnato</strong></td><td>Promesso ai piani aperti</td></tr><tr><td><strong>Libero</strong></td><td>esistente + in arrivo − impegnato</td></tr><tr><td><strong>Scorta minima</strong></td><td>La soglia sotto cui si avvisa, e che il netto ricostituisce</td></tr><tr><td><strong>Lotto di riordino</strong></td><td>La quantità a cui si arrotondano gli acquisti (multiplo esatto o quantità minima)</td></tr><tr><td><strong>Saturazione</strong></td><td>La percentuale di capacità di un centro occupata in una settimana</td></tr><tr><td><strong>Capacità</strong></td><td>Le ore che un centro può fare in una settimana. <strong>0 = non dichiarata</strong></td></tr><tr><td><strong>Revisione</strong></td><td>Una fotografia congelata di una distinta, identificata da una lettera</td></tr><tr><td><strong>Archivio condiviso</strong></td><td>Il database unico su cui lavorano tutti i colleghi, al posto di una copia per PC. Progettato, non ancora attivo (→ <a href="#30-quando-larchivio-è-condiviso-supabase">cap. 30</a>)</td></tr><tr><td><strong>Supabase</strong></td><td>Il servizio scelto per ospitare l'archivio condiviso: database, autenticazione e permessi</td></tr><tr><td><strong>Permessi sul server</strong></td><td>I ruoli applicati dal database invece che dall'app. È la differenza fra separare le responsabilità e proteggere davvero i dati</td></tr></tbody></table></div>
+<hr>
+<h2 id="34-domande-frequenti">34. Domande frequenti</h2>
+<p><strong>Non trovo un fornitore (o un cliente, o un centro) nel menu a tendina.</strong> Probabilmente è <strong>sospeso</strong>. <em>Gestione →</em> la sua scheda <em>→ Riattiva</em>. Le voci sospese restano negli archivi e nei documenti che le citano, ma spariscono dai menu.</p>
+<p><strong>Non riesco a modificare una riga di un ordine.</strong> Dipende dallo <strong>stato</strong> (→ <a href="#32-stati-dei-documenti">cap. 32</a>). Un ordine <em>Inviato</em> lascia modificare solo la colonna Ricevuto. Se serve davvero, <strong>🔓 Sblocca per modifica</strong>.</p>
+<p><strong>Il costo di una parte è zero.</strong> Tre possibilità: (a) è a <em>Acquisto da fornitore</em> e non ha nessuna quotazione a listino → <a href="#10-listino-fornitori">cap. 10</a>; (b) è a <em>Produzione interna</em> e non ha né distinta parte né ciclo → <a href="#14-cicli-di-lavorazione">cap. 14</a>; (c) i suoi componenti non hanno prezzo. Il Riepilogo elenca gli «articoli d'acquisto senza prezzo».</p>
+<p><strong>Il costo della macchina non torna / compare un avviso rosso.</strong> C'è un <strong>riferimento ciclico</strong>: un assieme che, scendendo, contiene se stesso. L'avviso nomina l'articolo coinvolto. Si corregge togliendo la riga che chiude l'anello.</p>
+<p><strong>Un articolo non entra nel fabbisogno.</strong> Se è una <strong>parte a <em>Acquisto da fornitore</strong></em>, la sua distinta non viene esplosa: si compra la parte, non il suo materiale. È il comportamento voluto. Per far comprare il materiale, la parte va messa a <em>Produzione interna</em>.</p>
+<p><strong>Ho registrato il ricevimento ma la giacenza non è cambiata (o è cambiata due volte).</strong> Il ricevimento di un <strong>ODA carica il magazzino da solo</strong>: non serve anche un movimento di carico. Il campo <strong>Rientrati</strong> di un <strong>ODL</strong> invece <strong>non carica</strong>: lì il carico lo fa il movimento di <em>rientro da conto lavoro</em> (→ <a href="#22-ordini-di-lavoro-odl-e-conto-lavoro">cap. 22</a>).</p>
+<p><strong>Ho mandato un pezzo da Beta a Gamma e la giacenza non si muove.</strong> È corretto: è un <strong>passaggio di lavorazione</strong>, un cambio di luogo a quantità invariata. Il pezzo non è mai stato a scaffale.</p>
+<p><strong>Il fabbisogno mi dice di comprare roba che ho già.</strong> Attiva la casella <strong>Fabbisogno netto</strong>. Senza, la lista è <strong>lorda</strong>: quanto serve, senza guardare cosa c'è.</p>
+<p><strong>Due piani mi chiedono lo stesso materiale.</strong> È il termine <strong>impegnato</strong> che li tiene separati: finché entrambi sono <strong>aperti</strong>, ciascuno vede la quota dell'altro come già promessa. Il piano che non serve più va <strong>chiuso</strong>: la sua quota torna libera.</p>
+<p><strong>Il Carico centri dice che sono in sovraccarico. Cosa faccio?</strong> Bomtrack te lo dice, non lo risolve: <strong>non c'è schedulazione</strong>. La decisione — anticipare, mandare fuori una fase, spostare una consegna — resta a chi la prende.</p>
+<p><strong>Un centro non mostra mai il sovraccarico.</strong> Ha la <strong>capacità a 0</strong>, che significa «non dichiarata». <em>Gestione → Centri di lavoro</em>.</p>
+<p><strong>Ho perso i dati.</strong> I dati stanno <strong>in questo browser, su questo PC</strong>. Controlla: stai usando lo stesso browser? Lo stesso profilo? Sono stati puliti i dati del sito? Se hai un backup JSON, <em>Gestione → Backup → Importa JSON</em>. Se hai eliminato qualcosa per errore negli ultimi <strong>30 giorni</strong>, guarda nel <strong>Cestino</strong> prima di disperare.</p>
+<p><strong>Come lavoriamo in due sullo stesso archivio?</strong> Oggi non si può in tempo reale: ogni PC ha la sua copia. Ci si allinea passandosi il <strong>backup JSON</strong>. Gli utenti e i ruoli servono a separare le responsabilità su uno stesso PC. L'archivio condiviso è progettato — come funzionerà, e cosa conviene preparare da ora, sta nel <a href="#30-quando-larchivio-è-condiviso-supabase">cap. 30</a>.</p>
+<p><strong>L'app non genera il PDF.</strong> I pulsanti <strong>Genera documento</strong> sono <strong>disabilitati finché ci sono modifiche non salvate</strong>: premi <strong>Salva</strong> prima. Se invece non succede proprio niente, guarda <em>Gestione → Backup → Registro errori</em>.</p>
+<hr>
+<h1 id="appendice-a--come-funziona-sotto">Appendice A — Come funziona sotto</h1>
+<p>Questa appendice serve a chi deve installare, spostare, salvare o sviluppare Bomtrack. Chi la usa e basta può fermarsi al capitolo 33.</p>
+<h2 id="a1-lo-stack">A.1 Lo stack</h2>
+<p>Bomtrack è <strong>vanilla JavaScript + HTML + CSS</strong>. Nessun framework, nessun modulo ES, nessun bundler, <strong>nessun passo di build</strong>, nessun <code>package.json</code>. Gli script sono caricati in sequenza da <code>index.html</code> e condividono lo scope globale.</p>
+<p>Le librerie di terze parti sono <strong>incluse nella cartella</strong>, in <code>vendor/</code>:</p>
+<div class="tw"><table><thead><tr><th>Libreria</th><th>A cosa serve</th></tr></thead><tbody><tr><td><code>jspdf.umd.min.js</code> + <code>jspdf.plugin.autotable.min.js</code></td><td>Generazione dei PDF</td></tr><tr><td><code>xlsx.full.min.js</code> (SheetJS)</td><td>Lettura e scrittura degli Excel</td></tr></tbody></table></div>
+<p>Sono lì apposta: l'app deve funzionare <strong>completamente offline</strong>, anche aperta da <code>file://</code>. L'unica risorsa di rete sono i font di Google Fonts, e senza di quelli l'app funziona lo stesso.</p>
+<p>Non c'è backend e non c'è database remoto.</p>
+<h2 id="a2-dove-risiedono-i-dati">A.2 Dove risiedono i dati</h2>
+<p>Tutto sta nel <strong><code>localStorage</code> del browser</strong>, sotto la chiave <strong><code>bomtrack_v1</code></strong>: un unico documento JSON.</p>
+<div class="tw"><table><thead><tr><th>Chiave</th><th>Contenuto</th></tr></thead><tbody><tr><td><code>bomtrack_v1</code></td><td><strong>L'archivio.</strong> Tutto il lavoro sta qui</td></tr><tr><td><code>bomtrack_v1_illeggibile</code></td><td>Dove finisce un archivio che non si riesce più a leggere, invece di essere sovrascritto dai dati di esempio</td></tr><tr><td><code>bomtrack_theme</code></td><td>Il tema scelto</td></tr><tr><td><code>bomtrack_session</code></td><td>La sessione aperta</td></tr><tr><td><code>bomtrack_columns</code></td><td>Le colonne nascoste, per vista</td></tr><tr><td><em>(chiave email)</em></td><td>L'email ricordata da «Ricordami su questo PC»</td></tr></tbody></table></div>
+<p>Le ultime quattro sono <strong>preferenze personali</strong>, non dati aziendali: non entrano nel backup e non si condividono.</p>
+<p><strong>Lo schema è versionato</strong> (<code>SCHEMA_VERSION = 2</code>; la v1 usava id interi, la v2 usa UUID e timestamp). Le migrazioni sono <strong>idempotenti</strong>: un backup vecchio si auto-migra all'import.</p>
+<p><strong>Il cestino</strong> trattiene le eliminazioni per <strong>30 giorni</strong> (<code>TRASH_DAYS</code>).</p>
+<h2 id="a3-le-collezioni">A.3 Le collezioni</h2>
+<div class="tw"><table><thead><tr><th>Collezione</th><th>Contiene</th><th>Figli annidati</th></tr></thead><tbody><tr><td><code>items</code></td><td><strong>Gli articoli</strong> — tutti e sei i tipi</td><td><code>components</code>, <code>operations</code>, <code>cycle</code>, <code>priceList</code></td></tr><tr><td><code>revisions</code></td><td>Le revisioni congelate</td><td>—</td></tr><tr><td><code>movements</code></td><td>I movimenti di magazzino</td><td>—</td></tr><tr><td><code>suppliers</code> · <code>customers</code></td><td>Fornitori e clienti</td><td>—</td></tr><tr><td><code>workCenters</code></td><td>I centri di lavoro</td><td><code>suppliers</code> (fornitori conto lavoro)</td></tr><tr><td><code>families</code></td><td>Le famiglie articolo</td><td><code>subs</code> (sottofamiglie)</td></tr><tr><td><code>rfqs</code> · <code>orders</code> · <code>workOrders</code></td><td>Richieste, ordini, ordini di lavoro</td><td><code>lines</code></td></tr><tr><td><code>plans</code></td><td>I piani di fabbisogno</td><td><code>lines</code></td></tr><tr><td><code>jobs</code></td><td>Le commesse</td><td>—</td></tr><tr><td><code>users</code></td><td>Gli utenti (con <code>passwordHash</code> e <code>passwordSalt</code>)</td><td>—</td></tr><tr><td><code>trash</code></td><td>Il cestino</td><td>—</td></tr></tbody></table></div>
+<p>Ogni record porta <code>id</code> (UUID), <code>createdAt</code> / <code>updatedAt</code>, <code>createdBy</code> / <code>updatedBy</code> e <code>active</code>.</p>
+<p><strong>I sei tipi di articolo</strong> stanno tutti in <code>items</code>, distinti dal campo <code>type</code>: <code>macchina</code> · <code>gruppo</code> · <code>sottogruppo</code> · <code>parte</code> · <code>materiale</code> (materia prima) · <code>acquistato</code> (commerciale).</p>
+<p><strong>Le righe di ciclo</strong> (<code>cycle[]</code>) hanno due forme: <code>kind: 'item'</code> (una riga di distinta parte, con <code>itemId</code>, <code>qty</code>, <code>costOverride</code>) e <code>kind: 'op'</code> (una fase, con <code>workCenterId</code>, <code>supplierId</code>, <code>costMode</code>, <code>hours</code>, <code>days</code>, <code>rate</code> o <code>cost</code>).</p>
+<p><strong>I movimenti</strong> portano <code>kind</code> (uno dei sei tipi), <code>qty</code> con segno, e per il conto lavoro <code>supplierId</code> (dove va) e <code>fromSupplierId</code> (da dove viene).</p>
+<h2 id="a4-i-file-sorgente">A.4 I file sorgente</h2>
+<div class="tw"><table><thead><tr><th>File</th><th>Contenuto</th></tr></thead><tbody><tr><td><code>index.html</code></td><td>Struttura della pagina, navigazione, barre filtri statiche, caricamento script</td></tr><tr><td><code>style.css</code></td><td>Foglio di stile unico, tema chiaro/scuro, regole di stampa</td></tr><tr><td><code>icons.js</code></td><td>Le icone SVG</td></tr><tr><td><code>theme.js</code></td><td>Il tema</td></tr><tr><td><code>store.js</code></td><td><strong>Il layer dati</strong>: schema, migrazioni, API, persistenza, hash password, cestino</td></tr><tr><td><code>core.js</code></td><td>Stato applicativo, utility, ruoli e permessi, <code>APP_VERSION</code>, scorciatoie</td></tr><tr><td><code>auth.js</code></td><td>Accesso, sessione, primo amministratore</td></tr><tr><td><code>costing.js</code></td><td><strong>Il motore di costificazione</strong> (rollup ricorsivo) e i modi di approvvigionamento</td></tr><tr><td><code>shell.js</code></td><td>Ricerca globale, stampa, definizione della navigazione, routing</td></tr><tr><td><code>worklist.js</code></td><td>Il telaio delle viste a documento</td></tr><tr><td><code>columns.js</code> · <code>inspector.js</code></td><td>Scelta colonne · pannello laterale</td></tr><tr><td><code>views-bom.js</code> · <code>views-rev.js</code></td><td>Distinte e revisioni</td></tr><tr><td><code>views-stock.js</code></td><td>Magazzino, movimenti, conto lavoro</td></tr><tr><td><code>views-catalog.js</code></td><td>Anagrafiche, listino, scheda articolo, cicli</td></tr><tr><td><code>views-report.js</code> · <code>views-item.js</code> · <code>views-home.js</code></td><td>Costificazione · scheda di sola lettura · Riepilogo</td></tr><tr><td><code>views-mrp.js</code></td><td>Fabbisogno e Carico centri</td></tr><tr><td><code>views-jobs.js</code> · <code>views-docs.js</code></td><td>Commesse · RFQ, ODA, ODL</td></tr><tr><td><code>views-manage.js</code></td><td>Gestione</td></tr><tr><td><code>export-lists.js</code> · <code>import-catalog.js</code> · <code>import-export.js</code></td><td>Export elenchi · import articoli · import distinte, backup, avvio</td></tr><tr><td><code>cloud-map.js</code></td><td>Traduzione della forma dati verso un futuro backend. Funzioni pure, nessun codice di rete</td></tr><tr><td><code>vendor/</code></td><td>jsPDF, jsPDF-AutoTable, SheetJS</td></tr><tr><td><code>docs/</code></td><td>Analisi tecnica, schema cloud, sostenibilità</td></tr><tr><td><code>test/</code></td><td>La suite di test</td></tr></tbody></table></div>
+<h2 id="a5-i-test">A.5 I test</h2>
+<p>Non servono all'app, servono a chi la modifica. Richiedono <strong>Node 18+</strong> e nessuna installazione:</p>
+<pre><code>node test/run.js      # la suite completa
+node test/bench.js    # benchmark del motore di costificazione</code></pre>
+<p>La suite gira anche in CI a ogni push.</p>
+<h2 id="a6-i-limiti-architetturali">A.6 I limiti architetturali</h2>
+<ul><li><strong>Un archivio per browser.</strong> Niente concorrenza, niente sincronizzazione, niente storico condiviso. Ci si allinea con i backup JSON.</li><li><strong>Il controllo dei permessi è sul client.</strong> Chi apre gli strumenti di sviluppo lo aggira.</li><li><strong>La dimensione dell'archivio è limitata</strong> da quanto <code>localStorage</code> concede al browser (in genere qualche megabyte). <em>Gestione → Backup</em> mostra la dimensione corrente.</li></ul>
+<p>La direzione presa per superarli è un backend con autenticazione e permessi sul server; <code>cloud-map.js</code> e <code>docs/cloud-schema.md</code> sono la preparazione a quel passaggio, e <strong>non</strong> contengono codice di rete. Il <a href="#30-quando-larchivio-è-condiviso-supabase">cap. 30</a> racconta la stessa cosa dal lato di chi userà l'app; qui sotto, cosa esiste già nel codice per arrivarci: gli id sono UUID e non contatori locali, ogni record porta <code>createdAt</code>/<code>updatedAt</code> e <code>createdBy</code>/<code>updatedBy</code>, il registro dello schema dichiara per ogni collezione come andrà fusa, e il punto in cui si sostituisce la destinazione dei dati è uno solo.</p>
+    </article>
+    <p class="colophon">Manuale di Bomtrack — aggiornato alla versione 0.73.0. Le funzioni descritte qui corrispondono a quella revisione; il changelog dell'app elenca le differenze rispetto alle versioni successive.</p>
+  </main>
+</div>
+
+<script>
+// La pagina e' gia' impaginata e navigabile senza di me: qui si aggiungono
+// soltanto il tema dell'app, il filtro dei capitoli, l'evidenziazione di dove
+// si e' e il cassetto dell'indice sugli schermi stretti.
+(function () {
+  "use strict";
+
+  // ─── Il tema scelto nell'app ───
+  // Stessa chiave di theme.js. Se non c'e' (o il browser non concede lo
+  // storage) resta «come il sistema», che e' il valore di partenza dell'app.
+  try {
+    var t = localStorage.getItem("bomtrack_theme");
+    if (t === "light" || t === "dark") document.documentElement.setAttribute("data-theme", t);
+  } catch (e) { /* niente da leggere, niente da rompere */ }
+
+  var toc = document.getElementById("toc");
+  var links = Array.prototype.slice.call(toc.querySelectorAll("a"));
+  var heads = Array.prototype.slice.call(document.querySelectorAll(".doc h2"));
+  var empty = document.getElementById("empty");
+
+  // ─── Filtro dei capitoli ───
+  document.getElementById("q").addEventListener("input", function (e) {
+    var v = e.target.value.trim().toLowerCase();
+    var shown = 0;
+    links.forEach(function (a) {
+      var hit = !v || a.textContent.toLowerCase().indexOf(v) > -1;
+      a.classList.toggle("hide", !hit);
+      if (hit) shown++;
+    });
+    // Un titolo di parte senza capitoli sotto non dice piu' niente.
+    toc.querySelectorAll(".toc-part").forEach(function (h) {
+      var g = h.nextElementSibling;
+      var any = g ? !!g.querySelector("a:not(.hide)") : false;
+      h.classList.toggle("hide", !any);
+    });
+    empty.hidden = shown > 0;
+  });
+
+  // ─── Dove sono ───
+  var byId = {};
+  links.forEach(function (a) { byId[a.getAttribute("href").slice(1)] = a; });
+  var active = null;
+  function spy() {
+    var best = null;
+    for (var i = 0; i < heads.length; i++) {
+      if (heads[i].getBoundingClientRect().top <= 120) best = heads[i];
+      else break;
+    }
+    var a = best ? byId[best.id] : links[0];
+    if (a === active) return;
+    if (active) active.classList.remove("on");
+    active = a;
+    if (a) {
+      a.classList.add("on");
+      // Tenerlo a vista: l'indice non sta in una schermata.
+      var r = a.getBoundingClientRect(), b = toc.getBoundingClientRect();
+      if (r.top < b.top + 8 || r.bottom > b.bottom - 8) {
+        toc.scrollTop += r.top - b.top - b.height / 2;
+      }
+    }
+  }
+  var tick = false;
+  window.addEventListener("scroll", function () {
+    if (tick) return;
+    tick = true;
+    requestAnimationFrame(function () { spy(); tick = false; });
+  }, { passive: true });
+  spy();
+
+  // ─── Cassetto dell'indice sotto i 980px ───
+  var rail = document.getElementById("rail");
+  var scrim = document.getElementById("scrim");
+  var menu = document.getElementById("menu");
+  function shut() {
+    rail.classList.remove("open");
+    scrim.classList.remove("on");
+    menu.setAttribute("aria-expanded", "false");
+  }
+  menu.addEventListener("click", function () {
+    var open = rail.classList.toggle("open");
+    scrim.classList.toggle("on", open);
+    menu.setAttribute("aria-expanded", open ? "true" : "false");
+  });
+  scrim.addEventListener("click", shut);
+  document.addEventListener("click", function (e) {
+    if (e.target.closest(".toc a") || e.target.closest(".doc a")) shut();
+  });
+  document.addEventListener("keydown", function (e) { if (e.key === "Escape") shut(); });
+})();
+</script>
+</body>
+</html>
