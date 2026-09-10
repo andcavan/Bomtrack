@@ -18,6 +18,7 @@ function app() {
   a.setDb(makeDb({ items: [mat('m1', 10)] }));
   a.asRole('admin');
   a.eval('colsHidden = {}');
+  a.eval('groupOff = {}');
   return a;
 }
 
@@ -60,21 +61,92 @@ describe('Ogni elenco tiene le sue scelte', () => {
     const a = app();
     a.eval('colToggle("buy", "family")');
     const css = String(a.eval('colsHideCss()'));
-    assert.match(css, /#buy-table \.col-family\{display:none\}/);
-    assert.doesNotMatch(css, /#des-table/);
-    assert.doesNotMatch(css, /#stk-table/);
+    // La riga di #buy-table nasconde anche le colonne nuove, nascoste di
+    // serie: qui interessa solo che "family" ci sia, nella tabella giusta.
+    assert.match(css, /#buy-table \.col-family(,|\{)/);
+    assert.doesNotMatch(css, /#des-table \.col-family/);
+    assert.doesNotMatch(css, /#stk-table \.col-family/);
   });
 
-  it('senza niente da nascondere non si scrive nessuna regola', () => {
-    assert.equal(app().eval('colsHideCss()'), '');
+  it('le colonne nuove nascono nascoste: senza toccare nulla il CSS non è vuoto', () => {
+    // "Situazione attuale" per chi non apre mai il pannello: le colonne di
+    // ieri restano tutte visibili, quelle di oggi restano tutte spente.
+    const css = String(app().eval('colsHideCss()'));
+    assert.match(css, /#buy-table \.col-subfamily/);
+    assert.match(css, /#des-table \.col-concept/);
+    assert.match(css, /#stk-table \.col-notes/);
+    // Le colonne di ieri non sono in quella lista.
+    assert.doesNotMatch(css, /#buy-table \.col-family/);
+    assert.doesNotMatch(css, /#stk-table \.col-onhand/);
   });
 
-  it('più colonne nascoste stanno in una regola sola', () => {
+  it('"Mostra tutte" azzera davvero il CSS, colonne nuove comprese', () => {
+    const a = app();
+    a.eval('colsResetView("buy")'); a.eval('colsResetView("design")'); a.eval('colsResetView("stock")');
+    assert.equal(a.eval('colsHideCss()'), '');
+  });
+
+  it('più colonne nascoste stanno nella stessa regola', () => {
     const a = app();
     a.eval('colToggle("stock", "safety")');
     a.eval('colToggle("stock", "lot")');
     const css = String(a.eval('colsHideCss()'));
-    assert.match(css, /#stk-table \.col-safety,#stk-table \.col-lot\{display:none\}/);
+    const riga = css.split('\n').find(r => r.includes('#stk-table'));
+    assert.match(riga, /#stk-table \.col-safety/);
+    assert.match(riga, /#stk-table \.col-lot/);
+  });
+});
+
+describe('Colonne nascoste di serie (defaultHidden)', () => {
+  it('nascono spente, e si accendono con lo stesso gesto delle altre', () => {
+    const a = app();
+    assert.equal(a.eval('colIsHidden("buy", "notes")'), true, 'nessuno l\'ha mai accesa');
+    a.eval('colToggle("buy", "notes")');
+    assert.equal(a.eval('colIsHidden("buy", "notes")'), false, 'accesa: ora si vede');
+    a.eval('colToggle("buy", "notes")');
+    assert.equal(a.eval('colIsHidden("buy", "notes")'), true, 'spenta di nuovo: torna com\'era di serie');
+  });
+
+  it('Concetto e Approvvigionamento esistono solo in Progetto', () => {
+    const a = app();
+    assert.equal(a.eval('colIsHidden("design", "concept")'), true);
+    a.eval('colToggle("buy", "concept")');   // Acquisti non ha questa colonna: no-op
+    assert.equal(a.eval('JSON.stringify(colsHiddenOf("buy"))'), '[]',
+      'una colonna che Acquisti non ha non può finire nelle sue preferenze');
+  });
+});
+
+describe('Dividere l\'elenco per famiglia', () => {
+  it('di serie è acceso, come oggi', () => {
+    assert.equal(app().eval('isGrouped("buy")'), true);
+  });
+
+  it('si spegne, resta spento dopo il ridisegno, e si può riaccendere', () => {
+    const a = app();
+    a.eval('groupToggle("stock")');
+    assert.equal(a.eval('isGrouped("stock")'), false);
+    assert.equal(a.eval('isGrouped("buy")'), true, 'è una scelta per vista, non globale');
+    a.eval('groupToggle("stock")');
+    assert.equal(a.eval('isGrouped("stock")'), true);
+  });
+
+  it('spenta, itemGrid disegna una tabella sola', () => {
+    const a = app();
+    a.setDb(makeDb({ items: [mat('m1', 10), mat('m2', 20)] }));
+    a.eval('groupOff = { buy: true }');
+    a.eval('renderCatalog("buy")');
+    const host = a.eval('document.getElementById("buy-table").innerHTML');
+    assert.equal((String(host).match(/<table>/g) || []).length, 1,
+      'senza divisione le righe stanno tutte nella stessa tabella');
+    assert.doesNotMatch(String(host), /cat-group-title/);
+  });
+
+  it('accesa (di serie), itemGrid torna a dividere per gruppo', () => {
+    const a = app();
+    a.setDb(makeDb({ items: [mat('m1', 10), mat('m2', 20)] }));
+    a.eval('renderCatalog("buy")');
+    const host = a.eval('document.getElementById("buy-table").innerHTML');
+    assert.match(String(host), /cat-group-title/);
   });
 });
 
@@ -115,9 +187,11 @@ describe('La scheda per scegliere', () => {
 
   it('il pulsante dice quante colonne mancano all\'elenco', () => {
     const a = app();
-    assert.doesNotMatch(String(a.eval('colsButton("buy")')), /nascoste/);
+    // Di serie mancano già le colonne nuove (nascoste finché non si accendono).
+    const n0 = a.eval('colsHiddenCount("buy")');
+    assert.match(String(a.eval('colsButton("buy")')), new RegExp(`${n0} nascoste`));
     a.eval('colToggle("buy", "meta")');
-    assert.match(String(a.eval('colsButton("buy")')), /1 nascosta/,
+    assert.match(String(a.eval('colsButton("buy")')), new RegExp(`${n0 + 1} nascoste`),
       'senza il conto, un elenco a cui manca una colonna sembra rotto');
   });
 });

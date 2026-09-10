@@ -2,6 +2,21 @@
 
 Le revisioni seguono il versionamento semantico `0.MINOR.PATCH`: **MINOR** per nuove funzionalità, **PATCH** per correzioni. La versione in cima è quella in `APP_VERSION` (`core.js`) e mostrata nell'header dell'app.
 
+### 0.74.0 — 2026-09-10
+
+**La divisione per famiglia si può spegnere, e vive nel pannello Colonne**
+Acquisti, Progetto e Magazzino spezzavano sempre l'elenco in una tabella per gruppo (macrofamiglia, o tipo per gli assiemi): non c'era modo di tornare a una lista sola. Il pannello **Colonne** porta ora anche l'interruttore **Dividi l'elenco per famiglia** — acceso di serie, come oggi — e spegnerlo ridisegna una tabella unica, con la stessa paginazione ("Mostra altri"/"Mostra tutti") di prima. La scelta è per vista come le colonne: si può tenere Acquisti diviso e Magazzino no.
+
+**Il pannello Colonne offre tutti i campi che un elenco può ospitare**
+Fino a ieri il registro delle colonne conteneva solo quelle già mostrate. Acquisti, Progetto e Magazzino guadagnano sottofamiglia, fornitore, doppia unità d'acquisto (UM acquisto/fattore), scorta minima, lotto, note e autore delle modifiche; Magazzino aggiunge anche modalità lotto, presso terzi e in lavorazione; Progetto aggiunge concetto e approvvigionamento, che riguardano solo le parti — e per questo Progetto smette di essere un clone delle colonne di Acquisti e diventa un registro suo. Tutte le colonne nuove nascono **nascoste**: chi non apre mai il pannello continua a vedere l'elenco di sempre, chi le accende le ritrova domani.
+
+**Filtri Macchina e Gruppo in Progetto e Magazzino**
+Accanto a famiglia e sottofamiglia, due nuove tendine restringono l'elenco a una sola macchina o a un solo gruppo — lo stesso filtro che la vista Gestione DB aveva già, ora anche dove si guardano gli articoli invece della distinta. Scegliendo una macchina restano lei, i suoi gruppi, sottogruppi e parti; scegliendo un gruppo ci si restringe a quello. In Magazzino il filtro vale solo per le parti — commerciali e materie prime non sono mai legati a una macchina, come già succede con la famiglia sugli assiemi. Il filtro applicato finisce anche nell'export, come gli altri.
+
+**Note**
+- **12 casi nuovi** fra `test/columns.test.js`, `test/codes.test.js` e `test/export-lists.test.js`: colonne nascoste di serie che si accendono e tornano a spegnersi, l'interruttore di divisione (di serie acceso, per vista, sopravvive al ridisegno), `itemGrid` che disegna una tabella sola a divisione spenta, Progetto che non è più un clone di Acquisti, e i filtri macchina/gruppo su tutto l'albero (macchina → gruppo → sottogruppo → parte) incluso il caso limite di Acquisti, che quei filtri non li ha. La suite passa da 1620 a **1632** casi.
+- `README.md` aggiornato: il paragrafo delle colonne descrive l'interruttore e i campi nuovi, e Progetto/Magazzino descrivono i filtri macchina e gruppo.
+
 ### 0.73.0 — 2026-09-09
 
 **Manuale d'uso**
