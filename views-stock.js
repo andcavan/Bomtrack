@@ -1002,6 +1002,7 @@ function renderStock() {
   invalidateCaches();
   syncFamilyFilters(STOCK_PFX, STOCK_TYPES);
   syncMachineFilters(STOCK_PFX);
+  filtScopeApply('stock');   // dopo il sync, non prima: vedi nota in renderCatalog
   const rows = stockFilteredRows();
 
   // I conteggi in testa parlano di **tutto** il magazzino, non del filtro

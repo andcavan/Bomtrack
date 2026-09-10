@@ -2,6 +2,22 @@
 
 Le revisioni seguono il versionamento semantico `0.MINOR.PATCH`: **MINOR** per nuove funzionalità, **PATCH** per correzioni. La versione in cima è quella in `APP_VERSION` (`core.js`) e mostrata nell'header dell'app.
 
+### 0.75.0 — 2026-09-10
+
+**Barra Filtri a scomparsa, con ambito condiviso fra le viste**
+Acquisti, Progetto, Magazzino, Cicli di lavorazione e Gestione DB avevano ciascuno la propria barra filtri, sempre in vista — una ventina di controlli in tutto — e indipendente dalle altre: scegliere una famiglia in Acquisti non aveva alcun effetto su Magazzino. La barra resta esattamente dove è sempre stata, ma ora parte **chiusa**: mostra solo il pulsante **Filtri**, le pasticche di ciò che sta restringendo l'elenco in quel momento e, quando c'è qualcosa da togliere, **Rimuovi filtri**. Aprirla è una sola scelta per tutta l'app — chi la apre in una vista se la ritrova aperta anche nelle altre — perché per chi la usa è la stessa domanda ovunque: «cosa mi mostra questo elenco?».
+
+**Famiglia, sottofamiglia, macchina e gruppo seguono la navigazione**
+Dove una vista li ha già in barra, questi quattro campi diventano anche **condivisi**: sceglierli in Progetto li ritrova già impostati passando a Magazzino o a Gestione DB, così si può restringersi a una macchina o a una famiglia e lavorarci muovendosi fra le viste, senza riselezionarla ogni volta. Una famiglia che in un'altra vista non esiste — materie prime/commerciali e parti restano ambiti diversi, come già nei filtri di sempre — semplicemente non si applica lì, e la pasticca segue sempre il campo vero della vista aperta, mai la scelta condivisa: non mente su cosa sta filtrando davanti agli occhi. **Rimuovi filtri** azzera insieme i campi locali della vista e l'ambito condiviso, così la restrizione sparisce per davvero e non ricompare cambiando pagina. Restano fuori, di proposito: il *Carico centri* (filtra per piano e centro di lavoro, un altro genere di domanda) e i filtri delle viste documento — Commesse, Fabbisogno, Richieste, Ordini — che restano quelli di sempre, nella colonna a destra.
+
+**I controlli non si ricreano mai**
+Stesso `id`, stesso comportamento di sempre: aprire o chiudere la barra è solo una classe sul `<body>`, non un ridisegno — altrimenti scrivere nel campo di ricerca avrebbe perso il focus a ogni filtro applicato. Il campo condiviso, quando cambia, chiama in più una funzione che ricorda la scelta; l'unico punto delicato era l'ordine: lo scope condiviso va scritto **dopo** che la vista ha già rifatto le proprie `<option>` (famiglie, macchine), non prima — un `<select>` non accetta un valore che fra le sue opzioni correnti non c'è ancora, e prima di questo aggiustamento la propagazione falliva in silenzio alla prima vista mai visitata in quella sessione.
+
+**Note**
+- **15 casi nuovi** in `test/filters.test.js`, più gli aggiustamenti a `openCycleFor` (che già azzerava i filtri locali entrando direttamente su una parte: ora azzera anche l'ambito condiviso, altrimenti lo riscriverebbe subito dopo sugli stessi campi appena svuotati). La suite passa da 1632 a **1647** casi.
+- Verificato anche nel browser vero, non solo nei test: l'elemento finto dell'harness non simula la selezione via `<option selected>`, quindi l'ordine sync-poi-scope si vede solo lì — la classe di bug che ha portato al punto precedente.
+- `README.md` aggiornato con il nuovo paragrafo della barra Filtri.
+
 ### 0.74.0 — 2026-09-10
 
 **La divisione per famiglia si può spegnere, e vive nel pannello Colonne**

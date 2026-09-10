@@ -633,6 +633,7 @@ function itemGrid(o) {
   a11yFields(host);
   colsMountButton(o.colonne);
   colsApply();
+  filtMount(o.colonne);
   // La tabella si riscrive per intero a ogni filtro: il pannello rimette
   // l'evidenza sulla riga scelta, e la lascia cadere se quella riga non c'è più.
   inspectorSync();
@@ -697,6 +698,11 @@ function renderCatalog(scope) {
   const sc = CATALOG_SCOPES[scope]; if (!sc) return;
   updateCatFamilyFilters(scope);
   syncMachineFilters(sc.pfx);
+  // Lo scope condiviso (filters.js) va scritto qui, non prima: gli elementi
+  // hanno appena preso le loro <option> fresche da syncMachineFilters/
+  // updateCatFamilyFilters, e un valore assegnato a un <select> senza
+  // un'opzione corrispondente non prende — è per questo che l'ordine conta.
+  filtScopeApply(scope);
   const pfx = sc.pfx;
   const rows = catalogFilteredRows(scope);
 
@@ -1129,6 +1135,10 @@ function openCycleFor(id) {
   if (!it || it.type !== 'parte') return;
   currentCycleItemId = id;
   setVal('cyc-search', ''); setVal('cyc-family', ''); setVal('cyc-subfamily', '');
+  // Anche lo scope condiviso (filters.js), altrimenti setView lo riscriverebbe
+  // subito dopo sui campi appena svuotati, e la parte scelta potrebbe restare
+  // fuori dal filtro come prima di questa pulizia.
+  if (typeof filtScope !== 'undefined') { filtScope.familyId = ''; filtScope.subFamilyId = ''; filtPrefsSave(); }
   setView('cycles');
 }
 function currentCycleItem() {
@@ -1156,6 +1166,7 @@ function cycleSourcingNote(it) {
 function renderCycles() {
   invalidateCaches();   // la cache dei costi vive dentro un singolo disegno
   updateCycleFamilyFilters();
+  filtScopeApply('cycles');   // dopo il sync, non prima: vedi nota in renderCatalog
   const parts = cycleFilteredParts();
   ensureCurrentCycleItem(parts);
   const partSel = document.getElementById('cyc-part');
@@ -1171,6 +1182,7 @@ function renderCycles() {
     body.innerHTML = `<div class="empty-text">${partItems().length
       ? 'Nessuna parte con questi filtri.'
       : `Nessuna parte a catalogo. Creane una in <strong>${ico('contacts', 'tinted')} Anagrafica → Progetto → + Nuovo articolo</strong>.`}</div>`;
+    filtMount('cycles');
     return;
   }
   renderCycleSummary(it);
@@ -1196,6 +1208,7 @@ function renderCycles() {
       <div id="picker-op"></div>
     </div>`;
   a11yFields(body);
+  filtMount('cycles');
 }
 // Riepilogo in cima: le due metà del costo separate, come le due sezioni sotto.
 function renderCycleSummary(it) {
