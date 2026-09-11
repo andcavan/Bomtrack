@@ -128,16 +128,23 @@
     </div>
 
     <div class="catalog-filters">
-      <input type="text" class="search" id="bom-search" placeholder="Cerca codice o nome distinta..." oninput="bomSearchInput()">
-      <select id="bom-type" onchange="onBomFilterChange()">
-        <option value="">Tutti i livelli</option>
-        <option value="macchina">Macchine</option>
-        <option value="gruppo">Gruppi</option>
-        <option value="sottogruppo">Sottogruppi</option>
-      </select>
-      <select id="bom-machine" onchange="onBomFilterChange()">
-        <option value="">Tutte le macchine</option>
-      </select>
+      <button class="btn-outline" id="filt-toggle-bom" onclick="filtToggle()">Filtri</button>
+      <div class="filt-summary" id="filt-summary-bom">
+        <span class="filt-chips" id="filt-chips-bom"></span>
+        <button class="btn-outline filt-clear" id="filt-clear-bom" onclick="filtClearAll('bom')">Rimuovi filtri</button>
+      </div>
+      <div class="filt-fields" id="filt-fields-bom">
+        <input type="text" class="search" id="bom-search" placeholder="Cerca codice o nome distinta..." oninput="bomSearchInput()">
+        <select id="bom-type" onchange="onBomFilterChange()">
+          <option value="">Tutti i livelli</option>
+          <option value="macchina">Macchine</option>
+          <option value="gruppo">Gruppi</option>
+          <option value="sottogruppo">Sottogruppi</option>
+        </select>
+        <select id="bom-machine" onchange="filtScopeChange('bom','machine');onBomFilterChange()">
+          <option value="">Tutte le macchine</option>
+        </select>
+      </div>
       <select id="bom-select" class="cyc-part-select" onchange="onBomSelect()"></select>
       <span class="doc-filter-count" id="bom-count"></span>
     </div>
@@ -169,19 +176,26 @@
       </div>
     </div>
     <div class="catalog-filters">
-      <input type="text" class="search" id="buy-search" placeholder="Cerca codice o nome..." oninput="catalogSearchInput('buy')">
-      <select id="buy-type" onchange="onCatTypeChange('buy')">
-        <option value="">Tutti i tipi</option>
-        <option value="acquistato">Componente commerciale</option>
-        <option value="materiale">Materia prima</option>
-      </select>
-      <select id="buy-family" onchange="onCatFamilyChange('buy')">
-        <option value="">Tutte le famiglie</option>
-      </select>
-      <select id="buy-subfamily" onchange="catalogFilterChange('buy')">
-        <option value="">Tutte le sottofamiglie</option>
-      </select>
-      <button class="btn-outline fav-filter" id="buy-fav" title="Mostra solo i preferiti" onclick="toggleFavFilter()">★ Solo preferiti</button>
+      <button class="btn-outline" id="filt-toggle-buy" onclick="filtToggle()">Filtri</button>
+      <div class="filt-summary" id="filt-summary-buy">
+        <span class="filt-chips" id="filt-chips-buy"></span>
+        <button class="btn-outline filt-clear" id="filt-clear-buy" onclick="filtClearAll('buy')">Rimuovi filtri</button>
+      </div>
+      <div class="filt-fields" id="filt-fields-buy">
+        <input type="text" class="search" id="buy-search" placeholder="Cerca codice o nome..." oninput="catalogSearchInput('buy')">
+        <select id="buy-type" onchange="onCatTypeChange('buy')">
+          <option value="">Tutti i tipi</option>
+          <option value="acquistato">Componente commerciale</option>
+          <option value="materiale">Materia prima</option>
+        </select>
+        <select id="buy-family" onchange="filtScopeChange('buy','family');onCatFamilyChange('buy')">
+          <option value="">Tutte le famiglie</option>
+        </select>
+        <select id="buy-subfamily" onchange="filtScopeChange('buy','subfamily');catalogFilterChange('buy')">
+          <option value="">Tutte le sottofamiglie</option>
+        </select>
+        <button class="btn-outline fav-filter" id="buy-fav" title="Mostra solo i preferiti" onclick="toggleFavFilter()">★ Solo preferiti</button>
+      </div>
       <span id="cols-btn-buy"></span>
       <button class="add-btn-sm" onclick="newItemModal('buy')">+ Nuovo articolo</button>
     </div>
@@ -198,20 +212,33 @@
       </div>
     </div>
     <div class="catalog-filters">
-      <input type="text" class="search" id="des-search" placeholder="Cerca codice o nome..." oninput="catalogSearchInput('design')">
-      <select id="des-type" onchange="onCatTypeChange('design')">
-        <option value="">Tutti i tipi</option>
-        <option value="macchina">Macchina</option>
-        <option value="gruppo">Gruppo</option>
-        <option value="sottogruppo">Sottogruppo</option>
-        <option value="parte">Parte (lavorato)</option>
-      </select>
-      <select id="des-family" onchange="onCatFamilyChange('design')">
-        <option value="">Tutte le famiglie</option>
-      </select>
-      <select id="des-subfamily" onchange="catalogFilterChange('design')">
-        <option value="">Tutte le sottofamiglie</option>
-      </select>
+      <button class="btn-outline" id="filt-toggle-design" onclick="filtToggle()">Filtri</button>
+      <div class="filt-summary" id="filt-summary-design">
+        <span class="filt-chips" id="filt-chips-design"></span>
+        <button class="btn-outline filt-clear" id="filt-clear-design" onclick="filtClearAll('design')">Rimuovi filtri</button>
+      </div>
+      <div class="filt-fields" id="filt-fields-design">
+        <input type="text" class="search" id="des-search" placeholder="Cerca codice o nome..." oninput="catalogSearchInput('design')">
+        <select id="des-type" onchange="onCatTypeChange('design')">
+          <option value="">Tutti i tipi</option>
+          <option value="macchina">Macchina</option>
+          <option value="gruppo">Gruppo</option>
+          <option value="sottogruppo">Sottogruppo</option>
+          <option value="parte">Parte (lavorato)</option>
+        </select>
+        <select id="des-family" onchange="filtScopeChange('design','family');onCatFamilyChange('design')">
+          <option value="">Tutte le famiglie</option>
+        </select>
+        <select id="des-subfamily" onchange="filtScopeChange('design','subfamily');catalogFilterChange('design')">
+          <option value="">Tutte le sottofamiglie</option>
+        </select>
+        <select id="des-machine" onchange="filtScopeChange('design','machine');catalogFilterChange('design')">
+          <option value="">Tutte le macchine</option>
+        </select>
+        <select id="des-group" onchange="filtScopeChange('design','group');catalogFilterChange('design')">
+          <option value="">Tutti i gruppi</option>
+        </select>
+      </div>
       <span id="cols-btn-design"></span>
       <button class="add-btn-sm" onclick="newItemModal('design')">+ Nuovo articolo</button>
     </div>
@@ -229,27 +256,40 @@
       </div>
     </div>
     <div class="catalog-filters">
-      <input type="text" class="search" id="stk-search" placeholder="Cerca codice o nome..." oninput="stockSearchInput()">
-      <select id="stk-type" onchange="onStockTypeChange()">
-        <option value="">Tutti i tipi</option>
-        <option value="acquistato">Componente commerciale</option>
-        <option value="materiale">Materia prima</option>
-        <option value="parte">Parte (lavorato)</option>
-      </select>
-      <select id="stk-family" onchange="onStockFamilyChange()">
-        <option value="">Tutte le famiglie</option>
-      </select>
-      <select id="stk-subfamily" onchange="stockFilterChange()">
-        <option value="">Tutte le sottofamiglie</option>
-      </select>
-      <select id="stk-state" onchange="stockFilterChange()">
-        <option value="">Tutti gli stati</option>
-        <option value="sotto">Sotto la scorta minima</option>
-        <option value="zero">Giacenza a zero</option>
-        <option value="con">Con giacenza</option>
-        <option value="negativo">Libero negativo</option>
-        <option value="terzi">Presso terzi o in lavorazione</option>
-      </select>
+      <button class="btn-outline" id="filt-toggle-stock" onclick="filtToggle()">Filtri</button>
+      <div class="filt-summary" id="filt-summary-stock">
+        <span class="filt-chips" id="filt-chips-stock"></span>
+        <button class="btn-outline filt-clear" id="filt-clear-stock" onclick="filtClearAll('stock')">Rimuovi filtri</button>
+      </div>
+      <div class="filt-fields" id="filt-fields-stock">
+        <input type="text" class="search" id="stk-search" placeholder="Cerca codice o nome..." oninput="stockSearchInput()">
+        <select id="stk-type" onchange="onStockTypeChange()">
+          <option value="">Tutti i tipi</option>
+          <option value="acquistato">Componente commerciale</option>
+          <option value="materiale">Materia prima</option>
+          <option value="parte">Parte (lavorato)</option>
+        </select>
+        <select id="stk-family" onchange="filtScopeChange('stock','family');onStockFamilyChange()">
+          <option value="">Tutte le famiglie</option>
+        </select>
+        <select id="stk-subfamily" onchange="filtScopeChange('stock','subfamily');stockFilterChange()">
+          <option value="">Tutte le sottofamiglie</option>
+        </select>
+        <select id="stk-machine" onchange="filtScopeChange('stock','machine');stockFilterChange()">
+          <option value="">Tutte le macchine</option>
+        </select>
+        <select id="stk-group" onchange="filtScopeChange('stock','group');stockFilterChange()">
+          <option value="">Tutti i gruppi</option>
+        </select>
+        <select id="stk-state" onchange="stockFilterChange()">
+          <option value="">Tutti gli stati</option>
+          <option value="sotto">Sotto la scorta minima</option>
+          <option value="zero">Giacenza a zero</option>
+          <option value="con">Con giacenza</option>
+          <option value="negativo">Libero negativo</option>
+          <option value="terzi">Presso terzi o in lavorazione</option>
+        </select>
+      </div>
       <span id="cols-btn-stock"></span>
     </div>
     <div id="stk-kpi" class="cost-summary"></div>
@@ -266,13 +306,20 @@
       </div>
     </div>
     <div class="catalog-filters">
-      <input type="text" class="search" id="cyc-search" placeholder="Cerca codice o nome..." oninput="cycleSearchInput()">
-      <select id="cyc-family" onchange="onCycleFilterChange()">
-        <option value="">Tutte le famiglie</option>
-      </select>
-      <select id="cyc-subfamily" onchange="onCycleFilterChange()">
-        <option value="">Tutte le sottofamiglie</option>
-      </select>
+      <button class="btn-outline" id="filt-toggle-cycles" onclick="filtToggle()">Filtri</button>
+      <div class="filt-summary" id="filt-summary-cycles">
+        <span class="filt-chips" id="filt-chips-cycles"></span>
+        <button class="btn-outline filt-clear" id="filt-clear-cycles" onclick="filtClearAll('cycles')">Rimuovi filtri</button>
+      </div>
+      <div class="filt-fields" id="filt-fields-cycles">
+        <input type="text" class="search" id="cyc-search" placeholder="Cerca codice o nome..." oninput="cycleSearchInput()">
+        <select id="cyc-family" onchange="filtScopeChange('cycles','family');onCycleFilterChange()">
+          <option value="">Tutte le famiglie</option>
+        </select>
+        <select id="cyc-subfamily" onchange="filtScopeChange('cycles','subfamily');onCycleFilterChange()">
+          <option value="">Tutte le sottofamiglie</option>
+        </select>
+      </div>
       <select id="cyc-part" class="cyc-part-select" onchange="onCyclePartSelect()"></select>
     </div>
     <!-- Revisione del ciclo: riempita da renderCyclesRevBar() -->
@@ -368,6 +415,8 @@
 <script src="import-catalog.js"></script>
 <!-- Scelta delle colonne degli elenchi: la chiamano le viste che le disegnano. -->
 <script src="columns.js"></script>
+<!-- Barra Filtri a scomparsa: la chiamano le stesse viste, subito dopo. -->
+<script src="filters.js"></script>
 <!-- Il pannello laterale legge lo stato delle viste: va dopo di loro. -->
 <script src="inspector.js"></script>
 <!-- ULTIMO, sempre: in fondo a questo file c'è init(), che avvia l'app. Uno

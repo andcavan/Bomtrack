@@ -932,6 +932,9 @@ const STOCK_STATE_LABELS = {
   con: 'Con giacenza', negativo: 'Libero negativo', terzi: 'Presso terzi o in lavorazione',
 };
 
+// Etichette della modalità lotto, stesse parole dei valori proposti nella
+// scheda articolo (views-catalog.js, select `it-lotmode`).
+const LOT_MODE_LABELS = { min: 'Minima', multiple: 'Multiplo' };
 function stockRow(it) {
   const st = stockState(it);
   const u = itemUom(it);
@@ -952,6 +955,12 @@ function stockRow(it) {
     ${num(st.libero, st.libero < 0 ? 'var(--red)' : '', 'free')}
     ${num(st.safety, st.safety > 0 ? '' : 'var(--text-dim)', 'safety')}
     ${num(st.lotSize, st.lotSize > 0 ? '' : 'var(--text-dim)', 'lot')}
+    <td class="col-subfamily" style="color:var(--text-dim)">${esc(usesFamily(it.type) && it.familyId ? (subFamilyName(it.familyId, it.subFamilyId) || '—') : '—')}</td>
+    <td class="col-lotmode" style="color:var(--text-dim)">${esc(it.lotSize ? (LOT_MODE_LABELS[lotModeOf(it)] || '—') : '—')}</td>
+    <td class="col-atsupplier" style="font-family:var(--mono);text-align:right${st.atSupplier > 0.000001 ? '' : ';color:var(--text-dim)'}">${fmtQty(st.atSupplier)}</td>
+    <td class="col-inwork" style="font-family:var(--mono);text-align:right${st.inWork > 0.000001 ? '' : ';color:var(--text-dim)'}">${fmtQty(st.inWork)}</td>
+    <td class="col-notes" style="color:var(--text-dim)">${esc(it.notes || '—')}</td>
+    <td class="col-autore" style="color:var(--text-dim)">${esc(recordAuthorShort(it))}</td>
     <td class="row-actions" style="text-align:right;white-space:nowrap">
       <button class="mini-btn" title="Rettifica giacenza" onclick="stockAdjustModal('${it.id}')">${ico('scale', 'tinted', 'Rettifica giacenza')}</button>
       <button class="mini-btn" title="Movimenti (${nMov})" onclick="stockMovementsModal('${it.id}')">${ico('clock', 'tinted', 'Movimenti di magazzino')}</button>
@@ -967,12 +976,18 @@ function stockFilteredRows(soloIds) {
   const leggi = k => (document.getElementById(STOCK_PFX + '-' + k) || {}).value || '';
   const q = leggi('search').toLowerCase();
   const ft = leggi('type'), ff = leggi('family'), fsf = leggi('subfamily'), fs = leggi('state');
+  const fm = leggi('machine'), fg = leggi('group');
   // Gli assiemi restano fuori: un gruppo si produce, non si stocca, e la sua
   // giacenza sarebbe quella dei suoi componenti contata due volte.
   let rows = (db.items || []).filter(hasStock);
   if (ft) rows = rows.filter(i => i.type === ft);
   if (ff) rows = rows.filter(i => usesFamily(i.type) && i.familyId === ff);
   if (fsf) rows = rows.filter(i => i.subFamilyId === fsf);
+  // Fra i tipi a magazzino solo le parti portano macchina/gruppo: scegliendo
+  // uno dei due filtri, commerciali e materie prime escono dall'elenco —
+  // stesso comportamento del filtro famiglia con gli assiemi.
+  if (fm) rows = rows.filter(i => i.machineItemId === fm);
+  if (fg) rows = rows.filter(i => i.groupItemId === fg);
   if (q) rows = rows.filter(i => (i.code + ' ' + i.name).toLowerCase().includes(q));
   const statoOk = STOCK_STATE_FILTERS[fs];
   if (statoOk) rows = rows.filter(i => statoOk(stockState(i)));
@@ -986,6 +1001,8 @@ function stockFilteredRows(soloIds) {
 function renderStock() {
   invalidateCaches();
   syncFamilyFilters(STOCK_PFX, STOCK_TYPES);
+  syncMachineFilters(STOCK_PFX);
+  filtScopeApply('stock');   // dopo il sync, non prima: vedi nota in renderCatalog
   const rows = stockFilteredRows();
 
   // I conteggi in testa parlano di **tutto** il magazzino, non del filtro
@@ -1016,6 +1033,12 @@ function renderStock() {
     <th scope="col" class="col-committed" style="text-align:right" title="Promesso dai piani di fabbisogno aperti">Impegnato</th>
     <th scope="col" class="col-free" style="text-align:right" title="Esistente + in arrivo − impegnato: quanto se ne può ancora promettere">Libero</th>
     <th scope="col" class="col-safety" style="text-align:right">Scorta min.</th><th scope="col" class="col-lot" style="text-align:right">Lotto</th>
+    <th scope="col" class="col-subfamily">Sottofamiglia</th>
+    <th scope="col" class="col-lotmode">Modalità lotto</th>
+    <th scope="col" class="col-atsupplier" style="text-align:right">Presso terzi</th>
+    <th scope="col" class="col-inwork" style="text-align:right">In lavorazione</th>
+    <th scope="col" class="col-notes">Note</th>
+    <th scope="col" class="col-autore">Creato/aggiornato da</th>
     <th scope="col" class="row-actions"></th></tr></thead>`;
   // Stessa griglia dell'anagrafica (itemGrid, views-catalog.js): stessa
   // paginazione, stesso titolo di gruppo, stesso piede. Qui cambiano solo le
@@ -1044,6 +1067,7 @@ function stockExportSpec(soloIds) {
   const leggi = k => (document.getElementById(STOCK_PFX + '-' + k) || {}).value || '';
   const fam = getFamily(leggi('family'));
   const sub = (fam && (fam.subs || []).find(s => s.id === leggi('subfamily'))) || null;
+  const mac = getItem(leggi('machine')), grp = getItem(leggi('group'));
   const righe = stockFilteredRows(soloIds).map(it => {
     const st = stockState(it);
     return [it.code || '', it.name || '', typeLabel(it.type), codingLabel(it) || familyLabel(it),
@@ -1057,6 +1081,8 @@ function stockExportSpec(soloIds) {
       ['Tipo', leggi('type') ? typeLabel(leggi('type')) : ''],
       ['Famiglia', fam ? fam.name : ''],
       ['Sottofamiglia', sub ? sub.name : ''],
+      ['Macchina', mac ? `${mac.code} — ${mac.name}` : ''],
+      ['Gruppo', grp ? `${grp.code} — ${grp.name}` : ''],
       ['Stato', STOCK_STATE_LABELS[leggi('state')] || ''],
       ['Selezione', soloIds && soloIds.length ? soloIds.length + ' righe scelte a mano' : ''],
     ],

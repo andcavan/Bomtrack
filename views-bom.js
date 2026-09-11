@@ -69,6 +69,7 @@ function onBomSelect() { currentBomId = val('bom-select'); bomExpanded = new Set
 function renderBom() {
   invalidateCaches();   // rete di sicurezza: la cache dei costi vive dentro un singolo disegno
   updateBomMachineFilter();
+  filtScopeApply('bom');   // dopo il sync, non prima: vedi nota in renderCatalog (views-catalog.js)
   ensureCurrentBom();
   document.getElementById('bom-select').innerHTML = productOptions(currentBomId);
   const conta = document.getElementById('bom-count');
@@ -84,6 +85,7 @@ function renderBom() {
     summary.innerHTML = '';
     tree.innerHTML = '<div class="empty-text">Nessun prodotto. Creane uno in <strong>Anagrafica → Progetto → + Nuovo articolo</strong>.</div>';
     refreshBomPanelIfOpen();
+    filtMount('bom');
     return;
   }
   const c = costOf(it.id);
@@ -110,6 +112,7 @@ function renderBom() {
   const opsRow = renderOpsBlock(it, true);
   tree.innerHTML = head + rootRow + (rows || `<div class="empty-text">Nessun componente. Usa "+ Aggiungi componenti".</div>`) + opsRow;
   refreshBomPanelIfOpen();
+  filtMount('bom');
 }
 function kpi(label, value, cls) {
   // L'unità appesa al numero (`€8951.50/pz`) è informazione di contorno: stampata

@@ -2,6 +2,37 @@
 
 Le revisioni seguono il versionamento semantico `0.MINOR.PATCH`: **MINOR** per nuove funzionalità, **PATCH** per correzioni. La versione in cima è quella in `APP_VERSION` (`core.js`) e mostrata nell'header dell'app.
 
+### 0.75.0 — 2026-09-10
+
+**Barra Filtri a scomparsa, con ambito condiviso fra le viste**
+Acquisti, Progetto, Magazzino, Cicli di lavorazione e Gestione DB avevano ciascuno la propria barra filtri, sempre in vista — una ventina di controlli in tutto — e indipendente dalle altre: scegliere una famiglia in Acquisti non aveva alcun effetto su Magazzino. La barra resta esattamente dove è sempre stata, ma ora parte **chiusa**: mostra solo il pulsante **Filtri**, le pasticche di ciò che sta restringendo l'elenco in quel momento e, quando c'è qualcosa da togliere, **Rimuovi filtri**. Aprirla è una sola scelta per tutta l'app — chi la apre in una vista se la ritrova aperta anche nelle altre — perché per chi la usa è la stessa domanda ovunque: «cosa mi mostra questo elenco?».
+
+**Famiglia, sottofamiglia, macchina e gruppo seguono la navigazione**
+Dove una vista li ha già in barra, questi quattro campi diventano anche **condivisi**: sceglierli in Progetto li ritrova già impostati passando a Magazzino o a Gestione DB, così si può restringersi a una macchina o a una famiglia e lavorarci muovendosi fra le viste, senza riselezionarla ogni volta. Una famiglia che in un'altra vista non esiste — materie prime/commerciali e parti restano ambiti diversi, come già nei filtri di sempre — semplicemente non si applica lì, e la pasticca segue sempre il campo vero della vista aperta, mai la scelta condivisa: non mente su cosa sta filtrando davanti agli occhi. **Rimuovi filtri** azzera insieme i campi locali della vista e l'ambito condiviso, così la restrizione sparisce per davvero e non ricompare cambiando pagina. Restano fuori, di proposito: il *Carico centri* (filtra per piano e centro di lavoro, un altro genere di domanda) e i filtri delle viste documento — Commesse, Fabbisogno, Richieste, Ordini — che restano quelli di sempre, nella colonna a destra.
+
+**I controlli non si ricreano mai**
+Stesso `id`, stesso comportamento di sempre: aprire o chiudere la barra è solo una classe sul `<body>`, non un ridisegno — altrimenti scrivere nel campo di ricerca avrebbe perso il focus a ogni filtro applicato. Il campo condiviso, quando cambia, chiama in più una funzione che ricorda la scelta; l'unico punto delicato era l'ordine: lo scope condiviso va scritto **dopo** che la vista ha già rifatto le proprie `<option>` (famiglie, macchine), non prima — un `<select>` non accetta un valore che fra le sue opzioni correnti non c'è ancora, e prima di questo aggiustamento la propagazione falliva in silenzio alla prima vista mai visitata in quella sessione.
+
+**Note**
+- **15 casi nuovi** in `test/filters.test.js`, più gli aggiustamenti a `openCycleFor` (che già azzerava i filtri locali entrando direttamente su una parte: ora azzera anche l'ambito condiviso, altrimenti lo riscriverebbe subito dopo sugli stessi campi appena svuotati). La suite passa da 1632 a **1647** casi.
+- Verificato anche nel browser vero, non solo nei test: l'elemento finto dell'harness non simula la selezione via `<option selected>`, quindi l'ordine sync-poi-scope si vede solo lì — la classe di bug che ha portato al punto precedente.
+- `README.md` aggiornato con il nuovo paragrafo della barra Filtri.
+
+### 0.74.0 — 2026-09-10
+
+**La divisione per famiglia si può spegnere, e vive nel pannello Colonne**
+Acquisti, Progetto e Magazzino spezzavano sempre l'elenco in una tabella per gruppo (macrofamiglia, o tipo per gli assiemi): non c'era modo di tornare a una lista sola. Il pannello **Colonne** porta ora anche l'interruttore **Dividi l'elenco per famiglia** — acceso di serie, come oggi — e spegnerlo ridisegna una tabella unica, con la stessa paginazione ("Mostra altri"/"Mostra tutti") di prima. La scelta è per vista come le colonne: si può tenere Acquisti diviso e Magazzino no.
+
+**Il pannello Colonne offre tutti i campi che un elenco può ospitare**
+Fino a ieri il registro delle colonne conteneva solo quelle già mostrate. Acquisti, Progetto e Magazzino guadagnano sottofamiglia, fornitore, doppia unità d'acquisto (UM acquisto/fattore), scorta minima, lotto, note e autore delle modifiche; Magazzino aggiunge anche modalità lotto, presso terzi e in lavorazione; Progetto aggiunge concetto e approvvigionamento, che riguardano solo le parti — e per questo Progetto smette di essere un clone delle colonne di Acquisti e diventa un registro suo. Tutte le colonne nuove nascono **nascoste**: chi non apre mai il pannello continua a vedere l'elenco di sempre, chi le accende le ritrova domani.
+
+**Filtri Macchina e Gruppo in Progetto e Magazzino**
+Accanto a famiglia e sottofamiglia, due nuove tendine restringono l'elenco a una sola macchina o a un solo gruppo — lo stesso filtro che la vista Gestione DB aveva già, ora anche dove si guardano gli articoli invece della distinta. Scegliendo una macchina restano lei, i suoi gruppi, sottogruppi e parti; scegliendo un gruppo ci si restringe a quello. In Magazzino il filtro vale solo per le parti — commerciali e materie prime non sono mai legati a una macchina, come già succede con la famiglia sugli assiemi. Il filtro applicato finisce anche nell'export, come gli altri.
+
+**Note**
+- **12 casi nuovi** fra `test/columns.test.js`, `test/codes.test.js` e `test/export-lists.test.js`: colonne nascoste di serie che si accendono e tornano a spegnersi, l'interruttore di divisione (di serie acceso, per vista, sopravvive al ridisegno), `itemGrid` che disegna una tabella sola a divisione spenta, Progetto che non è più un clone di Acquisti, e i filtri macchina/gruppo su tutto l'albero (macchina → gruppo → sottogruppo → parte) incluso il caso limite di Acquisti, che quei filtri non li ha. La suite passa da 1620 a **1632** casi.
+- `README.md` aggiornato: il paragrafo delle colonne descrive l'interruttore e i campi nuovi, e Progetto/Magazzino descrivono i filtri macchina e gruppo.
+
 ### 0.73.0 — 2026-09-09
 
 **Manuale d'uso**

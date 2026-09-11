@@ -491,6 +491,17 @@ tr{border-bottom:1px solid var(--hairline)}
 .catalog-filters{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:16px}
 .catalog-filters input,.catalog-filters select{background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:9px 12px;color:var(--text);font-size:13px;outline:none}
 .catalog-filters .search{flex:1;min-width:200px}
+
+/* Barra Filtri a scomparsa (filters.js): stessa riga di sempre, solo più alta
+   quando aperta — niente posizionamento fisso, niente da far coesistere col
+   pannello laterale o con "Aggiungi componenti". */
+.filt-fields{display:none;gap:10px;flex-wrap:wrap;align-items:center}
+body.filt-open .filt-fields{display:flex}
+.filt-summary{display:flex;gap:8px;align-items:center;flex:1;min-width:0}
+body.filt-open .filt-summary{display:none}
+.filt-chips{display:flex;gap:6px;flex-wrap:wrap}
+.filt-chip{background:var(--bg);border:1px solid var(--border);border-radius:20px;padding:4px 10px;font-size:12px;color:var(--text-dim);white-space:nowrap}
+.filt-clear{margin-left:auto}
 .cat-group-title{font-size:12px;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.05em;margin:18px 0 6px}
 .cat-group-title:first-child{margin-top:0}
 /* Listino fornitori: la quotazione in uso e quella più bassa vanno riconosciute a colpo d'occhio */

@@ -509,9 +509,13 @@ describe('Le colonne di Acquisti e Progetto sono separate davvero', () => {
     assert.equal(a.eval('COLUMNS.design === COLUMNS.buy'), false,
       'un alias si rompe alla prima colonna aggiunta a una sola delle due');
   });
-  it('ma dicono le stesse cose', () => {
+  it('Progetto ha le stesse colonne di Acquisti, più concetto e approvvigionamento', () => {
     const a = app(makeDb());
-    assert.deepEqual(JSON.parse(a.eval('JSON.stringify(COLUMNS.design)')),
-      JSON.parse(a.eval('JSON.stringify(COLUMNS.buy)')));
+    const buy = JSON.parse(a.eval('JSON.stringify(COLUMNS.buy)'));
+    const design = JSON.parse(a.eval('JSON.stringify(COLUMNS.design)'));
+    assert.deepEqual(design.slice(0, buy.length), buy,
+      'le colonne di base restano identiche: solo Progetto ospita anche le parti');
+    assert.deepEqual(design.slice(buy.length).map(c => c.key), ['concept', 'sourcing'],
+      'concetto e approvvigionamento esistono solo per le parti, e le parti stanno solo in Progetto');
   });
 });

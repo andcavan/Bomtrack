@@ -13,7 +13,7 @@
 // Revisione in esecuzione, mostrata accanto al logo. Va tenuta allineata alla
 // voce in cima a CHANGELOG.md (l'app si copia a mano tra PC: sapere
 // quale revisione sta girando su una postazione è l'unico modo per capirlo).
-const APP_VERSION = '0.73.0';
+const APP_VERSION = '0.75.0';
 
 let currentUser = null;      // utente della sessione (null = schermata di accesso)
 let currentBomId = null;     // articolo prodotto attualmente aperto nelle Distinte
@@ -1214,6 +1214,16 @@ function stampLine(rec) {
   if (rec.updatedAt && rec.updatedAt !== rec.createdAt) parts.push(`aggiornato${rec.updatedBy ? ' da ' + esc(actorName(rec.updatedBy)) : ''} il ${esc(fmtStamp(rec.updatedAt))}`);
   if (!parts.length) return '';
   return `<p class="stamp-line">${ico('clock', 'tinted', '')} ${parts.join(' · ')}</p>`;
+}
+// Versione testuale, una riga, per una cella di tabella: l'ultimo tocco (o la
+// creazione, se non è mai stato aggiornato) invece della frase intera di
+// `stampLine`, che è pensata per il fondo di una scheda.
+function recordAuthorShort(rec) {
+  if (!rec) return '—';
+  const at = rec.updatedAt || rec.createdAt;
+  if (!at) return '—';
+  const by = rec.updatedAt ? rec.updatedBy : rec.createdBy;
+  return (by ? actorName(by) + ' · ' : '') + fmtDateIt(at);
 }
 function confirmYes() {
   const fn = _confirmFn; _confirmFn = null;

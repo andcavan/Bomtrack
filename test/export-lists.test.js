@@ -138,6 +138,62 @@ describe('Magazzino', () => {
   });
 });
 
+// Un piccolo albero macchina › gruppo › sottogruppo/parte, per i filtri
+// Macchina e Gruppo di Progetto e Magazzino.
+function conMacchine() {
+  return makeDb({
+    items: [
+      asm('mac1', 'macchina'),
+      asm('mac2', 'macchina'),
+      asm('grp1', 'gruppo', { machineItemId: 'mac1' }),
+      asm('grp2', 'gruppo', { machineItemId: 'mac2' }),
+      asm('sg1', 'sottogruppo', { machineItemId: 'mac1', groupItemId: 'grp1' }),
+      parte('p1', { machineItemId: 'mac1', groupItemId: 'grp1' }),
+      parte('p2', { machineItemId: 'mac2', groupItemId: 'grp2' }),
+      acq('c1', 5),
+      mat('m1', 10),
+    ],
+  });
+}
+
+// Gli array restano nel contesto vm dell'harness: un confronto diretto con un
+// array del contesto di test fallisce per realm diversi, non per contenuto
+// diverso. Si passa da JSON, come fa `spec()` più sopra.
+const idsOf = (a, expr) => JSON.parse(a.eval(`JSON.stringify((${expr}).map(i => i.id).sort())`));
+
+describe('Filtri Macchina e Gruppo', () => {
+  it('in Progetto, la macchina porta con sé gruppo, sottogruppo e parte', () => {
+    const a = app(conMacchine());
+    filtra(a, 'des', { machine: 'mac1' });
+    assert.deepEqual(idsOf(a, 'catalogFilteredRows("design")'), ['grp1', 'mac1', 'p1', 'sg1']);
+  });
+
+  it('il gruppo restringe ulteriormente, senza la macchina stessa', () => {
+    const a = app(conMacchine());
+    filtra(a, 'des', { group: 'grp1' });
+    assert.deepEqual(idsOf(a, 'catalogFilteredRows("design")'), ['grp1', 'p1', 'sg1']);
+  });
+
+  it('Acquisti non ha questi filtri: leggerli dà sempre riga vuota, mai un errore', () => {
+    const a = app(conMacchine());
+    filtra(a, 'des', { machine: 'mac1' });   // elementi di Progetto, non di Acquisti
+    assert.deepEqual(idsOf(a, 'catalogFilteredRows("buy")'), ['c1', 'm1']);
+  });
+
+  it('in Magazzino la macchina esclude commerciali e materie prime: solo le parti la portano', () => {
+    const a = app(conMacchine());
+    filtra(a, 'stk', { machine: 'mac1' });
+    assert.deepEqual(idsOf(a, 'stockFilteredRows()'), ['p1']);
+  });
+
+  it('l\'export scrive "codice — nome" nel filtro, non l\'id', () => {
+    const a = app(conMacchine());
+    filtra(a, 'des', { machine: 'mac1' });
+    const sp = spec(a, 'catalogExportSpec("design")');
+    assert.ok(sp.filtri.some(f => f[0] === 'Macchina' && f[1] === 'MAC1 — Assieme mac1'));
+  });
+});
+
 describe('Anagrafiche', () => {
   it('Acquisti esporta ciò che si compra, Progetto ciò che si costruisce', () => {
     const a = app();

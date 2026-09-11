@@ -435,6 +435,23 @@ function syncFamilyFilters(pfx, types) {
   subSel.innerHTML = `<option value="">Tutte le sottofamiglie</option>` +
     subs.map(s => `<option value="${s.id}" ${s.id === keepSub ? 'selected' : ''}>${esc(s.name)}</option>`).join('');
 }
+// Filtri Macchina/Gruppo di Progetto e Magazzino — Acquisti non li ha in barra
+// (commerciali e materie prime non sono mai legati a una macchina), e qui
+// esce subito perché gli elementi non esistono. Il gruppo si restringe alla
+// macchina scelta, come la sottofamiglia si restringe alla famiglia.
+function syncMachineFilters(pfx) {
+  const macSel = document.getElementById(pfx + '-machine');
+  const grpSel = document.getElementById(pfx + '-group');
+  if (!macSel || !grpSel) return;
+  const macchine = machineItems();
+  const keepMac = macchine.some(m => m.id === macSel.value) ? macSel.value : '';
+  macSel.innerHTML = `<option value="">Tutte le macchine</option>` +
+    macchine.map(m => `<option value="${m.id}" ${m.id === keepMac ? 'selected' : ''}>${esc(m.code)} — ${esc(m.name)}</option>`).join('');
+  const gruppi = keepMac ? groupItemsFor(keepMac) : (db.items || []).filter(i => i.type === 'gruppo');
+  const keepGrp = gruppi.some(g => g.id === grpSel.value) ? grpSel.value : '';
+  grpSel.innerHTML = `<option value="">Tutti i gruppi</option>` +
+    gruppi.map(g => `<option value="${g.id}" ${g.id === keepGrp ? 'selected' : ''}>${esc(g.code)} — ${esc(g.name)}</option>`).join('');
+}
 // Preferiti: solo su ciò che si acquista, per ritrovare in fretta gli articoli ricorrenti
 function canFavorite(type) { return type === 'acquistato' || type === 'materiale'; }
 function toggleFavorite(id) {
@@ -488,7 +505,35 @@ function catalogMeta(i) {
   else if (!meta) meta = '—';
   return meta;
 }
-function catalogRow(i) {
+// Fornitore in uso: dalla quotazione attiva se c'è, altrimenti dal campo
+// sull'articolo — stessa priorità di `itemPricingSummary`, per non dire due
+// cose diverse nella riga e nella scheda.
+function catalogSupplierName(i) {
+  if (!hasPriceList(i)) return '—';
+  const riga = activePriceRow(i);
+  const sid = (riga && riga.supplierId) || i.supplierId;
+  return sid ? (supplierName(sid) || '—') : '—';
+}
+// Le celle dei campi facoltativi (colonne nascoste di serie, columns.js):
+// sempre presenti nel markup — è la CSS a nasconderle — sennò non ci sarebbe
+// nessuna casella da nascondere quando l'articolo non ha quel campo.
+function catalogExtraCells(i) {
+  return `<td class="col-subfamily" style="color:var(--text-dim)">${esc(usesFamily(i.type) && i.familyId ? (subFamilyName(i.familyId, i.subFamilyId) || '—') : '—')}</td>
+    <td class="col-supplier" style="color:var(--text-dim)">${esc(catalogSupplierName(i))}</td>
+    <td class="col-altuom">${esc(i.altUom || '—')}</td>
+    <td class="col-altfactor" style="font-family:var(--mono)">${i.altFactor ? fmtN(i.altFactor) : '—'}</td>
+    <td class="col-safety" style="font-family:var(--mono)">${i.safetyStock ? fmtN(i.safetyStock) : '—'}</td>
+    <td class="col-lot" style="font-family:var(--mono)">${i.lotSize ? fmtN(i.lotSize) : '—'}</td>
+    <td class="col-notes" style="color:var(--text-dim)">${esc(i.notes || '—')}</td>
+    <td class="col-autore" style="color:var(--text-dim)">${esc(recordAuthorShort(i))}</td>`;
+}
+// Solo Progetto ospita parti: Acquisti non avrà mai queste due celle né le
+// loro colonne nel registro (`COLUMNS.buy`).
+function catalogDesignCells(i) {
+  return `<td class="col-concept" style="color:var(--text-dim)">${esc(i.type === 'parte' ? (conceptName(i.conceptId) || '—') : '—')}</td>
+    <td class="col-sourcing" style="color:var(--text-dim)">${esc(i.type === 'parte' ? (PART_SOURCING[partSourcing(i)] || '—') : '—')}</td>`;
+}
+function catalogRow(i, scope) {
   const unit = itemUnitCost(i);
   const meta = catalogMeta(i);
   // Indicatori a sinistra, di sola visione (i flag si impostano nella scheda articolo)
@@ -503,6 +548,8 @@ function catalogRow(i) {
     <td class="col-uom">${esc(i.uom || '')}</td>
     <td class="col-cost" style="font-family:var(--mono)">${fmtN(unit)}</td>
     <td class="col-meta" style="color:var(--text-dim)">${esc(meta)}</td>
+    ${catalogExtraCells(i)}
+    ${scope === 'design' ? catalogDesignCells(i) : ''}
     <td class="row-actions" style="text-align:right;white-space:nowrap">
       ${hasPriceList(i) ? `<button class="mini-btn" title="Listino fornitori e storico prezzi" onclick="priceListModal('${i.id}')">${ico('euro', 'tinted', 'Listino fornitori e storico prezzi')}</button>` : ''}
       ${i.type === 'parte' ? `<button class="mini-btn" title="Distinta parte e ciclo di lavorazione" onclick="openCycleFor('${i.id}')">${ico('wrench', 'tinted', 'Distinta parte e ciclo di lavorazione')}</button>` : ''}
@@ -541,28 +588,41 @@ function catalogSearchInput(scope) {
 // l'intestazione, il disegno della riga, il limite corrente, i comandi del
 // piede e cosa dire quando non c'è niente da mostrare.
 //
+// La divisione in gruppi è una preferenza (`isGrouped`, columns.js): spenta,
+// le stesse righe finiscono in una tabella sola — il contratto del piede
+// (quante ne mancano, "Mostra altri"/"Mostra tutti") resta identico nei due
+// rami, così i chiamanti non se ne accorgono.
+//
 //   itemGrid({ hostId, rows, head, riga, limite, pagina, altro, tutti, vuoto, colonne })
 function itemGrid(o) {
   const host = document.getElementById(o.hostId);
   if (!host) return;   // la vista non è montata
-  const { groups, keys } = catalogGroups(o.rows);
-  // Si riempiono i gruppi nell'ordine di visualizzazione finché c'è spazio: il
-  // taglio non prende un po' da ognuno, che sarebbe un elenco di nessuno.
-  let restanti = o.limite;
-  let disegnati = 0;
-  const html = keys.map(k => {
-    const tutti = groups[k].items;
-    const visibili = tutti.slice(0, Math.max(0, restanti));
-    restanti -= visibili.length;
-    disegnati += visibili.length;
-    if (!visibili.length) return '';
-    // Il titolo nomina sempre il totale del gruppo, anche quando ne disegna solo
-    // i primi: un conteggio che mentisse lì manderebbe qualcuno a decidere
-    // sulla base di un elenco tagliato senza saperlo.
-    const conteggio = visibili.length < tutti.length ? `${visibili.length} di ${tutti.length}` : `${tutti.length}`;
-    return `<div class="cat-group-title">${esc(k)} <span style="color:var(--text-dim);font-weight:500">(${conteggio})</span></div>
-      <div class="table-wrap"><table>${o.head}<tbody>${visibili.map(o.riga).join('')}</tbody></table></div>`;
-  }).join('');
+  let html, disegnati;
+  if (isGrouped(o.colonne)) {
+    const { groups, keys } = catalogGroups(o.rows);
+    // Si riempiono i gruppi nell'ordine di visualizzazione finché c'è spazio: il
+    // taglio non prende un po' da ognuno, che sarebbe un elenco di nessuno.
+    let restanti = o.limite;
+    disegnati = 0;
+    html = keys.map(k => {
+      const tutti = groups[k].items;
+      const visibili = tutti.slice(0, Math.max(0, restanti));
+      restanti -= visibili.length;
+      disegnati += visibili.length;
+      if (!visibili.length) return '';
+      // Il titolo nomina sempre il totale del gruppo, anche quando ne disegna solo
+      // i primi: un conteggio che mentisse lì manderebbe qualcuno a decidere
+      // sulla base di un elenco tagliato senza saperlo.
+      const conteggio = visibili.length < tutti.length ? `${visibili.length} di ${tutti.length}` : `${tutti.length}`;
+      return `<div class="cat-group-title">${esc(k)} <span style="color:var(--text-dim);font-weight:500">(${conteggio})</span></div>
+        <div class="table-wrap"><table>${o.head}<tbody>${visibili.map(o.riga).join('')}</tbody></table></div>`;
+    }).join('');
+  } else {
+    // Divisione spenta: una tabella sola, nell'ordine che le righe già hanno.
+    const visibili = o.rows.slice(0, Math.max(0, o.limite));
+    disegnati = visibili.length;
+    html = visibili.length ? `<div class="table-wrap"><table>${o.head}<tbody>${visibili.map(o.riga).join('')}</tbody></table></div>` : '';
+  }
   const mancanti = o.rows.length - disegnati;
   const piu = mancanti > 0 ? `<div class="cat-more">
       <span>Mostrati ${disegnati} di ${o.rows.length} articoli</span>
@@ -573,6 +633,7 @@ function itemGrid(o) {
   a11yFields(host);
   colsMountButton(o.colonne);
   colsApply();
+  filtMount(o.colonne);
   // La tabella si riscrive per intero a ogni filtro: il pannello rimette
   // l'evidenza sulla riga scelta, e la lascia cadere se quella riga non c'è più.
   inspectorSync();
@@ -603,11 +664,16 @@ function catalogFilteredRows(scope, soloIds) {
   const leggi = k => (document.getElementById(sc.pfx + '-' + k) || {}).value || '';
   const q = leggi('search').toLowerCase();
   const ft = leggi('type'), ff = leggi('family'), fsf = leggi('subfamily');
+  const fm = leggi('machine'), fg = leggi('group');
   let rows = db.items.filter(i => sc.types.includes(i.type));
   if (ft) rows = rows.filter(i => i.type === ft);
   if (scope === 'buy' && favOnly) rows = rows.filter(i => i.favorite);
   if (ff) rows = rows.filter(i => usesFamily(i.type) && i.familyId === ff);
   if (fsf) rows = rows.filter(i => i.subFamilyId === fsf);
+  // Acquisti non ha questi due filtri in barra: `leggi` dà sempre '' e qui non
+  // scattano mai.
+  if (fm) rows = rows.filter(i => i.type === 'macchina' ? i.id === fm : i.machineItemId === fm);
+  if (fg) rows = rows.filter(i => i.type === 'gruppo' ? i.id === fg : i.groupItemId === fg);
   if (q) rows = rows.filter(i => (i.code + ' ' + i.name).toLowerCase().includes(q));
   // La scelta fatta a mano è un filtro come gli altri, ma applicato per ultimo:
   // esportare la selezione deve dare le righe scelte, non le righe scelte più
@@ -615,10 +681,28 @@ function catalogFilteredRows(scope, soloIds) {
   if (soloIds && soloIds.length) rows = rows.filter(i => soloIds.includes(i.id));
   return rows.sort((a, b) => (a.code || '').localeCompare(b.code || ''));
 }
+// Le intestazioni delle colonne facoltative, gemelle di `catalogExtraCells`/
+// `catalogDesignCells`: stessa classe col-X, stesso ordine.
+const CAT_EXTRA_HEAD = `<th scope="col" class="col-subfamily">Sottofamiglia</th>
+    <th scope="col" class="col-supplier">Fornitore</th>
+    <th scope="col" class="col-altuom">UM acquisto</th>
+    <th scope="col" class="col-altfactor">Fattore</th>
+    <th scope="col" class="col-safety">Scorta minima</th>
+    <th scope="col" class="col-lot">Lotto</th>
+    <th scope="col" class="col-notes">Note</th>
+    <th scope="col" class="col-autore">Creato/aggiornato da</th>`;
+const CAT_DESIGN_HEAD = `<th scope="col" class="col-concept">Concetto</th>
+    <th scope="col" class="col-sourcing">Approvvigionamento</th>`;
 function renderCatalog(scope) {
   invalidateCaches();
   const sc = CATALOG_SCOPES[scope]; if (!sc) return;
   updateCatFamilyFilters(scope);
+  syncMachineFilters(sc.pfx);
+  // Lo scope condiviso (filters.js) va scritto qui, non prima: gli elementi
+  // hanno appena preso le loro <option> fresche da syncMachineFilters/
+  // updateCatFamilyFilters, e un valore assegnato a un <select> senza
+  // un'opzione corrispondente non prende — è per questo che l'ordine conta.
+  filtScopeApply(scope);
   const pfx = sc.pfx;
   const rows = catalogFilteredRows(scope);
 
@@ -627,12 +711,15 @@ function renderCatalog(scope) {
   const head = `<thead><tr><th scope="col" class="col-flags"></th><th scope="col" class="col-code">Codice</th><th scope="col" class="col-name">Descrizione</th>
     <th scope="col" class="col-type">Tipo</th><th scope="col" class="col-family">Famiglia</th><th scope="col" class="col-uom">U.M.</th>
     <th scope="col" class="col-cost" title="Costo di una unità, nella U.M. della colonna accanto">Costo un. (${esc(cur())}/U.M.)</th>
-    <th scope="col" class="col-meta">Dettaglio</th><th scope="col" class="row-actions"></th></tr></thead>`;
+    <th scope="col" class="col-meta">Dettaglio</th>
+    ${CAT_EXTRA_HEAD}
+    ${scope === 'design' ? CAT_DESIGN_HEAD : ''}
+    <th scope="col" class="row-actions"></th></tr></thead>`;
   itemGrid({
     hostId: pfx + '-table',
     rows,
     head,
-    riga: catalogRow,
+    riga: i => catalogRow(i, scope),
     limite: catalogLimit[scope],
     pagina: CATALOG_PAGE,
     altro: `catalogShowMore('${scope}')`,
@@ -651,6 +738,7 @@ function catalogExportSpec(scope, soloIds) {
   const leggi = k => (document.getElementById(sc.pfx + '-' + k) || {}).value || '';
   const fam = getFamily(leggi('family'));
   const sub = (fam && (fam.subs || []).find(s => s.id === leggi('subfamily'))) || null;
+  const mac = getItem(leggi('machine')), grp = getItem(leggi('group'));
   const righe = catalogFilteredRows(scope, soloIds).map(i => [
     i.code || '', i.name || '', typeLabel(i.type), codingLabel(i) || familyLabel(i),
     i.uom || '', +(itemUnitCost(i) || 0).toFixed(4), catalogMeta(i),
@@ -663,6 +751,8 @@ function catalogExportSpec(scope, soloIds) {
       ['Tipo', leggi('type') ? typeLabel(leggi('type')) : ''],
       ['Famiglia', fam ? fam.name : ''],
       ['Sottofamiglia', sub ? sub.name : ''],
+      ['Macchina', mac ? `${mac.code} — ${mac.name}` : ''],
+      ['Gruppo', grp ? `${grp.code} — ${grp.name}` : ''],
       ['Preferiti', scope === 'buy' && favOnly ? 'solo i preferiti' : ''],
       ['Selezione', soloIds && soloIds.length ? soloIds.length + ' righe scelte a mano' : ''],
     ],
@@ -1063,6 +1153,10 @@ function openCycleFor(id) {
   if (!it || it.type !== 'parte') return;
   currentCycleItemId = id;
   setVal('cyc-search', ''); setVal('cyc-family', ''); setVal('cyc-subfamily', '');
+  // Anche lo scope condiviso (filters.js), altrimenti setView lo riscriverebbe
+  // subito dopo sui campi appena svuotati, e la parte scelta potrebbe restare
+  // fuori dal filtro come prima di questa pulizia.
+  if (typeof filtScope !== 'undefined') { filtScope.familyId = ''; filtScope.subFamilyId = ''; filtPrefsSave(); }
   setView('cycles');
 }
 function currentCycleItem() {
@@ -1090,6 +1184,7 @@ function cycleSourcingNote(it) {
 function renderCycles() {
   invalidateCaches();   // la cache dei costi vive dentro un singolo disegno
   updateCycleFamilyFilters();
+  filtScopeApply('cycles');   // dopo il sync, non prima: vedi nota in renderCatalog
   const parts = cycleFilteredParts();
   ensureCurrentCycleItem(parts);
   const partSel = document.getElementById('cyc-part');
@@ -1105,6 +1200,7 @@ function renderCycles() {
     body.innerHTML = `<div class="empty-text">${partItems().length
       ? 'Nessuna parte con questi filtri.'
       : `Nessuna parte a catalogo. Creane una in <strong>${ico('contacts', 'tinted')} Anagrafica → Progetto → + Nuovo articolo</strong>.`}</div>`;
+    filtMount('cycles');
     return;
   }
   renderCycleSummary(it);
@@ -1130,6 +1226,7 @@ function renderCycles() {
       <div id="picker-op"></div>
     </div>`;
   a11yFields(body);
+  filtMount('cycles');
 }
 // Riepilogo in cima: le due metà del costo separate, come le due sezioni sotto.
 function renderCycleSummary(it) {
