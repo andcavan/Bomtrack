@@ -221,6 +221,42 @@ function parentIndex() {
   _parentIdx = idx;
   return idx;
 }
+// ─── "Usato da qualche parte", in senso ampio ───
+// usedBy()/parentIndex() rispondono a «è componente/riga di ciclo di un altro
+// articolo?»: basta per bloccare l'eliminazione con un messaggio preciso, ma
+// un codice può essere "in uso" anche solo in un movimento di magazzino, una
+// riga di RFQ/ordine, un piano MRP o una revisione congelata — nessuno di
+// questi lo rende "genitore" di niente, eppure rinominarlo o cancellarlo
+// silenzierebbe quel riferimento.
+//
+// Non serve un secondo elenco di campi da tenere aggiornato a mano: REFS
+// (store.js) è già la mappa completa "quale campo punta a un articolo",
+// scritta per la migrazione v2 e mantenuta apposta perché aggiungerne una
+// fosse una riga sola in un posto solo. La si legge qui, in sola lettura,
+// con lo stesso giro che fa migrateV2() per riscriverli.
+function isItemUsedAnywhere(id) {
+  if (!id) return false;
+  const puntaAllItem = campi => Object.keys(campi).some(k => campi[k] === 'item');
+  for (const coll of Object.keys(REFS)) {
+    const def = REFS[coll];
+    const recs = db[coll] || [];
+    if (def.fields && puntaAllItem(def.fields)) {
+      const chiavi = Object.keys(def.fields).filter(k => def.fields[k] === 'item');
+      if (recs.some(rec => chiavi.some(k => rec[k] === id))) return true;
+    }
+    for (const figlio of Object.keys(def.children || {})) {
+      const campiFiglio = def.children[figlio];
+      if (!puntaAllItem(campiFiglio)) continue;
+      const chiavi = Object.keys(campiFiglio).filter(k => campiFiglio[k] === 'item');
+      if (recs.some(rec => (rec[figlio] || []).some(r => chiavi.some(k => r[k] === id)))) return true;
+    }
+  }
+  // Le righe ODL non hanno un campo itemId proprio: lo portano dentro
+  // `phaseKey` (`itemId#indice#workCenterId`), la stessa eccezione che REFS
+  // documenta per la migrazione — va controllata a parte.
+  return (db.workOrders || []).some(o => (o.lines || [])
+    .some(l => typeof l.phaseKey === 'string' && l.phaseKey.startsWith(id + '#')));
+}
 // Risultati di costOf già calcolati in questo giro di rendering.
 let _costCache = new Map();
 // Azzera indice e cache. Chiamata da Store.commit() — l'unico punto di scrittura

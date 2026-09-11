@@ -624,7 +624,7 @@ function renderCatalog(scope) {
 
   // «Costo un.» è per una unità dell'articolo, cioè nella U.M. della colonna
   // accanto: si dice in intestazione, una volta, invece che su ogni riga.
-  const head = `<thead><tr><th scope="col" class="col-flags"></th><th scope="col" class="col-code">Codice</th><th scope="col" class="col-name">Nome</th>
+  const head = `<thead><tr><th scope="col" class="col-flags"></th><th scope="col" class="col-code">Codice</th><th scope="col" class="col-name">Descrizione</th>
     <th scope="col" class="col-type">Tipo</th><th scope="col" class="col-family">Famiglia</th><th scope="col" class="col-uom">U.M.</th>
     <th scope="col" class="col-cost" title="Costo di una unità, nella U.M. della colonna accanto">Costo un. (${esc(cur())}/U.M.)</th>
     <th scope="col" class="col-meta">Dettaglio</th><th scope="col" class="row-actions"></th></tr></thead>`;
@@ -669,7 +669,7 @@ function catalogExportSpec(scope, soloIds) {
     sezioni: [{
       nome: scope === 'buy' ? 'Acquisti' : 'Progetto',
       colonne: [
-        { h: 'Codice', w: 18 }, { h: 'Nome', w: 34 }, { h: 'Tipo', w: 16 }, { h: 'Famiglia', w: 24 },
+        { h: 'Codice', w: 18 }, { h: 'Descrizione', w: 34 }, { h: 'Tipo', w: 16 }, { h: 'Famiglia', w: 24 },
         { h: 'U.M.', w: 8 },
         // La valuta sta in intestazione: nella cella romperebbe ogni formula.
         { h: `Costo unitario (${cur()}/U.M.)`, w: 18, num: true },
@@ -708,9 +708,25 @@ function itemPricingSummary(it) {
     ${prezzo} · ${forn}${rif ? ' · ' + rif : ''}<br>
     ${n ? `${n} ${n === 1 ? 'quotazione a listino' : 'quotazioni a listino'}${riga ? '' : ' — nessuna in uso'}` : 'Nessuna quotazione a listino'}${apri}</span>`;
 }
+// Vero se l'articolo è già usato in un qualunque ambito (distinte, cicli,
+// magazzino, documenti, piani, revisioni): oltre quel punto i campi che ne
+// determinano identità e codifica smettono di essere modificabili, per non
+// disallineare in silenzio ciò che lo referenzia già. `admin` fa eccezione
+// solo per nome/concetto/descrizione, mai per codice/famiglia/codifica.
+function itemLockState(it) {
+  const used = !!it && isItemUsedAnywhere(it.id);
+  return { used, structLocked: used, nameLocked: used && !isAdmin() };
+}
+function itemLockNote(lock) {
+  if (!lock.used) return '';
+  const extra = lock.nameLocked ? '' : ' Come amministratore puoi comunque correggere nome/concetto/descrizione.';
+  return `<p class="empty-text" style="text-align:left;padding:0 0 10px">${ico('lock', 'tinted', '')} Articolo già utilizzato: i campi identificativi non sono più modificabili.${extra}</p>`;
+}
 function itemModalBody(it, scope) {
   const sc = CATALOG_SCOPES[scope] || CATALOG_SCOPES.buy;
   const t = it ? it.type : sc.types[0];
+  const lock = itemLockState(it);
+  const dis = cond => cond ? 'disabled' : '';
   const sourcePicker = it ? '' : `
     <div class="modal-field"><label>Parti da (opzionale)</label>
       <input type="text" id="src-search" class="search" placeholder="Duplica da un articolo esistente..." oninput="debounced('src', renderSourceResults)" autocomplete="off">
@@ -718,23 +734,23 @@ function itemModalBody(it, scope) {
     </div>`;
   // In modifica il tipo è bloccato: resta l'unica voce dell'articolo, qualunque sia lo scope
   const types = it ? [it.type] : sc.types;
-  return `${sourcePicker}
+  return `${itemLockNote(lock)}${sourcePicker}
     <div class="modal-grid">
       <div class="modal-field"><label>Tipo</label>
         <select id="it-type" onchange="toggleItemFields()" ${it ? 'disabled' : ''}>
           ${types.map(x => `<option value="${x}" ${t === x ? 'selected' : ''}>${TYPE_OPTION_LABELS[x]}</option>`).join('')}
         </select>
       </div>
-      <div class="modal-field"><label>Codice</label><input id="it-code" value="${it ? esc(it.code) : ''}" oninput="markCodeManual()"></div>
+      <div class="modal-field"><label>Codice</label><input id="it-code" value="${it ? esc(it.code) : ''}" oninput="markCodeManual()" ${dis(lock.structLocked)}></div>
     </div>
-    <div class="modal-field" id="fld-name-std"><label>Nome</label><input id="it-name" value="${it ? esc(it.name) : ''}"></div>
+    <div class="modal-field" id="fld-name-std"><label>Descrizione</label><input id="it-name" value="${it ? esc(it.name) : ''}" ${dis(lock.nameLocked)}></div>
     <div class="modal-grid" id="fld-name-parte">
       <div class="modal-field"><label>Concetto</label>
-        <select id="it-concept" onchange="updatePartNamePreview()">${conceptOptions(it ? it.conceptId : '')}</select></div>
+        <select id="it-concept" onchange="updatePartNamePreview()" ${dis(lock.nameLocked)}>${conceptOptions(it ? it.conceptId : '')}</select></div>
       <div class="modal-field"><label>Descrizione</label>
-        <input id="it-namefree" value="${it ? esc(it.nameFree != null ? it.nameFree : it.name) : ''}" oninput="updatePartNamePreview()"></div>
+        <input id="it-namefree" value="${it ? esc(it.nameFree != null ? it.nameFree : it.name) : ''}" oninput="updatePartNamePreview()" ${dis(lock.nameLocked)}></div>
       <div class="modal-field" style="grid-column:1/-1;margin-top:-4px">
-        <span class="empty-text" style="padding:0">Nome: <strong id="part-name-preview"></strong></span></div>
+        <span class="empty-text" style="padding:0">Descrizione: <strong id="part-name-preview"></strong></span></div>
     </div>
     <div class="modal-grid">
       <div class="modal-field"><label>Unità di misura</label><select id="it-uom" onchange="itemUomLabelsRefresh()">${uomOptions(it ? (it.uom || defaultUom()) : defaultUom())}</select></div>
@@ -747,10 +763,10 @@ function itemModalBody(it, scope) {
       ${itemPricingSummary(it)}
     </div>
     <div class="modal-grid" id="fld-family">
-      <div class="modal-field"><label>Macrofamiglia</label><select id="it-family" onchange="onItemFamilyChange()">${familyOptions(it ? it.familyId : '', usesFamily(t) ? t : '')}</select></div>
-      <div class="modal-field"><label>Sottofamiglia</label><select id="it-subfamily" onchange="onItemSubFamilyChange()">${subFamilyOptions(it ? it.familyId : '', it ? it.subFamilyId : '')}</select></div>
+      <div class="modal-field"><label>Macrofamiglia</label><select id="it-family" onchange="onItemFamilyChange()" ${dis(lock.structLocked)}>${familyOptions(it ? it.familyId : '', usesFamily(t) ? t : '')}</select></div>
+      <div class="modal-field"><label>Sottofamiglia</label><select id="it-subfamily" onchange="onItemSubFamilyChange()" ${dis(lock.structLocked)}>${subFamilyOptions(it ? it.familyId : '', it ? it.subFamilyId : '')}</select></div>
     </div>
-    ${codingFieldsHtml(it)}
+    ${codingFieldsHtml(it, lock.structLocked)}
     <div class="modal-field" id="fld-cycle">
       <label>Distinta parte e ciclo di lavorazione</label>
       <span class="empty-text" style="padding:0">${it
@@ -818,35 +834,36 @@ function groupOptions(machineId, selectedId) {
   return `<option value="">—</option>` + groupItemsFor(machineId)
     .map(g => `<option value="${g.id}" ${g.id === selectedId ? 'selected' : ''}>${esc((g.sigla ? g.sigla + ' — ' : '') + g.name)}</option>`).join('');
 }
-function codingFieldsHtml(it) {
+function codingFieldsHtml(it, structLocked) {
   const sm = machineScheme(it);
   const macId = it ? (it.machineItemId || '') : '';
   const grpId = it ? (it.groupItemId || '') : '';
   const gsm = machineScheme(getItem(macId));
+  const dis = structLocked ? 'disabled' : '';
   return `
     <div id="fld-coding-mac" class="modal-grid">
       <div class="modal-field"><label>Sigla macchina</label>
         <input id="it-sigla-mac" maxlength="10" value="${it ? esc(it.sigla || '') : ''}" placeholder="es. TRN"
           style="text-transform:uppercase;font-family:var(--mono);font-weight:700"
-          oninput="this.value=this.value.toUpperCase();refreshItemCode()"></div>
+          oninput="this.value=this.value.toUpperCase();refreshItemCode()" ${dis}></div>
       <div class="modal-field"><label>N° car. sigla gruppo</label>
-        <input type="number" id="it-glen" min="1" max="10" value="${sm.gLen}" onchange="refreshItemCode()"></div>
+        <input type="number" id="it-glen" min="1" max="10" value="${sm.gLen}" onchange="refreshItemCode()" ${dis}></div>
       <div class="modal-field"><label>Tipo car. sigla gruppo</label>
-        <select id="it-gtype" onchange="refreshItemCode()">${typeOptionsHtml(sm.gType)}</select></div>
+        <select id="it-gtype" onchange="refreshItemCode()" ${dis}>${typeOptionsHtml(sm.gType)}</select></div>
       <div class="modal-field"><label>Cifre progressivo S## </label>
-        <input type="number" id="it-incrs" min="1" max="6" value="${sm.incrS}" onchange="refreshItemCode()"></div>
+        <input type="number" id="it-incrs" min="1" max="6" value="${sm.incrS}" onchange="refreshItemCode()" ${dis}></div>
       <div class="modal-field"><label>Cifre numerazione ###</label>
-        <input type="number" id="it-incrn" min="1" max="6" value="${sm.incrN}" onchange="refreshItemCode()"></div>
+        <input type="number" id="it-incrn" min="1" max="6" value="${sm.incrN}" onchange="refreshItemCode()" ${dis}></div>
     </div>
     <div id="fld-coding-child" class="modal-grid">
       <div class="modal-field"><label>Macchina</label>
-        <select id="it-machine" onchange="onItemMachineChange()">${machineOptions(macId)}</select></div>
+        <select id="it-machine" onchange="onItemMachineChange()" ${dis}>${machineOptions(macId)}</select></div>
       <div class="modal-field" id="fld-coding-gsigla"><label id="it-sigla-grp-label">Sigla gruppo (${typeHint(gsm.gLen, gsm.gType)})</label>
         <input id="it-sigla-grp" maxlength="${gsm.gLen}" value="${it && it.type === 'gruppo' ? esc(it.sigla || '') : ''}" placeholder="es. BAS"
           style="text-transform:uppercase;font-family:var(--mono);font-weight:700"
-          oninput="this.value=this.value.toUpperCase();refreshItemCode()"></div>
+          oninput="this.value=this.value.toUpperCase();refreshItemCode()" ${dis}></div>
       <div class="modal-field" id="fld-coding-group"><label>Gruppo</label>
-        <select id="it-group" onchange="refreshItemCode()">${groupOptions(macId, grpId)}</select></div>
+        <select id="it-group" onchange="refreshItemCode()" ${dis}>${groupOptions(macId, grpId)}</select></div>
     </div>`;
 }
 function onItemMachineChange() {
@@ -918,11 +935,12 @@ function toggleItemFields() {
   mostra('fld-family', showFam);
   mostra('fld-assembly-note', isAssembly(t));
   mostra('fld-cycle', t === 'parte');
-  // Flag: preferito su commerciali e materie prime, obsoleto anche sulle parti
-  const showObs = t === 'acquistato' || t === 'materiale' || t === 'parte';
+  // Flag: preferito su commerciali e materie prime, obsoleto su qualunque tipo
+  // — è l'unico modo per ritirare un codice già usato e sbagliato, senza
+  // eliminarlo e perdere lo storico che lo referenzia.
   mostra('fld-flag-fav', canFavorite(t));
-  mostra('fld-flag-obs', showObs);
-  mostra('fld-flags', showObs);
+  mostra('fld-flag-obs', true);
+  mostra('fld-flags', true);
   // Magazzino: solo su ciò che si tiene a scorta. Un assieme si produce, e la
   // sua giacenza sarebbe quella dei componenti contata due volte.
   mostra('fld-stock', hasStock({ type: t }));
@@ -1379,8 +1397,10 @@ function closeCyclePicker() {
 function addCycleItemRow() {
   if (!roleGuard('catalog')) return;
   const box = document.getElementById('picker-bom'); if (!box) return;
+  // Un articolo Obsoleto resta dov'è già inserito nei cicli, ma non si propone
+  // più come NUOVO materiale/commerciale.
   window.__cyclePickerCandidates = db.items
-    .filter(i => CYCLE_CHILD_TYPES.includes(i.type))
+    .filter(i => CYCLE_CHILD_TYPES.includes(i.type) && !i.obsolete)
     .sort((a, b) => String(a.code).localeCompare(String(b.code)));
   if (!window.__cyclePickerCandidates.length) {
     showToast('Nessun commerciale o materia prima a catalogo.', 'error'); return;
@@ -1571,14 +1591,21 @@ function duplicateItemModal(id) {
   applyItemSource(id);
 }
 function readItemForm(it) {
-  it.code = val('it-code') || it.id;
+  // Difesa in profondità: gli stessi campi che la scheda disabilita non si
+  // riscrivono nemmeno da qui, indipendentemente da cosa contiene il form —
+  // un campo disabled non cambia valore da solo, ma non è questo il punto in
+  // cui fidarsi del DOM è la sola garanzia.
+  const lock = itemLockState(it);
+  if (!lock.structLocked) it.code = val('it-code') || it.id;
   // Le parti compongono il nome da concetto + descrizione libera; gli altri tipi restano a testo libero
-  if (it.type === 'parte') {
-    it.conceptId = val('it-concept');
-    it.nameFree = val('it-namefree');
-    it.name = composePartName(it.conceptId, it.nameFree);
-  } else {
-    it.name = val('it-name');
+  if (!lock.nameLocked) {
+    if (it.type === 'parte') {
+      it.conceptId = val('it-concept');
+      it.nameFree = val('it-namefree');
+      it.name = composePartName(it.conceptId, it.nameFree);
+    } else {
+      it.name = val('it-name');
+    }
   }
   it.uom = val('it-uom') || defaultUom();
   it.notes = val('it-notes');
@@ -1607,24 +1634,26 @@ function readItemForm(it) {
     const attiva = activePriceRow(it);
     if (attiva) applyPriceRow(it, attiva);
   }
-  // Flag: preferito (solo commerciali e materie prime), obsoleto (anche parti)
+  // Flag: preferito (solo commerciali e materie prime), obsoleto (qualunque tipo)
   if (canFavorite(it.type)) it.favorite = isChecked('it-favorite');
-  if (it.type === 'acquistato' || it.type === 'materiale' || it.type === 'parte') it.obsolete = isChecked('it-obsolete');
+  it.obsolete = isChecked('it-obsolete');
   // Prezzo, fornitore, codice e descrizione presso il fornitore NON si leggono
   // da qui: li scrive solo applyPriceRow() quando si sceglie una quotazione.
   // Solo un valore valido sovrascrive: in creazione il campo può non esserci
   // ancora, e lì vale il default delle impostazioni scritto da saveNewItem.
   if (it.type === 'parte') { const s = val('it-sourcing'); if (PART_SOURCING[s]) it.sourcing = s; }
-  if (usesFamily(it.type)) { it.familyId = val('it-family'); it.subFamilyId = val('it-subfamily'); }
+  if (usesFamily(it.type) && !lock.structLocked) { it.familyId = val('it-family'); it.subFamilyId = val('it-subfamily'); }
   // Codifica gerarchica: schema sulla macchina, appartenenza sugli altri tipi
-  const d = itemDraftFromForm();
-  if (it.type === 'macchina') {
-    it.sigla = d.sigla; it.gCodeLen = d.gCodeLen; it.gCodeType = d.gCodeType;
-    it.incrDigitsS = d.incrDigitsS; it.incrDigitsN = d.incrDigitsN;
-  } else if (it.type === 'gruppo') {
-    it.machineItemId = d.machineItemId; it.sigla = d.sigla;
-  } else if (it.type === 'sottogruppo' || it.type === 'parte') {
-    it.machineItemId = d.machineItemId; it.groupItemId = d.groupItemId;
+  if (!lock.structLocked) {
+    const d = itemDraftFromForm();
+    if (it.type === 'macchina') {
+      it.sigla = d.sigla; it.gCodeLen = d.gCodeLen; it.gCodeType = d.gCodeType;
+      it.incrDigitsS = d.incrDigitsS; it.incrDigitsN = d.incrDigitsN;
+    } else if (it.type === 'gruppo') {
+      it.machineItemId = d.machineItemId; it.sigla = d.sigla;
+    } else if (it.type === 'sottogruppo' || it.type === 'parte') {
+      it.machineItemId = d.machineItemId; it.groupItemId = d.groupItemId;
+    }
   }
   // Distinta parte, ciclo e modo di calcolo non passano da qui: si modificano
   // nella vista Cicli di lavorazione, che salva per conto suo.
@@ -1673,7 +1702,7 @@ function validateItemName(type) {
     if (!val('it-namefree')) return 'Descrizione richiesta';
     return null;
   }
-  return val('it-name') ? null : 'Nome richiesto';
+  return val('it-name') ? null : 'Descrizione richiesta';
 }
 function saveNewItem() {
   if (!roleGuard('catalog')) return;
@@ -1759,6 +1788,15 @@ function delItem(id) {
   // da lì si vede chi lo contiene e si può risalire.
   const used = usedBy(id);
   if (used.length) { showToast('Usato in ' + used.length + ' articoli: rimuovilo prima.', 'error'); usageModal(id); return; }
+  // Oltre a distinte/cicli, il codice può essere già in movimenti di
+  // magazzino, documenti, piani o revisioni congelate: nessuno di questi lo
+  // rende "genitore" di niente (usedBy non lo vede), ma cancellarlo perderebbe
+  // comunque quello storico. Qui non c'è eccezione di ruolo: l'unica via per
+  // ritirare un codice sbagliato è marcarlo Obsoleto.
+  if (isItemUsedAnywhere(id)) {
+    showToast('Articolo già movimentato (magazzino, cicli, documenti o piani): non può essere eliminato. Segnalo come obsoleto per impedirne il riuso.', 'error');
+    return;
+  }
   askConfirm(`Eliminare "${it.name}"?`, () => {
     if (currentBomId === id) currentBomId = null;
     removeConUndo('items', id, `"${it.name}" eliminato`, renderCatalogs);

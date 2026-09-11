@@ -131,7 +131,7 @@ function itemInfoAnagrafica(it) {
   const grp = getItem(it.groupItemId);
   return itemInfoSection('Anagrafica', itemInfoRows([
     ['Codice', rawHtml(_mono(it.code))],
-    ['Nome', it.name],
+    ['Descrizione', it.name],
     it.type === 'parte' && it.conceptId ? ['Concetto', conceptName(it.conceptId)] : null,
     ['Tipo', typeLabel(it.type)],
     ['Unità di misura', rawHtml(_mono(it.uom || '—'))],

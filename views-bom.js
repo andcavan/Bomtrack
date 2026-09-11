@@ -285,8 +285,10 @@ function itemPickerOptions(parentType, selectedId, excludeId) {
 onPanelClose('form', () => { window.__pickerCandidates = null; if (window.__pickerAllowed) window.__pickerAllowed.cmp = null; });
 function pickerCandidates(parentType, excludeId) {
   const allowed = ALLOWED_CHILDREN[parentType] || [];
+  // Un articolo Obsoleto resta dov'è già inserito, ma non si propone più come
+  // NUOVO componente: è il senso stesso del marcarlo tale.
   return db.items
-    .filter(i => allowed.includes(i.type) && i.id !== excludeId)
+    .filter(i => allowed.includes(i.type) && i.id !== excludeId && !i.obsolete)
     .sort((a, b) => String(a.code).localeCompare(String(b.code)));
 }
 // Filtri del picker: tipo (solo se il padre ne ammette più di uno, es. un
@@ -733,12 +735,12 @@ function editCurrentItemModal() {
   if (!roleGuard('bom')) return;
   const it = getItem(currentBomId); if (!it) return;
   openModal(`<h3>${ico('edit', 'tinted pill', '')} Modifica testata — <span style="color:var(--text-dim);font-weight:500">${typeLabel(it.type)}</span></h3>
-    <p class="empty-text" style="text-align:left;padding:0 0 10px">Codice, nome e U.M. si modificano solo in Anagrafica → Progetto.</p>
+    <p class="empty-text" style="text-align:left;padding:0 0 10px">Codice, descrizione e U.M. si modificano solo in Anagrafica → Progetto.</p>
     <div class="modal-grid">
       <div class="modal-field"><label>Codice</label><input value="${esc(it.code)}" disabled style="font-family:var(--mono);font-weight:700"></div>
       <div class="modal-field"><label>U.M.</label><input value="${esc(it.uom || defaultUom())}" disabled></div>
     </div>
-    <div class="modal-field"><label>Nome</label><input value="${esc(it.name)}" disabled></div>
+    <div class="modal-field"><label>Descrizione</label><input value="${esc(it.name)}" disabled></div>
     <div class="modal-grid">
       <div class="modal-field"><label>Spese generali % (override)</label><input type="number" id="mac-ov" step="0.1" value="${it.overheadPctOverride != null ? it.overheadPctOverride : ''}" placeholder="default ${db.settings.overheadPct}%"></div>
       <div class="modal-field"><label>Margine % (override)</label><input type="number" id="mac-mg" step="0.1" value="${it.marginPctOverride != null ? it.marginPctOverride : ''}" placeholder="default ${db.settings.marginPct}%"></div>
@@ -763,6 +765,13 @@ function deleteCurrentMachine() {
   const it = getItem(currentBomId); if (!it) return;
   const used = usedBy(it.id);
   if (used.length) { showToast('Usato in: ' + used.map(u => u.code).join(', ') + '. Rimuovilo prima.', 'error'); return; }
+  // Come in delItem (views-catalog.js): oltre a distinte/cicli, il codice può
+  // essere già in magazzino, documenti, piani o revisioni — nessuna eccezione
+  // di ruolo, l'unica via è marcarlo Obsoleto.
+  if (isItemUsedAnywhere(it.id)) {
+    showToast('Articolo già movimentato (magazzino, cicli, documenti o piani): non può essere eliminato. Segnalo come obsoleto per impedirne il riuso.', 'error');
+    return;
+  }
   askConfirm(`Eliminare "${it.name}" e la sua distinta?`, () => {
     currentBomId = null;
     removeConUndo('items', it.id, `"${it.name}" eliminato`, renderBom);

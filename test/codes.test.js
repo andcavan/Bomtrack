@@ -177,6 +177,102 @@ describe('Salvataggio della scheda articolo', () => {
   });
 });
 
+// isItemUsedAnywhere è più largo di usedBy/parentIndex (solo distinte/cicli):
+// deve vedere anche un movimento di magazzino o una riga di documento, che non
+// rendono l'articolo "genitore" di niente ma lo usano comunque.
+describe('isItemUsedAnywhere — riferimenti oltre distinte e cicli', () => {
+  it('falso per un articolo isolato', () => {
+    const a = app(makeDb({ items: [mat('m1', 1)] }));
+    assert.equal(a.eval('isItemUsedAnywhere("m1")'), false);
+  });
+  it('vero se compare in una distinta (come usedBy)', () => {
+    const a = app(makeDb({ items: [asm('a1', 'gruppo', { components: [comp('m1', 2)] }), mat('m1', 1)] }));
+    assert.equal(a.eval('isItemUsedAnywhere("m1")'), true);
+  });
+  it('vero se compare in un movimento di magazzino, anche senza distinta', () => {
+    const a = app(makeDb({ items: [mat('m1', 1)], movements: [{ id: 'mv1', itemId: 'm1', qty: 5 }] }));
+    assert.equal(a.eval('isItemUsedAnywhere("m1")'), true);
+  });
+  it('vero se compare in una riga di RFQ, anche senza distinta', () => {
+    const a = app(makeDb({ items: [mat('m1', 1)], rfqs: [{ id: 'r1', lines: [{ id: 'l1', itemId: 'm1' }] }] }));
+    assert.equal(a.eval('isItemUsedAnywhere("m1")'), true);
+  });
+});
+
+describe('Campi bloccati su un articolo già usato', () => {
+  // Usato solo in un movimento: usedBy (distinte/cicli) non lo vedrebbe, ma
+  // isItemUsedAnywhere sì — è il caso che il vecchio controllo si perdeva.
+  function dbUsato() {
+    return makeDb({ items: [conCodice('m1', 'MAT-001')], movements: [{ id: 'mv1', itemId: 'm1', qty: 5 }] });
+  }
+  function editaTutto(a) {
+    a.el('it-code').value = 'MAT-999';
+    a.el('it-name').value = 'Nome nuovo';
+    a.el('it-family').value = 'FAM-X';
+    a.el('it-uom').value = 'kg';
+  }
+
+  it('progettazione: codice e nome restano quelli di prima', () => {
+    const a = app(dbUsato());
+    a.asRole('progettazione');
+    editaTutto(a);
+    a.eval('saveItemEdit("m1")');
+    const it = a.snapshot().items.find(x => x.id === 'm1');
+    assert.equal(it.code, 'MAT-001');
+    assert.equal(it.name, 'Materia m1');
+    assert.notEqual(it.familyId, 'FAM-X', 'anche la famiglia è un campo strutturale, bloccato');
+  });
+
+  it('admin: il codice resta bloccato, il nome invece si aggiorna', () => {
+    const a = app(dbUsato());
+    a.asRole('admin');
+    editaTutto(a);
+    a.eval('saveItemEdit("m1")');
+    const it = a.snapshot().items.find(x => x.id === 'm1');
+    assert.equal(it.code, 'MAT-001', 'il codice resta bloccato anche per l\'amministratore');
+    assert.equal(it.name, 'Nome nuovo', 'il nome è l\'eccezione riservata all\'amministratore');
+  });
+
+  it('un articolo non ancora usato resta modificabile su tutto', () => {
+    const a = app(makeDb({ items: [conCodice('m1', 'MAT-001')] }));
+    a.asRole('progettazione');
+    editaTutto(a);
+    a.eval('saveItemEdit("m1")');
+    const it = a.snapshot().items.find(x => x.id === 'm1');
+    assert.equal(it.code, 'MAT-999');
+    assert.equal(it.name, 'Nome nuovo');
+  });
+});
+
+describe('Eliminazione bloccata su un articolo già usato', () => {
+  it('un uso fuori da distinte/cicli (es. un movimento) blocca comunque l\'eliminazione', () => {
+    const a = app(makeDb({ items: [mat('m1', 1)], movements: [{ id: 'mv1', itemId: 'm1', qty: 5 }] }));
+    a.asRole('admin');
+    a.eval('delItem("m1")');
+    assert.equal(a.snapshot().items.length, 1, 'nessuna eccezione, nemmeno per l\'amministratore');
+  });
+  it('un articolo non usato si elimina normalmente', () => {
+    const a = app(makeDb({ items: [mat('m1', 1)] }));
+    a.asRole('admin');
+    a.eval('delItem("m1"); confirmYes();');
+    assert.equal(a.snapshot().items.length, 0);
+  });
+});
+
+// L'obsoleto non è più solo un'etichetta: un articolo così marcato non si
+// deve più proporre come NUOVO componente di distinta.
+describe('Obsoleto esclude dal picker dei nuovi componenti', () => {
+  it('pickerCandidates non propone un articolo obsoleto', () => {
+    const a = app(makeDb({ items: [
+      asm('a1', 'gruppo', {}),
+      Object.assign(mat('m1', 1), { obsolete: true }),
+      mat('m2', 1),
+    ] }));
+    const ids = JSON.parse(a.eval('JSON.stringify(pickerCandidates("gruppo", "a1").map(i => i.id))'));
+    assert.deepEqual(ids, ['m2'], 'm1 è obsoleto e non compare più fra i candidati');
+  });
+});
+
 describe('createsCycle — copre anche la distinta parte', () => {
   it('un articolo dentro se stesso è sempre un ciclo', () => {
     const a = app(makeDb({ items: [asm('g1', 'gruppo')] }));

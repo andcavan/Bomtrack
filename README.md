@@ -96,7 +96,7 @@ Rinominare un codice propaga la modifica a tutti gli articoli e documenti che lo
 
 ### Concetti (nome delle parti)
 
-Il nome di una **parte** non è testo libero: si compone di un **concetto** (l'oggetto — es. `ALBERO`, `FLANGIA`, `STAFFA`, sempre in **maiuscolo**) scelto dall'elenco gestito in *Gestione → 🏷 Concetti*, seguito da una **descrizione libera**. Così `ALBERO` + `motore 20×100` diventa il nome `ALBERO motore 20×100`. Il concetto è **obbligatorio** in creazione e modifica di una parte; gli altri tipi di articolo mantengono il campo Nome libero.
+Il nome di una **parte** non è testo libero: si compone di un **concetto** (l'oggetto — es. `ALBERO`, `FLANGIA`, `STAFFA`, sempre in **maiuscolo**) scelto dall'elenco gestito in *Gestione → 🏷 Concetti*, seguito da una **descrizione libera**. Così `ALBERO` + `motore 20×100` diventa il nome `ALBERO motore 20×100`. Il concetto è **obbligatorio** in creazione e modifica di una parte; gli altri tipi di articolo mantengono il campo Descrizione libero.
 
 Il nome composto resta salvato nel campo nome dell'articolo ed è quello mostrato ovunque (cataloghi, distinte, costificazione, PDF/Excel). Un concetto **in uso non può essere rinominato né eliminato** (il pannello mostra il conteggio delle parti che lo usano), così i nomi già composti non cambiano da soli. Le parti importate o create prima della funzione conservano il nome esistente come descrizione libera, completabile scegliendo il concetto in modifica.
 

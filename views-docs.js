@@ -848,7 +848,9 @@ function catalogPickerModal(onAddIds, opts) {
   __pickOnAdd = onAddIds;
   const cfg = opts || {};
   const filtro = cfg.filtro || (() => true);
-  const scelte = db.items.filter(i => i.active !== false && filtro(i)).sort((a, b) => (a.code || '').localeCompare(b.code || ''))
+  // Un articolo Obsoleto resta nelle righe già create, ma non si propone più
+  // come NUOVA riga di RFQ/ordine/ODL/piano.
+  const scelte = db.items.filter(i => i.active !== false && !i.obsolete && filtro(i)).sort((a, b) => (a.code || '').localeCompare(b.code || ''))
     .map(i => `<label class="rfq-pick-row" data-type="${i.type}" data-fam="${i.familyId || ''}" data-sub="${i.subFamilyId || ''}" data-sup="${i.supplierId || ''}"><input type="checkbox" value="${i.id}">
       <span style="font-family:var(--mono)">${esc(i.code || '')}</span> ${esc(i.name)}${itemBadges(i)}
       <span class="rfq-pick-type">${TYPE_LABELS[i.type] || i.type}</span></label>`).join('');

@@ -28,14 +28,20 @@
 // stringhe e l'import cerca queste stringhe, quindi non possono divergere.
 //
 // Le obbligatorie sono marcate con " *", e non costa niente: normHeader() toglie
-// tutto ciò che non è a-z0-9, quindi "Nome *" e "Nome" sono la stessa chiave.
-// Attenzione a inventare colonne nuove: la chiave è il nome *normalizzato*, e
-// "Codice articolo" NON è "Codice". Oggi sono tutte distinte — Codice, Codice
-// macchina, Codice gruppo, Codice fornitore, Codice articolo; UM, UM acquisto,
-// UM prezzo; Data, Data prezzo; Nome, Nome composto.
+// tutto ciò che non è a-z0-9, quindi "Descrizione *" e "Descrizione" sono la
+// stessa chiave. Attenzione a inventare colonne nuove: la chiave è il nome
+// *normalizzato*, e "Codice articolo" NON è "Codice". Oggi sono tutte distinte
+// — Codice, Codice macchina, Codice gruppo, Codice fornitore, Codice articolo;
+// UM, UM acquisto, UM prezzo; Data, Data prezzo; Descrizione, Descrizione composta.
+//
+// "Descrizione *" è la stessa chiave per Commerciali/Materie prime/Macchine/
+// Gruppi/Sottogruppi (il nome dell'articolo, prima chiamata "Nome *") e per
+// Parti (la parte libera del nome, accanto a "Concetto *"): fogli diversi, le
+// due colonne non si incontrano mai nello stesso foglio. Gli alias includono
+// ancora "Nome"/"Name"/"Denominazione" perché un file esportato prima di
+// questa rinomina continui a importare senza dover essere ritoccato a mano.
 const CAT_ALIAS = {
   'Codice': ['Code'],
-  'Nome *': ['Nome', 'Name', 'Denominazione'],
   'UM *': ['UM', 'U.M.', 'Unità', 'UnitaDiMisura'],
   'UM acquisto': ['UMAcquisto', 'UnitaAcquisto'],
   'Fattore': ['FattoreConversione', 'Conversione'],
@@ -63,7 +69,7 @@ const CAT_ALIAS = {
   'Cifre progressivo S': ['CifreProgressivo', 'incrDigitsS'],
   'Cifre numerazione': ['CifreNumerazione', 'incrDigitsN'],
   'Concetto *': ['Concetto', 'Concept'],
-  'Descrizione *': ['Descrizione', 'DescrizioneLibera'],
+  'Descrizione *': ['Descrizione', 'DescrizioneLibera', 'Nome', 'Name', 'Denominazione'],
   'Approvvigionamento': ['Sourcing'],
   'Codice articolo *': ['Codice articolo', 'CodiceArticolo'],
   'Prezzo *': ['Prezzo', 'Price'],
@@ -186,7 +192,7 @@ const CAT_COL_ALTUOM = [
 // hasStock e canFavorite li trattano allo stesso modo. Una definizione, due fogli.
 const CAT_COLS_BUY = [
   ['Codice', it => it.code || ''],
-  ['Nome *', it => it.name || ''],
+  ['Descrizione *', it => it.name || ''],
   ['UM *', it => it.uom || ''],
 ].concat(CAT_COL_ALTUOM, CAT_COL_FAMILY, CAT_COL_PRICE, CAT_COL_STOCK, [
   ['Preferito', it => catSiNoEsplicito(it.favorite)],
@@ -196,7 +202,7 @@ const CAT_COLS_BUY = [
 const CAT_COLS_MACCHINA = [
   ['Codice', it => it.code || ''],
   ['Sigla', it => it.sigla || ''],
-  ['Nome *', it => it.name || ''],
+  ['Descrizione *', it => it.name || ''],
   ['UM *', it => it.uom || ''],
   ['N° car. sigla gruppo', it => catNumOut(it.gCodeLen)],
   ['Tipo sigla gruppo', it => it.gCodeType || ''],
@@ -208,7 +214,7 @@ const CAT_COLS_GRUPPO = [
   ['Codice', it => it.code || ''],
   ['Codice macchina *', it => catItemCode(it.machineItemId)],
   ['Sigla', it => it.sigla || ''],
-  ['Nome *', it => it.name || ''],
+  ['Descrizione *', it => it.name || ''],
   ['UM *', it => it.uom || ''],
   ['Note', it => it.notes || ''],
 ];
@@ -216,7 +222,7 @@ const CAT_COLS_SOTTOGRUPPO = [
   ['Codice', it => it.code || ''],
   ['Codice macchina', it => catItemCode(it.machineItemId)],
   ['Codice gruppo', it => catItemCode(it.groupItemId)],
-  ['Nome *', it => it.name || ''],
+  ['Descrizione *', it => it.name || ''],
   ['UM *', it => it.uom || ''],
   ['Note', it => it.notes || ''],
 ];
@@ -233,7 +239,7 @@ const CAT_COLS_PARTE = [
   ['Note', it => it.notes || ''],
   // Di sola lettura: il nome di una parte si compone da concetto + descrizione
   // (composePartName). Scriverlo qui non cambierebbe niente, e l'import lo ignora.
-  ['Nome composto (calcolato)', it => it.name || ''],
+  ['Descrizione composta (calcolato)', it => it.name || ''],
 ]);
 const CAT_COLS = {
   acquistato: CAT_COLS_BUY, materiale: CAT_COLS_BUY, macchina: CAT_COLS_MACCHINA,
@@ -318,7 +324,7 @@ function catalogSheets(scope) {
 }
 function catWidth(h) {
   if (h === 'Note' || h === 'Descrizione fornitore') return 38;
-  if (h === 'Nome *' || h === 'Descrizione *' || h === 'Nome composto (calcolato)') return 34;
+  if (h === 'Descrizione *' || h === 'Descrizione composta (calcolato)') return 34;
   if (h === 'Fornitore' || h === 'Macrofamiglia' || h === 'Sottofamiglia' || h === 'Approvvigionamento') return 24;
   if (h.indexOf('Codice') === 0) return 18;
   return 13;
@@ -407,7 +413,7 @@ function catInfoAoa(scope) {
       [],
       ['Colonna', 'Descrizione'],
       ['Codice', 'Chiave. Vuoto = generato dalla famiglia (es. CMM-MEC-CUS-001).'],
-      ['Nome *', 'Obbligatorio.'],
+      ['Descrizione *', 'Obbligatoria.'],
       ['UM *', 'Unità di gestione: quella con cui l\'articolo va in distinta e a magazzino.'],
       ['UM acquisto', 'Solo se il fornitore quota in un\'altra unità (barra gestita a metri, comprata a chilo).'],
       ['Fattore', 'Quante UM acquisto stanno in una UM (es. 5,55 kg per ogni metro). Vale insieme a UM acquisto: da soli non valgono.'],
@@ -578,7 +584,7 @@ function catApplyItemRow(row, def, ctx, ln, st) {
     if (hasPriceList(it)) { it.priceList = []; it.priceListSeeded = true; }
   }
 
-  // ── Nome ──
+  // ── Descrizione ──
   if (type === 'parte') {
     const cn = catCell(row, 'Concetto *');
     const descr = catCell(row, 'Descrizione *');
@@ -594,10 +600,10 @@ function catApplyItemRow(row, def, ctx, ln, st) {
     if (descr !== null) it.nameFree = descr;
     it.name = composePartName(it.conceptId, it.nameFree);
   } else {
-    const nome = catCell(row, 'Nome *');
-    if (isNew && !nome) { err('nome mancante'); return; }
+    const nome = catCell(row, 'Descrizione *');
+    if (isNew && !nome) { err('descrizione mancante'); return; }
     if (nome !== null && nome !== '') it.name = nome;
-    else if (nome === '') { err('il nome non può restare vuoto'); return; }
+    else if (nome === '') { err('la descrizione non può restare vuota'); return; }
   }
 
   // ── U.M. e doppia unità (prima del prezzo: la conversione dipende da qui) ──

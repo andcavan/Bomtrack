@@ -164,7 +164,7 @@ describe('Anagrafiche', () => {
   it('non è il template d\'import: colonne dell\'elenco, non tutte', () => {
     const a = app();
     const head = spec(a, 'catalogExportSpec("buy")').sezioni[0].colonne.map(c => c.h);
-    assert.deepEqual(head.slice(0, 5), ['Codice', 'Nome', 'Tipo', 'Famiglia', 'U.M.']);
+    assert.deepEqual(head.slice(0, 5), ['Codice', 'Descrizione', 'Tipo', 'Famiglia', 'U.M.']);
     assert.ok(head[5].indexOf('Costo unitario') === 0 && head[5].indexOf('€') > 0);
     assert.equal(head.length, 7);
   });

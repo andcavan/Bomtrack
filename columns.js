@@ -22,14 +22,14 @@
 const COLS_KEY = 'bomtrack_columns';
 const COLS_KEY_VECCHIA = 'bomtrack.columns';
 
-// Codice e Nome non si nascondono: sono l'identità della riga, e un elenco in
+// Codice e Descrizione non si nascondono: sono l'identità della riga, e un elenco in
 // cui non si sa più di cosa parla ogni riga non è un elenco più pulito, è un
 // elenco rotto. La colonna dei comandi non è qui: la governa il pannello.
 const COLUMNS = {
   buy: [
     { key: 'flags', label: 'Indicatori' },
     { key: 'code', label: 'Codice', fissa: true },
-    { key: 'name', label: 'Nome', fissa: true },
+    { key: 'name', label: 'Descrizione', fissa: true },
     { key: 'type', label: 'Tipo' },
     { key: 'family', label: 'Famiglia' },
     { key: 'uom', label: 'U.M.' },
@@ -39,7 +39,7 @@ const COLUMNS = {
   stock: [
     { key: 'flags', label: 'Indicatori' },
     { key: 'code', label: 'Codice', fissa: true },
-    { key: 'name', label: 'Nome', fissa: true },
+    { key: 'name', label: 'Descrizione', fissa: true },
     { key: 'type', label: 'Tipo' },
     { key: 'family', label: 'Famiglia' },
     { key: 'uom', label: 'U.M.' },

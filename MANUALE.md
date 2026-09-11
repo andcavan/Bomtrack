@@ -543,8 +543,8 @@ Nella barra dei filtri, a destra: **Colonne** e **+ Nuovo articolo**.
 | Sottofamiglia | Tutte le sottofamiglie · *(quelle della famiglia scelta)* |
 | ★ Solo preferiti | Interruttore: mostra solo gli articoli marcati preferiti |
 
-**Colonne disponibili** (pulsante **Colonne**): Indicatori, **Codice**, **Nome**, Tipo, Famiglia,
-U.M., Costo unitario, Dettaglio. Codice e nome non si nascondono: sono l'identità della riga.
+**Colonne disponibili** (pulsante **Colonne**): Indicatori, **Codice**, **Descrizione**, Tipo, Famiglia,
+U.M., Costo unitario, Dettaglio. Codice e descrizione non si nascondono: sono l'identità della riga.
 La scelta resta anche domani, ed è **separata** da quella di *Progetto* — le due anagrafiche hanno
 le stesse colonne ma si guardano per motivi diversi.
 
@@ -611,7 +611,7 @@ un costo che non c'è.
 | **Parti da** | solo in creazione | Ricerca live: si sceglie un articolo esistente e la scheda si precompila con i suoi dati. Facoltativo. |
 | **Tipo** | sempre | **Bloccato in modifica**: un commerciale non diventa una parte. |
 | **Codice** | sempre | Proposto automaticamente (→ [cap. 9](#9-i-codici-automatici)). **Appena lo si edita a mano, l'app smette di rigenerarlo.** |
-| **Nome** | tutti i tipi tranne le parti | Testo libero. |
+| **Descrizione** | tutti i tipi tranne le parti | Testo libero. |
 | **Concetto** + **Descrizione** | **solo parti** | Il nome di una parte è composto: `ALBERO` + `motore 20×100` → `ALBERO motore 20×100`. Il concetto è **obbligatorio** e si sceglie dall'elenco di *Gestione → Concetti*. Sotto i due campi c'è l'anteprima del nome che ne esce. |
 | **Unità di misura** | sempre | Dall'elenco di *Gestione → Unità di misura*. |
 | **Approvvigionamento** | solo parti | *Produzione interna* / *Acquisto da fornitore* (→ [cap. 7](#7-anagrafica--progetto)). |
@@ -824,7 +824,7 @@ Gruppi · Sottogruppi); **macchina di appartenenza**; il menu della distinta ape
 
 | Campo | Note |
 |---|---|
-| Codice · U.M. · Nome | **Bloccati**: si modificano in *Anagrafica → Progetto* |
+| Codice · U.M. · Descrizione | **Bloccati**: si modificano in *Anagrafica → Progetto* |
 | **Spese generali % (override)** | Sostituisce la percentuale globale, solo per questa macchina |
 | **Margine % (override)** | Idem |
 | Note | Testo libero |

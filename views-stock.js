@@ -1009,7 +1009,7 @@ function renderStock() {
     kpi(`Valore giacenza (${esc(cur())})`, fmtN(valore), 'purple'),
   ].join('');
 
-  const head = `<thead><tr><th scope="col" class="col-flags"></th><th scope="col" class="col-code">Codice</th><th scope="col" class="col-name">Nome</th>
+  const head = `<thead><tr><th scope="col" class="col-flags"></th><th scope="col" class="col-code">Codice</th><th scope="col" class="col-name">Descrizione</th>
     <th scope="col" class="col-type">Tipo</th><th scope="col" class="col-family">Famiglia</th><th scope="col" class="col-uom">U.M.</th>
     <th scope="col" class="col-onhand" style="text-align:right" title="Ricevuto sugli ordini più i movimenti">Esistente</th>
     <th scope="col" class="col-incoming" style="text-align:right" title="Atteso da ordini inviati, confermati o parziali">In arrivo</th>
@@ -1063,7 +1063,7 @@ function stockExportSpec(soloIds) {
     sezioni: [{
       nome: 'Magazzino',
       colonne: [
-        { h: 'Codice', w: 18 }, { h: 'Nome', w: 34 }, { h: 'Tipo', w: 16 }, { h: 'Famiglia', w: 24 },
+        { h: 'Codice', w: 18 }, { h: 'Descrizione', w: 34 }, { h: 'Tipo', w: 16 }, { h: 'Famiglia', w: 24 },
         { h: 'U.M.', w: 8 }, { h: 'Esistente', w: 12, num: true }, { h: 'In arrivo', w: 12, num: true },
         { h: 'Impegnato', w: 12, num: true }, { h: 'Libero', w: 12, num: true },
         { h: 'Scorta minima', w: 14, num: true }, { h: 'Lotto', w: 10, num: true },
