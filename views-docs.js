@@ -397,6 +397,45 @@ function docPartyLines(e, bilingue) {
   return [e.name, ...addressLines(e), e.vat ? iva + e.vat : '', e.referente, e.email, e.phone]
     .map(s => s || '').filter(Boolean);
 }
+// ─── La coda di un documento stampato: trasporto, pagamento, note ───
+// Le condizioni che chiudono richieste, ordini e ordini di lavoro. Erano tre
+// blocchi identici, e tutti e tre scrivevano con doc.text() a y crescente senza
+// mai guardare dove finisse la pagina.
+//
+// Due modi di sparire,**entrambi silenziosi** — il PDF si generava senza un
+// errore, e mancava solo quando qualcuno andava a cercarlo:
+//   - una nota lunga usciva dal margine destro e veniva tagliata, perché
+//     doc.text() non manda a capo da solo;
+//   - su un ordine con molte righe finalY è già in fondo al foglio, e le
+//     condizioni venivano disegnate **oltre il bordo**, dove non esiste carta.
+//
+// Sono le condizioni contrattuali di un ordine che parte verso un fornitore:
+// il posto meno adatto a un troncamento che non si annuncia.
+const PDF_MARGINE = 14;          // lo stesso margine sinistro del resto del foglio
+const PDF_INTERLINEA = 5;
+function docCoda(doc, voci, y) {
+  const pagina = doc.internal.pageSize;
+  const largh = (pagina.getWidth ? pagina.getWidth() : pagina.width) - PDF_MARGINE * 2;
+  const fondo = (pagina.getHeight ? pagina.getHeight() : pagina.height) - PDF_MARGINE;
+  voci.filter(v => v && v.testo).forEach(v => {
+    // Una voce può occupare più righe: si spezza sulla larghezza utile, e poi si
+    // scrive **a gruppi di righe che ci stanno**. Non basta cambiare foglio
+    // quando il blocco non entra: una nota di quattromila caratteri è più alta
+    // di una pagina intera, e spostarla su un foglio nuovo la farebbe traboccare
+    // da quello — stesso troncamento silenzioso, un foglio più in là.
+    const righe = doc.splitTextToSize(v.etichetta + ': ' + v.testo, largh);
+    let i = 0;
+    while (i < righe.length) {
+      if (y + PDF_INTERLINEA > fondo) { doc.addPage(); y = PDF_MARGINE + 6; }
+      const quante = Math.max(1, Math.floor((fondo - y) / PDF_INTERLINEA));
+      const blocco = righe.slice(i, i + quante);
+      doc.text(blocco, PDF_MARGINE, y);
+      y += blocco.length * PDF_INTERLINEA;
+      i += blocco.length;
+    }
+  });
+  return y;
+}
 // Eliminazione. Su un documento che non è più una bozza l'avviso dice **cosa**
 // si sta cancellando: «risulta inviato» ferma la mano più di «sei sicuro?».
 // `extraWarn` aggiunge ciò che solo quel tipo sa (i ricevimenti di un ordine).
@@ -851,7 +890,7 @@ function catalogPickerModal(onAddIds, opts) {
   // Un articolo Obsoleto resta nelle righe già create, ma non si propone più
   // come NUOVA riga di RFQ/ordine/ODL/piano.
   const scelte = db.items.filter(i => i.active !== false && !i.obsolete && filtro(i)).sort((a, b) => (a.code || '').localeCompare(b.code || ''))
-    .map(i => `<label class="rfq-pick-row" data-type="${i.type}" data-fam="${i.familyId || ''}" data-sub="${i.subFamilyId || ''}" data-sup="${i.supplierId || ''}"><input type="checkbox" value="${i.id}">
+    .map(i => `<label class="rfq-pick-row" data-type="${i.type}" data-fam="${i.familyId || ''}" data-sub="${i.subFamilyId || ''}" data-sup="${i.supplierId || ''}" data-cerca="${esc(((i.code || '') + ' ' + (i.name || '')).toLowerCase())}"><input type="checkbox" value="${i.id}">
       <span style="font-family:var(--mono)">${esc(i.code || '')}</span> ${esc(i.name)}${itemBadges(i)}
       <span class="rfq-pick-type">${TYPE_LABELS[i.type] || i.type}</span></label>`).join('');
   const typeOpts = ALL_TYPES.map(t => `<option value="${t}">${typeLabel(t)}</option>`).join('');
@@ -881,7 +920,12 @@ function pickFilter() {
   const ty = val('pick-type'), fam = val('pick-fam'), sub = val('pick-sub'), sup = val('pick-sup');
   let shown = 0;
   document.querySelectorAll('#pick-list .rfq-pick-row').forEach(el => {
-    const ok = el.textContent.toLowerCase().includes(q)
+    // Si cerca in codice e nome, non in `textContent`: quello si porta dentro
+    // anche l'etichetta del tipo e i contrassegni della riga, e bastava
+    // scrivere «parte» per non filtrare niente (tutte le parti contengono la
+    // parola) o «obsoleto» per pescare articoli che non c'entrano. Gli altri
+    // picker dell'app confrontano codice e nome: questo faceva eccezione.
+    const ok = (el.dataset.cerca || '').includes(q)
       && (!ty || el.dataset.type === ty)
       && (!fam || el.dataset.fam === fam)
       && (!sub || el.dataset.sub === sub)
@@ -937,7 +981,7 @@ function renderRfqEdit(id) {
       ${cell2(`<input type="number" class="rfq-qty-input lock-contract" value="${l.qty}" min="0" step="any" title="Quantità" onchange="rfqSetLine('${id}','${l.id}','qty',this.value)">`,
     esc(l.uom || ''))}
       ${cell2(`<input type="number" class="rfq-price-input lock-offer" value="${price == null ? '' : price}" min="0" step="any" placeholder="—" title="Prezzo unitario" onchange="rfqSetLine('${id}','${l.id}','price',this.value)">`,
-    `<span class="ln-amount">${price != null ? fmtN(qty * price) : '—'}</span>`)}
+    `<span class="ln-amount">${price != null ? fmtN(importoRiga(l)) : '—'}</span>`)}
       ${cell2(`<input type="date" class="rfq-date-input lock-offer" value="${esc(l.deliveryDate || '')}" title="Data di consegna richiesta" onchange="rfqSetLine('${id}','${l.id}','deliveryDate',this.value)">`, '')}
       ${cell2(`<button class="mini-btn" onclick="rfqEditLineModal('${id}','${l.id}')" title="Modifica riga / nota">${ico('edit', 'tinted', 'Modifica riga / nota')}</button>`,
     `<button class="mini-btn danger lock-contract" onclick="rfqDelLine('${id}','${l.id}')" title="Togli la riga">${ico('trash', 'tinted', 'Togli la riga')}</button>`, 'line-actions')}
@@ -1064,13 +1108,14 @@ function exportRfqPDF(id) {
       : [i + 1, l.code || '', lineDescDoc(l), ...tail];
   });
   doc.autoTable({ startY, head: [head], body, styles: { fontSize: 8 }, headStyles: { fillColor: [58, 123, 232] } });
-  let fy = doc.lastAutoTable.finalY + 8;
   doc.setTextColor(80); doc.setFontSize(9);
-  if (r.transport) { doc.text('Trasporto / Shipping: ' + r.transport, 14, fy); fy += 5; }
-  if (r.payment) { doc.text('Pagamento / Payment: ' + r.payment, 14, fy); fy += 5; }
   // Solo r.notes: le note interne (notesInternal) non escono mai sul documento.
-  if (r.notes) { doc.text('Note / Notes: ' + r.notes, 14, fy); }
-  doc.save(`${r.number}${sup ? '_' + (sup.name || '').replace(/\s+/g, '_') : ''}.pdf`);
+  docCoda(doc, [
+    { etichetta: 'Trasporto / Shipping', testo: r.transport },
+    { etichetta: 'Pagamento / Payment', testo: r.payment },
+    { etichetta: 'Note / Notes', testo: r.notes },
+  ], doc.lastAutoTable.finalY + 8);
+  doc.save(nomeFileSicuro(r.number + (sup ? '_' + (sup.name || '') : ''), 'richiesta') + '.pdf');
   showToast('PDF esportato');
   askMarkSent(r, `PDF generato.\nSegnare la richiesta ${r.number} come inviata?`, 'inviata', renderRfq);
 }
@@ -1108,7 +1153,7 @@ function exportRfqExcel(id) {
   const ws = XLSX.utils.aoa_to_sheet(data);
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'RFQ');
-  XLSX.writeFile(wb, `${r.number}${sup ? '_' + (sup.name || '').replace(/\s+/g, '_') : ''}.xlsx`);
+  XLSX.writeFile(wb, nomeFileSicuro(r.number + (sup ? '_' + (sup.name || '') : ''), 'richiesta') + '.xlsx');
   showToast('Excel esportato');
   askMarkSent(r, `Excel generato.\nSegnare la richiesta ${r.number} come inviata?`, 'inviata', renderRfq);
 }
@@ -1224,7 +1269,7 @@ function orderWorstDelay(o) {
   });
   return peggiore;
 }
-function orderTotal(o) { return (o.lines || []).reduce((s, l) => s + (Number(l.qty) || 0) * (Number(l.price) || 0), 0); }
+function orderTotal(o) { return totaleRighe(o.lines); }
 function orderReception(o) {
   let ordered = 0, received = 0;
   (o.lines || []).forEach(l => { ordered += Number(l.qty) || 0; received += Number(l.received) || 0; });
@@ -1412,7 +1457,7 @@ function renderOrderEdit(id) {
     const warn = ordLineListinoWarn(o, l);
     const lotWarn = lineLotWarn(l);
     const qty = Number(l.qty) || 0, price = (l.price === '' || l.price == null) ? null : Number(l.price);
-    const amount = price != null ? qty * price : null;
+    const amount = price != null ? importoRiga(l) : null;
     const rec = Number(l.received) || 0, residual = qty - rec;
     return `<tr>
       ${cell2(i + 1, '', 'ln-idx')}
@@ -1534,21 +1579,22 @@ function exportOrderPDF(id) {
     const qty = Number(l.qty) || 0, price = (l.price === '' || l.price == null) ? null : Number(l.price);
     const tail = [(qty + ' ' + (l.uom || '')).trim(),
       price != null ? fmtN(price) + (l.uom ? '/' + l.uom : '') : '',
-      price != null ? fmtN(qty * price) : '', fmtDateIt(l.deliveryDate)];
+      price != null ? fmtN(importoRiga(l)) : '', fmtDateIt(l.deliveryDate)];
     return hasSup ? [i + 1, l.code || '', lineDescDoc(l), si ? si.code : '', si ? si.desc : '', ...tail] : [i + 1, l.code || '', lineDescDoc(l), ...tail];
   });
   const totLabel = { content: 'Totale / Total', styles: { halign: 'right', fontStyle: 'bold' } };
   const totVal = { content: fmtN(orderTotal(o)), styles: { fontStyle: 'bold' } };
   const foot = hasSup ? [['', '', '', '', '', '', totLabel, totVal, '']] : [['', '', '', '', totLabel, totVal, '']];
   doc.autoTable({ startY, head: [head], body, foot, styles: { fontSize: 8 }, headStyles: { fillColor: [58, 123, 232] }, footStyles: { fillColor: [235, 238, 245], textColor: 20 } });
-  let fy = doc.lastAutoTable.finalY + 8;
   doc.setTextColor(80); doc.setFontSize(9);
-  if (o.transport) { doc.text('Trasporto / Shipping: ' + o.transport, 14, fy); fy += 5; }
-  if (o.payment) { doc.text('Pagamento / Payment: ' + o.payment, 14, fy); fy += 5; }
-  if (o.supplierConfirmation) { doc.text('Conferma fornitore / Order confirmation: ' + o.supplierConfirmation, 14, fy); fy += 5; }
   // Solo o.notes: le note interne (notesInternal) non escono mai sul documento.
-  if (o.notes) { doc.text('Note / Notes: ' + o.notes, 14, fy); }
-  doc.save(`${o.number}${sup ? '_' + (sup.name || '').replace(/\s+/g, '_') : ''}.pdf`);
+  docCoda(doc, [
+    { etichetta: 'Trasporto / Shipping', testo: o.transport },
+    { etichetta: 'Pagamento / Payment', testo: o.payment },
+    { etichetta: 'Conferma fornitore / Order confirmation', testo: o.supplierConfirmation },
+    { etichetta: 'Note / Notes', testo: o.notes },
+  ], doc.lastAutoTable.finalY + 8);
+  doc.save(nomeFileSicuro(o.number + (sup ? '_' + (sup.name || '') : ''), 'ordine') + '.pdf');
   showToast('PDF esportato');
   askMarkSent(o, `PDF generato.\nSegnare l'ordine ${o.number} come inviato?`, 'inviato', renderOrders);
 }
@@ -1579,7 +1625,7 @@ function exportOrderExcel(id) {
   (o.lines || []).forEach((l, i) => {
     const si = lineSupInfo(o.supplierId, l);
     const qty = Number(l.qty) || 0, price = (l.price === '' || l.price == null) ? '' : Number(l.price);
-    const amount = price === '' ? '' : qty * price;
+    const amount = price === '' ? '' : importoRiga(l);
     const rec = Number(l.received) || 0;
     const supCols = hasSup ? [si ? si.code : '', si ? si.desc : ''] : [];
     data.push([i + 1, l.code || '', l.description, ...supCols, qty, l.uom || '', price, amount, fmtDateIt(l.deliveryDate), rec, qty - rec, l.note || '']);
@@ -1592,7 +1638,7 @@ function exportOrderExcel(id) {
   const ws = XLSX.utils.aoa_to_sheet(data);
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Ordine');
-  XLSX.writeFile(wb, `${o.number}${sup ? '_' + (sup.name || '').replace(/\s+/g, '_') : ''}.xlsx`);
+  XLSX.writeFile(wb, nomeFileSicuro(o.number + (sup ? '_' + (sup.name || '') : ''), 'ordine') + '.xlsx');
   showToast('Excel esportato');
   askMarkSent(o, `Excel generato.\nSegnare l'ordine ${o.number} come inviato?`, 'inviato', renderOrders);
 }
@@ -1614,7 +1660,7 @@ function getOdl(id) { return (db.workOrders || []).find(o => o.id === id); }
 function odlMode(o) { return docMode('odl', o); }
 function odlGuard(id, kind) { return docGuard('odl', id, kind); }
 function odlUnlock(id) { return docUnlock('odl', id); }
-function odlTotal(o) { return (o.lines || []).reduce((s, l) => s + (Number(l.qty) || 0) * (Number(l.price) || 0), 0); }
+function odlTotal(o) { return totaleRighe(o.lines); }
 // Progressivo per anno: ODL-<anno>-NNN. Numerazione **sua**: un ODL e un ODA
 // dello stesso giorno non devono avere lo stesso numero, o al telefono col
 // terzista non si capisce di quale documento si stia parlando.
@@ -1802,7 +1848,7 @@ function renderOdlEdit(id) {
   const o = getOdl(id); if (!o) { odlView = 'list'; return ''; }
   const lines = (o.lines || []).map((l, i) => {
     const qty = Number(l.qty) || 0, price = (l.price === '' || l.price == null) ? null : Number(l.price);
-    const amount = price != null ? qty * price : null;
+    const amount = price != null ? importoRiga(l) : null;
     const rec = Number(l.received) || 0, residual = qty - rec;
     // Le due azioni di conto lavoro stanno sotto la riga che le giustifica:
     // terzista e ordine sono già decisi, resta da dire cosa esce e quanto.
@@ -1924,20 +1970,21 @@ function exportOdlPDF(id) {
     const qty = Number(l.qty) || 0, price = (l.price === '' || l.price == null) ? null : Number(l.price);
     return [i + 1, l.code || '', lineDescDoc(l), (qty + ' ' + (l.uom || '')).trim(),
       price != null ? fmtN(price) + (l.uom ? '/' + l.uom : '') : '',
-      price != null ? fmtN(qty * price) : '', fmtDateIt(l.deliveryDate)];
+      price != null ? fmtN(importoRiga(l)) : '', fmtDateIt(l.deliveryDate)];
   });
   const totLabel = { content: 'Totale / Total', styles: { halign: 'right', fontStyle: 'bold' } };
   const totVal = { content: fmtN(odlTotal(o)), styles: { fontStyle: 'bold' } };
   doc.autoTable({ startY, head: [head], body, foot: [['', '', '', '', totLabel, totVal, '']],
     styles: { fontSize: 8 }, headStyles: { fillColor: [46, 164, 121] }, footStyles: { fillColor: [235, 242, 238], textColor: 20 } });
-  let fy = doc.lastAutoTable.finalY + 8;
   doc.setTextColor(80); doc.setFontSize(9);
-  if (o.transport) { doc.text('Trasporto / Shipping: ' + o.transport, 14, fy); fy += 5; }
-  if (o.payment) { doc.text('Pagamento / Payment: ' + o.payment, 14, fy); fy += 5; }
-  if (o.supplierConfirmation) { doc.text('Conferma terzista / Order confirmation: ' + o.supplierConfirmation, 14, fy); fy += 5; }
   // Solo o.notes: le note interne (notesInternal) non escono mai sul documento.
-  if (o.notes) { doc.text('Note / Notes: ' + o.notes, 14, fy); }
-  doc.save(`${o.number}${sup ? '_' + (sup.name || '').replace(/\s+/g, '_') : ''}.pdf`);
+  docCoda(doc, [
+    { etichetta: 'Trasporto / Shipping', testo: o.transport },
+    { etichetta: 'Pagamento / Payment', testo: o.payment },
+    { etichetta: 'Conferma terzista / Order confirmation', testo: o.supplierConfirmation },
+    { etichetta: 'Note / Notes', testo: o.notes },
+  ], doc.lastAutoTable.finalY + 8);
+  doc.save(nomeFileSicuro(o.number + (sup ? '_' + (sup.name || '') : ''), 'ordine') + '.pdf');
   showToast('PDF esportato');
   askMarkSent(o, `PDF generato.\nSegnare l'ordine di lavoro ${o.number} come inviato?`, 'inviato', renderOdl);
 }
@@ -1960,7 +2007,7 @@ function exportOdlExcel(id) {
   data.push(['#', 'Parte', 'Lavorazione', 'Pezzi', 'U.M.', `Tariffa (${cur()}/pz)`, `Importo (${cur()})`, 'Consegna', 'Rientrati', 'Ancora fuori', 'Nota']);
   (o.lines || []).forEach((l, i) => {
     const qty = Number(l.qty) || 0, price = (l.price === '' || l.price == null) ? '' : Number(l.price);
-    const amount = price === '' ? '' : qty * price;
+    const amount = price === '' ? '' : importoRiga(l);
     const rec = Number(l.received) || 0;
     data.push([i + 1, l.code || '', l.description, qty, l.uom || '', price, amount, fmtDateIt(l.deliveryDate), rec, qty - rec, l.note || '']);
   });
@@ -1970,7 +2017,7 @@ function exportOdlExcel(id) {
   if (!requireXlsx()) return;
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(data), 'Ordine di lavoro');
-  XLSX.writeFile(wb, `${o.number}${sup ? '_' + (sup.name || '').replace(/\s+/g, '_') : ''}.xlsx`);
+  XLSX.writeFile(wb, nomeFileSicuro(o.number + (sup ? '_' + (sup.name || '') : ''), 'ordine') + '.xlsx');
   showToast('Excel esportato');
   askMarkSent(o, `Excel generato.\nSegnare l'ordine di lavoro ${o.number} come inviato?`, 'inviato', renderOdl);
 }

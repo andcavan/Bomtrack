@@ -2,6 +2,83 @@
 
 Le revisioni seguono il versionamento semantico `0.MINOR.PATCH`: **MINOR** per nuove funzionalità, **PATCH** per correzioni. La versione in cima è quella in `APP_VERSION` (`core.js`) e mostrata nell'header dell'app.
 
+### 0.77.0 — 2026-09-11
+
+Tre funzionalità nuove, scelte fra le mancanze che il manuale dichiara da sé. La suite passa da 1696 a **1743** casi.
+
+**Avanzamento di produzione**
+Era la prima voce di «cosa Bomtrack non fa», e la sua assenza si vedeva in un punto preciso: sul fabbisogno, accanto alle lavorazioni da mandare fuori, c'era scritto che il netto non si poteva applicare perché «sapere quanti pezzi sono già stati lavorati richiederebbe un avanzamento di produzione che l'app non ha». Ora ce l'ha. Nella tabella **Da fabbricare** ogni parte ha due colonne nuove — *fatti* e *restano* — e un pulsante che apre la scheda dell'avanzamento: si dichiara quanti pezzi sono stati fatti, con una nota, e si vede lo storico di chi ha dichiarato cosa e quando.
+
+Non è un campo che si sovrascrive ma una **dichiarazione per volta**, sommata quando serve: è la stessa scelta che l'app fa per il magazzino, dove la giacenza non è un campo ma la somma dei movimenti, e per la stessa ragione — un totale che si ricostruisce si può spiegare, e si corregge senza riscrivere il passato. Un numero negativo corregge un conteggio sbagliato, come una rettifica, e la correzione resta visibile.
+
+**Le lavorazioni già fatte non si commissionano due volte**
+È la conseguenza diretta, ed è il motivo per cui la funzione esiste: una parte dichiarata finita ha attraversato tutte le sue fasi, quindi sparisce da «da far lavorare fuori» invece di finire in un ordine di lavoro che pagherebbe una seconda volta lo stesso lavoro. Quantità, ore e importi delle fasi seguono il netto. Il limite è dichiarato in chiaro dove si legge: una parte ferma **a metà ciclo** conta ancora per intero, perché si dichiara la parte finita e non la fase superata — il conto è prudente per scelta, si rischia di riproporre una lavorazione già avviata e mai di dimenticarne una da fare. Senza nessuna dichiarazione tutto si comporta **esattamente** come prima: i piani già aperti non cambiano da soli.
+
+Dichiarare pezzi fatti **non muove il magazzino** e non tocca le righe d'acquisto del piano: il materiale per una parte si compra prima di farla, e averla fatta non annulla quell'acquisto. Due strade per la stessa giacenza darebbero due verità, ed è la cosa che questa funzione evita con più cura.
+
+**Allegati: disegni e schede tecniche sugli articoli**
+Ogni articolo ha ora una scheda **Allegati**, dal pulsante sulla riga di catalogo accanto al listino — e dal **pannello laterale** (Ctrl+I) in Acquisti, Progetto e Magazzino, dove il comando porta il conteggio nell'etichetta come già fa «Movimenti». Il comando resta visibile anche a chi ha la vista in sola lettura: scaricare un disegno e modificare l'anagrafica sono due permessi diversi, e chi va in officina col foglio in mano non è detto che abbia il secondo. Da lì: si aggiungono disegni, PDF, foto e file CAD fino a 25 MB l'uno, si riscaricano con un click, e il numero di allegati si vede dall'elenco senza doverli aprire. La scheda articolo li elenca, in sola lettura come tutto il resto di quella scheda.
+
+I **file** stanno in IndexedDB, i **dati** (nome, dimensione, a quale articolo, chi e quando) in `db.attachments` come ogni altra collezione. La divisione non è un dettaglio tecnico: un solo disegno pesa più di tutto il database, e metterlo in `localStorage` non l'avrebbe fatto crescere — l'avrebbe fatto **smettere di salvare**, insieme a tutto il resto del lavoro. Il prezzo va detto, ed è scritto in tre posti: **il backup JSON non contiene i file**, ne porta l'elenco. Ripristinandolo su un altro PC si vede che cosa manca invece di trovare una scheda vuota; prima di trasferirsi i file vanno riscaricati a mano. In Gestione › Backup un pulsante recupera lo spazio dei file rimasti senza più un articolo.
+
+**L'app si installa e funziona senza rete**
+`manifest.webmanifest` e `sw.js`: Bomtrack si può installare come applicazione, con un'icona sua, e una volta aperta funziona offline — manuale compreso, che è proprio quello che serve consultare quando la rete manca. Il service worker mette in cache il programma, mai i dati: quelli restano dove sono sempre stati. Aperta con un doppio click su `file://` non cambia niente: lì i service worker non esistono, l'app se ne accorge e tace, ed è la ragione per cui le librerie di export stanno in `vendor/` invece che nella cache.
+
+**Note**
+- **47 casi nuovi** in tre file: `test/produzione.test.js` (23), `test/allegati.test.js` (15) e `test/pwa.test.js` (11). L'harness guadagna un **IndexedDB finto**, che mancava: era l'ultimo pezzo di piattaforma non simulato.
+- `test/pwa.test.js` guarda le tre cose che si rompono **in silenzio** e solo offline: uno script aggiunto alla pagina e dimenticato nel service worker, la versione della cache non aggiornata (i browser già visitati continuerebbero a servire quella vecchia, per sempre) e un file elencato che non esiste, che facendo fallire `addAll` lascerebbe l'app senza cache senza dirlo.
+- Gli allegati sono nati nella scheda articolo e sono stati **spostati** in una scheda propria: `test/iteminfo.test.js` difende l'invariante «la scheda non modifica niente», ed è una proprietà che vale più di una scorciatoia. Gli editor per articolo stanno sulla riga di catalogo, dove ci sono già il listino e la distinta.
+- Due collezioni nuove — `attachments` e `productions` — dichiarate in `SCHEMA` e in `REFS`, seminate da `migrateDB` e presenti nel backup.
+
+### 0.76.0 — 2026-09-11
+
+Giro di controllo generale sul codice. Nessuna funzionalità nuova: si chiudono difetti trovati leggendo, e si copre con i test la parte che ne era rimasta fuori. La suite passa da 1657 a **1696** casi.
+
+**Due schede aperte non si cancellano più il lavoro a vicenda**
+`Store.commit()` riscrive l'intero archivio con la fotografia che ha in memoria. Con due finestre di Bomtrack aperte — che su un gestionale è la normalità — la seconda che salvava cancellava tutto ciò che la prima aveva fatto nel frattempo: senza un errore, senza un avviso, senza nemmeno il badge «modifiche non salvate», perché la scrittura andava a buon fine. Era perdita di dati certa e invisibile. Ora l'archivio porta un contatore di revisione in una chiave sua, che si legge prima di ogni salvataggio: se qualcun altro ha scritto, il salvataggio si ferma e lo dice. Si può ricaricare (si perde quello che si stava facendo qui) o tenere la propria versione (si perde quello che ha fatto l'altra scheda), e la finestra dice per ciascuna che cosa costa, offrendo l'export di un backup prima di scegliere. **Non si fonde niente, di proposito**: per fondere due fotografie bisognerebbe sapere riga per riga quale delle due versioni vale, e quella risposta non ce l'ha né l'app né chi la usa. L'altra scheda che scrive si fa sentire subito, non al primo salvataggio: chi continua a lavorare su dati ormai vecchi accumula modifiche che poi non potrà più salvare senza cancellare quelle altrui.
+
+**Il totale dei documenti torna con la somma delle righe**
+La colonna Importo arrotondava ogni riga ai centesimi per stamparla, il piede sommava i prodotti a piena precisione e arrotondava solo alla fine. Con i prezzi a quattro decimali che il listino ammette, tre righe da 1×1,005 stampavano 1,01 + 1,01 + 1,01 in colonna e 3,02 sotto. È un PDF che parte verso un fornitore, e un totale che non torna tocca a qualcuno spiegarlo. Ora l'importo si arrotonda una volta sola, dove nasce (`importoRiga` in `core.js`), e il totale somma esattamente ciò che il fornitore legge — a schermo, in PDF e in Excel, dove la colonna si somma per davvero.
+
+**Le condizioni non spariscono più in fondo ai PDF**
+Trasporto, pagamento, conferma e note erano scritte a coordinata crescente, senza mai guardare dove finisse la pagina. Una nota lunga usciva dal margine destro e veniva tagliata; su un ordine con molte righe le condizioni venivano disegnate oltre il bordo, dove non c'è carta. In entrambi i casi il PDF si generava senza un errore, e la mancanza si scopriva solo andando a cercarla. Il testo ora va a capo sulla larghezza utile e passa a una pagina nuova quando serve, anche a metà di una nota più alta di un foglio intero.
+
+**Un fornitore che ha i nostri pezzi non si cancella più**
+`supplierUses()` controllava sette posti ma non i movimenti di magazzino, benché la scheda del movimento **pretenda** il terzista («senza, non si sa da chi sta la merce»). Cancellandolo, il prospetto «presso terzi» raggruppava sotto «senza fornitore» materiale che è nostro e sta fisicamente da qualcuno: la domanda a cui quel prospetto serve a rispondere restava senza risposta, e senza più niente da cui ricostruirla.
+
+**I nomi dei file esportati non si rompono più**
+In officina «AB/123-01» è un codice normale, e «Rossi & C. / Milano» una ragione sociale normale: finivano tali e quali nel nome di PDF ed Excel. Il browser, davanti a un nome invalido, non protesta — tronca, o salva con un altro nome, e il documento non si ritrova. Un solo `nomeFileSicuro()` in `core.js` ripulisce i dieci punti che esportano, lasciando intatti accenti e spazi, che in un nome di file vanno benissimo.
+
+**Il pannello «Aggiungi componenti» non si svuota più da solo**
+Le quantità dovevano restare impostate «finché non si inserisce, si cambia distinta o si chiude il pannello» — così dice il commento che le governa. In realtà si azzeravano a ogni ridisegno della vista: bastava espandere un nodo dell'albero per perdere le quantità messe su dieci articoli, il testo di ricerca e il punto in cui si stava scrivendo. Ora si azzerano solo quando la distinta cambia davvero.
+
+**La schermata d'accesso parte anche dove il browser nega l'archivio**
+Erano gli ultimi tre accessi a `localStorage` senza `try/catch`, e stavano sulla schermata che ogni utente attraversa per forza. In navigazione privata, con i dati dei siti bloccati, o su `file://` con lo storage negato, `renderLogin()` moriva sulla prima riga e la schermata non si disegnava affatto: l'app era inutilizzabile proprio nello scenario che l'avviso «dati non caricati» esiste per raccontare.
+
+**Chiudere la scheda con del lavoro per aria adesso chiede**
+Il salvataggio fallito e i documenti a metà compilazione (`rfqDirty`, `orderDirty`, `odlDirty`) erano già noti all'app, e nessuno li guardava all'uscita. Si chiede solo quando c'è qualcosa in sospeso: un avviso che compare sempre è un avviso che si impara a scacciare senza leggerlo.
+
+**Rinominare un'unità di misura porta con sé la seconda**
+Una barra si gestisce in metri e si compra a chilo: il chilo vive in `altUom` sull'articolo e in `priceUom` sulla riga di listino. La rinomina li lasciava indietro e il conteggio d'uso non li vedeva — al punto che l'unità che convertiva i prezzi di mezzo magazzino risultava «non usata» e si poteva cancellare con un click. Le conversioni continuavano a tornare (i due campi si guardano fra loro, non l'elenco), ma anagrafica ed elenco raccontavano due cose diverse.
+
+**Selezione multipla: da quadratica a lineare**
+Con «Mostra tutti» su qualche migliaio di righe e un Maiusc+click dal primo all'ultimo articolo, l'Ispettore faceva milioni di confronti a ogni ridisegno della griglia — cioè a ogni carattere digitato nel filtro. Tre `Set` al posto di altrettante ricerche lineari.
+
+**Minori**
+- I messaggi di `requirePdf`/`requireXlsx` nominano il file mancante invece della connessione a internet: dalla 0.43.0 le librerie stanno in `vendor/`, e quella frase mandava a cercare il guasto dalla parte sbagliata.
+- I caratteri non bloccano più il primo disegno della pagina: erano un `<link>` normale, e su un PC di officina senza rete l'attesa diventava il timeout del DNS — finestra bianca per secondi, a ogni avvio. Se non arrivano, `style.css` ha già i ripieghi.
+- Tolto `aria-modal` dalle schede: dichiarava inerte tutto il resto della pagina, che qui per scelta non lo è — le schede si lasciano aperte e la vista dietro resta viva. Due schede aperte insieme si dichiaravano entrambe «l'unica». Resta `role="dialog"`.
+- Il filtro del picker catalogo cerca in codice e descrizione, non nel testo dell'intera riga: scrivere «parte» non filtrava più niente, «obsoleto» pescava articoli che non c'entravano.
+- Il report d'import dice «righe saltate» invece di «righe vuote»: contava insieme le righe vuote, quelle senza tipo e quelle dell'altro ambito, e dichiarava «312 righe vuote» di un file pieno.
+- `ico()` fa passare il `title` da `esc()`, unico punto del disegno fuori dalla convenzione; la dimensione del database nella conferma di azzeramento è arrotondata come altrove; tolta `inspectorRigaDi()`, rimasta senza chiamanti, che costruiva un selettore CSS per concatenazione.
+
+**Note**
+- **39 casi nuovi** in tre file: `test/concorrenza.test.js` (due schede sullo stesso archivio, con il `localStorage` condiviso fra due istanze), `test/export-docs.test.js` e `test/anagrafiche.test.js`.
+- Gli export dei documenti avevano un test: **nessuno**, ed è la ragione per cui `docs/analisi-tecnica.md` teneva aperta la deduplica della presentazione (C1) — «un export si verifica sui dati che produce, non sul PDF: serve prima quello». Ora c'è: jsPDF e SheetJS sono sostituiti da due finti che annotano righe, piede e nome del file. Il primo a scriverlo ha subito trovato un limite della correzione sulle pagine, che senza non sarebbe venuto fuori.
+- `test/scripts.test.js` guadagna un controllo sulle **collisioni di nomi globali**. I 26 script condividono un unico scope e due dichiarazioni dello stesso nome non danno errore: vince l'ultima caricata, in silenzio. Oggi i nomi sono 1291 e le collisioni zero; il controllo serve a tenerle zero, senza dover rinunciare all'apertura da `file://` che `C4` dava per prezzo obbligato.
+- Una correzione è stata **annullata** dopo il test: leggere «1.500» come millecinquecento in import. `test/import.test.js` documenta la lettura decimale come scelta deliberata — con un separatore solo non si indovina, e `0.750` sono settantacinque centesimi — e la scelta regge.
+- `docs/analisi-tecnica.md` riallineato: era fermo alla 0.43.0 con il codice alla 0.75.0.
+
 ### 0.75.0 — 2026-09-10
 
 **Barra Filtri a scomparsa, con ambito condiviso fra le viste**

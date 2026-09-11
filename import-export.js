@@ -960,11 +960,13 @@ function renderBackup() {
     <div style="flex:1">
       <strong>${ico('save', 'tinted', '')} Backup locale</strong>
       <p>I dati sono salvati nel browser (localStorage). Esporta un file JSON per conservare un backup o trasferire i dati su un altro PC. L'import sovrascrive i dati attuali.</p>
+      <p><strong>Gli allegati non sono nel backup.</strong> Disegni e schede tecniche stanno fuori dal database — sono file, e nel JSON non ci starebbero — quindi il backup ne porta l'<em>elenco</em> e non il contenuto: ripristinandolo altrove si vede che cosa manca invece di trovare una scheda vuota. Prima di trasferirsi su un altro PC vanno riscaricati a mano dalla scheda Allegati di ciascun articolo.</p>
       ${dbSizeLine()}
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
         <button class="add-btn-sm" onclick="exportBackup()">${ico('download', 'tinted', '')} Esporta JSON</button>
         <button class="btn-outline" onclick="document.getElementById('import-file').click()">${ico('upload', 'tinted', '')} Importa JSON</button>
         <input type="file" id="import-file" accept="application/json,.json" style="display:none" onchange="importBackup(event)">
+        <button class="btn-outline" onclick="allegatiPulisci()">${ico('trash', 'tinted', '')} Recupera spazio allegati</button>
         <button class="btn-outline" style="color:var(--red);border-color:var(--red)" onclick="resetDB()">↺ Ripristina dati esempio</button>
       </div>
     </div></div>
@@ -1151,7 +1153,7 @@ function wipeAll() {
   openModal(`<h3>${ico('warning', 'tinted pill', '')} Azzera tutto</h3>
     <p class="confirm-text">Il database verrà svuotato <strong>completamente</strong> e in modo <strong>irreversibile</strong>:
       ${db.items.length} articoli, ${db.rfqs.length} richieste, ${db.orders.length} ordini, ${(db.plans || []).length} piani
-      (${size.mb} MB). Resti dentro come amministratore, tutto il resto sparisce.</p>
+      (${size.mb.toFixed(2)} MB). Resti dentro come amministratore, tutto il resto sparisce.</p>
     <p class="confirm-text">Hai esportato un backup JSON? Scrivi <strong>AZZERA</strong> qui sotto per confermare.</p>
     <div class="modal-field"><input id="wipe-word" placeholder="AZZERA" autocomplete="off"
       style="text-transform:uppercase;font-family:var(--mono);font-weight:700"></div>

@@ -1,0 +1,22 @@
+{
+  "name": "Bomtrack — Distinte Base & Costificazione",
+  "short_name": "Bomtrack",
+  "description": "Distinte base multi-livello, costificazione, magazzino e ciclo acquisti per l'officina meccanica.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "landscape",
+  "lang": "it",
+  "dir": "ltr",
+  "background_color": "#12141c",
+  "theme_color": "#3A7BE8",
+  "categories": ["business", "productivity"],
+  "icons": [
+    {
+      "src": "icona.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

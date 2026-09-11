@@ -250,3 +250,41 @@ describe('Azioni di massa', () => {
     assert.equal(a.eval('db.items.length'), 2);
   });
 });
+
+// ═══════════════════════════════════════════════════════════
+//  Allegati
+// ═══════════════════════════════════════════════════════════
+// Il comando sta nel pannello come sta nella riga: da lì si aprono i disegni.
+// Non è marcato `write` di proposito — scaricare un disegno e modificare
+// l'anagrafica sono due permessi diversi, e chi va in officina con il foglio in
+// mano non è detto che abbia il secondo.
+describe('Pannello: gli allegati', () => {
+  it('il comando c\'è in entrambe le anagrafiche e in magazzino', () => {
+    const a = app();
+    ['buy', 'design', 'stock'].forEach(v => {
+      assert.match(scegli(a, v, 'm1'), /Allegati/, `manca in ${v}`);
+    });
+  });
+
+  it('l\'etichetta dice quanti sono, senza doverli aprire', () => {
+    const a = app();
+    a.eval('db.attachments = [{ id: "a1", itemId: "m1", name: "disegno.pdf", size: 2048 },'
+      + '{ id: "a2", itemId: "m1", name: "scheda.pdf", size: 1024 }]');
+    assert.match(scegli(a, 'buy', 'm1'), /Allegati \(2\)/);
+  });
+
+  it('senza allegati l\'etichetta resta pulita, non «Allegati (0)»', () => {
+    const a = app();
+    const h = scegli(a, 'buy', 'm1');
+    assert.match(h, /Allegati/);
+    assert.doesNotMatch(h, /Allegati \(0\)/, 'uno zero fra parentesi è rumore, non informazione');
+  });
+
+  it('anche chi ha la vista in sola lettura può aprirli', () => {
+    const a = app();
+    a.asRole('lettore');
+    const h = scegli(a, 'buy', 'm1');
+    assert.match(h, /Allegati/, 'consultare un disegno non è modificare un articolo');
+    assert.doesNotMatch(h, /Elimina articolo/, 'i comandi che scrivono restano nascosti');
+  });
+});

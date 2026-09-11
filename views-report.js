@@ -185,7 +185,7 @@ function exportBomExcel() {
   const ws = XLSX.utils.aoa_to_sheet(data);
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Distinta');
-  XLSX.writeFile(wb, `Distinta_${it.code || it.name}.xlsx`);
+  XLSX.writeFile(wb, 'Distinta_' + nomeFileSicuro(it.code || it.name, 'articolo') + '.xlsx');
   showToast('Excel esportato');
 }
 function exportBomPDF() {
@@ -210,6 +210,6 @@ function exportBomPDF() {
   ];
   doc.autoTable({ startY: y, body: sum, theme: 'plain', styles: { fontSize: 10 },
     columnStyles: { 0: { fontStyle: 'bold' }, 1: { halign: 'right', fontStyle: 'bold' } }, tableWidth: 90 });
-  doc.save(`Distinta_${it.code || it.name}.pdf`);
+  doc.save('Distinta_' + nomeFileSicuro(it.code || it.name, 'articolo') + '.pdf');
   showToast('PDF esportato');
 }

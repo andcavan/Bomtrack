@@ -166,7 +166,12 @@ function ico(name, cls, label) {
   if (!ICONS[name]) return '';
   const svg = `<svg class="ico ic-${name}${cls ? ' ' + cls : ''}" aria-hidden="true"><use href="#ic-${name}"></use></svg>`;
   const t = label === undefined ? ICON_LABEL[name] : label;
-  return t ? `<span class="ico-w" title="${t}">${svg}</span>` : svg;
+  // Il title passa da esc() come ogni altro testo che finisce in un attributo.
+  // Oggi tutti i chiamanti passano stringhe scritte nel codice, quindi non c'è
+  // niente da sfruttare — ma questa è una funzione che invita a ricevere testo
+  // dinamico (un ico('wrench', '', wc.name) sembra la cosa più naturale del
+  // mondo), ed era l'unico punto del disegno fuori dalla convenzione.
+  return t ? `<span class="ico-w" title="${esc(t)}">${svg}</span>` : svg;
 }
 
 function iconSprite() {

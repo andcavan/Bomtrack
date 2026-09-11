@@ -100,9 +100,17 @@ Vale la pena dirlo subito, perché evita di cercare funzioni che non ci sono.
 - **Non schedula la produzione.** Il *Carico centri* mostra le ore che i piani chiedono a ciascun
   centro settimana per settimana, e segnala il sovraccarico. Non lo risolve: non c'è calendario,
   non c'è data di avvio di una fase, la capacità è **infinita**.
-- **Non ha l'avanzamento di produzione.** Non si dichiara «pezzo fatto». Il magazzino si muove con
-  i movimenti e con i ricevimenti degli ordini, non con dei versamenti di produzione.
+- **Non versa a magazzino ciò che produci.** Dalla 0.77.0 l'avanzamento c'è — nella tabella
+  *Da fabbricare* di un piano si dichiara quanti pezzi sono stati fatti, e le lavorazioni già
+  fatte non vengono più rimandate al terzista — ma resta una **dichiarazione di avanzamento**,
+  non un versamento: il magazzino continua a muoversi solo con i movimenti e con i ricevimenti
+  degli ordini. Due strade per la stessa giacenza darebbero due verità.
+  L'avanzamento si dichiara **per parte finita**, non per fase superata: un pezzo fermo a metà
+  ciclo conta ancora come tutto da fare.
 - **Non è un gestionale amministrativo.** Niente fatture, niente contabilità, niente DDT.
+- **Non archivia i documenti nel database.** Disegni e schede tecniche si allegano agli articoli
+  (dalla 0.77.0), ma i file stanno **su questo computer**, fuori dall'archivio: il backup JSON ne
+  porta l'elenco e non il contenuto. Prima di trasferirti su un altro PC vanno riscaricati a mano.
 - **Non è multi-utente in tempo reale.** Ogni PC ha il suo archivio. Due colleghi che lavorano su
   due PC lavorano su due copie diverse: si allineano con un backup
   (→ [cap. 29](#29-backup-e-manutenzione)). L'archivio condiviso è progettato ma non ancora
@@ -1156,11 +1164,22 @@ Gli **indicatori di riga**:
 | `✓ coperto` | Non serve ordinare niente |
 | *(impegno)* | Quanta parte è impegnata da altri piani |
 
-**Da far lavorare fuori** — le fasi di ciclo affidate a un terzista. **Il netto non si applica
-qui**, ed è dichiarato in pagina: una fase non sta a scaffale, e sapere quanti pezzi sono già stati
-lavorati richiederebbe un avanzamento di produzione che l'app non ha.
+**Da far lavorare fuori** — le fasi di ciclo affidate a un terzista. Le quantità sono **al netto
+dei pezzi dichiarati fatti** in *Da fabbricare*: una parte finita ha già attraversato tutte le sue
+fasi, e mandarla fuori un'altra volta vorrebbe dire pagare due volte lo stesso lavoro. Una parte
+ferma a metà ciclo conta invece ancora per intero — si dichiara la parte finita, non la fase
+superata — quindi il conto è prudente: si rischia di riproporre una lavorazione già avviata, mai
+di dimenticarne una da fare.
 
-**Da fabbricare** — le parti a produzione interna che il piano richiede.
+**Da fabbricare** — le parti a produzione interna che il piano richiede, con l'**avanzamento**:
+quante ne sono state fatte e quante ne restano. Il pulsante 🏭 in fondo alla riga apre la scheda in
+cui si dichiara: si scrive quanti pezzi sono stati fatti (il modulo propone il residuo, che è il
+caso più frequente), si può aggiungere una nota, e resta lo storico di chi ha dichiarato cosa e
+quando. Un numero **negativo** corregge un conteggio sbagliato, come una rettifica di magazzino:
+lo storico non si riscrive, si aggiunge.
+
+Dichiarare pezzi fatti **non muove il magazzino** e non annulla le righe d'acquisto del piano: il
+materiale per una parte si compra prima di farla.
 
 **Carico dei centri** — la stessa tavola del [cap. 23](#23-carico-dei-centri-di-lavoro), ristretta
 a questo piano.

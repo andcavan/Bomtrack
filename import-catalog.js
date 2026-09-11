@@ -947,13 +947,19 @@ function catRunImport(dryRun) {
   }
   showCatalogReport(rep);
 }
+// «Saltate», non «vuote»: in `skipped` finiscono tre cose diverse — la riga
+// davvero vuota, quella senza un tipo riconoscibile e quella che appartiene
+// all'altro ambito. Chiamarle tutte «vuote» faceva dire al report «312 righe
+// vuote» di un file pieno, e chi legge conclude che il file è sbagliato quando
+// invece l'import ha fatto esattamente il suo mestiere. Quante siano del terzo
+// tipo lo dice già l'avviso aggregato, che nomina anche il pulsante giusto.
 function showCatalogReport(rep) {
   const tot = rep.sheets.reduce((a, s) => ({ c: a.c + s.created, u: a.u + s.updated }), { c: 0, u: 0 });
   const cards = [['Creati', tot.c], ['Aggiornati', tot.u], ['Avvisi', rep.warnings.length], ['Errori', rep.errors.length]]
     .map(([l, v]) => `<div class="kpi-card ${(l === 'Errori' || l === 'Avvisi') && v ? 'orange' : ''}"><div class="kpi-value">${v}</div><div class="kpi-label">${l}</div></div>`).join('');
   const righe = rep.sheets.map(s => `<div class="mgmt-item">
       <span class="mgmt-item-name">${esc(s.name)}</span>
-      <span class="mgmt-item-meta">${s.created} creati · ${s.updated} aggiornati · ${s.skipped} righe vuote</span>
+      <span class="mgmt-item-meta">${s.created} creati · ${s.updated} aggiornati · ${s.skipped} righe saltate</span>
     </div>`).join('') || '<div class="empty-text">Nessun foglio riconosciuto.</div>';
   const note = [];
   if (rep.foreign.length) {

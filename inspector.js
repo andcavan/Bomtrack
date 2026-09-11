@@ -76,6 +76,12 @@ function inspAzioniArticolo(it) {
     cmd('copy', 'Duplica', `duplicateItemModal('${it.id}')`, { write: true }),
     hasPriceList(it) ? cmd('euro', 'Listino fornitori', `priceListModal('${it.id}')`) : null,
     it.type === 'parte' ? cmd('wrench', 'Distinta parte e ciclo', `openCycleFor('${it.id}')`) : null,
+    // Il conteggio nell'etichetta, come per i movimenti qui sotto: dice se c'è
+    // un disegno senza doverlo aprire per scoprirlo. Non è marcato `write`
+    // perché la scheda si apre e si scarica anche in sola lettura — chi va in
+    // officina con il disegno non è detto che possa modificare l'anagrafica; ad
+    // aggiungere ed eliminare pensa la scheda, che ha le sue guardie.
+    cmd('folder', `Allegati${allegatiCount(it.id) ? ' (' + allegatiCount(it.id) + ')' : ''}`, `allegatiModal('${it.id}')`),
     cmd('link', 'Dove è usato e impatto costi', `usageModal('${it.id}')`),
     cmd('eye', 'Scheda completa', `itemInfoModal('${it.id}')`),
     cmd('trash', 'Elimina articolo', `delItem('${it.id}')`, { write: true, danger: true }),
@@ -86,6 +92,7 @@ function inspAzioniGiacenza(it) {
     cmd('scale', 'Rettifica giacenza', `stockAdjustModal('${it.id}')`, { write: true }),
     cmd('clock', `Movimenti (${movementsOf(it.id).length})`, `stockMovementsModal('${it.id}')`),
     cmd('link', 'Dove è usato e impatto costi', `usageModal('${it.id}')`),
+    cmd('folder', `Allegati${allegatiCount(it.id) ? ' (' + allegatiCount(it.id) + ')' : ''}`, `allegatiModal('${it.id}')`),
     cmd('edit', 'Modifica articolo', `editItemModal('${it.id}')`, { write: true }),
     cmd('eye', 'Scheda completa', `itemInfoModal('${it.id}')`),
   ].filter(Boolean);
@@ -148,8 +155,12 @@ function inspectorExtendSelection(id) {
   const [a, b] = i <= j ? [i, j] : [j, i];
   const nuovi = righe.slice(a, b + 1);
   // Chi c'era resta: si estende una scelta, non la si ricomincia.
+  // Il controllo dei doppioni passa da un Set: con Maiusc+click dalla prima
+  // all'ultima riga di un elenco lungo, `includes` dentro il ciclo faceva
+  // crescere il costo col quadrato delle righe scelte.
   const ids = (inspSel.view === activeView ? inspSel.ids : []).slice();
-  nuovi.forEach(x => { if (!ids.includes(x)) ids.push(x); });
+  const gia = new Set(ids);
+  nuovi.forEach(x => { if (!gia.has(x)) { gia.add(x); ids.push(x); } });
   inspSel = { view: activeView, kind: reg.kind, ids };
   renderInspector();
   inspectorMarkRows();
@@ -323,20 +334,24 @@ function inspectorSync() {
   // Cadono le righe che non ci sono più — filtro cambiato, articolo eliminato —
   // e restano le altre: un filtro più stretto non deve buttare via una scelta
   // fatta a mano su venti articoli.
-  if (inspSel.ids.length) inspSel.ids = inspSel.ids.filter(id => inspectorRigaDi(id));
+  // Una sola passata sul DOM invece di una ricerca per ogni id scelto: con
+  // «Mostra tutti» su qualche migliaio di righe, inspectorSync() gira a ogni
+  // carattere digitato nel filtro, e lì la differenza si sente.
+  if (inspSel.ids.length) {
+    const presenti = new Set(inspectorRowIds());
+    inspSel.ids = inspSel.ids.filter(id => presenti.has(id));
+  }
   renderInspector();
   inspectorMarkRows();
-}
-function inspectorRigaDi(id) {
-  const p = typeof document === 'undefined' ? null : document.getElementById('view-' + activeView);
-  return p && p.querySelector ? p.querySelector(`tr[data-sel="${id}"]`) : null;
 }
 function inspectorMarkRows() {
   const p = typeof document === 'undefined' ? null : document.getElementById('view-' + activeView);
   if (!p || !p.querySelectorAll) return;
-  const scelti = inspSel.view === activeView ? inspSel.ids : [];
+  // Set invece dell'array: `includes` per ogni riga rendeva quadratico anche
+  // il solo evidenziare la scelta, e questo gira a ogni ridisegno della griglia.
+  const scelti = new Set(inspSel.view === activeView ? inspSel.ids : []);
   p.querySelectorAll('tr[data-sel]').forEach(tr => {
-    tr.classList.toggle('row-selected', scelti.includes(tr.dataset.sel));
+    tr.classList.toggle('row-selected', scelti.has(tr.dataset.sel));
   });
 }
 

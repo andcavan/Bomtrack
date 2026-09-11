@@ -455,6 +455,10 @@ function delComponent(idx) {
 // quantità restano impostate anche affinando la ricerca, finché non si
 // inserisce, si cambia distinta o si chiude il pannello.
 let bomPanelQty = new Map();   // itemId -> quantità impostata (solo voci > 0)
+// La distinta a cui appartengono le quantità qui sopra. Serve a distinguere
+// «la vista si è ridisegnata» da «si è cambiata distinta»: sono la stessa
+// chiamata, e senza questo riferimento erano indistinguibili.
+let bomPanelFor = null;
 
 // ─── Ridimensionamento del pannello ───
 // Stesso schema dell'Ispettore di Anagrafica (inspector.js): variabili e
@@ -516,7 +520,10 @@ function toggleBomPanel() {
 }
 function openBomPanel() {
   const it = getItem(currentBomId); if (!it) return;
+  // Si apre sempre vuoto, e si dichiara subito per quale distinta: senza,
+  // il primo ridisegno lo troverebbe «di un'altra» e lo azzererebbe di nuovo.
   bomPanelQty = new Map();
+  bomPanelFor = it.id;
   document.getElementById('bom-panel').classList.add('open');
   document.body.classList.add('bom-panel-on');
   bpnApplyWidth();
@@ -529,12 +536,20 @@ function closeBomPanel() {
 }
 // Richiamata da renderBom() ad ogni ridisegno: tiene il pannello coerente con
 // la distinta aperta quando cambia (menu a tendina o click nell'albero).
+//
+// Le quantità si azzerano **solo** quando la distinta cambia davvero. Prima
+// l'azzeramento era incondizionato, e siccome renderBom() passa di qui a ogni
+// ridisegno bastava espandere un nodo dell'albero — toggleBom() ridisegna — per
+// perdere le quantità impostate su dieci articoli, il testo di ricerca e il
+// punto in cui si stava scrivendo. Era anche l'opposto di quanto promette il
+// commento su bomPanelQty: «restano impostate finché non si inserisce, si
+// cambia distinta o si chiude il pannello».
 function refreshBomPanelIfOpen() {
   const panel = document.getElementById('bom-panel');
   if (!panel || !panel.classList.contains('open')) return;
   const it = getItem(currentBomId);
   if (!it) { closeBomPanel(); return; }
-  bomPanelQty = new Map();
+  if (bomPanelFor !== it.id) { bomPanelQty = new Map(); bomPanelFor = it.id; }
   renderBomPanel();
 }
 function renderBomPanel() {

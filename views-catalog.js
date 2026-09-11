@@ -553,6 +553,7 @@ function catalogRow(i, scope) {
     <td class="row-actions" style="text-align:right;white-space:nowrap">
       ${hasPriceList(i) ? `<button class="mini-btn" title="Listino fornitori e storico prezzi" onclick="priceListModal('${i.id}')">${ico('euro', 'tinted', 'Listino fornitori e storico prezzi')}</button>` : ''}
       ${i.type === 'parte' ? `<button class="mini-btn" title="Distinta parte e ciclo di lavorazione" onclick="openCycleFor('${i.id}')">${ico('wrench', 'tinted', 'Distinta parte e ciclo di lavorazione')}</button>` : ''}
+      <button class="mini-btn" title="Allegati: disegni e schede tecniche" onclick="allegatiModal('${i.id}')">${ico('folder', 'tinted', 'Allegati')}${allegatiCount(i.id) ? '<span class="mini-count">' + allegatiCount(i.id) + '</span>' : ''}</button>
       <button class="mini-btn" title="Dove è usato e impatto costi" onclick="usageModal('${i.id}')">${ico('link', 'tinted', 'Dove è usato e impatto costi')}</button>
       <button class="mini-btn" title="Modifica articolo" onclick="editItemModal('${i.id}')">${ico('edit', 'tinted', 'Modifica articolo')}</button>
       <button class="mini-btn" title="Duplica" onclick="duplicateItemModal('${i.id}')">${ico('copy', 'tinted', 'Duplica')}</button>
@@ -1622,16 +1623,23 @@ function pickCycleOp() {
   touch(it); saveDB(); renderCycles(); savedToast('Lavorazione aggiunta');
 }
 
+// La scheda si apre **prima**, e solo se si apre davvero si dichiara su cosa si
+// sta lavorando. openModal() può rifiutare — con un'altra scheda già aperta
+// chiede conferma, e «Annulla» vuol dire «lascia le cose come stanno» — ma lo
+// stato era già stato riscritto sopra: restava la scheda di prima a schermo con
+// le variabili che parlavano di un altro articolo. Un «Annulla» che cambia
+// qualcosa è peggio del problema che voleva evitare.
 function newItemModal(scope) {
   if (!roleGuard('catalog')) return;
   scope = CATALOG_SCOPES[scope] ? scope : 'buy';
+  const p = openModal(`<h3>${ico(scope === 'buy' ? 'package' : 'tree', 'tinted pill', '')} Nuovo articolo — ${esc(CATALOG_SCOPES[scope].title)}</h3>${itemModalBody(null, scope)}
+    <div class="modal-actions"><button class="btn-ghost" onclick="closeModal()">Annulla</button>
+      <button class="add-btn-sm" onclick="saveNewItem()">Crea</button></div>`, true);
+  if (!p) return;
   itemCodeAuto = true;
   window.__dupSourceId = null;
   window.__editingItemId = null;
   window.__itemScope = scope;
-  openModal(`<h3>${ico(scope === 'buy' ? 'package' : 'tree', 'tinted pill', '')} Nuovo articolo — ${esc(CATALOG_SCOPES[scope].title)}</h3>${itemModalBody(null, scope)}
-    <div class="modal-actions"><button class="btn-ghost" onclick="closeModal()">Annulla</button>
-      <button class="add-btn-sm" onclick="saveNewItem()">Crea</button></div>`, true);
   toggleItemFields();
 }
 // Ricerca live di un articolo sorgente da cui duplicare (tutti i tipi).
@@ -1854,15 +1862,18 @@ function saveNewItem() {
 // La scheda articolo ricorda chi si sta modificando: chiusa, non deve
 // ricordarlo più — itemDraftFromForm legge questa variabile.
 onPanelClose('form', () => { window.__editingItemId = null; window.__itemScope = null; });
+// Stesso ordine di newItemModal, e per la stessa ragione.
 function editItemModal(id) {
   if (!roleGuard('catalog')) return;
   const it = getItem(id); if (!it) return;
-  itemCodeAuto = false; // in modifica non si rigenera mai il codice esistente
-  window.__editingItemId = id;
-  window.__itemScope = scopeOf(it.type);
-  openModal(`<h3>${ico('edit', 'tinted pill', '')} Modifica articolo</h3>${itemModalBody(it, window.__itemScope)}
+  const scope = scopeOf(it.type);
+  const p = openModal(`<h3>${ico('edit', 'tinted pill', '')} Modifica articolo</h3>${itemModalBody(it, scope)}
     <div class="modal-actions"><button class="btn-ghost" onclick="closeModal()">Annulla</button>
       <button class="add-btn-sm" onclick="saveItemEdit('${id}')">Salva</button></div>`, true);
+  if (!p) return;
+  itemCodeAuto = false; // in modifica non si rigenera mai il codice esistente
+  window.__editingItemId = id;
+  window.__itemScope = scope;
   toggleItemFields();
 }
 function saveItemEdit(id) {

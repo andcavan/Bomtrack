@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="512" height="512" role="img" aria-label="Bomtrack">
+  <!-- Lo stesso tracciato del logo in icons.js (la voce `logo`): una scatola in
+       assonometria, che è poi l'idea di distinta base — un assieme fatto di
+       parti. Ridisegnarlo qui invece di importarlo è voluto: questo file lo
+       legge il sistema operativo quando installa l'app, e deve bastare a se
+       stesso. Se il logo cambia, vanno cambiati tutti e due. -->
+  <rect width="24" height="24" rx="5" fill="#12141c"/>
+  <g fill="none" stroke="#3A7BE8" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"
+     transform="translate(2.4 2.4) scale(0.8)">
+    <path d="M3 7l9-4 9 4-9 4-9-4z"/>
+    <path d="M3 7v10l9 4 9-4V7"/>
+    <path d="M12 11v10"/>
+  </g>
+</svg>

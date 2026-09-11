@@ -4,9 +4,30 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Bomtrack — Distinte Base & Costificazione</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="style.css">
+<!-- Installabile come applicazione, e con un'icona sua nella barra delle
+     applicazioni. Il manifest non cambia niente per chi apre index.html con un
+     doppio click: lì il browser lo ignora, come ignora il service worker. -->
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icona.svg" type="image/svg+xml">
+<meta name="theme-color" content="#3A7BE8">
+<!-- I caratteri sono un **miglioramento**, non un requisito, e si caricano senza
+     bloccare il primo disegno della pagina. Erano un <link> normale: il browser
+     aspetta un foglio di stile prima di dipingere qualunque cosa, e su un PC di
+     officina senza rete quell'attesa diventa il timeout del DNS — la finestra
+     resta bianca per secondi, all'avvio, ogni volta.
+     È lo stesso motivo per cui nella 0.43.0 le librerie di export sono entrate
+     in vendor/: l'app dichiara di aprirsi con un doppio click e di funzionare
+     offline, e una dipendenza di rete sul percorso di avvio lo smentiva.
+     L'attributo media="print" fa scaricare il foglio senza applicarlo, e onload lo
+     promuove a foglio vero quando è arrivato. Se non arriva mai, non succede
+     niente: style.css dichiara già i ripieghi ('Segoe UI' e il monospace di
+     sistema), e la pagina è perfettamente leggibile senza. -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700;800&display=swap"
+      rel="stylesheet" media="print" onload="this.media='all'">
+<noscript><link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700;800&display=swap" rel="stylesheet"></noscript>
 <!-- Il tema si applica PRIMA che la pagina si disegni: theme.js sta in fondo al
      body, e aspettarlo significherebbe un lampo scuro in faccia a chi ha scelto
      il chiaro. Qui si scrive solo l'attributo — il colore lo fa il foglio di
@@ -405,7 +426,13 @@
 <script src="views-report.js"></script>
 <script src="views-jobs.js"></script>
 <script src="views-home.js"></script>
+<!-- Avanzamento di produzione: quanti pezzi di una parte sono stati fatti.
+     Va prima di views-mrp.js, che ne disegna le colonne. -->
+<script src="produzione.js"></script>
 <script src="views-mrp.js"></script>
+<!-- Allegati: i dati stanno in db come ogni collezione, i byte dei file in
+     IndexedDB. Va prima di views-item.js, che ne disegna la sezione. -->
+<script src="allegati.js"></script>
 <script src="views-item.js"></script>
 <script src="views-docs.js"></script>
 <script src="views-manage.js"></script>

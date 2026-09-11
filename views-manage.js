@@ -336,9 +336,10 @@ function saveSupplier(id) {
   touch(s);
   saveDB(); closeModal(); renderManage(); savedToast('Aggiornato');
 }
-// Dove compare un fornitore: articoli, quotazioni a listino, documenti e
-// lavorazioni esterne di ciclo. Controllare i soli articoli lasciava riferimenti
-// orfani — uno storico prezzi che punta a un fornitore che non esiste più.
+// Dove compare un fornitore: articoli, quotazioni a listino, documenti,
+// lavorazioni esterne di ciclo e movimenti di magazzino. Controllare i soli
+// articoli lasciava riferimenti orfani — uno storico prezzi che punta a un
+// fornitore che non esiste più.
 function supplierUses(id) {
   const usi = [];
   const n = (a) => a.length;
@@ -356,6 +357,15 @@ function supplierUses(id) {
   if (n(odl)) usi.push(odl.length + (odl.length === 1 ? ' ordine di lavoro' : ' ordini di lavoro'));
   const contoLavoro = (db.workCenters || []).filter(w => (w.suppliers || []).some(s => s.supplierId === id));
   if (n(contoLavoro)) usi.push(contoLavoro.length + (contoLavoro.length === 1 ? ' centro di lavoro (conto lavoro)' : ' centri di lavoro (conto lavoro)'));
+  // I movimenti di conto lavoro. Non è un caso di confine: la scheda del
+  // movimento **pretende** il terzista (`views-stock.js`, «senza, non si sa da
+  // chi sta la merce»), quindi il riferimento c'è sempre. Cancellando il
+  // fornitore, il prospetto «presso terzi» raggruppava sotto «senza fornitore»
+  // materiale che è nostro e sta fisicamente da qualcuno: la domanda a cui quel
+  // prospetto serve a rispondere — da chi stanno i pezzi — restava senza
+  // risposta, e senza più niente da cui ricostruirla.
+  const movimenti = (db.movements || []).filter(m => m.supplierId === id || m.fromSupplierId === id);
+  if (n(movimenti)) usi.push(movimenti.length + (movimenti.length === 1 ? ' movimento di magazzino' : ' movimenti di magazzino'));
   return usi;
 }
 function delSupplier(id) {
@@ -798,9 +808,21 @@ function delConcept(i) {
   });
 }
 
+// Quante volte una U.M. è in uso. Conta anche la **seconda** unità degli
+// articoli e quella delle righe di listino: una barra si gestisce in metri e si
+// compra a chilo, e il chilo vive in altUom/priceUom, non in uom.
+//
+// Contarle non è pignoleria: su questo numero delUom decide se lasciar
+// cancellare. Senza, l'unità che converte i prezzi di mezzo magazzino risultava
+// «non usata» e spariva dall'elenco con un click, mentre gli articoli
+// continuavano a portarsela scritta dentro.
 function uomUsage(code) {
   let n = 0;
-  (db.items || []).forEach(i => { if (i.uom === code) n++; });
+  (db.items || []).forEach(i => {
+    if (i.uom === code) n++;
+    if (i.altUom === code) n++;
+    (i.priceList || []).forEach(r => { if (r.priceUom === code) n++; });
+  });
   (db.rfqs || []).forEach(r => (r.lines || []).forEach(l => { if (l.uom === code) n++; }));
   (db.orders || []).forEach(o => (o.lines || []).forEach(l => { if (l.uom === code) n++; }));
   (db.workOrders || []).forEach(o => (o.lines || []).forEach(l => { if (l.uom === code) n++; }));
@@ -856,8 +878,20 @@ function saveUom(i) {
   saveDB(); closeModal(); renderManage(); savedToast('Aggiornato');
 }
 // Propaga il nuovo codice ovunque sia referenziato (l'U.M. è salvata per valore)
+// Rinominare propaga ovunque quel codice sia scritto — seconda unità e righe di
+// listino comprese. Lasciandole indietro, l'articolo restava con un codice U.M.
+// che nell'elenco non esisteva più: le conversioni continuavano a tornare
+// (altUom e priceUom si guardano fra loro, non l'elenco), ma l'anagrafica e
+// l'elenco raccontavano due cose diverse, e la differenza non si vedeva da
+// nessuna parte finché qualcuno non apriva quel singolo articolo.
 function renameUom(oldCode, newCode) {
-  (db.items || []).forEach(it => { if (it.uom === oldCode) { it.uom = newCode; touch(it); } });
+  (db.items || []).forEach(it => {
+    let tocca = false;
+    if (it.uom === oldCode) { it.uom = newCode; tocca = true; }
+    if (it.altUom === oldCode) { it.altUom = newCode; tocca = true; }
+    (it.priceList || []).forEach(r => { if (r.priceUom === oldCode) { r.priceUom = newCode; tocca = true; } });
+    if (tocca) touch(it);
+  });
   (db.rfqs || []).forEach(r => (r.lines || []).forEach(l => { if (l.uom === oldCode) l.uom = newCode; }));
   (db.orders || []).forEach(o => (o.lines || []).forEach(l => { if (l.uom === oldCode) l.uom = newCode; }));
   (db.workOrders || []).forEach(o => (o.lines || []).forEach(l => { if (l.uom === oldCode) l.uom = newCode; }));

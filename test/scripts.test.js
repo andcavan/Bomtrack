@@ -48,3 +48,44 @@ describe('Ordine di caricamento', () => {
     });
   });
 });
+
+// ═══════════════════════════════════════════════════════════
+//  Lo scope globale piatto
+// ═══════════════════════════════════════════════════════════
+// L'app non ha moduli: i 26 script condividono un unico scope, e due file che
+// dichiarano lo stesso nome non danno nessun errore — vince l'ultimo caricato,
+// silenziosamente, e la funzione che il primo file credeva di chiamare è un'altra.
+//
+// È il rischio che `docs/analisi-tecnica.md` registra come C4, e la sua
+// conclusione è che si chiude solo passando ai moduli, cioè rinunciando ad
+// aprire l'app con un doppio click su file://. Vero per il problema generale —
+// ma la **collisione**, che è il modo in cui quel rischio fa danno, si può
+// impedire senza rinunciare a niente: basta contarla.
+//
+// Al momento in cui questo controllo è stato scritto i nomi globali erano 1291
+// e le collisioni zero. Serve a tenerle zero.
+describe('Nomi globali', () => {
+  // Le dichiarazioni di primo livello: `function x()` e `let/const/var x` a
+  // inizio riga. Non è un analizzatore sintattico e non deve esserlo — le
+  // dichiarazioni annidate sono rientrate, e quindi non finiscono qui.
+  function globaliDi(file) {
+    const src = fs.readFileSync(path.join(ROOT, file), 'utf8');
+    const nomi = new Set();
+    for (const m of src.matchAll(/^function\s+([A-Za-z0-9_$]+)/gm)) nomi.add(m[1]);
+    for (const m of src.matchAll(/^(?:let|const|var)\s+([A-Za-z0-9_$]+)/gm)) nomi.add(m[1]);
+    return nomi;
+  }
+
+  it('nessun nome è dichiarato da due script diversi', () => {
+    const visto = new Map();
+    const collisioni = [];
+    scriptDiIndex().forEach(file => {
+      globaliDi(file).forEach(nome => {
+        if (visto.has(nome)) collisioni.push(`${nome}: ${visto.get(nome)} e ${file}`);
+        else visto.set(nome, file);
+      });
+    });
+    assert.deepEqual(collisioni, [],
+      'due dichiarazioni dello stesso nome nello stesso scope: vince quella caricata dopo, e non lo dice nessuno');
+  });
+});

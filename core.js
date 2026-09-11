@@ -13,7 +13,7 @@
 // Revisione in esecuzione, mostrata accanto al logo. Va tenuta allineata alla
 // voce in cima a CHANGELOG.md (l'app si copia a mano tra PC: sapere
 // quale revisione sta girando su una postazione è l'unico modo per capirlo).
-const APP_VERSION = '0.75.0';
+const APP_VERSION = '0.77.0';
 
 let currentUser = null;      // utente della sessione (null = schermata di accesso)
 let currentBomId = null;     // articolo prodotto attualmente aperto nelle Distinte
@@ -44,6 +44,22 @@ let odlDirty = false;        // modifiche non salvate nell'editor ODL
 // ═══════════════════════════════════════════════════════════
 function cur() { return (db.settings && db.settings.currency) || '€'; }
 function fmtN(n) { return cur() + (Number(n) || 0).toFixed(2); }
+// ─── L'importo di una riga di documento ───
+// Quantità × prezzo, arrotondato ai centesimi **una volta sola**.
+//
+// Esiste perché il totale e le righe arrotondavano in due momenti diversi: ogni
+// riga finiva a schermo e in PDF passata per fmtN() — cioè a 2 decimali — mentre
+// il totale sommava i prodotti a piena precisione e arrotondava solo alla fine.
+// Con i prezzi a quattro decimali che il listino ammette, tre righe da 1×1,005
+// stampano 1,01 + 1,01 + 1,01 in colonna e 3,02 nel piede.
+//
+// Su un documento che parte verso un fornitore un totale che non torna con la
+// somma delle righe è un errore che si vede, e che tocca a qualcuno spiegare.
+// Si arrotonda dove l'importo nasce, e si somma ciò che il fornitore legge.
+function importoRiga(l) {
+  return +(((Number(l && l.qty) || 0) * (Number(l && l.price) || 0)).toFixed(2));
+}
+function totaleRighe(lines) { return (lines || []).reduce((s, l) => s + importoRiga(l), 0); }
 // L'apice singolo c'è perché il codice scrive di continuo attributi come
 // onclick="fn('${x}')". Oggi `x` è sempre un id generato, quindi non c'è niente
 // da sfruttare — ma il contratto dell'helper deve reggere l'uso che se ne fa: il
@@ -274,20 +290,41 @@ function invalidateCaches() {
   if (typeof invalidateItemDocs === 'function') invalidateItemDocs(); // sta in views-item.js, caricato dopo
 }
 // ─── Librerie esterne (PDF ed Excel) ───
-// Arrivano da CDN, ma l'app è fatta per aprirsi con un doppio click su file://
-// e girare anche offline. Senza rete `window.jspdf` semplicemente non esiste: la
-// destrutturazione lanciava un TypeError che nessuno intercettava e l'utente
-// premeva "Esporta" senza vedere accadere nulla.
+// Stanno in vendor/, dentro il repo: l'app è fatta per aprirsi con un doppio
+// click su file:// e girare offline. Senza di esse `window.jspdf` semplicemente
+// non esiste: la destrutturazione lanciava un TypeError che nessuno
+// intercettava e l'utente premeva "Esporta" senza vedere accadere nulla.
+//
+// Il messaggio nomina il file, non la rete. Fino alla 0.43.0 le librerie
+// arrivavano da un CDN e «serve la connessione a internet» era la diagnosi
+// giusta; da quando sono nel repo quella frase manda a cercare il guasto dalla
+// parte sbagliata — si controlla la linea mentre manca un file.
 function requirePdf() {
   const lib = typeof window !== 'undefined' && window.jspdf;
   if (lib && lib.jsPDF) return lib.jsPDF;
-  showToast('Libreria PDF non disponibile: serve la connessione a internet al primo caricamento', 'error');
+  showToast('Libreria PDF non disponibile: manca vendor/jspdf.umd.min.js', 'error');
   return null;
 }
 function requireXlsx() {
   if (typeof XLSX !== 'undefined' && XLSX) return XLSX;
-  showToast('Libreria Excel non disponibile: serve la connessione a internet al primo caricamento', 'error');
+  showToast('Libreria Excel non disponibile: manca vendor/xlsx.full.min.js', 'error');
   return null;
+}
+// ─── Nome di un file da scaricare ───
+// Codici articolo e ragioni sociali finiscono nel nome dei PDF e degli Excel
+// esportati, e tutti e due contengono abitualmente caratteri che un nome di file
+// non ammette: in officina «AB/123-01» è un codice normalissimo, e la barra lo
+// è altrettanto in «Rossi & C. / Milano». Il browser, davanti a un nome
+// invalido, non protesta: tronca, oppure salva con un nome che non è quello
+// annunciato — e il file non si ritrova più.
+//
+// Si tiene tutto il resto com'è: accenti e spazi in un nome di file vanno
+// benissimo, e sostituirli renderebbe i documenti meno leggibili senza motivo.
+const FILE_VIETATI = /[\\/:*?"<>|\x00-\x1f]/g;
+function nomeFileSicuro(s, ripiego) {
+  const pulito = String(s == null ? '' : s).replace(FILE_VIETATI, '-')
+    .replace(/\s+/g, ' ').replace(/^[\s.]+|[\s.]+$/g, '').slice(0, 120).trim();
+  return pulito || (ripiego || 'documento');
 }
 // ─── Ridisegno che non fa perdere il posto ───
 // Riscrive l'innerHTML di un contenitore preservando ciò che un ridisegno
@@ -864,6 +901,47 @@ function showPersistErrorModal(kind, info) {
   openModal(`<h3>${ico('warning', 'tinted pill', '')} Salvataggio non riuscito</h3>${testo}
     <div class="modal-actions"><button class="btn-ghost" onclick="closeModal()">Ho capito</button>${btnBackup}</div>`, false, 'avviso');
 }
+// ─── Un'altra scheda ha modificato l'archivio ───
+// Terzo della famiglia, dopo onPersistError (non si è riusciti a scrivere) e
+// onLoadError (non si è riusciti a leggere): qui si **sarebbe** riusciti a
+// scrivere, ed è proprio per questo che ci si ferma. Sotto c'è il lavoro di
+// qualcun altro, e sovrascriverlo non darebbe nessun errore a nessuno dei due.
+//
+// Non si offre una fusione, perché non esiste: per fondere due fotografie del
+// database bisognerebbe sapere, riga per riga, quale delle due versioni è
+// quella buona, e quella risposta non ce l'ha né l'app né chi la usa. Si
+// offrono le due scelte che si possono davvero fare — ricaricare (si perde
+// quello che si stava facendo qui) o tenere la propria versione (si perde
+// quello che ha fatto l'altra scheda) — dicendo per ciascuna che cosa costa.
+let conflittoMostrato = false;
+function onExternalChange() {
+  renderUnsavedBadge();
+  if (conflittoMostrato) return;
+  conflittoMostrato = true;
+  setTimeout(showExternalChangeModal, 0);
+}
+function showExternalChangeModal() {
+  const btnBackup = canWrite('manage')
+    ? `<button class="btn-outline" onclick="exportBackup()">${ico('download', 'tinted', '')} Esporta backup</button>` : '';
+  openModal(`<h3>${ico('warning', 'tinted pill', '')} Modificato in un'altra scheda</h3>
+    <p>Questi dati sono stati modificati altrove — un'altra scheda o un'altra finestra con Bomtrack aperto — dopo che questa scheda li ha caricati.</p>
+    <p><strong>L'ultima modifica non è stata salvata</strong>, di proposito: salvarla adesso cancellerebbe tutto il lavoro fatto nell'altra scheda, senza lasciarne traccia.</p>
+    <p>Prima di decidere conviene esportare un backup: qualunque strada si prenda, una delle due versioni resta indietro.</p>
+    <div class="modal-actions">
+      ${btnBackup}
+      <button class="btn-outline" onclick="forzaSalvataggio()">Tieni questa versione</button>
+      <button class="add-btn-sm" onclick="location.reload()">Ricarica dall'archivio</button>
+    </div>`, false, 'avviso');
+}
+// «Tieni questa versione»: si riscrive sopra, consapevolmente. Il conflitto si
+// considera chiuso, così il prossimo avviso riguarderà una modifica nuova.
+function forzaSalvataggio() {
+  Store.forzaProssimaScrittura();
+  const ok = Store.commit();
+  conflittoMostrato = false;
+  closeModal();
+  if (ok) savedToast('Versione di questa scheda salvata');
+}
 // ─── Archivio locale illeggibile all'avvio ───
 // Gemello di onPersistError, dall'altro capo: là non si è riusciti a scrivere,
 // qui non si è riusciti a leggere. È la situazione più spaventosa che l'app
@@ -891,6 +969,20 @@ function showLoadErrorModal(info) {
   // aperto invece di buttar via un form a metà.
   openModal(`<h3>${ico('warning', 'tinted pill', '')} Dati non caricati</h3>${testo}
     <div class="modal-actions"><button class="btn-ghost" onclick="closeModal()">Ho capito</button></div>`, false, 'avviso');
+}
+// ─── C'è del lavoro che una chiusura porterebbe via? ───
+// Due sorgenti distinte, e basta una delle due:
+//   - il salvataggio è fallito (quota esaurita, archivio negato): ciò che si
+//     vede a schermo non è mai arrivato su disco;
+//   - un documento è aperto a metà compilazione. I tre flag esistono già, li
+//     alzano gli editor di richieste, ordini e ordini di lavoro.
+// Sta accanto a renderUnsavedBadge() perché è lo stesso stato, detto in un
+// altro momento: quello lo mostra mentre si lavora, questo lo difende all'uscita.
+function lavoroInSospeso() {
+  if (typeof Store !== 'undefined' && Store.isUnsaved && Store.isUnsaved()) return true;
+  return !!(typeof rfqDirty !== 'undefined' && rfqDirty)
+    || !!(typeof orderDirty !== 'undefined' && orderDirty)
+    || !!(typeof odlDirty !== 'undefined' && odlDirty);
 }
 // Indicatore fisso nell'header finché c'è divergenza tra memoria e persistito.
 function renderUnsavedBadge() {
@@ -1019,8 +1111,16 @@ function openModal(h, wide, key) {
     // Una scheda è un dialogo: chi naviga con un lettore di schermo deve
     // sentirsi dire che ne è stata aperta una, non trovarsi del testo nuovo
     // in mezzo alla pagina senza sapere da dove arriva.
+    //
+    // `role` sì, `aria-modal` no. Quest'ultimo dichiara che tutto il resto della
+    // pagina è inerte, e qui non lo è per scelta: le schede si lasciano aperte,
+    // se ne apre un'altra accanto, la vista dietro resta viva e usabile. Il Tab
+    // esce eccome — e chi usa un lettore di schermo si trovava a leggere del
+    // contenuto che l'attributo gli aveva appena dichiarato inesistente.
+    // Dicevano il falso anche due schede aperte insieme, entrambe «l'unica».
+    // Si toglie l'attributo invece di rinchiudere il Tab: la pagina viva dietro
+    // è il disegno, non un difetto da correggere.
     p.setAttribute('role', 'dialog');
-    p.setAttribute('aria-modal', 'true');
     // Dove tornare quando si chiude: senza, il focus finisce a inizio pagina e
     // chi usa la tastiera deve rifare tutta la strada per riprendere il lavoro.
     p._focusPrima = document.activeElement || null;
@@ -1278,15 +1378,55 @@ if (typeof document !== 'undefined') {
   // Il Ctrl+P del browser deve trovare l'intestazione già compilata.
   // Riferimento differito: printHeadFill sta in uno script caricato dopo questo.
   window.addEventListener('beforeprint', () => printHeadFill());
+  // Chiudere la scheda con del lavoro per aria: si chiede, non si lascia andare.
+  //
+  // Due cose diverse finiscono qui. La prima è il salvataggio **fallito**:
+  // showPersistErrorModal() dice testualmente «chiudendo questa scheda
+  // andrebbero persi», e il badge ⚠ in testata lo ricorda — ma finché non c'era
+  // questa riga la scheda si chiudeva senza una parola, e quel lavoro spariva
+  // davvero. La seconda sono i documenti a metà compilazione: rfqDirty,
+  // orderDirty e odlDirty esistono già e nessuno li guardava all'uscita.
+  //
+  // Il testo non lo decide l'app: i browser mostrano da anni una frase loro, e
+  // l'unica cosa che conta è **restituire qualcosa** da preventDefault. Si tace
+  // quando non c'è niente in sospeso, perché un avviso che compare sempre è un
+  // avviso che si impara a scacciare senza leggerlo.
+  window.addEventListener('beforeunload', e => {
+    if (!lavoroInSospeso()) return;
+    e.preventDefault();
+    e.returnValue = '';       // richiesto dai browser più vecchi
+    return '';
+  });
   // Rete per tutto ciò che non ha un try/catch proprio. `error` cattura anche il
-  // caricamento fallito degli script CDN, che però hanno già le loro guardie
-  // (requirePdf/requireXlsx) e non vanno segnalati due volte.
+  // caricamento fallito di uno script, che però ha già le sue guardie
+  // (requirePdf/requireXlsx) e non va segnalato due volte.
   window.addEventListener('error', e => {
     if (e.target && e.target !== window && e.target.tagName) return;   // risorsa non caricata, non un'eccezione
     onAppError('errore', e.message || 'errore sconosciuto', e.error);
   });
   // Indietro/Avanti del browser e link con hash: la navigazione risponde
   // all'indirizzo. Riferimento differito: onHashChange sta in shell.js.
+  // L'altra scheda che scrive si fa sentire **subito**, non al primo
+  // salvataggio di questa: chi continua a lavorare su dati ormai vecchi accumula
+  // modifiche che poi non potrà più salvare senza cancellare quelle altrui.
+  // L'evento `storage` arriva solo alle **altre** schede, mai a chi ha scritto.
+  window.addEventListener('storage', e => {
+    if (e.key && e.key !== DB_KEY_REV && e.key !== DB_KEY) return;
+    if (typeof Store !== 'undefined' && Store.revisione && Store.revisione() !== undefined) onExternalChange();
+  });
+  // ── L'app anche senza rete ──
+  // Il service worker mette in cache i file del programma (non i dati: quelli
+  // stanno in localStorage e non passano di lì) così l'app si apre offline e si
+  // può installare sul PC dell'officina.
+  //
+  // Su file:// non esiste e il browser lo rifiuta: è il modo in cui l'app si
+  // apre col doppio click, ed è **il caso normale**, non un ripiego. Per questo
+  // l'errore si ignora in silenzio invece di finire in onAppError — non c'è
+  // niente che non va, e un avviso a ogni avvio sarebbe rumore. Le librerie di
+  // export stanno in vendor/ proprio perché l'offline non dipenda da qui.
+  if (typeof navigator !== 'undefined' && navigator.serviceWorker && location.protocol !== 'file:') {
+    navigator.serviceWorker.register('sw.js').catch(() => { /* niente cache: l'app funziona lo stesso */ });
+  }
   window.addEventListener('hashchange', () => onHashChange());
   window.addEventListener('unhandledrejection', e => {
     const r = e.reason;

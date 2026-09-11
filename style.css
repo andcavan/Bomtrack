@@ -389,6 +389,9 @@ input[type=date]::-webkit-calendar-picker-indicator,input[type=datetime-local]::
 .cycle-phase{font-family:var(--mono);font-size:12px;font-weight:700;color:var(--text-dim)}
 .cycle-move{display:flex;gap:4px}
 .cycle-move .mini-btn{padding:3px 5px}
+/* Quanti allegati ha un articolo, sul pulsante che li apre: si vede dall'elenco
+   che il disegno c'è, senza doverlo aprire per scoprirlo. */
+.mini-count{margin-left:3px;font-size:10px;font-weight:700;color:var(--accent)}
 .cycle-move .mini-btn[disabled]{opacity:.3;cursor:default}
 .cycle-move .mini-btn[disabled]:hover{color:var(--text-dim);border-color:var(--border)}
 /* Sola lettura: niente riordino e nessun campo modificabile nelle righe */

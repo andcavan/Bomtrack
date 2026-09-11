@@ -738,7 +738,41 @@ function mrpPhaseRow(entry) {
     noPrice: !(price > 0),
   };
 }
-function mrpPhaseRows(plan) { return mrpExplode(plan.lines).phases.map(mrpPhaseRow); }
+// Le fasi di un piano, **al netto di ciò che è già stato prodotto**.
+//
+// Fino alla 0.77.0 questo netto non esisteva, e la vista lo dichiarava:
+// «sapere quanti pezzi sono già stati lavorati richiederebbe un avanzamento di
+// produzione che l'app non ha». Ora l'avanzamento c'è (produzione.js) e la
+// domanda ha una risposta: i pezzi dichiarati fatti hanno attraversato **tutte**
+// le fasi del ciclo — sono parti finite — quindi non vanno rimandati a lavorare
+// fuori, e non vanno né pagati né messi in carico ai centri una seconda volta.
+//
+// Il limite di questa lettura va detto perché non sorprenda: un pezzo **a metà
+// ciclo** non è rappresentato. Si dichiara la parte finita, non la fase
+// superata, quindi un lotto fermo fra la terza e la quarta fase conta ancora
+// come tutto da fare. È la lettura prudente — si rischia di riordinare una
+// lavorazione già avviata, mai di dimenticarne una da fare — ed è l'unica
+// possibile finché la dichiarazione è per parte. Seguire il pezzo fase per fase
+// è un'altra funzione, e va decisa a parte.
+//
+// Senza nessuna dichiarazione il netto è la quantità intera: i piani di prima
+// si comportano esattamente come prima, per costruzione.
+// Le fasi di un piano al netto del prodotto, dalle voci già esplose.
+//
+// Sta separata da mrpPhaseRows perché il netto serve in **due** punti che
+// partono dalla stessa esplosione: la tabella che si legge e l'indice da cui si
+// pescano le righe quando si genera il documento. Applicarlo in uno solo dei
+// due — che è l'errore fatto la prima volta — significa mostrare «6 pezzi da
+// far lavorare» e poi scrivere 10 sull'ordine di lavoro che parte al terzista.
+function mrpPhaseRowsNette(planId, phases) {
+  return phases.map(e => {
+    const resta = typeof daFare === 'function' ? daFare(planId, e.item.id, e.qty) : e.qty;
+    return mrpPhaseRow(resta === e.qty ? e : Object.assign({}, e, { qty: resta }));
+  }).filter(r => r.qty > 0);
+}
+function mrpPhaseRows(plan) {
+  return mrpPhaseRowsNette(plan.id, mrpExplode(plan.lines).phases);
+}
 // ─── Dalle fasi alle tratte ───
 // Un ordine di lavoro non si commissiona fase per fase: le fasi **consecutive**
 // dello stesso terzista sono una lavorazione sola — il pezzo arriva da lui, gli
@@ -1073,7 +1107,12 @@ function planRowIndex(plan) {
   mrpRowsOf(exp.buy, plan.id).forEach(r => map.set(r.item.id, r));
   // Le fasi entrano come **tratte**: è la tratta che diventa una riga di
   // documento, e la chiave è quella della sua prima fase.
-  mrpPhaseRuns(exp.phases.map(mrpPhaseRow)).forEach(r => map.set(r.phaseKey, r));
+  //
+  // **Al netto del prodotto**, come la tabella che le mostra: da qui
+  // planCreateDocs() pesca le righe che scrive sul documento, e una quantità
+  // diversa da quella spuntata un attimo prima manderebbe al terzista un ordine
+  // per pezzi che sono già stati fatti.
+  mrpPhaseRuns(mrpPhaseRowsNette(plan.id, exp.phases)).forEach(r => map.set(r.phaseKey, r));
   return map;
 }
 // Il tipo di documento si sceglie **prima**, dal pulsante che si preme: sono
@@ -1609,6 +1648,7 @@ function renderPlanEdit(id) {
       ${kpi('Fornitori coinvolti', String(fornitori), '')}
       ${kpi('Parti da fabbricare', String(exp.make.length), 'purple')}
       ${fasi.length ? kpi('Conto lavoro', fmtN(totaleCl), 'green') : ''}
+      ${planAvanzamentoKpi(id, exp.make)}
     </div>
     ${exp.cycle ? '<div class="empty-text" style="color:var(--red)">' + ico('warning', 'tinted', '') + ' Rilevato riferimento ciclico nelle distinte: il fabbisogno è troncato su quel ramo.</div>' : ''}
     ${risparmio > 0 ? `<div class="empty-text" style="text-align:left">↓ Scegliendo ovunque la quotazione più bassa a listino il totale scenderebbe di <strong>${fmtN(risparmio)}</strong>. Il prezzo in uso si cambia dal listino dell'articolo.</div>` : ''}
@@ -1626,13 +1666,13 @@ function renderPlanEdit(id) {
 
     <div class="mrp-section">
       <div class="cycle-section-head"><h3>${ico('wrench', 'tinted pill', '')} Da far lavorare fuori</h3></div>
-      <p class="empty-text" style="text-align:left;padding:0 0 8px">Le fasi del ciclo affidate a un terzista. Entrano nelle richieste e negli ordini come le righe d'acquisto, un documento per fornitore. <strong>Il fabbisogno netto non si applica</strong>: una lavorazione non sta a scaffale, e sapere quanti pezzi sono già stati lavorati richiederebbe un avanzamento di produzione che l'app non ha.</p>
+      <p class="empty-text" style="text-align:left;padding:0 0 8px">Le fasi del ciclo affidate a un terzista. Entrano nelle richieste e negli ordini come le righe d'acquisto, un documento per fornitore. Le quantità sono <strong>al netto dei pezzi dichiarati fatti</strong> in «Da fabbricare»: una parte finita ha già attraversato tutte le sue fasi, e non va rimandata fuori. Una parte ferma <em>a metà ciclo</em> conta invece ancora per intero — si dichiara la parte finita, non la fase superata — quindi il conto qui è prudente per scelta: si rischia di riproporre una lavorazione già avviata, mai di dimenticarne una da fare.</p>
       ${mrpPhaseTable(fasi)}
     </div>
 
     <div class="mrp-section">
       <div class="cycle-section-head"><h3>${ico('factory', 'tinted pill', '')} Da fabbricare</h3></div>
-      ${mrpMakeTable(exp.make)}
+      ${mrpMakeTable(exp.make, id)}
     </div>
     <div class="mrp-section">
       <div class="cycle-section-head"><h3>${ico('wrench', 'tinted pill', '')} Carico dei centri</h3></div>
@@ -1758,22 +1798,53 @@ function mrpPhaseTable(rows) {
       <td style="font-family:var(--mono);text-align:right">${totOre ? fmtQty(totOre) : '—'}</td>
       <td></td><td style="font-family:var(--mono);text-align:right">${fmtN(tot)}</td></tr></tfoot></table></div>`;
 }
-function mrpMakeTable(make) {
+// `planId` serve all'avanzamento: quante di queste parti sono già state fatte si
+// dichiara **dentro un piano**, non sull'articolo — la stessa parte in due piani
+// diversi è due lavori diversi.
+// A che punto è il lavoro. Compare **solo** quando qualcuno ha dichiarato
+// qualcosa: su un piano appena aperto «fatto 0%» non informa nessuno, occupa un
+// posto in fila agli altri numeri e li fa leggere peggio.
+function planAvanzamentoKpi(planId, make) {
+  const av = pianoAvanzamento(planId, make);
+  if (!av || !av.pezziFatti) return '';
+  const pct = Math.round(av.quota * 100);
+  return kpi('Prodotto', pct + '%', pct >= 100 ? 'green' : 'orange');
+}
+function mrpMakeTable(make, planId) {
   if (!make.length) return '<div class="empty-text">Nessuna parte da fabbricare in questo piano.</div>';
+  const puoScrivere = canWrite('docs');
   const rows = make.map(e => {
     const c = costOf(e.item.id).total;
+    const fatti = planId ? prodottiDi(planId, e.item.id) : 0;
+    const resta = planId ? daFare(planId, e.item.id, e.qty) : e.qty;
+    // Finita si dice in verde e si smette di chiederlo: una riga chiusa non deve
+    // continuare a somigliare a lavoro da fare.
+    const statoFatti = !planId ? ''
+      : fatti <= 0 ? '<span class="empty-text" style="padding:0">—</span>'
+        : resta > 0 ? `<span class="mrp-warn">${fmtQty(fatti)}</span>`
+          : `<span class="price-best">${fmtQty(fatti)}</span>`;
+    const azione = planId && puoScrivere
+      ? `<button class="mini-btn" title="Dichiara quanti pezzi sono stati fatti" onclick="produzioneModal('${planId}','${e.item.id}',${e.qty})">${ico('factory', 'tinted', 'Avanzamento')}</button>`
+      : '';
     return `<tr>
       <td style="font-family:var(--mono)">${codeLink(e.item.id, e.item.code)}</td>
       <td>${esc(e.item.name)}</td>
       <td>${esc(e.item.uom || '')}</td>
       <td style="font-family:var(--mono);text-align:right">${fmtQty(e.qty)}</td>
+      <td style="font-family:var(--mono);text-align:right">${statoFatti}</td>
+      <td style="font-family:var(--mono);text-align:right">${planId ? (resta > 0 ? fmtQty(resta) : '<span class="price-best">finita</span>') : ''}</td>
       <td style="font-family:var(--mono);text-align:right">${fmtN(c)}</td>
-      <td style="font-family:var(--mono);text-align:right">${fmtN(c * e.qty)}</td></tr>`;
+      <td style="font-family:var(--mono);text-align:right">${fmtN(c * e.qty)}</td>
+      <td class="row-actions" style="text-align:right">${azione}</td></tr>`;
   }).join('');
   return `<div class="table-wrap"><table>
     <thead><tr><th scope="col">Codice</th><th scope="col">Parte</th><th scope="col">U.M.</th>
-      <th scope="col" style="text-align:right">Q.tà</th><th scope="col" style="text-align:right">Costo un. (${esc(cur())}/U.M.)</th>
-      <th scope="col" style="text-align:right">Importo (${esc(cur())})</th></tr></thead>
+      <th scope="col" style="text-align:right">Q.tà</th>
+      <th scope="col" style="text-align:right" title="Pezzi dichiarati fatti su questo piano">Fatti</th>
+      <th scope="col" style="text-align:right" title="Quanti ne restano da fare">Restano</th>
+      <th scope="col" style="text-align:right">Costo un. (${esc(cur())}/U.M.)</th>
+      <th scope="col" style="text-align:right">Importo (${esc(cur())})</th>
+      <th scope="col"></th></tr></thead>
     <tbody>${rows}</tbody></table></div>`;
 }
 // Le quantità esplose sono float (scarti e frazioni): si mostrano senza zeri
@@ -1823,7 +1894,7 @@ function exportMrpExcel(id) {
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(acquisti), 'Acquisti');
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(contoLavoro), 'Conto lavoro');
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(produzione), 'Produzione');
-  XLSX.writeFile(wb, `Fabbisogno_${p.number}.xlsx`);
+  XLSX.writeFile(wb, 'Fabbisogno_' + nomeFileSicuro(p.number, 'piano') + '.xlsx');
   showToast('Excel esportato');
 }
 function exportMrpPDF(id) {
@@ -1877,6 +1948,6 @@ function exportMrpPDF(id) {
       styles: { fontSize: 8 }, headStyles: { fillColor: [155, 109, 255] },
     });
   }
-  doc.save(`Fabbisogno_${p.number}.pdf`);
+  doc.save('Fabbisogno_' + nomeFileSicuro(p.number, 'piano') + '.pdf');
   showToast('PDF esportato');
 }

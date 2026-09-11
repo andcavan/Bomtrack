@@ -5,6 +5,14 @@ Controllo generale del codice fatto insieme al lavoro della 0.21.0. Diviso in
 stata rimandata. Ogni voce porta file e riga: se il codice si sposta, il
 riferimento va aggiornato o la voce va chiusa.
 
+> **Nota di lettura (0.76.0).** Questo documento è nato col lavoro della 0.21.0
+> e le sue sezioni «Risolto» arrivano fino alla 0.43.0. Fra la 0.44.0 e la
+> 0.75.0 l'app è cresciuta parecchio (conto lavoro, ODL, carico centri, barra
+> filtri, manuale) senza che il documento la seguisse: le voci di quel tratto
+> **non sono qui**, stanno in `CHANGELOG.md`. La sezione «Aperto» è invece
+> aggiornata alla 0.76.0, ed è la parte che conta — è la mappa di ciò che resta
+> da fare.
+
 > **Nota di lettura (0.35.0).** Le voci che nominano `importItems` descrivono
 > lavoro fatto quando l'import articoli era un foglio unico in
 > `import-export.js`. Quella funzione non esiste più: dalla 0.35.0 l'import e
@@ -329,6 +337,127 @@ test sull'export prima del refactor — non dopo.
 
 ---
 
+## Risolto nella 0.76.0
+
+Giro di controllo generale: si legge tutto il codice e si chiude ciò che salta
+fuori. Le voci qui sotto **non erano in questo documento** — sono difetti nuovi,
+trovati leggendo, e vale la pena notare dove si annidavano: non nella logica di
+dominio, che è la parte più guardata e più testata, ma ai bordi — la
+concorrenza fra schede, l'arrotondamento fra due rappresentazioni della stessa
+cifra, i margini di un foglio PDF, il nome di un file.
+
+### 24. Due schede si cancellavano il lavoro a vicenda
+`Store.commit()` riscrive l'intera chiave con la propria fotografia in memoria, e
+non esisteva **nessun** listener `storage` né controllo di versione. La seconda
+scheda che salvava cancellava tutto ciò che la prima aveva fatto nel frattempo,
+senza errore e senza avviso — `dbUnsaved` restava `false`, perché la `setItem`
+riusciva. Su un gestionale aperto in due finestre era perdita dati certa e
+invisibile, ed è il difetto più grave trovato in questo giro.
+
+Ora un contatore di revisione vive in una chiave sua (`bomtrack_v1_rev`), letta
+prima di ogni scrittura: costa la lettura di un numero, non la rilettura di
+qualche megabyte di JSON. Al conflitto il salvataggio si ferma e lo dice.
+**Deliberatamente non si fonde niente**: fondere due fotografie richiede di
+sapere, riga per riga, quale versione vale, e quella risposta non ce l'ha
+nessuno qui — ci si limita a smettere di sovrascrivere di nascosto, che è il
+difetto. `Store.forzaProssimaScrittura()` è la via d'uscita esplicita, e vale
+una volta sola. Coperto da `test/concorrenza.test.js`, che fa condividere un
+`localStorage` a due istanze dell'app — cioè il rapporto vero fra due schede.
+
+### 25. Il totale dei documenti non tornava con la somma delle righe
+La colonna Importo arrotondava ogni riga ai centesimi (`fmtN`), il piede sommava
+i prodotti a piena precisione e arrotondava alla fine. Con i prezzi a quattro
+decimali che il listino ammette (`step="0.0001"`), tre righe da 1×1,005
+stampavano 3,03 in colonna e 3,02 sotto. Su un documento che parte verso un
+fornitore è un errore che si vede. `importoRiga()` in `core.js` arrotonda dove
+l'importo nasce, e `totaleRighe()` somma ciò che il fornitore legge; i sette
+punti che calcolavano `qty * price` a mano — inclusi i due Excel, che scrivevano
+il valore grezzo **in cella** — passano tutti di lì.
+
+### 26. Note e condizioni sparivano in fondo ai PDF
+`splitTextToSize` e `addPage` non comparivano **in tutto il repo**. Il testo di
+coda era scritto a `y` crescente: una nota lunga usciva dal margine destro, e su
+un ordine con molte righe le condizioni finivano oltre il bordo del foglio. In
+entrambi i casi senza un errore. `docCoda()` manda a capo, cambia pagina quando
+serve, e spezza anche un blocco più alto di una pagina intera — quest'ultimo
+caso l'ha trovato il test appena scritto, non l'ispezione.
+
+### 27. Un fornitore con i nostri pezzi si poteva cancellare
+Stessa classe della §3, dal lato nato dopo: `supplierUses()` copriva sette posti
+ma non `db.movements`, benché `REFS` dichiari `movements.supplierId` e
+`fromSupplierId`. Non era un caso di confine — la scheda del movimento
+**pretende** il terzista — e il prospetto «presso terzi» restava a raggruppare
+sotto «senza fornitore» materiale di proprietà fermo da qualcuno.
+
+### 28. Altro, in breve
+- **Nomi dei file di export** mai sanificati in dieci punti: «AB/123-01» è un
+  codice normale in officina, e il browser davanti a un nome invalido tronca o
+  rinomina senza dirlo. Un solo `nomeFileSicuro()` in `core.js`.
+- **Il pannello «Aggiungi componenti»** si azzerava a ogni ridisegno, contro
+  quanto promette il commento che lo governa: bastava espandere un nodo
+  dell'albero per perdere le quantità messe su dieci articoli.
+- **`auth.js`** aveva gli unici tre accessi a `localStorage` senza `try/catch`,
+  e stavano sulla schermata d'accesso: in navigazione privata l'app non partiva
+  affatto, cioè proprio nello scenario che `showLoadErrorModal` racconta.
+- **Nessun `beforeunload`**, benché `isUnsaved()` e i tre flag `*Dirty`
+  esistessero già e l'avviso dicesse testualmente «chiudendo questa scheda
+  andrebbero persi».
+- **`renameUom`/`uomUsage`** ignoravano `altUom` e `priceUom`, cioè la doppia
+  unità di misura. Non corrompeva i calcoli (i due campi si guardano fra loro,
+  non l'elenco) ma faceva dichiarare «non usata» l'unità che converte i prezzi.
+- **Selezione multipla O(n²)** nell'Ispettore, su un percorso che gira a ogni
+  carattere digitato nel filtro: tre `Set`.
+- **`aria-modal`** dichiarava inerte una pagina che per scelta non lo è, e due
+  schede aperte si dichiaravano entrambe «l'unica». Tolto l'attributo, tenuto
+  `role="dialog"`: la pagina viva dietro è il disegno, non un difetto.
+- I messaggi di `requirePdf`/`requireXlsx` parlavano ancora di **connessione a
+  internet**, superata dalla vendorizzazione della 0.43.0 (§23); i caratteri di
+  Google restavano l'unica dipendenza di rete, e **bloccante**, sul percorso di
+  avvio.
+
+### Una correzione annullata
+«1.500» letto come 1,5 in import sembrava un difetto, e non lo è:
+`test/import.test.js` documenta la lettura decimale come scelta deliberata — con
+un separatore solo non si indovina, e «0.750» sono settantacinque centesimi. Il
+test ha fermato la modifica. Vale la pena registrarlo: è il caso in cui la
+documentazione del progetto ha avuto ragione contro chi lo stava controllando.
+
+---
+
+## Aggiunto nella 0.77.0, e cosa comporta
+
+Tre funzionalità nuove. Si registrano qui perché ciascuna lascia qualcosa da
+tenere d'occhio, e perché due di esse toccano il contratto del futuro backend.
+
+**Avanzamento di produzione** (`produzione.js`, collezione `productions`). Una
+dichiarazione per volta invece di un saldo riscritto — la stessa scelta dei
+movimenti di magazzino, e per la stessa ragione. Da tenere d'occhio: la
+collezione **cresce e non viene mai potata**. Su un uso intenso è la seconda per
+numero di righe dopo i movimenti, e va contata nella stima di
+`docs/sostenibilita-free-tier.md`, che non la conosce.
+
+**Allegati** (`allegati.js`, collezione `attachments` + IndexedDB). È il primo
+posto in cui l'app tiene dati **fuori** da `Store`, ed è una deroga consapevole:
+in `localStorage` i file non ci stanno, e metterceli avrebbe fatto smettere di
+salvare tutto il resto. Le conseguenze aperte sono due, entrambe dichiarate
+all'utente ma non ancora risolte:
+  - il **backup JSON non è più completo**. Porta l'elenco degli allegati e non i
+    file, quindi un ripristino su un altro PC è una copia parziale. La strada
+    giusta il giorno del cloud la indica già
+    `docs/sostenibilita-free-tier.md` nella sezione «il giorno in cui arrivano i
+    disegni»: Supabase Storage, che è fuori dal budget del database;
+  - i **file orfani** non si raccolgono da soli. C'è il pulsante in Gestione, ma
+    è un gesto manuale, e nessuno lo farà finché lo spazio non finisce.
+
+**PWA** (`sw.js`, `manifest.webmanifest`). Il rischio vero non è il service
+worker in sé ma il **disallineamento**: uno script aggiunto a `index.html` e
+dimenticato in `sw.js` funziona online e sparisce offline, e una `VERSIONE` non
+aggiornata fa servire per sempre la cache vecchia a chi ha già aperto l'app.
+Sono i due difetti che si manifestano esattamente dove nessuno guarda, ed è per
+questo che `test/pwa.test.js` li controlla invece di fidarsi.
+
+---
+
 ## Aperto
 
 ### A. Sicurezza
@@ -338,6 +467,12 @@ né iterazioni, e il backup JSON esporta gli hash. Il limite è documentato
 onestamente (`store.js:161-166`, `README.md`) e l'app è locale e monoutente. Non
 ha senso risolverlo in locale: si chiude passando a Supabase Auth, dove
 `passwordHash`/`passwordSalt` vanno **cancellati** in migrazione.
+
+**A10 — gli allegati sono fuori da `Store`, e il backup lo dice ma non lo
+risolve.** Vedi la sezione 0.77.0 qui sopra. Non è un difetto da correggere in
+locale — è una conseguenza inevitabile del tenere dei file su un browser — ma è
+il primo punto in cui «esporta un backup JSON» non basta più a mettersi al
+sicuro, e va chiuso insieme al backend, non dopo.
 
 **A6 residuo — il vincolo `unique` su `items.code` va scritto in SQL.** Il lato
 applicativo è chiuso (§12), ma finché il vincolo non è nel database due client
@@ -359,6 +494,16 @@ congiuntamente un anello che nessuno dei due vede, e `costOf` ricorre **per
 tutti**: è l'unico vincolo la cui violazione rende l'app inutilizzabile a tutto
 il team. Serve un trigger ricorsivo su `item_components`, e non è opzionale.
 
+**A9 — `workCenters[].suppliers` non è dichiarato in `SCHEMA`.** Il difetto è
+ammesso in `docs/cloud-schema.md`, non era registrato qui. `SCHEMA.workCenters`
+non ha `children`, ma l'array annidato esiste ed è vivo (`views-manage.js`,
+`costing.js`, `views-bom.js`): i fornitori di conto lavoro di un centro. Oggi
+innocuo — nessun codice di rete esiste — ma al primo push `flattenDB()` lo
+lascerebbe dentro la riga padre invece di esplodere una tabella figlia. Va
+chiuso **prima** del backend, non dopo: è una riga di `SCHEMA`, e dopo sarebbe
+una migrazione. Il riferimento `suppliers[].supplierId` è invece già coperto dal
+lato applicativo (`supplierUses()`).
+
 ### B. Prestazioni
 
 **B1 residuo — `findOrCreateSupplier` e `findOrCreateFamily` restano lineari per
@@ -376,27 +521,44 @@ sembri: le quantità dipendono dal percorso, quindi la memoizzazione va fatta su
 
 **C1 residuo — resta duplicata la *presentazione* dei documenti** *(la logica è
 chiusa nella 0.41.0, vedi §22)*: `renderRfqEdit`/`renderOrderEdit` e i quattro
-export PDF/Excel, circa 300 righe. Il motivo per cui non è stata toccata è lo
-stesso di sempre: **gli export non hanno un test**. Serve prima quello — un
-export si verifica sui dati che produce, non sul PDF — e poi il refactor.
+export PDF/Excel, circa 300 righe. **Il prerequisito non c'è più**: dalla 0.76.0
+`test/export-docs.test.js` verifica i sette export sui dati che producono — righe,
+totali, piede, nome del file, condizioni in coda — sostituendo jsPDF e SheetJS con
+due finti che annotano ciò che l'app passa loro. Il refactor si può fare, e ora
+ha una rete sotto. *(Nella stessa versione `docCoda()` ha già unificato le tre
+code identiche di richiesta, ordine e ODL.)*
 
-**C3 residuo — buchi di copertura** *(ridotto nella 0.22.0 §8, e di nuovo nella
-0.40.0 con `test/docs-state.test.js`)*. Restano scoperti gli **export PDF/Excel**
-(nessuna delle quattro funzioni ha un test, vedi C1 residuo) e parte di
-`views-manage.js` (`renameUom` e le anagrafiche di servizio; le guardie di ruolo
-sono ora coperte da `test/guards.test.js`).
+**C3 residuo — buchi di copertura** *(ridotto nella 0.22.0 §8, di nuovo nella
+0.40.0 con `test/docs-state.test.js`, e nella 0.76.0 con `export-docs`,
+`anagrafiche` e `concorrenza`)*. Export PDF/Excel e `renameUom` sono ora coperti.
+Restano scoperti `printView` (`shell.js`) e le anagrafiche di servizio minori di
+`views-manage.js`.
 
-**C4 — file lunghi con scope globale piatto:** `views-catalog.js` ~1400 righe,
-`views-docs.js` ~1270, `core.js` ~930, `store.js` ~900, `views-manage.js` ~670.
-Senza moduli, ogni nome è globale e una collisione non dà errore: vince l'ultimo
-caricato. Nota: la deduplica della 0.41.0 non ha accorciato `views-docs.js` e
-non doveva — sono due problemi diversi, e questo si chiude solo con i moduli,
-cioè rinunciando all'apertura da `file://`.
+**C4 — file lunghi con scope globale piatto:** `views-docs.js` ~1990 righe,
+`views-catalog.js` ~1970, `views-mrp.js` ~1880, `core.js` ~1430, `store.js` ~1240,
+`views-manage.js` ~940. Senza moduli, ogni nome è globale e una collisione non dà
+errore: vince l'ultimo caricato.
+
+*Aggiornamento 0.76.0.* La **lunghezza** resta, e resta un problema di sola
+lettura del codice: si chiude coi moduli, cioè rinunciando all'apertura da
+`file://`. La **collisione** invece — che è il modo in cui quel problema fa danno
+davvero — è stata misurata e presidiata: i nomi globali dichiarati dai 26 script
+sono **1291** e le collisioni **zero**, e `test/scripts.test.js` ora fallisce se
+qualcuno ne introduce una, nominandola. Il prezzo che questa voce dava per
+obbligato non c'era: per non farsi male non serviva rinunciare a niente, serviva
+contare.
 
 ---
 
 ## Note in positivo
 
+- Il fatto che questo giro di controllo abbia prodotto **quattro** difetti alti
+  su diciassettemila righe, e nessuno di essi nella logica di dominio, dice
+  qualcosa: costificazione, esplosione di distinta, fabbisogno netto e conto
+  lavoro — la parte difficile e quella più testata — hanno retto la rilettura.
+  Quello che ha ceduto stava ai bordi: due schede aperte, un arrotondamento fra
+  due rappresentazioni della stessa cifra, il margine di un foglio, il nome di
+  un file. Sono i posti dove nessuno guarda perché non sembrano il problema.
 - `Store.commit()` è un punto di scrittura unico e ben documentato, con gestione
   esplicita di quota esaurita, storage non disponibile e dati non serializzabili,
   e un hook `onPersistError` che tiene `store.js` libero da codice d'interfaccia.

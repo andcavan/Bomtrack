@@ -15,6 +15,33 @@
 const SESSION_KEY = 'bomtrack_session';
 const SAVED_EMAIL_KEY = 'bomtrack_saved_email';
 
+// L'email ricordata su questo PC. Difesa da try/catch come ogni altro accesso
+// all'archivio locale dell'app (theme.js, columns.js, filters.js, inspector.js,
+// localPref in core.js): erano rimasti scoperti proprio i tre della schermata
+// d'accesso — cioè l'unica che ogni utente attraversa per forza.
+//
+// In navigazione privata, con i dati dei siti bloccati, o su file:// con lo
+// storage negato, la lettura lancia: renderLogin() moriva sulla prima riga e
+// la schermata d'accesso non si disegnava affatto. L'app diventava inutilizzabile
+// esattamente nello scenario che showPersistErrorModal() esiste per raccontare.
+function emailRicordata() {
+  try { return localStorage.getItem(SAVED_EMAIL_KEY); } catch (e) { return null; }
+}
+function ricordaEmail(email) {
+  try {
+    if (email) localStorage.setItem(SAVED_EMAIL_KEY, email);
+    else localStorage.removeItem(SAVED_EMAIL_KEY);
+  } catch (e) { /* niente archivio: si riparte dal campo vuoto al prossimo avvio */ }
+}
+// La sessione salvata. Stessa ragione: `restoreSession` gira dentro `init()`,
+// e una `removeItem` che lancia lì impedisce all'app di avviarsi del tutto.
+function sessioneSalvata() {
+  try { return JSON.parse(localStorage.getItem(SESSION_KEY) || 'null'); } catch (e) { return null; }
+}
+function dimenticaSessione() {
+  try { localStorage.removeItem(SESSION_KEY); } catch (e) { /* non c'era niente da dimenticare */ }
+}
+
 function userList() { return db.users || []; }
 function getUser(id) { return userList().find(u => u.id === id); }
 function findUserByEmail(email) {
@@ -45,7 +72,7 @@ function renderLogin() {
     ? 'Primo avvio — crea l\'amministratore' : 'Distinte base & Costificazione';
   document.getElementById('login-submit').textContent = setup ? 'Crea amministratore' : 'Accedi';
   const err = document.getElementById('login-error'); if (err) err.style.display = 'none';
-  const saved = !setup && localStorage.getItem(SAVED_EMAIL_KEY);
+  const saved = !setup && emailRicordata();
   if (saved) {
     setVal('login-email', saved);
     const cb = document.getElementById('login-remember'); if (cb) cb.checked = true;
@@ -72,8 +99,7 @@ function submitLogin() {
     return;
   }
   if (u.active === false) return _loginError('Account sospeso. Contatta un amministratore.');
-  if (document.getElementById('login-remember').checked) localStorage.setItem(SAVED_EMAIL_KEY, u.email || '');
-  else localStorage.removeItem(SAVED_EMAIL_KEY);
+  ricordaEmail(document.getElementById('login-remember').checked ? (u.email || '') : '');
   setVal('login-password', '');
   doLogin(u, true);
 }
@@ -123,10 +149,9 @@ function sessionExpired(s) {
 // Sessione salvata: si riapre l'app senza credenziali, purché l'utente esista
 // ancora, non sia stato sospeso nel frattempo e la sessione non sia scaduta.
 function restoreSession() {
-  let s = null;
-  try { s = JSON.parse(localStorage.getItem(SESSION_KEY) || 'null'); } catch (e) { s = null; }
+  const s = sessioneSalvata();
   const u = s && s.userId ? getUser(s.userId) : null;
-  if (!u || u.active === false || sessionExpired(s)) { localStorage.removeItem(SESSION_KEY); return false; }
+  if (!u || u.active === false || sessionExpired(s)) { dimenticaSessione(); return false; }
   // Si rientra e si **rinnova**: la scadenza è per inattività, non per età
   // assoluta. Senza il rinnovo, chi usa l'app tutti i giorni veniva comunque
   // buttato fuori al trentesimo giorno dal primo accesso — e la ragione per cui
@@ -136,7 +161,7 @@ function restoreSession() {
   return true;
 }
 function logout() {
-  localStorage.removeItem(SESSION_KEY);
+  dimenticaSessione();
   currentUser = null;
   Store.setActor(null);
   stopClock();

@@ -14,7 +14,7 @@ const ROOT = path.join(__dirname, '..');
 // Stessa sequenza di index.html: i file si caricano nello stesso contesto e
 // condividono lo scope globale, esattamente come i <script> della pagina.
 const SRC = ['icons.js', 'theme.js', 'store.js', 'cloud-map.js', 'core.js', 'auth.js', 'costing.js', 'shell.js', 'worklist.js',
-  'views-bom.js', 'views-rev.js', 'views-stock.js', 'views-catalog.js', 'views-report.js', 'views-jobs.js', 'views-home.js', 'views-mrp.js', 'views-item.js',
+  'views-bom.js', 'views-rev.js', 'views-stock.js', 'views-catalog.js', 'views-report.js', 'views-jobs.js', 'views-home.js', 'produzione.js', 'views-mrp.js', 'allegati.js', 'views-item.js',
   'views-docs.js', 'views-manage.js', 'export-lists.js', 'import-catalog.js', 'columns.js', 'filters.js', 'inspector.js', 'import-export.js'];
 
 // localStorage finto. `quotaBytes` opzionale: oltre soglia lancia lo stesso
@@ -167,6 +167,41 @@ function loadApp(opts) {
   sandbox.URL = {
     createObjectURL(b) { sandbox.scaricati.push({ contenuto: b && b._testo }); return 'blob:finto/' + sandbox.scaricati.length; },
     revokeObjectURL() {},
+  };
+  // ── IndexedDB finto ──
+  // Dove finiscono i byte degli allegati (allegati.js). È una mappa in memoria
+  // con la forma delle richieste di IndexedDB: le callback si chiamano subito,
+  // non al giro successivo, perché un test che aspetta un evento è un test che
+  // qualche volta passa. Resta comunque una Promise dal lato dell'app, quindi i
+  // test la aspettano come farebbero nel browser.
+  const deposito = new Map();
+  sandbox.__deposito = deposito;
+  function richiesta(esegui) {
+    const r = { onsuccess: null, onerror: null, result: undefined, error: null };
+    // Il codice che la riceve aggancia onsuccess **dopo** il ritorno: si dà un
+    // giro di coda prima di chiamarla, altrimenti non ci sarebbe nessuno ad
+    // ascoltare. È l'unico punto asincrono di tutto l'harness.
+    Promise.resolve().then(() => {
+      try { r.result = esegui(); if (r.onsuccess) r.onsuccess(); }
+      catch (e) { r.error = e; if (r.onerror) r.onerror(); }
+    });
+    return r;
+  }
+  sandbox.indexedDB = {
+    open() {
+      const store = {
+        put: (v, k) => richiesta(() => { deposito.set(k, v); return k; }),
+        get: k => richiesta(() => deposito.get(k)),
+        delete: k => richiesta(() => { deposito.delete(k); return undefined; }),
+        getAllKeys: () => richiesta(() => Array.from(deposito.keys())),
+      };
+      const d = {
+        objectStoreNames: { contains: () => true },
+        createObjectStore: () => store,
+        transaction: () => ({ objectStore: () => store }),
+      };
+      return richiesta(() => d);
+    },
   };
   sandbox.innerWidth = 1280; sandbox.innerHeight = 800;   // i pannelli si posizionano rispetto alla finestra
   sandbox.confirm = () => true;   // le richieste di conferma si accettano: il test verifica l'effetto

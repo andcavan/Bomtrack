@@ -13,6 +13,11 @@ const DB_KEY = 'bomtrack_v1';       // non rinominare: la versione vive dentro i
 // ripartiva dai dati demo e li si salvava sopra: l'unica copia rimasta spariva
 // prima che qualcuno potesse guardarla.
 const DB_KEY_RESCUE = 'bomtrack_v1_illeggibile';
+// Il contatore di revisione dell'archivio. Sta in una chiave **sua**, minuscola,
+// e non dentro il blob: si legge prima di ogni salvataggio, e rileggere e
+// analizzare qualche megabyte di JSON a ogni scrittura costerebbe molto più del
+// salvataggio stesso.
+const DB_KEY_REV = 'bomtrack_v1_rev';
 const SCHEMA_VERSION = 2;           // v1 = id interi legacy (implicita), v2 = uuid + timestamp
 const TRASH_DAYS = 30;              // per quanto un'eliminazione resta recuperabile
 
@@ -321,6 +326,18 @@ const SCHEMA = {
   // movimento non duplica il ricevimento: è l'unica scrittura che muove il
   // magazzino, e l'ordine dice solo da dove viene.
   movements: { table: 'stock_movements' },
+  // Allegati: **solo i dati**. I byte dei file stanno in IndexedDB (allegati.js)
+  // e non passano né da qui né dal backup JSON — un disegno pesa più di tutto il
+  // database, e localStorage non li reggerebbe. Il record dice che il file
+  // esiste, come si chiama e a chi appartiene: ripristinando un backup su un
+  // altro PC l'elenco c'è e i file no, il che è preferibile a non sapere
+  // nemmeno che cosa manca.
+  attachments: { table: 'attachments' },
+  // Avanzamento di produzione: una dichiarazione per volta, mai un saldo
+  // riscritto. Stessa scelta dei movimenti di magazzino — la giacenza non è un
+  // campo — e per la stessa ragione: un totale che si ricostruisce si può
+  // spiegare, e correggere senza riscrivere il passato.
+  productions: { table: 'productions' },
   suppliers: { table: 'suppliers' },
   // Clienti: anagrafica autonoma, come i fornitori. La commessa ne cita il
   // nome, non l'id — vedi il commento su `jobs`.
@@ -370,8 +387,9 @@ const SCHEMA = {
 //
 // **Due riferimenti che questa mappa non copre**, scritti qui perché non si
 // scoprano il giorno in cui servisse una v3:
-//   - `plans.jobId` e `rfqs/orders.planId|jobId` non ci sono. Oggi è innocuo —
-//     commesse e piani sono nati dopo la v2, e nessun blob v1 li contiene.
+//   - `plans.jobId`, `rfqs/orders.planId|jobId` e `productions.planId` non ci
+//     sono. Oggi è innocuo — commesse, piani e avanzamento sono nati dopo la v2,
+//     e nessun blob v1 li contiene.
 //   - `rfq_lines/order_lines.phaseKey` **contiene un itemId dentro una stringa**
 //     (`itemId#indice#workCenterId`). Una rimappatura non saprebbe seguirlo lì
 //     dentro: dovrebbe riscrivere la chiave, non sostituire un campo.
@@ -390,6 +408,8 @@ const REFS = {
   // `orderId` e `lineId` restano fuori: REFS non ha una destinazione 'order',
   // e gli ordini non sono mai stati rimappati. Va scritto, non lasciato muto.
   movements: { fields: { itemId: 'item', supplierId: 'supplier', fromSupplierId: 'supplier' } },
+  attachments: { fields: { itemId: 'item' } },
+  productions: { fields: { itemId: 'item' } },
   rfqs: { fields: { supplierId: 'supplier' }, children: { lines: { itemId: 'item' } } },
   orders: { fields: { supplierId: 'supplier' }, children: { lines: { itemId: 'item' } } },
   // Le righe di un ODL non hanno un articolo: portano una `phaseKey`, che un
@@ -441,6 +461,9 @@ function loadDB() {
   let grezzo = null;
   try { grezzo = adapter.read(); }
   catch (e) { dbLoadError = { kind: 'read', err: e }; console.error('Archivio locale non leggibile:', e); }
+  // La revisione di partenza: da qui in poi le scritture di questa scheda si
+  // misurano su questa. Va letta anche quando il blob non c'è (archivio vuoto).
+  try { revVista = adapter.leggiRev ? adapter.leggiRev() : 0; } catch (e) { revVista = 0; }
   if (grezzo) {
     try { db = JSON.parse(grezzo); migrateDB(); markSynced(); return; }
     catch (e) {
@@ -464,6 +487,11 @@ function migrateDB() {
   // Normalizzazioni legacy (idempotenti, sempre eseguite)
   if (!db.suppliers) db.suppliers = [];
   if (!db.customers) db.customers = [];
+  // Allegati: collezione nata nella 0.77.0. Un database salvato prima non ce
+  // l'ha, e ogni lettura dovrebbe ricordarsi di difendersi — qui si ricorda una
+  // volta sola, come per tutte le altre.
+  if (!db.attachments) db.attachments = [];
+  if (!db.productions) db.productions = [];
   if (!db.rfqs) db.rfqs = [];
   if (!db.orders) db.orders = [];
   if (!db.plans) db.plans = [];
@@ -1011,6 +1039,8 @@ const LocalAdapter = {
     return true;
   },
   rescued() { return localStorage.getItem(DB_KEY_RESCUE); },
+  leggiRev() { const v = localStorage.getItem(DB_KEY_REV); return v == null ? 0 : (+v || 0); },
+  scriviRev(n) { localStorage.setItem(DB_KEY_REV, String(n)); },
 };
 let adapter = LocalAdapter;
 
@@ -1020,6 +1050,25 @@ let adapter = LocalAdapter;
 // chiusura del browser sparisce tutto. Va detto, e va detto in modo che non si
 // possa non vederlo — non con un toast che sparisce in due secondi e mezzo.
 let dbUnsaved = false;
+// ─── Due schede sulla stessa app ───
+// `commit()` riscrive **tutta** la chiave con la fotografia che questa scheda ha
+// in memoria. Con due finestre aperte — cosa normalissima su un gestionale — la
+// seconda che salva cancellava tutto il lavoro fatto nella prima da quando era
+// stata aperta. Senza un errore, senza un avviso: la setItem riesce, quindi
+// nemmeno il badge «modifiche non salvate» si accendeva. Era perdita di dati
+// certa e invisibile.
+//
+// Il rimedio è deliberatamente minimo: **non si fonde niente**. Fondere due
+// fotografie di un gestionale richiede di sapere quale delle due versioni di
+// ogni riga vale, e quella risposta non ce l'ha nessuno qui. Ci si limita ad
+// accorgersene e a smettere di sovrascrivere di nascosto — che è il difetto.
+//
+// `revVista` è la revisione che questa scheda ha letto per ultima. Se
+// nell'archivio ce n'è una più alta, qualcun altro ha scritto nel frattempo.
+let revVista = 0;
+// Alzato da Store.forzaProssimaScrittura(): vale per un solo salvataggio, ed è
+// il modo in cui l'utente dice «lo so, tieni la mia versione».
+let forzaScrittura = false;
 function isQuotaError(e) {
   return !!e && (e.name === 'QuotaExceededError' || e.name === 'NS_ERROR_DOM_QUOTA_REACHED'
               || e.code === 22 || e.code === 1014);
@@ -1048,8 +1097,30 @@ const Store = {
     let payload;
     try { payload = JSON.stringify(db); }
     catch (e) { return commitFailed('serialize', e, 0); }
+    // Ha scritto qualcun altro da quando questa scheda ha letto? Se sì ci si
+    // ferma: scrivere adesso cancellerebbe il suo lavoro, ed è esattamente il
+    // guasto che questa guardia esiste per impedire. Si controlla **prima** di
+    // scrivere e la lettura è di un numero, non dell'archivio.
+    //
+    // `forzaScrittura` è la via d'uscita, per chi ha visto l'avviso e decide
+    // consapevolmente che la versione buona è la propria.
+    let revAttuale = revVista;
+    try { if (adapter.leggiRev) revAttuale = adapter.leggiRev(); }
+    catch (e) { revAttuale = revVista; }   // archivio non leggibile: ci pensa la write qui sotto
+    if (revAttuale !== revVista && !forzaScrittura) {
+      dbUnsaved = true;
+      if (typeof onExternalChange === 'function') onExternalChange();
+      else if (typeof showToast === 'function') showToast("Dati modificati in un'altra scheda: ricarica prima di salvare", 'error');
+      return false;
+    }
+    forzaScrittura = false;
     try {
       adapter.write(payload);
+      // La revisione sale **dopo** una scrittura riuscita: se la write fallisce
+      // il numero non deve muoversi, altrimenti le altre schede vedrebbero un
+      // conflitto che non c'è stato.
+      revVista = revAttuale + 1;
+      try { if (adapter.scriviRev) adapter.scriviRev(revVista); } catch (e) { /* il blob è salvo: il contatore si riallinea al prossimo caricamento */ }
       if (dbUnsaved) {
         dbUnsaved = false;
         if (typeof onPersistRecovered === 'function') onPersistRecovered();
@@ -1062,6 +1133,14 @@ const Store = {
   // Vero finché una modifica è rimasta solo in memoria. Chiudere la scheda in
   // questo stato perde tutto il lavoro fatto dal primo errore in poi.
   isUnsaved() { return dbUnsaved; },
+  // Il prossimo commit() scrive anche se un'altra scheda ha modificato
+  // l'archivio: lo chiama chi ha letto l'avviso e ha scelto di tenere la
+  // propria versione. Vale una volta sola, di proposito — una scelta fatta su
+  // un conflitto non si estende a quelli che verranno.
+  forzaProssimaScrittura() { forzaScrittura = true; },
+  // La revisione dell'archivio vista da questa scheda, per i test e per la
+  // diagnostica. Non serve alle viste.
+  revisione() { return revVista; },
   // Dimensione del database persistito, per far vedere il limite arrivare.
   sizeInfo() {
     let bytes = 0;
