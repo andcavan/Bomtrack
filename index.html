@@ -430,9 +430,12 @@
      Va prima di views-mrp.js, che ne disegna le colonne. -->
 <script src="produzione.js"></script>
 <script src="views-mrp.js"></script>
-<!-- Allegati: i dati stanno in db come ogni collezione, i byte dei file in
-     IndexedDB. Va prima di views-item.js, che ne disegna la sezione. -->
+<!-- Allegati: i dati stanno in db come ogni collezione, i byte dei vecchi file
+     in IndexedDB. Va prima di views-item.js, che ne disegna la sezione. -->
 <script src="allegati.js"></script>
+<!-- La cartella d'archivio dei PDF: impostazione locale, un PC alla volta.
+     Va dopo allegati.js, di cui usa l'apertura del database IndexedDB. -->
+<script src="archivio.js"></script>
 <script src="views-item.js"></script>
 <script src="views-docs.js"></script>
 <script src="views-manage.js"></script>

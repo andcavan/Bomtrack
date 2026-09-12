@@ -960,7 +960,7 @@ function renderBackup() {
     <div style="flex:1">
       <strong>${ico('save', 'tinted', '')} Backup locale</strong>
       <p>I dati sono salvati nel browser (localStorage). Esporta un file JSON per conservare un backup o trasferire i dati su un altro PC. L'import sovrascrive i dati attuali.</p>
-      <p><strong>Gli allegati non sono nel backup.</strong> Disegni e schede tecniche stanno fuori dal database — sono file, e nel JSON non ci starebbero — quindi il backup ne porta l'<em>elenco</em> e non il contenuto: ripristinandolo altrove si vede che cosa manca invece di trovare una scheda vuota. Prima di trasferirsi su un altro PC vanno riscaricati a mano dalla scheda Allegati di ciascun articolo.</p>
+      <p><strong>I documenti d'archivio sì, i vecchi file no.</strong> Di un documento d'archivio il backup porta il <em>percorso</em> dentro la cartella, che è un dato come gli altri: ripristinandolo su un PC che ha la sua copia dell'archivio i collegamenti valgono ancora. I file caricati <em>dentro</em> Bomtrack prima della 0.78.0 restano invece fuori dal JSON — sono byte, e nel JSON non ci starebbero — quindi il backup ne porta l'<em>elenco</em> e non il contenuto: si vede che cosa manca invece di trovare una scheda vuota. Prima di trasferirsi su un altro PC vanno riscaricati a mano dalla scheda Allegati di ciascun articolo.</p>
       ${dbSizeLine()}
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
         <button class="add-btn-sm" onclick="exportBackup()">${ico('download', 'tinted', '')} Esporta JSON</button>
@@ -970,6 +970,7 @@ function renderBackup() {
         <button class="btn-outline" style="color:var(--red);border-color:var(--red)" onclick="resetDB()">↺ Ripristina dati esempio</button>
       </div>
     </div></div>
+  ${renderArchivio()}
   ${renderTrash()}
   ${renderDuplicateCodes()}
   <div class="cloud-section" style="margin-top:16px">

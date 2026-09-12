@@ -333,6 +333,20 @@ const SCHEMA = {
   // altro PC l'elenco c'è e i file no, il che è preferibile a non sapere
   // nemmeno che cosa manca.
   attachments: { table: 'attachments' },
+  // I documenti dell'archivio esterno: non i byte e nemmeno l'elenco di ciò che
+  // l'app custodisce, ma **dove sta un PDF dentro la cartella d'archivio** —
+  // quella che ogni PC configura per sé (archivio.js). Qui il backup JSON è
+  // completo davvero: un percorso relativo è un dato, e ripristinandolo su un
+  // altro PC il collegamento continua a valere purché quella macchina abbia la
+  // sua copia dell'archivio.
+  //
+  // È una collezione a sé e non un campo su `attachments` perché **lo stesso
+  // documento vale per più codici**: il catalogo di un commerciale sta appeso a
+  // tutti gli articoli di quella serie. Con un record per articolo lo stesso
+  // percorso sarebbe scritto quaranta volte, e il giorno in cui quel file viene
+  // rinominato ci sarebbero quaranta righe da correggere a mano, sperando di
+  // trovarle tutte. Così se ne corregge una.
+  attachmentDocs: { table: 'attachment_docs' },
   // Avanzamento di produzione: una dichiarazione per volta, mai un saldo
   // riscritto. Stessa scelta dei movimenti di magazzino — la giacenza non è un
   // campo — e per la stessa ragione: un totale che si ricostruisce si può
@@ -408,6 +422,11 @@ const REFS = {
   // `orderId` e `lineId` restano fuori: REFS non ha una destinazione 'order',
   // e gli ordini non sono mai stati rimappati. Va scritto, non lasciato muto.
   movements: { fields: { itemId: 'item', supplierId: 'supplier', fromSupplierId: 'supplier' } },
+  // `docId` resta fuori, come `orderId` sulle righe di movimento e per la stessa
+  // ragione: REFS è la mappa degli id **legacy** da riscrivere nella migrazione
+  // v2, e non ha (né avrebbe senso che avesse) una destinazione
+  // 'attachmentDoc' — i documenti d'archivio nascono nella 0.78.0, con id UUID
+  // dal primo giorno, e nessun database antico ne contiene.
   attachments: { fields: { itemId: 'item' } },
   productions: { fields: { itemId: 'item' } },
   rfqs: { fields: { supplierId: 'supplier' }, children: { lines: { itemId: 'item' } } },
@@ -491,6 +510,10 @@ function migrateDB() {
   // l'ha, e ogni lettura dovrebbe ricordarsi di difendersi — qui si ricorda una
   // volta sola, come per tutte le altre.
   if (!db.attachments) db.attachments = [];
+  // Documenti d'archivio: collezione nata nella 0.78.0. Stessa ragione della
+  // riga qui sopra — una collezione dichiarata esiste sempre, così nessuna
+  // lettura deve ricordarsi di difendersi.
+  if (!db.attachmentDocs) db.attachmentDocs = [];
   if (!db.productions) db.productions = [];
   if (!db.rfqs) db.rfqs = [];
   if (!db.orders) db.orders = [];

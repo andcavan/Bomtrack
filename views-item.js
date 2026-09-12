@@ -392,12 +392,18 @@ function itemInfoAllegati(it) {
   const lista = allegatiDi(it.id);
   if (!lista.length) return '';
   const righe = lista.map(a => `<div class="mgmt-item">
-    <span class="mgmt-item-name">${ico('file', 'tinted', '')} ${esc(a.name)}</span>
-    <span class="mgmt-item-meta">${esc(pesoFile(a.size))}${a.createdAt ? ' · ' + esc(fmtDateIt(a.createdAt)) : ''}${a.createdBy ? ' · ' + esc(actorName(a.createdBy)) : ''}</span>
+    <span class="mgmt-item-name">${ico('file', 'tinted', '')} ${esc(allegatoEtichetta(a))}</span>
+    <span class="mgmt-item-meta">${esc(allegatoDettaglio(a))}${a.createdAt ? ' · ' + esc(fmtDateIt(a.createdAt)) : ''}${a.createdBy ? ' · ' + esc(actorName(a.createdBy)) : ''}</span>
   </div>`).join('');
+  // I documenti d'archivio stanno in una cartella fuori dall'app, e quale
+  // cartella lo decide ogni PC: dirlo qui evita che chi non trova un file lo
+  // creda perduto invece che non configurato.
+  const dove = lista.some(a => a.docId)
+    ? `I documenti d'archivio stanno nella cartella impostata su <strong>questo computer</strong>${archivioNome() ? ' (' + esc(archivioNome()) + ')' : ''}; il database ne porta il percorso, non il contenuto.`
+    : 'I file stanno su <strong>questo computer</strong>: il backup JSON ne porta l\'elenco, non il contenuto.';
   return itemInfoSection(ico('folder', 'tinted', '') + ' Allegati',
     `<div class="mgmt-list">${righe}</div>
-     <p class="empty-text" style="text-align:left;padding:6px 0 0">I file stanno su <strong>questo computer</strong>: il backup JSON ne porta l'elenco, non il contenuto.</p>`);
+     <p class="empty-text" style="text-align:left;padding:6px 0 0">${dove}</p>`);
 }
 
 function itemInfoRevisioni(it) {

@@ -81,6 +81,7 @@ function inspAzioniArticolo(it) {
     // perché la scheda si apre e si scarica anche in sola lettura — chi va in
     // officina con il disegno non è detto che possa modificare l'anagrafica; ad
     // aggiungere ed eliminare pensa la scheda, che ha le sue guardie.
+    cmd('file', 'Apri documento', `allegatoApriPrimo('${it.id}')`),
     cmd('folder', `Allegati${allegatiCount(it.id) ? ' (' + allegatiCount(it.id) + ')' : ''}`, `allegatiModal('${it.id}')`),
     cmd('link', 'Dove è usato e impatto costi', `usageModal('${it.id}')`),
     cmd('eye', 'Scheda completa', `itemInfoModal('${it.id}')`),

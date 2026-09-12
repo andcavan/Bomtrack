@@ -14,7 +14,7 @@ const ROOT = path.join(__dirname, '..');
 // Stessa sequenza di index.html: i file si caricano nello stesso contesto e
 // condividono lo scope globale, esattamente come i <script> della pagina.
 const SRC = ['icons.js', 'theme.js', 'store.js', 'cloud-map.js', 'core.js', 'auth.js', 'costing.js', 'shell.js', 'worklist.js',
-  'views-bom.js', 'views-rev.js', 'views-stock.js', 'views-catalog.js', 'views-report.js', 'views-jobs.js', 'views-home.js', 'produzione.js', 'views-mrp.js', 'allegati.js', 'views-item.js',
+  'views-bom.js', 'views-rev.js', 'views-stock.js', 'views-catalog.js', 'views-report.js', 'views-jobs.js', 'views-home.js', 'produzione.js', 'views-mrp.js', 'allegati.js', 'archivio.js', 'views-item.js',
   'views-docs.js', 'views-manage.js', 'export-lists.js', 'import-catalog.js', 'columns.js', 'filters.js', 'inspector.js', 'import-export.js'];
 
 // localStorage finto. `quotaBytes` opzionale: oltre soglia lancia lo stesso
@@ -176,6 +176,13 @@ function loadApp(opts) {
   // test la aspettano come farebbero nel browser.
   const deposito = new Map();
   sandbox.__deposito = deposito;
+  // Le tabelle del database degli allegati: `file` per i byte, `config` per il
+  // riferimento alla cartella d'archivio. Erano una sola, condivisa da tutti i
+  // nomi, e finché archivio.js non è esistito non si notava — ma con due
+  // tabelle finte che sono la stessa mappa la configurazione della cartella
+  // risulterebbe un file orfano, e `allegatiPulisci()` la butterebbe via.
+  const tabelle = { file: deposito, config: new Map() };
+  sandbox.__config = tabelle.config;
   function richiesta(esegui) {
     const r = { onsuccess: null, onerror: null, result: undefined, error: null };
     // Il codice che la riceve aggancia onsuccess **dopo** il ritorno: si dà un
@@ -187,22 +194,84 @@ function loadApp(opts) {
     });
     return r;
   }
+  const tabella = nome => {
+    const m = tabelle[nome] || (tabelle[nome] = new Map());
+    return {
+      put: (v, k) => richiesta(() => { m.set(k, v); return k; }),
+      get: k => richiesta(() => m.get(k)),
+      delete: k => richiesta(() => { m.delete(k); return undefined; }),
+      getAllKeys: () => richiesta(() => Array.from(m.keys())),
+    };
+  };
   sandbox.indexedDB = {
     open() {
-      const store = {
-        put: (v, k) => richiesta(() => { deposito.set(k, v); return k; }),
-        get: k => richiesta(() => deposito.get(k)),
-        delete: k => richiesta(() => { deposito.delete(k); return undefined; }),
-        getAllKeys: () => richiesta(() => Array.from(deposito.keys())),
-      };
       const d = {
-        objectStoreNames: { contains: () => true },
-        createObjectStore: () => store,
-        transaction: () => ({ objectStore: () => store }),
+        objectStoreNames: { contains: n => Object.prototype.hasOwnProperty.call(tabelle, n) },
+        createObjectStore: n => tabella(n),
+        transaction: n => ({ objectStore: () => tabella(n) }),
       };
       return richiesta(() => d);
     },
   };
+  // ── La cartella d'archivio, finta ──
+  // Riproduce ciò che `showDirectoryPicker` consegna: una cartella che si può
+  // scorrere, leggere e scrivere, con le sottocartelle e il permesso. Serve a
+  // provare le cose che contano davvero — il documento che non c'è, il permesso
+  // negato, il file copiato dentro — che nel browser vero sono proprio quelle
+  // che nessuno prova a mano.
+  //
+  // `__cartella` la costruisce da un oggetto piatto { 'a/b.pdf': 'contenuto' }.
+  function cartellaFinta(nome, files, permesso) {
+    const dir = (n, prefisso) => {
+      const h = {
+        kind: 'directory', name: n,
+        _permesso: permesso || 'granted',
+        queryPermission() { return Promise.resolve(h._permesso); },
+        requestPermission() { return Promise.resolve(h._permesso === 'prompt' ? 'granted' : h._permesso); },
+        entries() {
+          const dentro = new Set();
+          Object.keys(files).forEach(path => {
+            if (prefisso && !path.startsWith(prefisso)) return;
+            const resto = prefisso ? path.slice(prefisso.length) : path;
+            const taglio = resto.indexOf('/');
+            dentro.add(taglio < 0 ? resto : resto.slice(0, taglio) + '/');
+          });
+          const voci = Array.from(dentro).map(v => (v.endsWith('/')
+            ? [v.slice(0, -1), dir(v.slice(0, -1), (prefisso || '') + v)]
+            : [v, fileH((prefisso || '') + v)]));
+          let i = 0;
+          return { next: () => Promise.resolve(i < voci.length ? { done: false, value: voci[i++] } : { done: true }) };
+        },
+        getDirectoryHandle(sub) {
+          const p = (prefisso || '') + sub + '/';
+          if (!Object.keys(files).some(k => k.startsWith(p))) return Promise.reject(new Error('NotFound'));
+          return Promise.resolve(dir(sub, p));
+        },
+        getFileHandle(sub, opt) {
+          const p = (prefisso || '') + sub;
+          if (files[p] == null && !(opt && opt.create)) return Promise.reject(new Error('NotFound'));
+          return Promise.resolve(fileH(p));
+        },
+      };
+      return h;
+    };
+    const fileH = path => ({
+      kind: 'file', name: path.split('/').pop(),
+      getFile: () => Promise.resolve({
+        name: path.split('/').pop(), size: String(files[path] || '').length,
+        lastModified: 0, _testo: files[path],
+      }),
+      createWritable: () => Promise.resolve({
+        write(b) { files[path] = (b && (b._testo || b.name)) || ''; return Promise.resolve(); },
+        close() { return Promise.resolve(); },
+      }),
+    });
+    return dir(nome, '');
+  }
+  // I test la montano così: `a.archivio({ 'catalogo.pdf': '...' })`.
+  sandbox.__cartella = cartellaFinta;
+  sandbox.__aperti = [];
+  sandbox.open = (url) => { sandbox.__aperti.push(url); return null; };
   sandbox.innerWidth = 1280; sandbox.innerHeight = 800;   // i pannelli si posizionano rispetto alla finestra
   sandbox.confirm = () => true;   // le richieste di conferma si accettano: il test verifica l'effetto
   sandbox.setTimeout = (fn) => { void fn; return 0; };   // niente code differite nei test
@@ -227,6 +296,25 @@ function loadApp(opts) {
       vm.runInContext(`currentUser = { id: 'u-test', name: 'Test', email: 't@t.it', role: ${JSON.stringify(role || 'admin')}, active: true };`, ctx);
       return this;
     },
+    // Collega una cartella d'archivio finta, come se l'utente l'avesse scelta.
+    // `files` è piatto: { 'cataloghi/skf.pdf': 'contenuto' }. Le opzioni servono
+    // ai casi che contano — `permesso: 'denied'` per il permesso negato,
+    // `collega: false` per il PC che non l'ha ancora configurata, `rifiuta` per
+    // chi chiude la finestra di sistema senza scegliere.
+    archivio(files, opt) {
+      const o = opt || {};
+      const h = sandbox.__cartella(o.nome || 'Disegni', files || {}, o.permesso);
+      sandbox.showDirectoryPicker = () => (o.rifiuta
+        ? Promise.reject(Object.assign(new Error('annullato'), { name: 'AbortError' }))
+        : Promise.resolve(h));
+      if (o.collega !== false) {
+        tabelle.config.set('cartella', h);
+        storage.setItem('bomtrack_archivio_nome', h.name);
+      }
+      return h;
+    },
+    // Gli URL che l'app ha aperto in una scheda nuova (i PDF).
+    aperti() { return sandbox.__aperti; },
     // Imposta il database in memoria senza passare da localStorage.
     // Serializzato apposta: evita ogni problema di oggetti cross-realm.
     setDb(obj) { vm.runInContext('db = ' + JSON.stringify(obj), ctx); return ref('db'); },

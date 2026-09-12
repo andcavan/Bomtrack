@@ -2,6 +2,41 @@
 
 Le revisioni seguono il versionamento semantico `0.MINOR.PATCH`: **MINOR** per nuove funzionalità, **PATCH** per correzioni. La versione in cima è quella in `APP_VERSION` (`core.js`) e mostrata nell'header dell'app.
 
+### 0.78.0 — 2026-09-12
+
+Gli allegati cambiano forma: i PDF escono dal database e vanno in una **cartella d'archivio**, di cui Bomtrack memorizza soltanto il percorso. La suite passa da 1749 a **1782** casi.
+
+**L'archivio è una cartella, non il database**
+Fino alla 0.77.0 un allegato veniva caricato *dentro* Bomtrack: i byte in IndexedDB, i dati nel database. Funzionava, e pagava tre prezzi che si vedevano tutti. Il backup JSON non se li portava dietro — era scritto in tre posti, ma restava una scheda vuota su ogni PC nuovo. Un catalogo che vale per quaranta codici veniva copiato quaranta volte. E il PDF dentro il browser smetteva di essere il PDF che il fornitore aggiorna: diventava una fotografia di com'era il giorno che qualcuno l'ha caricato.
+
+Ora la scelta è opposta. L'archivio **fisico** resta fuori: una cartella sul PC, o la cartella locale di un servizio sincronizzato — OneDrive, Dropbox — che è già su tutte le macchine di chi usa Bomtrack. L'app ne memorizza il **percorso relativo**, che è un dato come gli altri: passa da `Store`, entra nel backup JSON, e ripristinato altrove continua a valere purché quel PC abbia la sua copia dell'archivio. Chi aggiorna un disegno lo aggiorna nella cartella, con il programma vero, e Bomtrack punta già alla versione nuova senza che nessuno riallegi niente.
+
+**La cartella è un'impostazione di questo PC**
+Non sta nel database, e di proposito: ogni macchina ha il suo archivio, e scriverlo nel database vorrebbe dire imporre a tutti la lettera di unità di chi l'ha configurato per primo. Si sceglie una volta, con la finestra di sistema — un browser non apre un percorso scritto a mano, e non lo farà mai: è la ragione per cui esiste — e il riferimento si conserva, quindi non lo si rifà a ogni avvio. Il pulsante sta nella scheda **Allegati** e in **Gestione › Backup**: è una configurazione che deve poter sistemare chiunque apra un documento, non solo chi ha accesso a Gestione.
+
+Il prezzo è dichiarato dove serve: funziona su **Chrome ed Edge**, e solo se Bomtrack è aperta dal suo indirizzo. Aperta con un doppio click su `index.html` il browser non ha nessuna origine sotto cui ricordare un permesso, e l'archivio non è disponibile — lì la scheda lo dice in chiaro invece di mostrare un pulsante che non fa niente, e resta il vecchio caricamento nel database, perché togliere a qualcuno l'unico modo che ha di allegare non è una semplificazione.
+
+**Un documento, tanti codici**
+È il caso che ha deciso la forma dei dati, ed è quello vero dei commerciali: lo stesso catalogo appeso a tutti gli articoli di una serie. Il documento (`attachmentDocs`) è censito **una volta sola**, i codici ci si **collegano** — e da lì viene tutto il resto. Rinominare o spostare un PDF si corregge in un punto, con «Ricollega», e i quaranta codici seguono; aprendo un documento si vede da quanti codici è citato; scollegare da un codice non è eliminare il documento, e un documento citato non si elimina, come il cliente citato da una commessa. Con un record per articolo lo stesso percorso sarebbe stato scritto quaranta volte, e il giorno del rinomina ci sarebbero state quaranta righe da correggere a mano, sperando di trovarle tutte.
+
+**Descrizione e pagina**
+I nomi dei file dei fornitori non dicono niente: `SKF-CAT-RS4412-IT-rev3.pdf` non si riconosce in una scheda. Ogni documento ha quindi una **descrizione**, ed è quella che si legge; la descrizione appartiene al documento, quindi riscriverla da un codice la corregge per tutti. La **pagina** invece appartiene al singolo collegamento: un catalogo di trecento pagine si apre dove serve a *quel* codice, e il numero resta scritto anche in chiaro, perché un catalogo si consulta anche stampato.
+
+**Apri documento, e i tre messaggi**
+Un pulsante nuovo sulla riga di catalogo e nel pannello laterale (Ctrl+I) apre il documento del codice; con più documenti apre l'elenco, invece di indovinare. Gli esiti sono **tre**, non due, perché sono tre rimedi diversi: *NESSUN DOCUMENTO SALVATO* quando al codice non è ancora collegato niente; *archivio non impostato su questo PC*, con il pulsante che lo imposta lì per lì, quando è la macchina a non sapere dove guardare; *DOCUMENTO NON TROVATO*, col nome cercato e la cartella dove l'ha cercato, quando il file da lì è sparito.
+
+**La verifica dell'archivio**
+Il difetto di questo disegno è il collegamento che si rompe **in silenzio**: qualcuno rinomina un PDF e nessuno lo sa finché non prova ad aprirlo, magari mesi dopo, magari davanti a un fornitore. In *Gestione › Backup* un comando scorre la cartella e nomina i documenti che non ci sono più — una volta per documento, non una per collegamento — e da lì si ricollegano.
+
+**Copia nell'archivio**
+Un PDF scelto da fuori — sul desktop, in una mail scaricata — non si può collegare: su ogni altro PC quel percorso non esiste. Il pannello lo dice e offre di copiarlo dentro l'archivio, senza mai sovrascrivere un nome già preso: il file che c'è appartiene a qualcun altro, e il codice che lo cita non saprebbe mai di aver perso il suo.
+
+**Note**
+- **33 casi nuovi** in `test/archivio.test.js`. L'harness guadagna una **cartella d'archivio finta** — scorribile, leggibile, scrivibile, con il permesso — che permette di provare le cose che nel browser vero nessuno prova a mano: il file rinominato, il permesso negato, il PC non configurato.
+- L'IndexedDB finto dell'harness aveva **una sola tabella per tutti i nomi**. Finché esisteva solo il deposito dei byte non si notava; con la tabella `config` accanto, il riferimento alla cartella sarebbe risultato un file senza padrone e «Recupera spazio allegati» l'avrebbe buttato via. Ora le tabelle sono separate davvero, e un test lo tiene fermo.
+- Collezione nuova `attachmentDocs`, dichiarata in `SCHEMA` e seminata da `migrateDB`. Resta **fuori da `REFS`**, come `orderId` sulle righe di movimento e per la stessa ragione: REFS è la mappa degli id *legacy* da riscrivere, e questi nascono con id UUID dal primo giorno.
+- Gli allegati caricati nel database prima di questa versione **restano e continuano a funzionare**: la sezione «File nel database» compare nella scheda solo se ce n'è almeno uno, così a chi parte da zero non si racconta una forma che non deve più usare.
+
 ### 0.77.0 — 2026-09-11
 
 Tre funzionalità nuove, scelte fra le mancanze che il manuale dichiara da sé. La suite passa da 1696 a **1743** casi.
