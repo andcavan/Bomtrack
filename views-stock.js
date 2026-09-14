@@ -52,6 +52,13 @@ const MOVEMENT_KINDS = {
   // `fromSupplierId` e' **da dove viene** (nullo = parte da noi). Un movimento
   // per gesto, non due: due si sarebbero potuti registrare a meta'.
   clStep: 'Passaggio di lavorazione',
+  // ── Il versamento di produzione ──
+  // Il pezzo finito che entra a magazzino alla chiusura dell'ultima fase di un
+  // **ordine di produzione**. Non è `carico`, che si chiama «Carico manuale» ed
+  // è merce entrata *senza un ordine*: qui l'ordine c'è, ed è la stessa ragione
+  // per cui `clIn` non è un carico manuale. Tenerli distinti è ciò che lascia
+  // leggere uno storico e sapere da dove viene ogni pezzo.
+  versamento: 'Versamento di produzione',
 };
 // I tipi che muovono materiale verso un terzista e indietro. Portano un
 // fornitore, e senza quello il prospetto non saprebbe da chi andare a riprendere
@@ -286,7 +293,10 @@ function addMovement(itemId, kind, qty, note, extra) {
   const rec = { id: gid(), itemId, kind: MOVEMENT_KINDS[kind] ? kind : 'rettifica',
     qty: q, date: nowISO(), note: String(note || '').trim(),
     supplierId: e.supplierId || null, fromSupplierId: e.fromSupplierId || null,
-    orderId: e.orderId || null, lineId: e.lineId || null };
+    orderId: e.orderId || null, lineId: e.lineId || null,
+    // Quale dichiarazione di produzione l'ha generato: serve ad annullare
+    // esattamente i suoi movimenti, non tutti quelli della fase.
+    declId: e.declId || null };
   return Store.insert('movements', rec);
 }
 
@@ -334,6 +344,14 @@ function clIndex() {
   const eventi = [];
   (db.movements || []).forEach(m => {
     if (!m.itemId || !isContoLavoroKind(m.kind)) return;
+    // I movimenti di un **ordine di produzione** non entrano in questo conto.
+    // Qui il saldo è per coppia (luogo, articolo), e un `clOut` di materiale a
+    // cui risponde un `clIn` del codice **parte** non si chiude mai: il
+    // materiale resterebbe appeso al primo terzista anche dopo che i pezzi sono
+    // andati altrove. Per gli ordini di produzione la risposta c'è intera e la
+    // dà prodWipRows(), che legge il luogo dalla fase corrente invece di
+    // dedurlo da movimenti che fra le fasi non esistono.
+    if (typeof opMovimentoDiOdp === 'function' && opMovimentoDiOdp(m)) return;
     // L'uscita è negativa, il rientro positivo: qui si guardano i valori
     // assoluti, perché «uscito 20» si legge meglio di «uscito −20».
     const q = Math.abs(Number(m.qty) || 0);
@@ -371,6 +389,9 @@ function atSupplierOf(itemId) {
     if (luogo === CL_WIP) return;
     const e = perSup.get(itemId); if (e && e.saldo > 0) n += e.saldo;
   });
+  // Più quello che sta fuori su un ordine di produzione, che i movimenti non
+  // raccontano: vedi atSupplierRows.
+  if (typeof prodWipOf === 'function') n += prodWipOf(itemId);
   return n;
 }
 // Quanti pezzi sono tornati da un terzista e devono ancora andare al successivo.
@@ -378,7 +399,8 @@ function atSupplierOf(itemId) {
 // li conta.
 function inWorkOf(itemId) {
   const e = (clIndex().get(CL_WIP) || new Map()).get(itemId);
-  return e && e.saldo > 0 ? e.saldo : 0;
+  const daMovimenti = e && e.saldo > 0 ? e.saldo : 0;
+  return daMovimenti + (typeof prodWipInCasa === 'function' ? prodWipInCasa(itemId) : 0);
 }
 // Il prospetto in forma piatta: una riga per coppia fornitore/articolo con un
 // saldo ancora aperto. Alimenta la modale di dettaglio e l'export.
@@ -398,6 +420,28 @@ function atSupplierRows() {
       itemId: e.itemId, item: it, out: e.out, in: e.in, saldo: e.saldo,
       ordini, ultima: ultima.slice(0, 10), righe: e.righe });
   }));
+  // La seconda sorgente: il lavoro in corso sugli **ordini di produzione**. Non
+  // viene dai movimenti, e non potrebbe — fra le fasi non se ne scrivono. Viene
+  // dalla fase corrente di ogni ordine aperto, che è il posto in cui la domanda
+  // «dove sono i pezzi?» ha davvero una risposta. Le due letture restano
+  // distinte (`da` lo dice) invece di fondersi: rispondono con due meccanismi
+  // diversi, e sommarle in silenzio renderebbe impossibile capire una cifra.
+  if (typeof prodWipRows === 'function') {
+    const wip = new Map();
+    prodWipRows().forEach(r => {
+      const k = r.luogo + '#' + r.item.id;
+      const e = wip.get(k) || { luogo: r.luogo, item: r.item, qty: 0, odp: [], fasi: [] };
+      e.qty += r.qty; e.odp.push(r.odp); e.fasi.push(r.fase);
+      wip.set(k, e);
+    });
+    wip.forEach(e => out.push({
+      supplierId: e.luogo === CL_WIP ? '' : e.luogo, wip: e.luogo === CL_WIP,
+      supplierName: clLuogoNome(e.luogo), itemId: e.item.id, item: e.item,
+      out: e.qty, in: 0, saldo: e.qty, da: 'odp',
+      ordini: Array.from(new Set(e.odp.map(o => o.number))),
+      fase: e.fasi[0], ultima: '', righe: [],
+    }));
+  }
   return out.sort((a, b) => a.supplierName.localeCompare(b.supplierName)
     || String(a.item && a.item.code).localeCompare(String(b.item && b.item.code)));
 }
@@ -478,7 +522,12 @@ function stockAdjustModal(itemId) {
 // li sa solo la riga di ordine di lavoro che lo giustifica. Offrirlo a mano
 // avrebbe chiesto due domande a cui, senza il documento davanti, si risponde a
 // caso — e un saldo appeso al luogo sbagliato non si riconosce più.
-const MOVEMENT_MANUAL_KINDS = Object.keys(MOVEMENT_KINDS).filter(k => k !== 'clStep');
+// I tipi che si possono scegliere a mano dalla rettifica del Magazzino.
+// `clStep` resta fuori perché si registra solo dalla riga di un ODL; il
+// `versamento` perché si registra solo da un ordine di produzione — offrirlo
+// qui vorrebbe dire poter fabbricare un carico di produzione senza nessun
+// documento che lo spieghi.
+const MOVEMENT_MANUAL_KINDS = Object.keys(MOVEMENT_KINDS).filter(k => k !== 'clStep' && k !== 'versamento');
 const MOVEMENT_HINTS = {
   rettifica: 'Scrivi quanti ce ne sono <strong>davvero</strong>: viene registrata la differenza rispetto all&rsquo;esistente calcolato.',
   scarico: 'Scrivi quanti ne <strong>escono</strong>: verranno sottratti.',
@@ -554,7 +603,8 @@ function stockMovementsModal(itemId) {
 // accettato un ordine d'acquisto per le righe di conto lavoro finite lì prima
 // della separazione fra ODA e ODL.
 function clDocById(id) {
-  return (db.workOrders || []).find(x => x.id === id) || (db.orders || []).find(x => x.id === id) || null;
+  return (db.workOrders || []).find(x => x.id === id) || (db.orders || []).find(x => x.id === id)
+    || (db.prodOrders || []).find(x => x.id === id) || null;
 }
 // ─── Conto lavoro: le tratte, e i due soli punti in cui il magazzino si muove ───
 //

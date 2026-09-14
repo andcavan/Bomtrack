@@ -37,6 +37,9 @@ let orderDirty = false;      // modifiche non salvate nell'editor ordine
 let odlView = 'list';        // 'list' | 'edit' — Ordini di lavoro (conto lavoro)
 let currentOdlId = null;     // ordine di lavoro aperto in editor
 let odlDirty = false;        // modifiche non salvate nell'editor ODL
+let odpView = 'list';        // 'list' | 'edit' — Ordini di produzione (ODP)
+let currentOdpId = null;     // ordine di produzione aperto in editor
+let odpDirty = false;        // modifiche non salvate nell'editor ODP
 
 
 // ═══════════════════════════════════════════════════════════
@@ -236,6 +239,7 @@ function invalidateCaches() {
   _userIdx = null; _userIdxArr = null; _userIdxLen = -1;
   if (typeof invalidateStock === 'function') invalidateStock();   // sta in views-stock.js, caricato dopo
   if (typeof invalidateItemDocs === 'function') invalidateItemDocs(); // sta in views-item.js, caricato dopo
+  if (typeof invalidateProd === 'function') invalidateProd();       // sta in views-prod.js, caricato dopo
 }
 // ─── Librerie esterne (PDF ed Excel) ───
 // Arrivano da CDN, ma l'app è fatta per aprirsi con un doppio click su file://

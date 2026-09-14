@@ -994,7 +994,8 @@ function renderBackup() {
 // pentimento immediato; questo copre quello di domani mattina.
 const TRASH_LABELS = { items: 'Articolo', suppliers: 'Fornitore', customers: 'Cliente', workCenters: 'Centro di lavoro',
   families: 'Macrofamiglia', rfqs: 'Richiesta', orders: 'Ordine', workOrders: 'Ordine di lavoro', plans: 'Piano', users: 'Utente',
-  jobs: 'Commessa', movements: 'Movimento', revisions: 'Revisione' };
+  jobs: 'Commessa', movements: 'Movimento', revisions: 'Revisione',
+  prodOrders: 'Ordine di produzione', prodDecls: 'Dichiarazione di produzione' };
 function trashDescr(t) {
   const r = t.record || {};
   return r.number || r.code || r.name || r.title || '(senza nome)';

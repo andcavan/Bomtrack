@@ -30,6 +30,8 @@ const defaultDB = {
   orders: [],       // ordini d'acquisto (ODA): merce
   workOrders: [],   // ordini di lavoro (ODL): lavorazioni affidate a un terzista
   plans: [],        // piani di produzione (fabbisogno materiali)
+  prodOrders: [],   // ordini di produzione (ODP): la successione delle fasi di una parte
+  prodDecls: [],    // dichiarazioni di avanzamento: eventi, non stato (vedi SCHEMA)
   // `suppliers` (opzionale, assente sui centri esistenti finché non se ne
   // registra uno): fornitori conto lavoro abituali per quel centro, ciascuno
   // con la propria tariffa — { id, supplierId, rate, note }. Vedi wcRateFor
@@ -337,6 +339,27 @@ const SCHEMA = {
   // un campo, ed è il tipo di distinzione che prima o poi qualcuno dimentica.
   workOrders: { table: 'work_orders', children: { lines: { table: 'work_order_lines', rowId: 'id', merge: 'row' } } },
   plans: { table: 'production_plans', children: { lines: { table: 'production_plan_lines', rowId: 'id', merge: 'row' } } },
+  // ─── Ordini di produzione (ODP) ───
+  // Il documento che segue una parte lungo il suo ciclo: le fasi congelate in
+  // successione, e il magazzino mosso ai **due estremi veri del ciclo** — esce
+  // il materiale alla prima fase, entra il pezzo finito alla chiusura
+  // dell'ultima. Fra le fasi non si scrive niente: un movimento nomina una
+  // quantità di un **codice**, e in mezzo i pezzi non sono più il materiale e
+  // non sono ancora la parte. Dove stanno lo dice l'ODP, non la giacenza.
+  //
+  // Le fasi hanno un `id` proprio e non un indice: è la differenza con
+  // `item_cycle_rows`, dove l'array *è* la definizione e la posizione è
+  // l'identità. Qui la fase porta un avanzamento, e un'identità posizionale si
+  // sposterebbe sotto i piedi al primo riordino del ciclo.
+  prodOrders: { table: 'production_orders', children: {
+    phases: { table: 'production_order_phases', rowId: 'id', merge: 'row' },
+    materials: { table: 'production_order_materials', rowId: 'id', merge: 'row' },
+  } },
+  // Le dichiarazioni di avanzamento sono **eventi**, e stanno piatte come i
+  // movimenti: l'avanzamento di una fase si calcola da qui, esattamente come
+  // l'esistente si calcola da ricevimenti e movimenti. Nessun campo di saldo
+  // sulla fase, quindi niente che possa divergere.
+  prodDecls: { table: 'production_declarations' },
   // Commesse: il cliente e la data a monte di tutto. Un piano ne cita una, e da
   // lì la citazione scende su richieste e ordini — è la catena che risponde a
   // «cosa abbiamo ordinato per la commessa 240?».
@@ -396,6 +419,17 @@ const REFS = {
   // itemId ce l'ha dentro ma dentro una stringa — vedi la nota qui sopra.
   workOrders: { fields: { supplierId: 'supplier' }, children: { lines: {} } },
   plans: { children: { lines: { itemId: 'item' } } },
+  prodOrders: {
+    fields: { itemId: 'item' },
+    children: {
+      phases: { workCenterId: 'workCenter', supplierId: 'supplier' },
+      materials: { itemId: 'item' },
+    },
+  },
+  // `odpId` e `phaseId` restano fuori, come `orderId`/`lineId` sui movimenti:
+  // REFS non ha una destinazione 'prodOrder', e le dichiarazioni non sono mai
+  // state rimappate. Va scritto, non lasciato muto.
+  prodDecls: { fields: {} },
 };
 const COLLECTIONS = Object.keys(SCHEMA);
 function childrenOf(coll) { return (SCHEMA[coll] && SCHEMA[coll].children) || {}; }
@@ -500,6 +534,11 @@ function migrateDB() {
     if (m.fromSupplierId === undefined) m.fromSupplierId = null;
     if (m.orderId === undefined) m.orderId = null;
     if (m.lineId === undefined) m.lineId = null;
+    // Quale dichiarazione di produzione ha generato questo movimento. Serve a
+    // poterlo togliere **esattamente** quando quella dichiarazione viene
+    // annullata: senza, si dovrebbe indovinare quale dei movimenti della fase
+    // apparteneva a quale dichiarazione.
+    if (m.declId === undefined) m.declId = null;
   });
   if (!db.jobs) db.jobs = [];             // commesse cliente
   // Cestino: le eliminazioni recenti, recuperabili. Si svuota da solo passata
@@ -641,6 +680,17 @@ function migrateDB() {
   // È la stessa garanzia contro il doppio conteggio di magazzino descritta in
   // docs/cloud-schema.md, applicata all'ingresso invece che all'uscita.
   (db.workOrders || []).forEach(o => (o.lines || []).forEach(l => { l.itemId = null; }));
+  // ─── Il legame con l'ordine di produzione ───
+  // Nullo su tutto ciò che esiste già, ed è esattamente questo che lascia gli
+  // ordini di lavoro emessi prima comportarsi **come prima**: ogni condizione
+  // nuova è un `if (l.odpId)`, e su di loro non scatta mai.
+  (db.workOrders || []).forEach(o => {
+    if (o.odpId === undefined) o.odpId = null;
+    (o.lines || []).forEach(l => {
+      if (l.odpId === undefined) l.odpId = null;
+      if (l.odpPhaseId === undefined) l.odpPhaseId = null;
+    });
+  });
   // Piani di produzione. L'unico stato è aperto/chiuso, e decide se il piano
   // impegna materiale a magazzino. I piani salvati prima che l'impegno
   // esistesse nascono **aperti**: sono i piani in corso di chi aggiorna, e
@@ -651,6 +701,43 @@ function migrateDB() {
     if (p.notes == null) p.notes = '';
     if (!Array.isArray(p.lines)) p.lines = [];
     p.lines.forEach(l => { if (l.qty == null) l.qty = 0; });
+  });
+  // ─── Ordini di produzione e dichiarazioni ───
+  if (!db.prodOrders) db.prodOrders = [];
+  if (!db.prodDecls) db.prodDecls = [];
+  db.prodOrders.forEach(o => {
+    ['title', 'notes', 'notesInternal', 'code', 'name', 'uom', 'date', 'dueDate'].forEach(k => { if (o[k] == null) o[k] = ''; });
+    if (o.itemId === undefined) o.itemId = null;
+    if (o.planId === undefined) o.planId = null;
+    if (o.jobId === undefined) o.jobId = null;
+    if (o.qty == null) o.qty = 0;
+    if (!o.status) o.status = 'bozza';
+    if (o.active == null) o.active = true;
+    if (!Array.isArray(o.phases)) o.phases = [];
+    if (!Array.isArray(o.materials)) o.materials = [];
+    // Una fase senza id sarebbe una fase che le dichiarazioni non sanno
+    // nominare: l'identità è l'id, non la posizione, ed è il punto per cui
+    // riordinare il ciclo non sposta più niente su un ordine già lanciato.
+    o.phases.forEach(f => {
+      if (!f.id) f.id = newId();
+      if (f.supplierId === undefined) f.supplierId = null;
+      if (f.phaseKey === undefined) f.phaseKey = null;
+      ['seq', 'opIndex', 'runFrom', 'runTo', 'passata', 'hours', 'days', 'rate', 'cost'].forEach(k => { if (f[k] == null) f[k] = 0; });
+      if (!f.costMode) f.costMode = 'fisso';
+      if (f.note == null) f.note = '';
+    });
+    o.materials.forEach(m => {
+      if (!m.id) m.id = newId();
+      if (m.qty == null) m.qty = 0;
+      if (m.perPezzo == null) m.perPezzo = 0;
+    });
+  });
+  db.prodDecls.forEach(d => {
+    if (!d.kind) d.kind = 'avanzamento';
+    if (d.qty == null) d.qty = 0;
+    if (d.scrap == null) d.scrap = 0;
+    if (d.note == null) d.note = '';
+    if (d.motivo == null) d.motivo = '';
   });
   // Seed una-tantum delle famiglie materie prime predefinite mancanti (non ripristina quelle cancellate)
   if (!db.settings.mpFamiliesSeeded) {
