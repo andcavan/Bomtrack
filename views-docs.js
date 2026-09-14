@@ -30,7 +30,10 @@ function docLockBanner(mode, kind, docKind, id) {
       : 'Il documento è in sola lettura';
   // Il gestore si compone qui da un tipo noto, non arriva come JavaScript grezzo
   // dal chiamante: nessun template deve poter iniettare codice in un onclick.
-  const fn = docKind === 'order' ? 'ordUnlock' : 'rfqUnlock';
+  // Una mappa e non una catena di ternari: l'ODL ricadeva su `rfqUnlock`, che
+  // su un id di ordine di lavoro non trova niente e torna in silenzio — il
+  // pulsante c'era e non sbloccava nulla.
+  const fn = { order: 'ordUnlock', odl: 'odlUnlock', odp: 'odpUnlock' }[docKind] || 'rfqUnlock';
   return `<div class="doc-lock-banner">
     <span>${ico('lock', 'tinted', '')} ${esc(kind)} — i dati sono protetti dalle modifiche accidentali. ${what}; note e stato restano sempre modificabili.</span>
     <button class="btn-outline" onclick="${fn}('${esc(id)}')">${ico('unlock', 'tinted', '')} Sblocca per modifica</button></div>`;
@@ -184,12 +187,12 @@ const DOC_KINDS = {
     opsFields: ['status', 'notes', 'notesInternal', 'supplierConfirmation'],
     lineLock: field => (field === 'received' || field === 'confirmedDate') ? 'reception' : 'contract',
     numLineFields: ['qty', 'price', 'received'],
-    newLineExtra: () => ({ received: 0, phaseKey: null, phaseKeys: null }),
+    newLineExtra: () => ({ received: 0, phaseKey: null, phaseKeys: null, odpId: null, odpPhaseId: null }),
     // Non si aggiungono righe da catalogo a un ordine di lavoro: un articolo non
     // è una lavorazione. La voce non compare nell'interfaccia; se qualcuno ci
     // arrivasse lo stesso, qui non succede niente invece di nascere una riga che
     // caricherebbe il magazzino da un documento che non deve caricarlo.
-    catalogLine: riga => Object.assign(riga, { received: 0, itemId: null, phaseKey: null, phaseKeys: null }),
+    catalogLine: riga => Object.assign(riga, { received: 0, itemId: null, phaseKey: null, phaseKeys: null, odpId: null, odpPhaseId: null }),
     catalogToast: n => n + ' righe aggiunte',
     afterSetField: (o, field, value) => {
       if (field === 'supplierConfirmation' && value && o.status === 'inviato') o.status = 'confermato';
@@ -201,6 +204,19 @@ const DOC_KINDS = {
     },
   },
 };
+// Su una riga che viene da un ordine di produzione i **pezzi rientrati** li
+// dichiara quello: è lo stesso fatto scritto in due posti, e tenerli d'accordo
+// a mano è il modo di vederli divergere. Il campo resta quello di sempre, con
+// gli stessi lettori — cambia solo chi lo scrive.
+function odlRigaDaOdp(l) { return !!(l && l.odpId); }
+// Da quale ordine di produzione viene questo ordine di lavoro. Serve a
+// ritrovare, mesi dopo, *perché* si è commissionata una lavorazione — e a
+// sapere dove si registrano i suoi movimenti.
+function odlOdpRef(o) {
+  if (!o.odpId || typeof getOdp !== 'function') return '';
+  const p = getOdp(o.odpId); if (!p) return '';
+  return `<div class="empty-text" style="text-align:left">${ico('factory', 'tinted', '')} Generato dall'ordine di produzione <strong>${esc(p.number)}</strong> — ${esc((p.code || '') + ' ' + (p.name || ''))}. Il materiale e i pezzi si registrano <strong>lì</strong>.</div>`;
+}
 function docKind(k) { return DOC_KINDS[k] || DOC_KINDS.rfq; }
 function docStatusLabel(K, doc) { return (K.STATUS[doc.status] || doc.status || '').toLowerCase(); }
 
@@ -524,6 +540,11 @@ function ordClLineActions(o, l) { return l.phaseKey ? docClActions(o, l) : ''; }
 // quattro volte lo stesso codice.
 function docClActions(o, l) {
   if (!l.phaseKey || !o.supplierId) return '';
+  // La riga viene da un **ordine di produzione**: là il magazzino ha un padrone
+  // solo, e gli estremi sono quelli del ciclo intero invece che quelli di questo
+  // documento. Offrire i comandi anche qui vorrebbe dire poter registrare due
+  // volte lo stesso gesto, da due schede che non si sanno l'una dell'altra.
+  if (l.odpId && typeof opRimandoHtml === 'function') return opRimandoHtml(l);
   const ruolo = clLineRole(o, l);
   const cmd = [];
   if (ruolo.out) {
@@ -1687,8 +1708,13 @@ function delOdl(id) { docDel('odl', id); }
 function odlMarkAllReceived(id) {
   if (!odlGuard(id, 'reception')) return;
   const o = getOdl(id); if (!o) return;
-  (o.lines || []).forEach(l => { l.received = Number(l.qty) || 0; });
+  let saltate = 0;
+  (o.lines || []).forEach(l => {
+    if (odlRigaDaOdp(l)) { saltate++; return; }
+    l.received = Number(l.qty) || 0;
+  });
   ordAutoStatus(o); touch(o); odlMarkDirty(); renderOdl();
+  if (saltate) showToast(`${saltate} ${saltate === 1 ? 'riga viene' : 'righe vengono'} da un ordine di produzione: i pezzi rientrati si dichiarano lì`, 'error');
 }
 
 // ─── Una lavorazione scritta a mano, partendo dal ciclo ───
@@ -1815,7 +1841,7 @@ function renderOdlEdit(id) {
     `<span class="ln-amount">${amount != null ? fmtN(amount) : '—'}</span>`)}
       ${cell2(`<input type="date" class="rfq-date-input lock-contract" value="${esc(l.deliveryDate || '')}" title="Data che abbiamo chiesto" onchange="odlSetLine('${id}','${l.id}','deliveryDate',this.value)">`,
     `<input type="date" class="rfq-date-input lock-reception" value="${esc(l.confirmedDate || '')}" title="Data che il terzista ha confermato" onchange="odlSetLine('${id}','${l.id}','confirmedDate',this.value)">${ordLineDelayHtml(l)}`)}
-      ${cell2(`<input type="number" class="rfq-qty-input lock-reception" value="${rec}" min="0" step="any" title="Pezzi rientrati dal terzista: portano l'ordine a parziale o evaso, ma non caricano il magazzino. Il rientro si registra come movimento." onchange="odlSetLine('${id}','${l.id}','received',this.value)">`,
+      ${cell2(`<input type="number" class="rfq-qty-input lock-reception" value="${rec}" min="0" step="any" ${odlRigaDaOdp(l) ? 'disabled' : ''} title="${odlRigaDaOdp(l) ? 'I pezzi rientrati li dichiara l&rsquo;ordine di produzione: qui si leggono, non si scrivono.' : 'Pezzi rientrati dal terzista: portano l&rsquo;ordine a parziale o evaso, ma non caricano il magazzino. Il rientro si registra come movimento.'}" onchange="odlSetLine('${id}','${l.id}','received',this.value)">`,
     `<span class="ln-residual ${residual > 0 ? 'pos' : ''}" title="Pezzi ancora dal terzista">${fmtQty(residual)}</span>`)}
       ${cell2(`<button class="mini-btn" onclick="odlEditLineModal('${id}','${l.id}')" title="Modifica riga / nota">${ico('edit', 'tinted', 'Modifica riga / nota')}</button>`,
     `<button class="mini-btn danger lock-contract" onclick="odlDelLine('${id}','${l.id}')" title="Togli la riga">${ico('trash', 'tinted', 'Togli la riga')}</button>`, 'line-actions')}
@@ -1838,7 +1864,7 @@ function renderOdlEdit(id) {
         <button class="btn-outline" style="color:var(--red);border-color:var(--red)" onclick="delOdl('${id}')" title="Elimina l'ordine di lavoro">${ico('trash', 'tinted', '')} Elimina</button>
       </div>
     </div>
-    ${coWarn}${rfqRef}${lockBanner}${stampLine(o)}
+    ${coWarn}${rfqRef}${odlOdpRef(o)}${lockBanner}${stampLine(o)}
     <div class="rfq-head">
       <div class="modal-field"><label>Titolo / oggetto</label><input class="lock-contract" value="${esc(o.title || '')}" onchange="odlSetField('${id}','title',this.value)"></div>
       <div class="rfq-head-row">

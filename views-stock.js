@@ -755,6 +755,11 @@ function clFromOdlModal(docId, lineId, verso) {
   if (!roleGuard('catalog')) return;
   const o = clDocById(docId); if (!o) return;
   const l = (o.lines || []).find(x => x.id === lineId); if (!l) return;
+  // La guardia sta **anche qui**, non solo nella UI che non disegna i comandi:
+  // chi arrivasse comunque a questa scheda — un vecchio onclick, un link
+  // rimasto in una pagina già aperta — registrerebbe un movimento che l'ordine
+  // di produzione ha già raccontato.
+  if (l.odpId) { showToast('I movimenti di questa lavorazione si registrano sull\'ordine di produzione', 'error'); return; }
   if (!o.supplierId) { showToast('Il documento non ha un fornitore: senza, non si sa da chi sta la merce', 'error'); return; }
   const uscita = verso === 'out';
   const ruolo = clLineRole(o, l);
@@ -812,6 +817,8 @@ function clFromOdlModal(docId, lineId, verso) {
 function saveClFromOdl(docId, lineId, verso) {
   if (!roleGuard('catalog')) return;
   const o = clDocById(docId); if (!o || !o.supplierId) return;
+  const riga = (o.lines || []).find(x => x.id === lineId);
+  if (riga && riga.odpId) { showToast('I movimenti di questa lavorazione si registrano sull\'ordine di produzione', 'error'); return; }
   const uscita = verso === 'out';
   const kind = window.__clKind || (uscita ? 'clOut' : 'clIn');
   const passaggio = kind === 'clStep';
@@ -863,7 +870,7 @@ function contoLavoroModal(soloItemId) {
     <div style="display:flex;flex-direction:column;gap:6px">
       ${rs.map(r => `<div class="mgmt-item">
         <span style="width:110px;font-family:var(--mono)">${r.item ? codeLink(r.item.id, r.item.code) : '(articolo mancante)'}</span>
-        <span style="flex:1">${esc(r.item ? r.item.name : '')}${r.ordini.length ? ` <span class="empty-text" style="padding:0">· ${esc(r.ordini.join(', '))}</span>` : ''}</span>
+        <span style="flex:1">${esc(r.item ? r.item.name : '')}${r.ordini.length ? ` <span class="empty-text" style="padding:0">· ${esc(r.ordini.join(', '))}</span>` : ''}${r.da === 'odp' && r.fase ? ` <span class="rfq-clavoro-tag" title="Letto dall&rsquo;ordine di produzione: fra le fasi non si scrivono movimenti, e dove stanno i pezzi lo dice la fase corrente">fase ${esc(String(r.fase.seq))} ${esc(r.fase.wcName)}</span>` : ''}</span>
         <span class="empty-text" style="padding:0;width:90px">${esc(r.ultima)}</span>
         <span style="font-family:var(--mono);width:90px;text-align:right" title="Uscito">${fmtQty(r.out)}</span>
         <span style="font-family:var(--mono);width:90px;text-align:right" title="Rientrato">${fmtQty(r.in)}</span>
@@ -872,6 +879,7 @@ function contoLavoroModal(soloItemId) {
     </div>`).join('');
   openModal(`<h3>${ico('factory', 'tinted pill', '')} Materiale presso terzi</h3>
     <p class="empty-text" style="text-align:left;padding:0 0 8px">Quello che è uscito verso un terzista e non è ancora rientrato. È calcolato dai <strong>movimenti</strong>, come la giacenza: non esiste nessun saldo scritto da qualche parte, e quindi niente che possa divergere. Il conto è per <strong>fornitore e articolo</strong>, perché quando esce del materiale e rientrano dei pezzi lavorati i due codici sono diversi e un saldo unico non direbbe niente.</p>
+    <p class="empty-text" style="text-align:left;padding:0 0 8px">Le righe di un <strong>ordine di produzione</strong> non vengono dai movimenti e non potrebbero: fra una fase e l&rsquo;altra non se ne scrivono, perché i pezzi non sono più il materiale e non sono ancora la parte. Lì il luogo lo dà la <strong>fase corrente</strong> dell&rsquo;ordine, ed è marcato accanto al codice.</p>
     <p class="empty-text" style="text-align:left;padding:0 0 8px">Il blocco <strong>«in casa, fra due fasi»</strong> sono i pezzi tornati da un terzista che devono ancora andare al successivo: non sono a magazzino — il codice prodotto si carica una volta sola, al rientro dell&rsquo;ultima fase — e non sono più da nessuno. Sono l&rsquo;unico posto in cui compaiono.</p>
     ${blocchi || '<div class="empty-text">Nessun materiale fuori: tutto quello che è uscito è rientrato.</div>'}
     <div class="modal-actions"><button class="btn-ghost" onclick="closeModal()">Chiudi</button></div>`, true, 'contolavoro');

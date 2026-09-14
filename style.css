@@ -654,6 +654,24 @@ textarea.notes-internal{border-style:dashed}
 .doc-badge.st-annullata{color:var(--red)}
 .doc-badge.st-attivo{color:var(--green)}
 .doc-badge.st-sospeso{color:var(--red)}
+/* Ordini di produzione: gli stati della testata e quelli delle fasi.
+   Le fasi usano lo stesso riquadro degli stati di documento — è la stessa
+   domanda, «a che punto è» — con i colori che dicono se si può agire:
+   spento in attesa, acceso quando è il turno, verde quando è chiuso. */
+.doc-badge.st-lanciato{color:var(--accent)}
+.doc-badge.st-corso{color:var(--orange)}
+.doc-badge.st-completato,.doc-badge.st-chiuso{color:var(--green)}
+.doc-badge.st-attesa{color:var(--text-dim)}
+.doc-badge.st-avviabile{color:var(--accent)}
+.doc-badge.st-chiusa{color:var(--green)}
+/* La riga di una fase in attesa si legge come «non è il suo turno»: il
+   contenuto resta leggibile, non è nascosto, ma non chiama l'occhio. */
+tr.odp-fase-attesa{opacity:.62}
+tr.odp-fase-corso td{background:color-mix(in srgb,var(--orange) 7%,transparent)}
+/* Una forzatura non si nasconde in fondo allo storico: la riga la porta
+   addosso, perché rileggendo l'ordine fra un mese quella è la cosa da sapere. */
+tr.odp-forzata td{background:color-mix(in srgb,var(--red) 8%,transparent)}
+.odp-part{font-family:var(--mono);padding:8px 0}
 
 /* Banner di blocco modifiche */
 .doc-lock-banner{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;

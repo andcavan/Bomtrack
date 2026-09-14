@@ -376,3 +376,163 @@ describe('ODP: il magazzino, i tre cicli', () => {
     assert.equal(onHand(app, 'tondo'), 80, 'e il prelievo del materiale resta dov\'era');
   });
 });
+
+describe('ODP ↔ ordine di lavoro', () => {
+  it('la riga generata passa dalla stessa fabbrica di quella del piano', () => {
+    const app = conDb();
+    lancia(app, 'esterna', 10);
+    const l = JSON.parse(app.eval(`(function(){ const o = getOdp('odp-esterna');
+      const w = opGeneraOdl(o.id, o.phases[0].id); return JSON.stringify(w.lines[0]); })()`));
+    assert.equal(l.itemId, null, 'la garanzia contro il doppio conteggio vale anche qui');
+    assert.equal(l.phaseKey, 'esterna#0#zin');
+    assert.equal(l.code, 'ESTERNA', 'il codice è quello della parte: è il pezzo che il terzista riceve');
+    assert.equal(l.qty, 10);
+    assert.equal(l.price, 3);
+    assert.equal(l.received, 0);
+    assert.ok(l.odpId && l.odpPhaseId, 'e porta il legame con la fase che la giustifica');
+  });
+
+  it('due fasi consecutive dello stesso terzista fanno una riga sola', () => {
+    const app = conDb();
+    app.eval(`(function(){ getItem('esterna').cycle = [
+      { kind: 'item', itemId: 'tondo', qty: 2 },
+      { kind: 'op', workCenterId: 'zin', supplierId: 'beta', costMode: 'fisso', cost: 3, hours: 0, days: 2, note: '' },
+      { kind: 'op', workCenterId: 'fre', supplierId: 'beta', costMode: 'fisso', cost: 4, hours: 0, days: 1, note: '' },
+    ]; invalidateCaches(); })()`);
+    lancia(app, 'esterna', 5);
+    const w = JSON.parse(app.eval(`(function(){ const o = getOdp('odp-esterna');
+      const x = opGeneraOdl(o.id, o.phases[0].id); return JSON.stringify({ n: x.lines.length, l: x.lines[0] }); })()`));
+    assert.equal(w.n, 1, 'è una lavorazione da commissionare, non due');
+    assert.equal(w.l.price, 7, 'prezzo sommato sulla tratta');
+    assert.equal(w.l.phaseKeys.split(',').length, 2, 'e copre entrambe le fasi');
+    assert.match(w.l.description, /fasi 10-20/);
+  });
+
+  it('la stessa tratta non si commissiona due volte', () => {
+    const app = conDb();
+    lancia(app, 'esterna', 10);
+    app.eval(`(function(){ const o = getOdp('odp-esterna'); opGeneraOdl(o.id, o.phases[0].id); })()`);
+    const secondo = app.eval(`(function(){ const o = getOdp('odp-esterna'); return !!opGeneraOdl(o.id, o.phases[0].id); })()`);
+    assert.equal(secondo, false);
+    assert.equal(app.eval('db.workOrders.length'), 1);
+  });
+
+  it('una fase interna non si commissiona a nessuno', () => {
+    const app = conDb();
+    lancia(app, 'interna', 10);
+    assert.equal(app.eval(`(function(){ const o = getOdp('odp-interna'); return !!opGeneraOdl(o.id, o.phases[0].id); })()`), false);
+  });
+
+  it('sulla riga guidata dall\'ODP i comandi di conto lavoro diventano un rimando', () => {
+    const app = conDb();
+    lancia(app, 'esterna', 10);
+    app.eval(`(function(){ const o = getOdp('odp-esterna'); opGeneraOdl(o.id, o.phases[0].id); invalidateCaches(); })()`);
+    const html = app.eval(`(function(){ const w = db.workOrders[0]; return docClActions(w, w.lines[0]); })()`);
+    assert.ok(!html.includes('clFromOdlModal'), 'due strade per lo stesso gesto sono due registrazioni');
+    assert.match(html, /openOdpFromOdl/);
+    assert.match(html, /ODP-2026-001/);
+  });
+
+  it('e la guardia sta anche nel mutatore, non solo nella UI', () => {
+    const app = conDb();
+    lancia(app, 'esterna', 10);
+    app.eval(`(function(){ const o = getOdp('odp-esterna'); opGeneraOdl(o.id, o.phases[0].id); invalidateCaches(); })()`);
+    const prima = app.eval('(db.movements || []).length');
+    app.eval(`(function(){ const w = db.workOrders[0]; saveClFromOdl(w.id, w.lines[0].id, 'out'); })()`);
+    assert.equal(app.eval('(db.movements || []).length'), prima, 'nessun movimento registrato da lì');
+  });
+
+  it('dichiarare sull\'ODP aggiorna i pezzi rientrati sull\'ordine di lavoro', () => {
+    const app = conDb();
+    lancia(app, 'esterna', 10);
+    app.eval(`(function(){ const o = getOdp('odp-esterna'); opGeneraOdl(o.id, o.phases[0].id); invalidateCaches(); })()`);
+    avvia(app, 'odp-esterna', 0);
+    dichiara(app, 'odp-esterna', 0, { qty: 6 });
+    assert.equal(Number(app.eval('db.workOrders[0].lines[0].received')), 6);
+    dichiara(app, 'odp-esterna', 0, { qty: 4 });
+    assert.equal(Number(app.eval('db.workOrders[0].lines[0].received')), 10);
+  });
+
+  it('un ordine di lavoro senza ODP si comporta esattamente come prima', () => {
+    const app = conDb();
+    app.eval(`(function(){ db.workOrders.push({ id: 'w1', number: 'ODL-2026-009', title: '', date: '2026-07-01',
+      status: 'bozza', supplierId: 'beta', transport: '', payment: '', rfqId: null, planId: null, jobId: null,
+      odpId: null, supplierConfirmation: '', notes: '', notesInternal: '', active: true,
+      lines: [{ id: 'wl1', itemId: null, phaseKey: 'esterna#0#zin', phaseKeys: 'esterna#0#zin',
+        code: 'ESTERNA', description: 'Zincatura', uom: 'pz', qty: 4, price: 3, received: 0,
+        deliveryDate: '', note: '', odpId: null, odpPhaseId: null }] }); invalidateCaches(); })()`);
+    const html = app.eval(`(function(){ const w = db.workOrders[0]; return docClActions(w, w.lines[0]); })()`);
+    assert.match(html, /clFromOdlModal/, 'i suoi comandi restano dov\'erano');
+  });
+});
+
+describe('ODP: il fabbisogno', () => {
+  const app0 = () => {
+    const app = conDb();
+    return app;
+  };
+
+  it('le parti da fabbricare diventano righe di documento, con una chiave loro', () => {
+    const app = app0();
+    const righe = JSON.parse(app.eval(`JSON.stringify(planDocRows(getPlan('pl1'), 'odp')
+      .map(r => ({ k: planRowKey(r), qty: r.qtyOrder, fasi: r.nFasi })))`));
+    assert.deepEqual(righe, [{ k: 'make#interna', qty: 6, fasi: 2 }]);
+  });
+
+  it('la chiave di una parte da fabbricare non collide con quella d\'acquisto', () => {
+    const app = app0();
+    const acquisti = JSON.parse(app.eval(`JSON.stringify(planDocRows(getPlan('pl1'), 'order').map(planRowKey))`));
+    assert.ok(!acquisti.includes('make#interna'));
+    assert.ok(acquisti.includes('tondo'));
+  });
+
+  it('una parte che si produce in casa non si chiede in offerta a nessuno', () => {
+    const app = app0();
+    const chiavi = JSON.parse(app.eval(`JSON.stringify(planDocRows(getPlan('pl1'), 'rfq').map(planRowKey))`));
+    assert.ok(!chiavi.some(k => String(k).startsWith('make#')));
+  });
+
+  it('generato l\'ordine, la parte risulta già lanciata e il pulsante scende', () => {
+    const app = app0();
+    assert.equal(Number(app.eval(`planDocsAvailable(getPlan('pl1'), 'odp')`)), 1);
+    app.eval(`(function(){ const p = getPlan('pl1'); planNewOdp(p, planRowIndex(p).get('make#interna')); saveDB(); })()`);
+    assert.equal(Number(app.eval(`planDocsAvailable(getPlan('pl1'), 'odp')`)), 0);
+    const refs = JSON.parse(app.eval(`JSON.stringify(planDocumentedKeys('pl1').get('make#interna'))`));
+    assert.equal(refs[0].kind, 'odp');
+  });
+
+  it('le fasi coperte da un ODP non si ordinano più dal piano, e le altre sì', () => {
+    // Il piano ha una parte a ciclo interno e una a ciclo misto: si lancia solo
+    // la seconda, e la lavorazione esterna dell'altra resta ordinabile da qui.
+    const app = conDb({
+      plans: [{ id: 'pl1', number: 'FAB-2026-001', title: 'Lotto', date: '2026-07-01', notes: '',
+        lines: [{ id: 'l1', itemId: 'mista', qty: 4, dueDate: '2026-09-30' },
+          { id: 'l2', itemId: 'esterna', qty: 2, dueDate: '2026-09-30' }], active: true, jobId: null }],
+    });
+    assert.equal(Number(app.eval(`planDocsAvailable(getPlan('pl1'), 'odl')`)), 3, 'una fase di mista, due di esterna');
+    app.eval(`(function(){ const p = getPlan('pl1'); planNewOdp(p, planRowIndex(p).get('make#mista')); saveDB(); })()`);
+    assert.equal(Number(app.eval(`planDocsAvailable(getPlan('pl1'), 'odl')`)), 2,
+      'la fase coperta esce dalla generazione diretta; le altre restano, ed è la convivenza');
+  });
+
+  it('un ordine annullato smette di coprire, e la parte torna lanciabile', () => {
+    const app = app0();
+    app.eval(`(function(){ const p = getPlan('pl1'); const o = planNewOdp(p, planRowIndex(p).get('make#interna'));
+      o.status = 'annullato'; saveDB(); })()`);
+    assert.equal(Number(app.eval(`planDocsAvailable(getPlan('pl1'), 'odp')`)), 1);
+  });
+
+  it('l\'ordine generato dal piano è identico a uno scritto a mano', () => {
+    const app = app0();
+    const dal = JSON.parse(app.eval(`(function(){ const p = getPlan('pl1');
+      const o = planNewOdp(p, planRowIndex(p).get('make#interna'));
+      return JSON.stringify({ qty: o.qty, fasi: o.phases.map(f => f.seq), mat: o.materials.map(m => m.qty), plan: o.planId }); })()`));
+    const mano = JSON.parse(app.eval(`(function(){ const o = odpNew(getItem('interna'), 6, '2026-09-30');
+      return JSON.stringify({ qty: o.qty, fasi: o.phases.map(f => f.seq), mat: o.materials.map(m => m.qty), plan: o.planId }); })()`));
+    assert.deepEqual(dal.fasi, mano.fasi);
+    assert.deepEqual(dal.mat, mano.mat);
+    assert.equal(dal.qty, mano.qty);
+    assert.equal(dal.plan, 'pl1');
+    assert.equal(mano.plan, null, "scritto a mano non è legato a nessun piano, e nel piano la parte resta da fabbricare");
+  });
+});

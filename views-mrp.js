@@ -815,6 +815,32 @@ function mrpRunFasiLabel(r) {
   return nos.length === 1 ? `fase ${nos[0]}` : `fasi ${nos[0]}-${nos[nos.length - 1]}`;
 }
 
+// ─── Le parti da fabbricare, come righe di documento ───
+// Gemella povera di mrpBuyRow: una parte che si produce non ha listino, non ha
+// fornitore e non ha un netto — il fabbisogno netto guarda il magazzino, e
+// lanciare un ordine di produzione è una decisione di produzione, non di
+// acquisto. Porta il marcatore `isMake` per la stessa ragione di `isPhase`: la
+// modale disegna le tre specie di riga nella stessa tabella e deve poterle
+// distinguere senza indovinare da quali campi mancano.
+function mrpMakeRow(entry, planId) {
+  const it = entry.item;
+  // Le **fasi** sono quelle del ciclo; le **tratte esterne** sono quelle che
+  // diventeranno ordini di lavoro. Sono due conti diversi e vanno detti
+  // entrambi: «tre fasi, una in conto lavoro» dice cosa ci si aspetta di dover
+  // commissionare, e «tre fasi» da solo no.
+  const nFasi = ((it.cycle || []).filter(r => r.kind === 'op')).length;
+  const tratte = clCycleRuns(it);
+  return {
+    item: it, isMake: true, makeKey: 'make#' + it.id,
+    qty: entry.qty, qtyOrder: entry.qty, uom: itemUom(it),
+    due: entry.due || '', orderBy: entry.due || '', urgenza: urgenzaOrdine(entry.due || ''),
+    supplierId: '', price: costOf(it.id).total, amount: costOf(it.id).total * entry.qty,
+    nFasi, nEsterne: tratte.filter(t => t.esterna).length,
+    senzaCiclo: !nFasi,
+    noPrice: !(costOf(it.id).total > 0),
+  };
+}
+function mrpMakeRows(plan) { return mrpExplode(plan.lines).make.map(e => mrpMakeRow(e, plan.id)); }
 function mrpBuyRows(plan, netMode) { return mrpExplode(plan.lines).buy.map(e => mrpBuyRow(e, netMode, plan.id)); }
 // `.map(mrpBuyRow)` passerebbe l'indice dell'array come secondo argomento, e
 // dalla seconda riga in poi il netto si accenderebbe da solo. Le viste passano
@@ -874,6 +900,10 @@ function ordinalePassata(n) {
 // I due raggruppamenti hanno la stessa forma, e chi genera i documenti non deve
 // sapere quale sta usando.
 function planDocGroups(rows, kind) {
+  // Un ordine di produzione è **di una parte sola** e non si intesta a nessuno:
+  // qui non c'è un fornitore per cui raggruppare, e le righe stanno insieme
+  // sotto un titolo che dice cosa sono.
+  if (kind === 'odp') return rows.length ? [{ key: '', supplierId: '', name: 'Parti da fabbricare', rows, total: rows.reduce((s, r) => s + (r.amount || 0), 0) }] : [];
   return kind === 'odl' ? mrpGroupOdl(rows) : mrpGroupBySupplier(rows);
 }
 
@@ -992,17 +1022,22 @@ function toggleMrpNet() { mrpNet = !mrpNet; renderMrp(); }
 // documento per fornitore, con le righe scelte. Nulla parte da solo: la modale
 // è il momento in cui si guarda cosa manca (fornitori, prezzi, minimi d'ordine)
 // prima di mandare qualcosa fuori.
-const PLAN_DOC_KINDS = { rfq: 'Richieste di offerta', order: 'Ordini a fornitore', odl: 'Ordini di lavoro' };
+const PLAN_DOC_KINDS = { rfq: 'Richieste di offerta', order: 'Ordini a fornitore', odl: 'Ordini di lavoro', odp: 'Ordini di produzione' };
 // Che cosa può finire in un documento **di quel tipo**. È la regola che tiene
 // separati i due ordini: un ordine d'acquisto compra merce, un ordine di lavoro
 // manda pezzi a lavorare, e nessuno dei due contiene le righe dell'altro. La
 // richiesta d'offerta li tiene invece insieme, e non è un'incoerenza: chiedere
 // a un terzista quanto costa il materiale **e** quanto costa lavorarlo è una
 // domanda sola, ed è il documento che la fa.
+//
+// Le **parti da fabbricare** entrano solo negli ordini di produzione: non si
+// comprano da nessuno, e una richiesta d'offerta su una parte che si produce in
+// casa è una domanda che non si fa.
 const PLAN_DOC_FILTER = {
-  rfq: () => true,
-  order: r => !r.isPhase,
+  rfq: r => !r.isMake,
+  order: r => !r.isPhase && !r.isMake,
   odl: r => !!r.isPhase,
+  odp: r => !!r.isMake,
 };
 
 // ─── Cosa è già stato messo in un documento di questo piano ───
@@ -1056,14 +1091,37 @@ function planDocumentedKeys(planId) {
   // Un ordine annullato non è un ordine: le sue righe tornano da comprare.
   (db.orders || []).filter(o => o.planId === planId && o.status !== 'annullato').forEach(d => aggiungi(d, 'order'));
   (db.workOrders || []).filter(o => o.planId === planId && o.status !== 'annullato').forEach(d => aggiungi(d, 'odl'));
+  // Un ordine di produzione copre **due** cose: la parte che fabbrica, e ognuna
+  // delle sue fasi esterne — l'ordine di lavoro per quelle si genera da lì, e
+  // generarlo anche dal piano produrrebbe due documenti per la stessa
+  // lavorazione. Le fasi si leggono dalle fasi **congelate** dell'ordine, non
+  // dal ciclo vivo: è l'ordine ad aver promesso quelle, non il ciclo di oggi.
+  (db.prodOrders || []).filter(o => o.planId === planId && o.status !== 'annullato').forEach(d => {
+    const ref = { kind: 'odp', number: d.number, id: d.id, qty: Number(d.qty) || 0, uom: d.uom || '' };
+    const push = (k, r) => { const l = map.get(k) || []; l.push(r); map.set(k, l); };
+    push('make#' + d.itemId, ref);
+    (d.phases || []).filter(f => f.supplierId && f.phaseKey).forEach(f =>
+      push(f.phaseKey, Object.assign({ faseId: f.id, seq: f.seq }, ref)));
+  });
   return map;
 }
-function docRefLabel(ref) { return ({ rfq: 'richiesta ', order: 'ordine ', odl: 'ordine di lavoro ' }[ref.kind] || 'documento ') + ref.number; }
+// Se una riga è già coperta per il tipo di documento che si sta generando.
+// L'eccezione: un ordine di produzione copre anche gli **ordini di lavoro**
+// delle sue fasi, perché è da lui che si generano.
+function planBloccata(refs, kind) {
+  return (refs || []).some(x => x.kind === kind)
+    || (kind === 'odl' && (refs || []).some(x => x.kind === 'odp'));
+}
+function docRefLabel(ref) { return ({ rfq: 'richiesta ', order: 'ordine ', odl: 'ordine di lavoro ', odp: 'ordine di produzione ' }[ref.kind] || 'documento ') + ref.number; }
 
 // La chiave con cui una riga di fabbisogno viaggia nella modale e nel documento:
 // l'id articolo per un acquisto, la `phaseKey` per una fase. Non collidono mai —
 // una chiave di fase contiene `#`, che in un UUID non compare.
-function planRowKey(r) { return r.phaseKey || r.item.id; }
+// Il prefisso `make#` non è decorazione: senza, la chiave di una parte da
+// fabbricare collide con quella della stessa parte comprata, e un ordine di
+// produzione bloccherebbe un ordine d'acquisto (o viceversa) su un articolo che
+// nei due casi è una cosa diversa.
+function planRowKey(r) { return r.phaseKey || (r.isMake ? r.makeKey : r.item.id); }
 // Righe del piano indicizzate per chiave: la modale lavora su spunte, e alla
 // conferma deve poter ritrovare la riga da quella chiave. Acquisti e fasi
 // stanno nella stessa mappa perché la modale ne ha una sola.
@@ -1074,6 +1132,7 @@ function planRowIndex(plan) {
   // Le fasi entrano come **tratte**: è la tratta che diventa una riga di
   // documento, e la chiave è quella della sua prima fase.
   mrpPhaseRuns(exp.phases.map(mrpPhaseRow)).forEach(r => map.set(r.phaseKey, r));
+  exp.make.map(e => mrpMakeRow(e, plan.id)).forEach(r => map.set(r.makeKey, r));
   return map;
 }
 // Il tipo di documento si sceglie **prima**, dal pulsante che si preme: sono
@@ -1095,13 +1154,17 @@ function planDocsModal(id, kind) {
   }
   window.__planDocsId = id;
   window.__planDocsKind = k;
-  openModal(`<h3>${k === 'rfq' ? ico('mail', 'tinted pill', '') + ' Genera richieste di offerta' : ico('receipt', 'tinted pill', '') + ' Genera ordini a fornitore'} — ${esc(p.number)}</h3>
-    <p class="empty-text" style="text-align:left;padding:0 0 8px">Quantità <strong>${mrpNet ? 'nette' : 'lorde'}</strong>${mrpNet ? ' — tolti esistente e in arrivo, e tolto quello che gli altri piani aperti hanno già impegnato' : ' — l\'intero fabbisogno del piano'}. Si cambia col pulsante <em>Fabbisogno netto</em> nell\'elenco.</p>
+  const titoloModale = { rfq: ico('mail', 'tinted pill', '') + ' Genera richieste di offerta',
+    order: ico('receipt', 'tinted pill', '') + ' Genera ordini a fornitore',
+    odl: ico('wrench', 'tinted pill', '') + ' Genera ordini di lavoro',
+    odp: ico('factory', 'tinted pill', '') + ' Genera ordini di produzione' }[k];
+  openModal(`<h3>${titoloModale} — ${esc(p.number)}</h3>
+    <p class="empty-text" style="text-align:left;padding:0 0 8px">${k === 'odp' ? 'Quantità <strong>lorde</strong> — il netto non si applica a una parte da fabbricare' : `Quantità <strong>${mrpNet ? 'nette' : 'lorde'}</strong>`}${mrpNet ? ' — tolti esistente e in arrivo, e tolto quello che gli altri piani aperti hanno già impegnato' : ' — l\'intero fabbisogno del piano'}. Si cambia col pulsante <em>Fabbisogno netto</em> nell\'elenco.</p>
     <p class="empty-text" style="text-align:left;padding:0 0 12px">${planDocsHint(k)}</p>
     <div id="plandoc-body">${planDocsBody(gruppi, id, k)}</div>
     <div class="modal-actions">
       <button class="btn-ghost" onclick="closeModal()">Annulla</button>
-      <button class="add-btn-sm" onclick="planCreateDocs()">${k === 'rfq' ? 'Genera richieste' : 'Genera ordini'}</button>
+      <button class="add-btn-sm" onclick="planCreateDocs()">${{ rfq: 'Genera richieste', order: 'Genera ordini', odl: 'Genera ordini di lavoro', odp: 'Genera ordini di produzione' }[k]}</button>
     </div>`, true, 'plandocs');
   planDocsCount();
 }
@@ -1110,7 +1173,7 @@ function planDocsModal(id, kind) {
 // peggio di uno spento, perché costringe a scoprirlo aprendo.
 function planDocButton(p, kind, label) {
   const n = planDocsAvailable(p, kind);
-  const doc = kind === 'rfq' ? 'una richiesta' : kind === 'odl' ? 'un ordine di lavoro' : 'un ordine';
+  const doc = { rfq: 'una richiesta', odl: 'un ordine di lavoro', odp: 'un ordine di produzione' }[kind] || 'un ordine';
   const titolo = n
     ? `${n} ${n === 1 ? 'riga ancora da mettere' : 'righe ancora da mettere'} in ${doc}`
     : `Tutte le righe di questo fabbisogno sono già in ${doc}`;
@@ -1118,6 +1181,7 @@ function planDocButton(p, kind, label) {
     ${n ? '' : 'disabled'} title="${esc(titolo)}">${label}${n ? ` (${n})` : ''}</button>`;
 }
 function planDocsHint(kind) {
+  if (kind === 'odp') return 'Un ordine di produzione <strong>per parte</strong>: le fasi del ciclo si congelano dentro, in successione. Da lì si seguono i pezzi, si generano gli ordini di lavoro per le fasi esterne, e il magazzino si muove ai due estremi del ciclo. Il <strong>fabbisogno netto non si applica</strong>: lanciare un pezzo è una decisione di produzione, non di acquisto.';
   if (kind === 'rfq') return 'Le richieste nascono senza prezzo: è quello che si sta chiedendo. Quando l&rsquo;offerta arriva, i prezzi si registrano a listino dalla richiesta stessa. Una richiesta può contenere insieme materiale e lavorazioni dello stesso fornitore.';
   if (kind === 'odl') return 'Gli ordini di lavoro contengono <strong>solo lavorazioni</strong>: la tariffa è quella scritta nel ciclo. Il materiale dello stesso terzista si ordina a parte, con un ordine d&rsquo;acquisto.';
   return 'Gli ordini d&rsquo;acquisto contengono <strong>solo merce</strong>, col prezzo in uso nella costificazione. Le righe senza prezzo varrebbero zero: correggile a listino prima, o dopo nell&rsquo;ordine. Le lavorazioni hanno un documento loro.';
@@ -1128,22 +1192,25 @@ function planDocsHint(kind) {
 function planDocsAvailable(plan, kind) {
   const gia = planDocumentedKeys(plan.id);
   return planDocRows(plan, kind)
-    .filter(r => r.qtyOrder > 0 && !(gia.get(planRowKey(r)) || []).some(x => x.kind === kind)).length;
+    .filter(r => r.qtyOrder > 0 && !planBloccata(gia.get(planRowKey(r)), kind)).length;
 }
 // Tutto ciò che da questo piano può diventare una riga di documento: gli
 // acquisti prima, le fasi di conto lavoro dopo, filtrate per il tipo di
 // documento che si sta generando (vedi PLAN_DOC_FILTER).
 function planDocRows(plan, kind) {
   const f = PLAN_DOC_FILTER[kind] || PLAN_DOC_FILTER.rfq;
-  return mrpBuyRows(plan, mrpNet).concat(mrpPhaseRuns(mrpPhaseRows(plan))).filter(f);
+  return mrpBuyRows(plan, mrpNet)
+    .concat(mrpPhaseRuns(mrpPhaseRows(plan)))
+    .concat(mrpMakeRows(plan))
+    .filter(f);
 }
 function planDocsBody(gruppi, planId, kind) {
   const gia = planDocumentedKeys(planId);
   // Già usato *per questo tipo* = non riselezionabile. Gli altri riferimenti si
   // mostrano lo stesso: sapere che di quell'articolo esiste già una richiesta è
   // utile anche mentre si prepara un ordine.
-  const usati = r => (gia.get(planRowKey(r)) || []).filter(x => x.kind === kind);
-  const altri = r => (gia.get(planRowKey(r)) || []).filter(x => x.kind !== kind);
+  const usati = r => (gia.get(planRowKey(r)) || []).filter(x => x.kind === kind || (kind === 'odl' && x.kind === 'odp'));
+  const altri = r => (gia.get(planRowKey(r)) || []).filter(x => x.kind !== kind && !(kind === 'odl' && x.kind === 'odp'));
   // Quanto varrà davvero la riga sul documento. Senza listino applicabile la
   // riga nascerà vuota: qui resta la stima da costificazione, che è l'unica
   // cifra disponibile per decidere se conviene generare.
@@ -1163,6 +1230,12 @@ function planDocsBody(gruppi, planId, kind) {
       if (bloccata.length) {
         seg.push(`<span class="mrp-warn" title="Già inserito in ${esc(bloccata.map(docRefLabel).join(', '))}: per cambiarne la quantità si modifica quel documento">
           ${ico('lock', 'tinted', '')} già in ${esc(bloccata.map(x => x.number).join(', '))}</span>`);
+      } else if (r.isMake) {
+        const a = altri(r);
+        if (a.length) seg.push(`<span class="price-best" title="Esiste già ${esc(a.map(docRefLabel).join(', '))}, di tipo diverso: questa riga resta selezionabile">${ico('file', 'tinted', '')} ${esc(a.map(x => x.number).join(', '))}</span>`);
+        // Una parte senza fasi non ha una successione da seguire: l'ordine che
+        // ne uscirebbe è una scheda vuota, e va detto prima di generarlo.
+        if (r.senzaCiclo) seg.push(`<span class="mrp-warn" title="Il ciclo di questa parte non ha lavorazioni: l'ordine di produzione nascerebbe senza fasi">${ico('warning', 'tinted', '')} senza ciclo</span>`);
       } else if (r.isPhase) {
         // Una fase non ha magazzino: gli unici avvisi che la riguardano sono il
         // documento gemello già esistente e il prezzo a zero.
@@ -1192,7 +1265,10 @@ function planDocsBody(gruppi, planId, kind) {
       const etichetta = r.isPhase
         ? `<span class="cycle-phase">${esc((r.phaseNos || [r.phaseNo]).join('-'))}</span> ${ico('wrench', 'tinted', '')} ${esc(r.wcName)}
            <span style="opacity:.7">su ${codeLink(r.item.id, r.item.code)} ${esc(r.item.name)}</span>`
-        : `<span style="font-family:var(--mono)">${codeLink(r.item.id, r.item.code)}</span> ${esc(r.item.name)}`;
+        : r.isMake
+          ? `${ico('factory', 'tinted', '')} <span style="font-family:var(--mono)">${codeLink(r.item.id, r.item.code)}</span> ${esc(r.item.name)}
+             <span style="opacity:.7">${r.senzaCiclo ? '' : esc(r.nFasi + (r.nFasi === 1 ? ' fase' : ' fasi') + (r.nEsterne ? ', ' + r.nEsterne + ' in conto lavoro' : ''))}</span>`
+          : `<span style="font-family:var(--mono)">${codeLink(r.item.id, r.item.code)}</span> ${esc(r.item.name)}`;
       return `<label class="plandoc-row${bloccata.length ? ' plandoc-used' : ''}">
         <input type="checkbox" class="plandoc-line" data-sup="${esc(key)}" value="${esc(planRowKey(r))}"
           ${bloccata.length ? 'disabled' : 'checked'} onchange="planDocsCount()">
@@ -1204,13 +1280,13 @@ function planDocsBody(gruppi, planId, kind) {
       <label class="plandoc-head">
         <input type="checkbox" class="plandoc-sup" data-sup="${esc(key)}" ${disponibili.length ? 'checked' : 'disabled'} onchange="planDocsToggleGroup(this)">
         ${ico('factory', 'tinted', '')} <strong>${esc(g.name)}</strong>
-        <span class="plandoc-qty">${disponibili.length ? `${disponibili.length} ${disponibili.length === 1 ? 'riga' : 'righe'} · ${fmtN(totDisp)}` : 'tutto già documentato'}${disponibili.length < g.rows.length ? ` <span style="opacity:.6">(${g.rows.length - disponibili.length} già ${kind === 'rfq' ? 'in richiesta' : kind === 'odl' ? 'in ordine di lavoro' : 'in ordine'})</span>` : ''}</span>
+        <span class="plandoc-qty">${disponibili.length ? `${disponibili.length} ${disponibili.length === 1 ? 'riga' : 'righe'} · ${fmtN(totDisp)}` : 'tutto già documentato'}${disponibili.length < g.rows.length ? ` <span style="opacity:.6">(${g.rows.length - disponibili.length} già ${{ rfq: 'in richiesta', odl: 'in ordine di lavoro', odp: 'in ordine di produzione' }[kind] || 'in ordine'})</span>` : ''}</span>
         ${g.supplierId ? '' : '<span class="mrp-warn" title="Nessun fornitore: il documento nasce da intestare">' + ico('warning', 'tinted', '') + ' da assegnare</span>'}
       </label>
       ${righe}</div>`;
   }).join('');
   const nDisp = gruppi.reduce((s, g) => s + g.rows.filter(r => !usati(r).length).length, 0);
-  const avviso = nDisp ? '' : `<div class="rfq-warn">Tutte le righe di questo fabbisogno sono già finite in ${kind === 'rfq' ? 'una richiesta' : kind === 'odl' ? 'un ordine di lavoro' : 'un ordine'}. Per cambiare quantità o fornitore si modifica il documento, oppure lo si elimina e si rigenera.</div>`;
+  const avviso = nDisp ? '' : `<div class="rfq-warn">Tutte le righe di questo fabbisogno sono già finite in ${{ rfq: 'una richiesta', odl: 'un ordine di lavoro', odp: 'un ordine di produzione' }[kind] || 'un ordine'}. Per cambiare quantità o fornitore si modifica il documento, oppure lo si elimina e si rigenera.</div>`;
   return `${avviso}${corpo}<p class="empty-text" style="text-align:left;padding:8px 0 0" id="plandoc-count"></p>`;
 }
 // Spunta di gruppo: trascina le sue righe, ed è il modo rapido di escludere un
@@ -1256,7 +1332,7 @@ function planCreateDocs() {
   // DOM, e ciò che decide se una riga può finire in un documento deve
   // stare accanto alla scrittura, non solo nell'interfaccia.
   const gia = planDocumentedKeys(p.id);
-  const bloccato = chiave => (gia.get(chiave) || []).some(x => x.kind === kind);
+  const bloccato = chiave => planBloccata(gia.get(chiave), kind);
   const creati = [];
   let scartate = 0;
   sel.forEach((chiavi, chiaveGruppo) => {
@@ -1267,6 +1343,10 @@ function planCreateDocs() {
     const ammesse = chiavi.filter(k => { if (bloccato(k)) { scartate++; return false; } return true; });
     const righe = ammesse.map(k => index.get(k)).filter(Boolean);
     if (!righe.length) return;
+    // Un ordine di produzione è **di una parte sola**: da un gruppo ne escono
+    // tanti quante sono le righe, non uno solo con dentro tutto. È l'unica
+    // differenza strutturale fra questo tipo e gli altri tre.
+    if (kind === 'odp') { righe.forEach(r => creati.push(planNewOdp(p, r))); return; }
     creati.push(kind === 'rfq' ? planNewRfq(p, supplierId, righe)
       : (kind === 'odl' ? planNewOdl(p, supplierId, righe) : planNewOrder(p, supplierId, righe)));
   });
@@ -1277,19 +1357,22 @@ function planCreateDocs() {
   saveDB(); closeModal();
   // Un documento solo: si apre. Più d'uno: si va all'elenco, non c'è una scelta
   // sensata su quale aprire per primo.
-  const vista = { rfq: 'rfq', order: 'orders', odl: 'odl' }[kind];
+  const vista = { rfq: 'rfq', order: 'orders', odl: 'odl', odp: 'odp' }[kind];
   docLeave(kind);
   if (creati.length === 1) {
     if (kind === 'rfq') { currentRfqId = creati[0].id; rfqView = 'edit'; }
     else if (kind === 'odl') { currentOdlId = creati[0].id; odlView = 'edit'; }
+    else if (kind === 'odp') { currentOdpId = creati[0].id; odpView = 'edit'; }
     else { currentOrderId = creati[0].id; orderView = 'edit'; }
-  } else if (kind === 'rfq') { rfqView = 'list'; currentRfqId = null; }
+  } else if (kind === 'odp') { odpView = 'list'; currentOdpId = null; }
+  else if (kind === 'rfq') { rfqView = 'list'; currentRfqId = null; }
   else if (kind === 'odl') { odlView = 'list'; currentOdlId = null; }
   else { orderView = 'list'; currentOrderId = null; }
   setView(vista);
   const nome = { rfq: ['Richiesta ', ' richieste create da '],
     order: ['Ordine ', ' ordini creati da '],
-    odl: ['Ordine di lavoro ', ' ordini di lavoro creati da '] }[kind];
+    odl: ['Ordine di lavoro ', ' ordini di lavoro creati da '],
+    odp: ['Ordine di produzione ', ' ordini di produzione creati da '] }[kind];
   showToast(creati.length === 1
     ? nome[0] + creati[0].number + ' creato da ' + p.number
     : creati.length + nome[1] + p.number);
@@ -1400,6 +1483,16 @@ function planNewOdl(p, supplierId, righe) {
   db.workOrders.push(o);
   return o;
 }
+// Un ordine di produzione: una parte, i suoi pezzi, e le fasi del suo ciclo
+// congelate. Passa dalla **stessa fabbrica** di uno scritto a mano (`odpNew`),
+// perché un ordine generato dal piano che si comportasse diversamente sarebbe
+// una seconda specie di ordine da ricordarsi.
+function planNewOdp(p, r) {
+  const o = odpNew(r.item, r.qtyOrder != null ? r.qtyOrder : r.qty, r.due || p.dueDate || '',
+    { planId: p.id, jobId: p.jobId || null, title: p.title ? `${p.title} — ${r.item.code || ''}` : `Da ${p.number}` });
+  db.prodOrders.push(o);
+  return o;
+}
 function planNewOrder(p, supplierId, righe) {
   const o = stampNew(Object.assign({ id: gid(), number: nextOrderNumber() }, planDocHead(p, supplierId),
     { rfqId: null, supplierConfirmation: '',
@@ -1413,11 +1506,12 @@ function planDocs(planId) {
     rfqs: (db.rfqs || []).filter(r => r.planId === planId),
     orders: (db.orders || []).filter(o => o.planId === planId),
     workOrders: (db.workOrders || []).filter(o => o.planId === planId),
+    prodOrders: (db.prodOrders || []).filter(o => o.planId === planId),
   };
 }
 function planDocsList(planId) {
   const d = planDocs(planId);
-  if (!d.rfqs.length && !d.orders.length && !d.workOrders.length) return '';
+  if (!d.rfqs.length && !d.orders.length && !d.workOrders.length && !d.prodOrders.length) return '';
   const riga = (x, apri, icona) => `<span class="plandoc-link" ${clickAttrs(apri, 'Apri ' + x.number)}><span style="font-family:var(--mono)">${icona} ${esc(x.number)}</span> · ${esc(supplierName(x.supplierId) || 'da assegnare')}</span>`;
   return `<div class="mrp-section">
     <div class="cycle-section-head"><h3>${ico('clipboard', 'tinted pill', '')} Documenti generati</h3></div>
@@ -1425,6 +1519,7 @@ function planDocsList(planId) {
       ${d.rfqs.map(r => riga(r, `openRfqFromPlan('${r.id}')`, ico('mail', 'tinted', 'Richiesta di offerta'))).join('')}
       ${d.orders.map(o => riga(o, `openOrderFromPlan('${o.id}')`, ico('receipt', 'tinted', 'Ordine a fornitore'))).join('')}
       ${d.workOrders.map(o => riga(o, `openOdlFromPlan('${o.id}')`, ico('wrench', 'tinted', 'Ordine di lavoro'))).join('')}
+      ${d.prodOrders.map(o => `<span class="plandoc-link" ${clickAttrs(`openOdpFromPlan('${o.id}')`, 'Apri ' + o.number)}><span style="font-family:var(--mono)">${ico('factory', 'tinted', 'Ordine di produzione')} ${esc(o.number)}</span> · ${esc(o.code || '')}</span>`).join('')}
     </div></div>`;
 }
 // Stato prima, vista dopo: setView disegna già, chiamare open*Edit prima
@@ -1440,6 +1535,10 @@ function openOrderFromPlan(id) {
 function openOdlFromPlan(id) {
   docLeave('odl'); currentOdlId = id; odlView = 'edit';
   setView('odl');
+}
+function openOdpFromPlan(id) {
+  currentOdpId = id; odpView = 'edit';
+  setView('odp');
 }
 
 // ─── Disegno ───
@@ -1571,6 +1670,7 @@ function renderPlanEdit(id) {
       <div class="bom-toolbar-right">
         ${planDocButton(p, 'rfq', ico('mail', 'tinted', '') + ' Genera richieste')}
         ${planDocButton(p, 'order', ico('receipt', 'tinted', '') + ' Genera ordini')}
+        ${planDocButton(p, 'odp', ico('factory', 'tinted', '') + ' Genera ordini di produzione')}
         ${planDocButton(p, 'odl', ico('wrench', 'tinted', '') + ' Genera ordini di lavoro')}
         <div class="export-pair">
           <button class="export-btn-xls" onclick="exportMrpExcel('${id}')">${ico('sheet', 'tinted', '')} Esporta Excel</button>
@@ -1632,7 +1732,7 @@ function renderPlanEdit(id) {
 
     <div class="mrp-section">
       <div class="cycle-section-head"><h3>${ico('factory', 'tinted pill', '')} Da fabbricare</h3></div>
-      ${mrpMakeTable(exp.make)}
+      ${mrpMakeTable(exp.make, id)}
     </div>
     <div class="mrp-section">
       <div class="cycle-section-head"><h3>${ico('wrench', 'tinted pill', '')} Carico dei centri</h3></div>
@@ -1727,7 +1827,12 @@ function mrpPhaseTable(rows) {
   if (!rows.length) return '<div class="empty-text">Nessuna lavorazione in conto lavoro in questo piano. Le fasi del ciclo senza fornitore sono interne.</div>';
   const corpo = rows.map(r => {
     const seg = [];
-    if (r.docRefs && r.docRefs.length) seg.push(`<span class="price-best" title="Già in ${esc(r.docRefs.map(docRefLabel).join(', '))}">${ico('file', 'tinted', '')} ${esc(r.docRefs.map(x => x.number).join(', '))}</span>`);
+    // Una fase coperta da un ordine di produzione non si ordina da qui: l'ordine
+    // di lavoro si genera da lì, dove la successione dice anche *quando*.
+    const odp = (r.docRefs || []).filter(x => x.kind === 'odp');
+    const altri = (r.docRefs || []).filter(x => x.kind !== 'odp');
+    if (odp.length) seg.push(`<span class="price-best" ${clickAttrs(`openOdpFromPlan('${odp[0].id}')`, "Apri l'ordine di produzione: l'ordine di lavoro per questa fase si genera da lì")} title="Coperta da un ordine di produzione: l'ordine di lavoro si genera da lì, quando la fase precedente è chiusa">${ico('factory', 'tinted', '')} coperta da ${esc(odp.map(x => x.number).join(', '))}</span>`);
+    if (altri.length) seg.push(`<span class="price-best" title="Già in ${esc(altri.map(docRefLabel).join(', '))}">${ico('file', 'tinted', '')} ${esc(altri.map(x => x.number).join(', '))}</span>`);
     if (r.noPrice) seg.push(`<span class="mrp-warn" title="La fase non ha una tariffa nel ciclo: in un ordine varrebbe zero">${ico('warning', 'tinted', '')} senza tariffa</span>`);
     const u = URGENZA_LABEL[r.urgenza] || null;
     return `<tr>
@@ -1758,21 +1863,34 @@ function mrpPhaseTable(rows) {
       <td style="font-family:var(--mono);text-align:right">${totOre ? fmtQty(totOre) : '—'}</td>
       <td></td><td style="font-family:var(--mono);text-align:right">${fmtN(tot)}</td></tr></tfoot></table></div>`;
 }
-function mrpMakeTable(make) {
+// Fino alla 0.73 questa era l'unica sezione del piano che non diceva mai dove
+// fosse finita una riga: si leggeva «tre parti da fabbricare» e per sapere se
+// erano state lanciate bisognava cercarle altrove. Ora porta la data in cui
+// servono e il riferimento all'ordine di produzione, come le altre due.
+function mrpMakeTable(make, planId) {
   if (!make.length) return '<div class="empty-text">Nessuna parte da fabbricare in questo piano.</div>';
+  const gia = planId ? planDocumentedKeys(planId) : new Map();
   const rows = make.map(e => {
     const c = costOf(e.item.id).total;
+    const refs = (gia.get('make#' + e.item.id) || []).filter(x => x.kind === 'odp');
+    const fasi = clCycleRuns(e.item);
+    const seg = [];
+    if (refs.length) seg.push(`<span class="price-best" ${clickAttrs(`openOdpFromPlan('${refs[0].id}')`, "Apri l'ordine di produzione")} title="Già lanciata con un ordine di produzione">${ico('factory', 'tinted', '')} ${esc(refs.map(x => x.number).join(', '))}</span>`);
+    else if (!fasi.length) seg.push(`<span class="mrp-warn" title="Il ciclo di questa parte non ha lavorazioni: non c'è nessuna successione da seguire">${ico('warning', 'tinted', '')} senza ciclo</span>`);
     return `<tr>
       <td style="font-family:var(--mono)">${codeLink(e.item.id, e.item.code)}</td>
-      <td>${esc(e.item.name)}</td>
+      <td>${esc(e.item.name)} ${seg.join(' ')}</td>
       <td>${esc(e.item.uom || '')}</td>
       <td style="font-family:var(--mono);text-align:right">${fmtQty(e.qty)}</td>
+      <td>${e.due ? fmtDateIt(e.due) : '—'}</td>
       <td style="font-family:var(--mono);text-align:right">${fmtN(c)}</td>
       <td style="font-family:var(--mono);text-align:right">${fmtN(c * e.qty)}</td></tr>`;
   }).join('');
   return `<div class="table-wrap"><table>
     <thead><tr><th scope="col">Codice</th><th scope="col">Parte</th><th scope="col">U.M.</th>
-      <th scope="col" style="text-align:right">Q.tà</th><th scope="col" style="text-align:right">Costo un. (${esc(cur())}/U.M.)</th>
+      <th scope="col" style="text-align:right">Q.tà</th>
+      <th scope="col" title="Data in cui questa parte deve essere pronta">Serve per</th>
+      <th scope="col" style="text-align:right">Costo un. (${esc(cur())}/U.M.)</th>
       <th scope="col" style="text-align:right">Importo (${esc(cur())})</th></tr></thead>
     <tbody>${rows}</tbody></table></div>`;
 }

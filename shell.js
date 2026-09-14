@@ -33,6 +33,7 @@ function globalSearchHits(q) {
   doc(db.rfqs, 'rfq', 'RDO', d => 'Richiesta · ' + (supplierName(d.supplierId) || 'senza fornitore'));
   doc(db.orders, 'order', 'ODA', d => 'Ordine · ' + (supplierName(d.supplierId) || 'senza fornitore'));
   doc(db.workOrders, 'odl', 'ODL', d => 'Ordine di lavoro · ' + (supplierName(d.supplierId) || 'senza terzista'));
+  doc(db.prodOrders, 'odp', 'ODP', d => 'Ordine di produzione · ' + ((d.code || '') + ' ' + (d.name || '')).trim());
   doc(db.plans, 'plan', 'FAB', d => 'Piano di produzione · ' + (d.lines || []).length + ' righe');
   // Chi ha il codice che inizia con quanto digitato viene prima: è la ricerca
   // di chi sa già cosa cerca e lo sta scrivendo.
@@ -84,6 +85,7 @@ function globalSearchOpen(i) {
   } else if (h.kind === 'rfq') { setView('rfq'); openRfqEdit(h.id); }
   else if (h.kind === 'order') { setView('orders'); openOrderEdit(h.id); }
   else if (h.kind === 'odl') { setView('odl'); openOdlEdit(h.id); }
+  else if (h.kind === 'odp') { setView('odp'); openOdpEdit(h.id); }
   else if (h.kind === 'plan') { setView('mrp'); openPlanEdit(h.id); }
 }
 
@@ -104,6 +106,7 @@ function printSubtitle() {
   if (activeView === 'rfq') { const r = getRfq(currentRfqId); return r ? r.number + ' ' + (r.title || '') : ''; }
   if (activeView === 'orders') { const o = getOrder(currentOrderId); return o ? o.number + ' ' + (o.title || '') : ''; }
   if (activeView === 'odl') { const o = getOdl(currentOdlId); return o ? o.number + ' ' + (o.title || '') : ''; }
+  if (activeView === 'odp') { const o = getOdp(currentOdpId); return o ? o.number + ' ' + (o.code || '') : ''; }
   return '';
 }
 function printHeadFill() {
@@ -161,6 +164,9 @@ const NAV = [
   { id: 'docs', icon: 'mail', label: 'Documenti', views: [
     { id: 'jobs', label: 'Commesse' },
     { id: 'mrp', label: 'Fabbisogno' },
+    // L'ordine di produzione sta prima dell'ordine di lavoro perché è lui a
+    // generarlo: la fase esterna si commissiona da lì.
+    { id: 'odp', label: 'Ordini di produzione' },
     { id: 'rfq', label: 'Richieste offerta' },
     { id: 'orders', label: 'Ordini' },
     // ODA e ODL sono due documenti diversi e stanno in due elenchi: uno compra
@@ -260,6 +266,7 @@ function setView(v) {
   else if (v === 'rfq') renderRfq();
   else if (v === 'orders') renderOrders();
   else if (v === 'odl') renderOdl();
+  else if (v === 'odp') renderOdp();
   else if (v === 'load') renderLoad();
   else if (v === 'manage') renderManage();
   showReadOnlyBanner(panel, area);
