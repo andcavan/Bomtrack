@@ -83,6 +83,7 @@ function itemInfoBody(it) {
     ${itemInfoComposizione(it)}
     ${itemInfoImpieghi(it)}
     ${itemInfoDocumenti(it)}
+    ${itemInfoAllegati(it)}
     ${itemInfoRevisioni(it)}
     ${stampLine(it)}`;
 }
@@ -131,7 +132,7 @@ function itemInfoAnagrafica(it) {
   const grp = getItem(it.groupItemId);
   return itemInfoSection('Anagrafica', itemInfoRows([
     ['Codice', rawHtml(_mono(it.code))],
-    ['Nome', it.name],
+    ['Descrizione', it.name],
     it.type === 'parte' && it.conceptId ? ['Concetto', conceptName(it.conceptId)] : null,
     ['Tipo', typeLabel(it.type)],
     ['Unità di misura', rawHtml(_mono(it.uom || '—'))],
@@ -378,6 +379,31 @@ function itemInfoDocumenti(it) {
     ...piani.map(p => voce(ico('list', 'tinted', 'Piano di fabbisogno'), p, p.active === false ? 'piano chiuso' : 'piano aperto')),
   ].join('');
   return itemInfoSection(ico('clipboard', 'tinted', '') + ' Documenti e piani in cui compare', `<div class="mgmt-list">${corpo}</div>`);
+}
+
+// ─── Allegati, in sola lettura ───
+// Qui si **dice** che ci sono e come si chiamano, e basta. Niente pulsanti,
+// niente campo per aggiungerne: la scheda si apre in mezzo a qualunque lavoro
+// proprio perché non ha uno stato da salvare, e `test/iteminfo.test.js` tiene
+// ferma quella proprietà per tutti — un allegato non vale l'eccezione.
+// Si aggiungono e si tolgono da «Allegati» sulla riga di catalogo, che è dove
+// stanno già gli altri editor per articolo (il listino fornitori, la distinta).
+function itemInfoAllegati(it) {
+  const lista = allegatiDi(it.id);
+  if (!lista.length) return '';
+  const righe = lista.map(a => `<div class="mgmt-item">
+    <span class="mgmt-item-name">${ico('file', 'tinted', '')} ${esc(allegatoEtichetta(a))}</span>
+    <span class="mgmt-item-meta">${esc(allegatoDettaglio(a))}${a.createdAt ? ' · ' + esc(fmtDateIt(a.createdAt)) : ''}${a.createdBy ? ' · ' + esc(actorName(a.createdBy)) : ''}</span>
+  </div>`).join('');
+  // I documenti d'archivio stanno in una cartella fuori dall'app, e quale
+  // cartella lo decide ogni PC: dirlo qui evita che chi non trova un file lo
+  // creda perduto invece che non configurato.
+  const dove = lista.some(a => a.docId)
+    ? `I documenti d'archivio stanno nella cartella impostata su <strong>questo computer</strong>${archivioNome() ? ' (' + esc(archivioNome()) + ')' : ''}; il database ne porta il percorso, non il contenuto.`
+    : 'I file stanno su <strong>questo computer</strong>: il backup JSON ne porta l\'elenco, non il contenuto.';
+  return itemInfoSection(ico('folder', 'tinted', '') + ' Allegati',
+    `<div class="mgmt-list">${righe}</div>
+     <p class="empty-text" style="text-align:left;padding:6px 0 0">${dove}</p>`);
 }
 
 function itemInfoRevisioni(it) {

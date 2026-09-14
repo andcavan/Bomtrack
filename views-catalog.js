@@ -435,6 +435,23 @@ function syncFamilyFilters(pfx, types) {
   subSel.innerHTML = `<option value="">Tutte le sottofamiglie</option>` +
     subs.map(s => `<option value="${s.id}" ${s.id === keepSub ? 'selected' : ''}>${esc(s.name)}</option>`).join('');
 }
+// Filtri Macchina/Gruppo di Progetto e Magazzino — Acquisti non li ha in barra
+// (commerciali e materie prime non sono mai legati a una macchina), e qui
+// esce subito perché gli elementi non esistono. Il gruppo si restringe alla
+// macchina scelta, come la sottofamiglia si restringe alla famiglia.
+function syncMachineFilters(pfx) {
+  const macSel = document.getElementById(pfx + '-machine');
+  const grpSel = document.getElementById(pfx + '-group');
+  if (!macSel || !grpSel) return;
+  const macchine = machineItems();
+  const keepMac = macchine.some(m => m.id === macSel.value) ? macSel.value : '';
+  macSel.innerHTML = `<option value="">Tutte le macchine</option>` +
+    macchine.map(m => `<option value="${m.id}" ${m.id === keepMac ? 'selected' : ''}>${esc(m.code)} — ${esc(m.name)}</option>`).join('');
+  const gruppi = keepMac ? groupItemsFor(keepMac) : (db.items || []).filter(i => i.type === 'gruppo');
+  const keepGrp = gruppi.some(g => g.id === grpSel.value) ? grpSel.value : '';
+  grpSel.innerHTML = `<option value="">Tutti i gruppi</option>` +
+    gruppi.map(g => `<option value="${g.id}" ${g.id === keepGrp ? 'selected' : ''}>${esc(g.code)} — ${esc(g.name)}</option>`).join('');
+}
 // Preferiti: solo su ciò che si acquista, per ritrovare in fretta gli articoli ricorrenti
 function canFavorite(type) { return type === 'acquistato' || type === 'materiale'; }
 function toggleFavorite(id) {
@@ -488,7 +505,35 @@ function catalogMeta(i) {
   else if (!meta) meta = '—';
   return meta;
 }
-function catalogRow(i) {
+// Fornitore in uso: dalla quotazione attiva se c'è, altrimenti dal campo
+// sull'articolo — stessa priorità di `itemPricingSummary`, per non dire due
+// cose diverse nella riga e nella scheda.
+function catalogSupplierName(i) {
+  if (!hasPriceList(i)) return '—';
+  const riga = activePriceRow(i);
+  const sid = (riga && riga.supplierId) || i.supplierId;
+  return sid ? (supplierName(sid) || '—') : '—';
+}
+// Le celle dei campi facoltativi (colonne nascoste di serie, columns.js):
+// sempre presenti nel markup — è la CSS a nasconderle — sennò non ci sarebbe
+// nessuna casella da nascondere quando l'articolo non ha quel campo.
+function catalogExtraCells(i) {
+  return `<td class="col-subfamily" style="color:var(--text-dim)">${esc(usesFamily(i.type) && i.familyId ? (subFamilyName(i.familyId, i.subFamilyId) || '—') : '—')}</td>
+    <td class="col-supplier" style="color:var(--text-dim)">${esc(catalogSupplierName(i))}</td>
+    <td class="col-altuom">${esc(i.altUom || '—')}</td>
+    <td class="col-altfactor" style="font-family:var(--mono)">${i.altFactor ? fmtN(i.altFactor) : '—'}</td>
+    <td class="col-safety" style="font-family:var(--mono)">${i.safetyStock ? fmtN(i.safetyStock) : '—'}</td>
+    <td class="col-lot" style="font-family:var(--mono)">${i.lotSize ? fmtN(i.lotSize) : '—'}</td>
+    <td class="col-notes" style="color:var(--text-dim)">${esc(i.notes || '—')}</td>
+    <td class="col-autore" style="color:var(--text-dim)">${esc(recordAuthorShort(i))}</td>`;
+}
+// Solo Progetto ospita parti: Acquisti non avrà mai queste due celle né le
+// loro colonne nel registro (`COLUMNS.buy`).
+function catalogDesignCells(i) {
+  return `<td class="col-concept" style="color:var(--text-dim)">${esc(i.type === 'parte' ? (conceptName(i.conceptId) || '—') : '—')}</td>
+    <td class="col-sourcing" style="color:var(--text-dim)">${esc(i.type === 'parte' ? (PART_SOURCING[partSourcing(i)] || '—') : '—')}</td>`;
+}
+function catalogRow(i, scope) {
   const unit = itemUnitCost(i);
   const meta = catalogMeta(i);
   // Indicatori a sinistra, di sola visione (i flag si impostano nella scheda articolo)
@@ -503,9 +548,13 @@ function catalogRow(i) {
     <td class="col-uom">${esc(i.uom || '')}</td>
     <td class="col-cost" style="font-family:var(--mono)">${fmtN(unit)}</td>
     <td class="col-meta" style="color:var(--text-dim)">${esc(meta)}</td>
+    ${catalogExtraCells(i)}
+    ${scope === 'design' ? catalogDesignCells(i) : ''}
     <td class="row-actions" style="text-align:right;white-space:nowrap">
       ${hasPriceList(i) ? `<button class="mini-btn" title="Listino fornitori e storico prezzi" onclick="priceListModal('${i.id}')">${ico('euro', 'tinted', 'Listino fornitori e storico prezzi')}</button>` : ''}
       ${i.type === 'parte' ? `<button class="mini-btn" title="Distinta parte e ciclo di lavorazione" onclick="openCycleFor('${i.id}')">${ico('wrench', 'tinted', 'Distinta parte e ciclo di lavorazione')}</button>` : ''}
+      <button class="mini-btn" title="Apri documento" onclick="allegatoApriPrimo('${i.id}')">${ico('file', 'tinted', 'Apri documento')}</button>
+      <button class="mini-btn" title="Allegati: disegni e schede tecniche" onclick="allegatiModal('${i.id}')">${ico('folder', 'tinted', 'Allegati')}${allegatiCount(i.id) ? '<span class="mini-count">' + allegatiCount(i.id) + '</span>' : ''}</button>
       <button class="mini-btn" title="Dove è usato e impatto costi" onclick="usageModal('${i.id}')">${ico('link', 'tinted', 'Dove è usato e impatto costi')}</button>
       <button class="mini-btn" title="Modifica articolo" onclick="editItemModal('${i.id}')">${ico('edit', 'tinted', 'Modifica articolo')}</button>
       <button class="mini-btn" title="Duplica" onclick="duplicateItemModal('${i.id}')">${ico('copy', 'tinted', 'Duplica')}</button>
@@ -541,28 +590,41 @@ function catalogSearchInput(scope) {
 // l'intestazione, il disegno della riga, il limite corrente, i comandi del
 // piede e cosa dire quando non c'è niente da mostrare.
 //
+// La divisione in gruppi è una preferenza (`isGrouped`, columns.js): spenta,
+// le stesse righe finiscono in una tabella sola — il contratto del piede
+// (quante ne mancano, "Mostra altri"/"Mostra tutti") resta identico nei due
+// rami, così i chiamanti non se ne accorgono.
+//
 //   itemGrid({ hostId, rows, head, riga, limite, pagina, altro, tutti, vuoto, colonne })
 function itemGrid(o) {
   const host = document.getElementById(o.hostId);
   if (!host) return;   // la vista non è montata
-  const { groups, keys } = catalogGroups(o.rows);
-  // Si riempiono i gruppi nell'ordine di visualizzazione finché c'è spazio: il
-  // taglio non prende un po' da ognuno, che sarebbe un elenco di nessuno.
-  let restanti = o.limite;
-  let disegnati = 0;
-  const html = keys.map(k => {
-    const tutti = groups[k].items;
-    const visibili = tutti.slice(0, Math.max(0, restanti));
-    restanti -= visibili.length;
-    disegnati += visibili.length;
-    if (!visibili.length) return '';
-    // Il titolo nomina sempre il totale del gruppo, anche quando ne disegna solo
-    // i primi: un conteggio che mentisse lì manderebbe qualcuno a decidere
-    // sulla base di un elenco tagliato senza saperlo.
-    const conteggio = visibili.length < tutti.length ? `${visibili.length} di ${tutti.length}` : `${tutti.length}`;
-    return `<div class="cat-group-title">${esc(k)} <span style="color:var(--text-dim);font-weight:500">(${conteggio})</span></div>
-      <div class="table-wrap"><table>${o.head}<tbody>${visibili.map(o.riga).join('')}</tbody></table></div>`;
-  }).join('');
+  let html, disegnati;
+  if (isGrouped(o.colonne)) {
+    const { groups, keys } = catalogGroups(o.rows);
+    // Si riempiono i gruppi nell'ordine di visualizzazione finché c'è spazio: il
+    // taglio non prende un po' da ognuno, che sarebbe un elenco di nessuno.
+    let restanti = o.limite;
+    disegnati = 0;
+    html = keys.map(k => {
+      const tutti = groups[k].items;
+      const visibili = tutti.slice(0, Math.max(0, restanti));
+      restanti -= visibili.length;
+      disegnati += visibili.length;
+      if (!visibili.length) return '';
+      // Il titolo nomina sempre il totale del gruppo, anche quando ne disegna solo
+      // i primi: un conteggio che mentisse lì manderebbe qualcuno a decidere
+      // sulla base di un elenco tagliato senza saperlo.
+      const conteggio = visibili.length < tutti.length ? `${visibili.length} di ${tutti.length}` : `${tutti.length}`;
+      return `<div class="cat-group-title">${esc(k)} <span style="color:var(--text-dim);font-weight:500">(${conteggio})</span></div>
+        <div class="table-wrap"><table>${o.head}<tbody>${visibili.map(o.riga).join('')}</tbody></table></div>`;
+    }).join('');
+  } else {
+    // Divisione spenta: una tabella sola, nell'ordine che le righe già hanno.
+    const visibili = o.rows.slice(0, Math.max(0, o.limite));
+    disegnati = visibili.length;
+    html = visibili.length ? `<div class="table-wrap"><table>${o.head}<tbody>${visibili.map(o.riga).join('')}</tbody></table></div>` : '';
+  }
   const mancanti = o.rows.length - disegnati;
   const piu = mancanti > 0 ? `<div class="cat-more">
       <span>Mostrati ${disegnati} di ${o.rows.length} articoli</span>
@@ -573,6 +635,7 @@ function itemGrid(o) {
   a11yFields(host);
   colsMountButton(o.colonne);
   colsApply();
+  filtMount(o.colonne);
   // La tabella si riscrive per intero a ogni filtro: il pannello rimette
   // l'evidenza sulla riga scelta, e la lascia cadere se quella riga non c'è più.
   inspectorSync();
@@ -603,11 +666,16 @@ function catalogFilteredRows(scope, soloIds) {
   const leggi = k => (document.getElementById(sc.pfx + '-' + k) || {}).value || '';
   const q = leggi('search').toLowerCase();
   const ft = leggi('type'), ff = leggi('family'), fsf = leggi('subfamily');
+  const fm = leggi('machine'), fg = leggi('group');
   let rows = db.items.filter(i => sc.types.includes(i.type));
   if (ft) rows = rows.filter(i => i.type === ft);
   if (scope === 'buy' && favOnly) rows = rows.filter(i => i.favorite);
   if (ff) rows = rows.filter(i => usesFamily(i.type) && i.familyId === ff);
   if (fsf) rows = rows.filter(i => i.subFamilyId === fsf);
+  // Acquisti non ha questi due filtri in barra: `leggi` dà sempre '' e qui non
+  // scattano mai.
+  if (fm) rows = rows.filter(i => i.type === 'macchina' ? i.id === fm : i.machineItemId === fm);
+  if (fg) rows = rows.filter(i => i.type === 'gruppo' ? i.id === fg : i.groupItemId === fg);
   if (q) rows = rows.filter(i => (i.code + ' ' + i.name).toLowerCase().includes(q));
   // La scelta fatta a mano è un filtro come gli altri, ma applicato per ultimo:
   // esportare la selezione deve dare le righe scelte, non le righe scelte più
@@ -615,24 +683,45 @@ function catalogFilteredRows(scope, soloIds) {
   if (soloIds && soloIds.length) rows = rows.filter(i => soloIds.includes(i.id));
   return rows.sort((a, b) => (a.code || '').localeCompare(b.code || ''));
 }
+// Le intestazioni delle colonne facoltative, gemelle di `catalogExtraCells`/
+// `catalogDesignCells`: stessa classe col-X, stesso ordine.
+const CAT_EXTRA_HEAD = `<th scope="col" class="col-subfamily">Sottofamiglia</th>
+    <th scope="col" class="col-supplier">Fornitore</th>
+    <th scope="col" class="col-altuom">UM acquisto</th>
+    <th scope="col" class="col-altfactor">Fattore</th>
+    <th scope="col" class="col-safety">Scorta minima</th>
+    <th scope="col" class="col-lot">Lotto</th>
+    <th scope="col" class="col-notes">Note</th>
+    <th scope="col" class="col-autore">Creato/aggiornato da</th>`;
+const CAT_DESIGN_HEAD = `<th scope="col" class="col-concept">Concetto</th>
+    <th scope="col" class="col-sourcing">Approvvigionamento</th>`;
 function renderCatalog(scope) {
   invalidateCaches();
   const sc = CATALOG_SCOPES[scope]; if (!sc) return;
   updateCatFamilyFilters(scope);
+  syncMachineFilters(sc.pfx);
+  // Lo scope condiviso (filters.js) va scritto qui, non prima: gli elementi
+  // hanno appena preso le loro <option> fresche da syncMachineFilters/
+  // updateCatFamilyFilters, e un valore assegnato a un <select> senza
+  // un'opzione corrispondente non prende — è per questo che l'ordine conta.
+  filtScopeApply(scope);
   const pfx = sc.pfx;
   const rows = catalogFilteredRows(scope);
 
   // «Costo un.» è per una unità dell'articolo, cioè nella U.M. della colonna
   // accanto: si dice in intestazione, una volta, invece che su ogni riga.
-  const head = `<thead><tr><th scope="col" class="col-flags"></th><th scope="col" class="col-code">Codice</th><th scope="col" class="col-name">Nome</th>
+  const head = `<thead><tr><th scope="col" class="col-flags"></th><th scope="col" class="col-code">Codice</th><th scope="col" class="col-name">Descrizione</th>
     <th scope="col" class="col-type">Tipo</th><th scope="col" class="col-family">Famiglia</th><th scope="col" class="col-uom">U.M.</th>
     <th scope="col" class="col-cost" title="Costo di una unità, nella U.M. della colonna accanto">Costo un. (${esc(cur())}/U.M.)</th>
-    <th scope="col" class="col-meta">Dettaglio</th><th scope="col" class="row-actions"></th></tr></thead>`;
+    <th scope="col" class="col-meta">Dettaglio</th>
+    ${CAT_EXTRA_HEAD}
+    ${scope === 'design' ? CAT_DESIGN_HEAD : ''}
+    <th scope="col" class="row-actions"></th></tr></thead>`;
   itemGrid({
     hostId: pfx + '-table',
     rows,
     head,
-    riga: catalogRow,
+    riga: i => catalogRow(i, scope),
     limite: catalogLimit[scope],
     pagina: CATALOG_PAGE,
     altro: `catalogShowMore('${scope}')`,
@@ -651,6 +740,7 @@ function catalogExportSpec(scope, soloIds) {
   const leggi = k => (document.getElementById(sc.pfx + '-' + k) || {}).value || '';
   const fam = getFamily(leggi('family'));
   const sub = (fam && (fam.subs || []).find(s => s.id === leggi('subfamily'))) || null;
+  const mac = getItem(leggi('machine')), grp = getItem(leggi('group'));
   const righe = catalogFilteredRows(scope, soloIds).map(i => [
     i.code || '', i.name || '', typeLabel(i.type), codingLabel(i) || familyLabel(i),
     i.uom || '', +(itemUnitCost(i) || 0).toFixed(4), catalogMeta(i),
@@ -663,13 +753,15 @@ function catalogExportSpec(scope, soloIds) {
       ['Tipo', leggi('type') ? typeLabel(leggi('type')) : ''],
       ['Famiglia', fam ? fam.name : ''],
       ['Sottofamiglia', sub ? sub.name : ''],
+      ['Macchina', mac ? `${mac.code} — ${mac.name}` : ''],
+      ['Gruppo', grp ? `${grp.code} — ${grp.name}` : ''],
       ['Preferiti', scope === 'buy' && favOnly ? 'solo i preferiti' : ''],
       ['Selezione', soloIds && soloIds.length ? soloIds.length + ' righe scelte a mano' : ''],
     ],
     sezioni: [{
       nome: scope === 'buy' ? 'Acquisti' : 'Progetto',
       colonne: [
-        { h: 'Codice', w: 18 }, { h: 'Nome', w: 34 }, { h: 'Tipo', w: 16 }, { h: 'Famiglia', w: 24 },
+        { h: 'Codice', w: 18 }, { h: 'Descrizione', w: 34 }, { h: 'Tipo', w: 16 }, { h: 'Famiglia', w: 24 },
         { h: 'U.M.', w: 8 },
         // La valuta sta in intestazione: nella cella romperebbe ogni formula.
         { h: `Costo unitario (${cur()}/U.M.)`, w: 18, num: true },
@@ -708,9 +800,25 @@ function itemPricingSummary(it) {
     ${prezzo} · ${forn}${rif ? ' · ' + rif : ''}<br>
     ${n ? `${n} ${n === 1 ? 'quotazione a listino' : 'quotazioni a listino'}${riga ? '' : ' — nessuna in uso'}` : 'Nessuna quotazione a listino'}${apri}</span>`;
 }
+// Vero se l'articolo è già usato in un qualunque ambito (distinte, cicli,
+// magazzino, documenti, piani, revisioni): oltre quel punto i campi che ne
+// determinano identità e codifica smettono di essere modificabili, per non
+// disallineare in silenzio ciò che lo referenzia già. `admin` fa eccezione
+// solo per nome/concetto/descrizione, mai per codice/famiglia/codifica.
+function itemLockState(it) {
+  const used = !!it && isItemUsedAnywhere(it.id);
+  return { used, structLocked: used, nameLocked: used && !isAdmin() };
+}
+function itemLockNote(lock) {
+  if (!lock.used) return '';
+  const extra = lock.nameLocked ? '' : ' Come amministratore puoi comunque correggere nome/concetto/descrizione.';
+  return `<p class="empty-text" style="text-align:left;padding:0 0 10px">${ico('lock', 'tinted', '')} Articolo già utilizzato: i campi identificativi non sono più modificabili.${extra}</p>`;
+}
 function itemModalBody(it, scope) {
   const sc = CATALOG_SCOPES[scope] || CATALOG_SCOPES.buy;
   const t = it ? it.type : sc.types[0];
+  const lock = itemLockState(it);
+  const dis = cond => cond ? 'disabled' : '';
   const sourcePicker = it ? '' : `
     <div class="modal-field"><label>Parti da (opzionale)</label>
       <input type="text" id="src-search" class="search" placeholder="Duplica da un articolo esistente..." oninput="debounced('src', renderSourceResults)" autocomplete="off">
@@ -718,23 +826,23 @@ function itemModalBody(it, scope) {
     </div>`;
   // In modifica il tipo è bloccato: resta l'unica voce dell'articolo, qualunque sia lo scope
   const types = it ? [it.type] : sc.types;
-  return `${sourcePicker}
+  return `${itemLockNote(lock)}${sourcePicker}
     <div class="modal-grid">
       <div class="modal-field"><label>Tipo</label>
         <select id="it-type" onchange="toggleItemFields()" ${it ? 'disabled' : ''}>
           ${types.map(x => `<option value="${x}" ${t === x ? 'selected' : ''}>${TYPE_OPTION_LABELS[x]}</option>`).join('')}
         </select>
       </div>
-      <div class="modal-field"><label>Codice</label><input id="it-code" value="${it ? esc(it.code) : ''}" oninput="markCodeManual()"></div>
+      <div class="modal-field"><label>Codice</label><input id="it-code" value="${it ? esc(it.code) : ''}" oninput="markCodeManual()" ${dis(lock.structLocked)}></div>
     </div>
-    <div class="modal-field" id="fld-name-std"><label>Nome</label><input id="it-name" value="${it ? esc(it.name) : ''}"></div>
+    <div class="modal-field" id="fld-name-std"><label>Descrizione</label><input id="it-name" value="${it ? esc(it.name) : ''}" ${dis(lock.nameLocked)}></div>
     <div class="modal-grid" id="fld-name-parte">
       <div class="modal-field"><label>Concetto</label>
-        <select id="it-concept" onchange="updatePartNamePreview()">${conceptOptions(it ? it.conceptId : '')}</select></div>
+        <select id="it-concept" onchange="updatePartNamePreview()" ${dis(lock.nameLocked)}>${conceptOptions(it ? it.conceptId : '')}</select></div>
       <div class="modal-field"><label>Descrizione</label>
-        <input id="it-namefree" value="${it ? esc(it.nameFree != null ? it.nameFree : it.name) : ''}" oninput="updatePartNamePreview()"></div>
+        <input id="it-namefree" value="${it ? esc(it.nameFree != null ? it.nameFree : it.name) : ''}" oninput="updatePartNamePreview()" ${dis(lock.nameLocked)}></div>
       <div class="modal-field" style="grid-column:1/-1;margin-top:-4px">
-        <span class="empty-text" style="padding:0">Nome: <strong id="part-name-preview"></strong></span></div>
+        <span class="empty-text" style="padding:0">Descrizione: <strong id="part-name-preview"></strong></span></div>
     </div>
     <div class="modal-grid">
       <div class="modal-field"><label>Unità di misura</label><select id="it-uom" onchange="itemUomLabelsRefresh()">${uomOptions(it ? (it.uom || defaultUom()) : defaultUom())}</select></div>
@@ -747,10 +855,10 @@ function itemModalBody(it, scope) {
       ${itemPricingSummary(it)}
     </div>
     <div class="modal-grid" id="fld-family">
-      <div class="modal-field"><label>Macrofamiglia</label><select id="it-family" onchange="onItemFamilyChange()">${familyOptions(it ? it.familyId : '', usesFamily(t) ? t : '')}</select></div>
-      <div class="modal-field"><label>Sottofamiglia</label><select id="it-subfamily" onchange="onItemSubFamilyChange()">${subFamilyOptions(it ? it.familyId : '', it ? it.subFamilyId : '')}</select></div>
+      <div class="modal-field"><label>Macrofamiglia</label><select id="it-family" onchange="onItemFamilyChange()" ${dis(lock.structLocked)}>${familyOptions(it ? it.familyId : '', usesFamily(t) ? t : '')}</select></div>
+      <div class="modal-field"><label>Sottofamiglia</label><select id="it-subfamily" onchange="onItemSubFamilyChange()" ${dis(lock.structLocked)}>${subFamilyOptions(it ? it.familyId : '', it ? it.subFamilyId : '')}</select></div>
     </div>
-    ${codingFieldsHtml(it)}
+    ${codingFieldsHtml(it, lock.structLocked)}
     <div class="modal-field" id="fld-cycle">
       <label>Distinta parte e ciclo di lavorazione</label>
       <span class="empty-text" style="padding:0">${it
@@ -818,35 +926,36 @@ function groupOptions(machineId, selectedId) {
   return `<option value="">—</option>` + groupItemsFor(machineId)
     .map(g => `<option value="${g.id}" ${g.id === selectedId ? 'selected' : ''}>${esc((g.sigla ? g.sigla + ' — ' : '') + g.name)}</option>`).join('');
 }
-function codingFieldsHtml(it) {
+function codingFieldsHtml(it, structLocked) {
   const sm = machineScheme(it);
   const macId = it ? (it.machineItemId || '') : '';
   const grpId = it ? (it.groupItemId || '') : '';
   const gsm = machineScheme(getItem(macId));
+  const dis = structLocked ? 'disabled' : '';
   return `
     <div id="fld-coding-mac" class="modal-grid">
       <div class="modal-field"><label>Sigla macchina</label>
         <input id="it-sigla-mac" maxlength="10" value="${it ? esc(it.sigla || '') : ''}" placeholder="es. TRN"
           style="text-transform:uppercase;font-family:var(--mono);font-weight:700"
-          oninput="this.value=this.value.toUpperCase();refreshItemCode()"></div>
+          oninput="this.value=this.value.toUpperCase();refreshItemCode()" ${dis}></div>
       <div class="modal-field"><label>N° car. sigla gruppo</label>
-        <input type="number" id="it-glen" min="1" max="10" value="${sm.gLen}" onchange="refreshItemCode()"></div>
+        <input type="number" id="it-glen" min="1" max="10" value="${sm.gLen}" onchange="refreshItemCode()" ${dis}></div>
       <div class="modal-field"><label>Tipo car. sigla gruppo</label>
-        <select id="it-gtype" onchange="refreshItemCode()">${typeOptionsHtml(sm.gType)}</select></div>
+        <select id="it-gtype" onchange="refreshItemCode()" ${dis}>${typeOptionsHtml(sm.gType)}</select></div>
       <div class="modal-field"><label>Cifre progressivo S## </label>
-        <input type="number" id="it-incrs" min="1" max="6" value="${sm.incrS}" onchange="refreshItemCode()"></div>
+        <input type="number" id="it-incrs" min="1" max="6" value="${sm.incrS}" onchange="refreshItemCode()" ${dis}></div>
       <div class="modal-field"><label>Cifre numerazione ###</label>
-        <input type="number" id="it-incrn" min="1" max="6" value="${sm.incrN}" onchange="refreshItemCode()"></div>
+        <input type="number" id="it-incrn" min="1" max="6" value="${sm.incrN}" onchange="refreshItemCode()" ${dis}></div>
     </div>
     <div id="fld-coding-child" class="modal-grid">
       <div class="modal-field"><label>Macchina</label>
-        <select id="it-machine" onchange="onItemMachineChange()">${machineOptions(macId)}</select></div>
+        <select id="it-machine" onchange="onItemMachineChange()" ${dis}>${machineOptions(macId)}</select></div>
       <div class="modal-field" id="fld-coding-gsigla"><label id="it-sigla-grp-label">Sigla gruppo (${typeHint(gsm.gLen, gsm.gType)})</label>
         <input id="it-sigla-grp" maxlength="${gsm.gLen}" value="${it && it.type === 'gruppo' ? esc(it.sigla || '') : ''}" placeholder="es. BAS"
           style="text-transform:uppercase;font-family:var(--mono);font-weight:700"
-          oninput="this.value=this.value.toUpperCase();refreshItemCode()"></div>
+          oninput="this.value=this.value.toUpperCase();refreshItemCode()" ${dis}></div>
       <div class="modal-field" id="fld-coding-group"><label>Gruppo</label>
-        <select id="it-group" onchange="refreshItemCode()">${groupOptions(macId, grpId)}</select></div>
+        <select id="it-group" onchange="refreshItemCode()" ${dis}>${groupOptions(macId, grpId)}</select></div>
     </div>`;
 }
 function onItemMachineChange() {
@@ -918,11 +1027,12 @@ function toggleItemFields() {
   mostra('fld-family', showFam);
   mostra('fld-assembly-note', isAssembly(t));
   mostra('fld-cycle', t === 'parte');
-  // Flag: preferito su commerciali e materie prime, obsoleto anche sulle parti
-  const showObs = t === 'acquistato' || t === 'materiale' || t === 'parte';
+  // Flag: preferito su commerciali e materie prime, obsoleto su qualunque tipo
+  // — è l'unico modo per ritirare un codice già usato e sbagliato, senza
+  // eliminarlo e perdere lo storico che lo referenzia.
   mostra('fld-flag-fav', canFavorite(t));
-  mostra('fld-flag-obs', showObs);
-  mostra('fld-flags', showObs);
+  mostra('fld-flag-obs', true);
+  mostra('fld-flags', true);
   // Magazzino: solo su ciò che si tiene a scorta. Un assieme si produce, e la
   // sua giacenza sarebbe quella dei componenti contata due volte.
   mostra('fld-stock', hasStock({ type: t }));
@@ -1045,6 +1155,10 @@ function openCycleFor(id) {
   if (!it || it.type !== 'parte') return;
   currentCycleItemId = id;
   setVal('cyc-search', ''); setVal('cyc-family', ''); setVal('cyc-subfamily', '');
+  // Anche lo scope condiviso (filters.js), altrimenti setView lo riscriverebbe
+  // subito dopo sui campi appena svuotati, e la parte scelta potrebbe restare
+  // fuori dal filtro come prima di questa pulizia.
+  if (typeof filtScope !== 'undefined') { filtScope.familyId = ''; filtScope.subFamilyId = ''; filtPrefsSave(); }
   setView('cycles');
 }
 function currentCycleItem() {
@@ -1072,6 +1186,7 @@ function cycleSourcingNote(it) {
 function renderCycles() {
   invalidateCaches();   // la cache dei costi vive dentro un singolo disegno
   updateCycleFamilyFilters();
+  filtScopeApply('cycles');   // dopo il sync, non prima: vedi nota in renderCatalog
   const parts = cycleFilteredParts();
   ensureCurrentCycleItem(parts);
   const partSel = document.getElementById('cyc-part');
@@ -1087,6 +1202,7 @@ function renderCycles() {
     body.innerHTML = `<div class="empty-text">${partItems().length
       ? 'Nessuna parte con questi filtri.'
       : `Nessuna parte a catalogo. Creane una in <strong>${ico('contacts', 'tinted')} Anagrafica → Progetto → + Nuovo articolo</strong>.`}</div>`;
+    filtMount('cycles');
     return;
   }
   renderCycleSummary(it);
@@ -1112,6 +1228,7 @@ function renderCycles() {
       <div id="picker-op"></div>
     </div>`;
   a11yFields(body);
+  filtMount('cycles');
 }
 // Riepilogo in cima: le due metà del costo separate, come le due sezioni sotto.
 function renderCycleSummary(it) {
@@ -1379,8 +1496,10 @@ function closeCyclePicker() {
 function addCycleItemRow() {
   if (!roleGuard('catalog')) return;
   const box = document.getElementById('picker-bom'); if (!box) return;
+  // Un articolo Obsoleto resta dov'è già inserito nei cicli, ma non si propone
+  // più come NUOVO materiale/commerciale.
   window.__cyclePickerCandidates = db.items
-    .filter(i => CYCLE_CHILD_TYPES.includes(i.type))
+    .filter(i => CYCLE_CHILD_TYPES.includes(i.type) && !i.obsolete)
     .sort((a, b) => String(a.code).localeCompare(String(b.code)));
   if (!window.__cyclePickerCandidates.length) {
     showToast('Nessun commerciale o materia prima a catalogo.', 'error'); return;
@@ -1505,16 +1624,23 @@ function pickCycleOp() {
   touch(it); saveDB(); renderCycles(); savedToast('Lavorazione aggiunta');
 }
 
+// La scheda si apre **prima**, e solo se si apre davvero si dichiara su cosa si
+// sta lavorando. openModal() può rifiutare — con un'altra scheda già aperta
+// chiede conferma, e «Annulla» vuol dire «lascia le cose come stanno» — ma lo
+// stato era già stato riscritto sopra: restava la scheda di prima a schermo con
+// le variabili che parlavano di un altro articolo. Un «Annulla» che cambia
+// qualcosa è peggio del problema che voleva evitare.
 function newItemModal(scope) {
   if (!roleGuard('catalog')) return;
   scope = CATALOG_SCOPES[scope] ? scope : 'buy';
+  const p = openModal(`<h3>${ico(scope === 'buy' ? 'package' : 'tree', 'tinted pill', '')} Nuovo articolo — ${esc(CATALOG_SCOPES[scope].title)}</h3>${itemModalBody(null, scope)}
+    <div class="modal-actions"><button class="btn-ghost" onclick="closeModal()">Annulla</button>
+      <button class="add-btn-sm" onclick="saveNewItem()">Crea</button></div>`, true);
+  if (!p) return;
   itemCodeAuto = true;
   window.__dupSourceId = null;
   window.__editingItemId = null;
   window.__itemScope = scope;
-  openModal(`<h3>${ico(scope === 'buy' ? 'package' : 'tree', 'tinted pill', '')} Nuovo articolo — ${esc(CATALOG_SCOPES[scope].title)}</h3>${itemModalBody(null, scope)}
-    <div class="modal-actions"><button class="btn-ghost" onclick="closeModal()">Annulla</button>
-      <button class="add-btn-sm" onclick="saveNewItem()">Crea</button></div>`, true);
   toggleItemFields();
 }
 // Ricerca live di un articolo sorgente da cui duplicare (tutti i tipi).
@@ -1571,14 +1697,21 @@ function duplicateItemModal(id) {
   applyItemSource(id);
 }
 function readItemForm(it) {
-  it.code = val('it-code') || it.id;
+  // Difesa in profondità: gli stessi campi che la scheda disabilita non si
+  // riscrivono nemmeno da qui, indipendentemente da cosa contiene il form —
+  // un campo disabled non cambia valore da solo, ma non è questo il punto in
+  // cui fidarsi del DOM è la sola garanzia.
+  const lock = itemLockState(it);
+  if (!lock.structLocked) it.code = val('it-code') || it.id;
   // Le parti compongono il nome da concetto + descrizione libera; gli altri tipi restano a testo libero
-  if (it.type === 'parte') {
-    it.conceptId = val('it-concept');
-    it.nameFree = val('it-namefree');
-    it.name = composePartName(it.conceptId, it.nameFree);
-  } else {
-    it.name = val('it-name');
+  if (!lock.nameLocked) {
+    if (it.type === 'parte') {
+      it.conceptId = val('it-concept');
+      it.nameFree = val('it-namefree');
+      it.name = composePartName(it.conceptId, it.nameFree);
+    } else {
+      it.name = val('it-name');
+    }
   }
   it.uom = val('it-uom') || defaultUom();
   it.notes = val('it-notes');
@@ -1607,24 +1740,26 @@ function readItemForm(it) {
     const attiva = activePriceRow(it);
     if (attiva) applyPriceRow(it, attiva);
   }
-  // Flag: preferito (solo commerciali e materie prime), obsoleto (anche parti)
+  // Flag: preferito (solo commerciali e materie prime), obsoleto (qualunque tipo)
   if (canFavorite(it.type)) it.favorite = isChecked('it-favorite');
-  if (it.type === 'acquistato' || it.type === 'materiale' || it.type === 'parte') it.obsolete = isChecked('it-obsolete');
+  it.obsolete = isChecked('it-obsolete');
   // Prezzo, fornitore, codice e descrizione presso il fornitore NON si leggono
   // da qui: li scrive solo applyPriceRow() quando si sceglie una quotazione.
   // Solo un valore valido sovrascrive: in creazione il campo può non esserci
   // ancora, e lì vale il default delle impostazioni scritto da saveNewItem.
   if (it.type === 'parte') { const s = val('it-sourcing'); if (PART_SOURCING[s]) it.sourcing = s; }
-  if (usesFamily(it.type)) { it.familyId = val('it-family'); it.subFamilyId = val('it-subfamily'); }
+  if (usesFamily(it.type) && !lock.structLocked) { it.familyId = val('it-family'); it.subFamilyId = val('it-subfamily'); }
   // Codifica gerarchica: schema sulla macchina, appartenenza sugli altri tipi
-  const d = itemDraftFromForm();
-  if (it.type === 'macchina') {
-    it.sigla = d.sigla; it.gCodeLen = d.gCodeLen; it.gCodeType = d.gCodeType;
-    it.incrDigitsS = d.incrDigitsS; it.incrDigitsN = d.incrDigitsN;
-  } else if (it.type === 'gruppo') {
-    it.machineItemId = d.machineItemId; it.sigla = d.sigla;
-  } else if (it.type === 'sottogruppo' || it.type === 'parte') {
-    it.machineItemId = d.machineItemId; it.groupItemId = d.groupItemId;
+  if (!lock.structLocked) {
+    const d = itemDraftFromForm();
+    if (it.type === 'macchina') {
+      it.sigla = d.sigla; it.gCodeLen = d.gCodeLen; it.gCodeType = d.gCodeType;
+      it.incrDigitsS = d.incrDigitsS; it.incrDigitsN = d.incrDigitsN;
+    } else if (it.type === 'gruppo') {
+      it.machineItemId = d.machineItemId; it.sigla = d.sigla;
+    } else if (it.type === 'sottogruppo' || it.type === 'parte') {
+      it.machineItemId = d.machineItemId; it.groupItemId = d.groupItemId;
+    }
   }
   // Distinta parte, ciclo e modo di calcolo non passano da qui: si modificano
   // nella vista Cicli di lavorazione, che salva per conto suo.
@@ -1673,7 +1808,7 @@ function validateItemName(type) {
     if (!val('it-namefree')) return 'Descrizione richiesta';
     return null;
   }
-  return val('it-name') ? null : 'Nome richiesto';
+  return val('it-name') ? null : 'Descrizione richiesta';
 }
 function saveNewItem() {
   if (!roleGuard('catalog')) return;
@@ -1728,15 +1863,18 @@ function saveNewItem() {
 // La scheda articolo ricorda chi si sta modificando: chiusa, non deve
 // ricordarlo più — itemDraftFromForm legge questa variabile.
 onPanelClose('form', () => { window.__editingItemId = null; window.__itemScope = null; });
+// Stesso ordine di newItemModal, e per la stessa ragione.
 function editItemModal(id) {
   if (!roleGuard('catalog')) return;
   const it = getItem(id); if (!it) return;
-  itemCodeAuto = false; // in modifica non si rigenera mai il codice esistente
-  window.__editingItemId = id;
-  window.__itemScope = scopeOf(it.type);
-  openModal(`<h3>${ico('edit', 'tinted pill', '')} Modifica articolo</h3>${itemModalBody(it, window.__itemScope)}
+  const scope = scopeOf(it.type);
+  const p = openModal(`<h3>${ico('edit', 'tinted pill', '')} Modifica articolo</h3>${itemModalBody(it, scope)}
     <div class="modal-actions"><button class="btn-ghost" onclick="closeModal()">Annulla</button>
       <button class="add-btn-sm" onclick="saveItemEdit('${id}')">Salva</button></div>`, true);
+  if (!p) return;
+  itemCodeAuto = false; // in modifica non si rigenera mai il codice esistente
+  window.__editingItemId = id;
+  window.__itemScope = scope;
   toggleItemFields();
 }
 function saveItemEdit(id) {
@@ -1759,6 +1897,15 @@ function delItem(id) {
   // da lì si vede chi lo contiene e si può risalire.
   const used = usedBy(id);
   if (used.length) { showToast('Usato in ' + used.length + ' articoli: rimuovilo prima.', 'error'); usageModal(id); return; }
+  // Oltre a distinte/cicli, il codice può essere già in movimenti di
+  // magazzino, documenti, piani o revisioni congelate: nessuno di questi lo
+  // rende "genitore" di niente (usedBy non lo vede), ma cancellarlo perderebbe
+  // comunque quello storico. Qui non c'è eccezione di ruolo: l'unica via per
+  // ritirare un codice sbagliato è marcarlo Obsoleto.
+  if (isItemUsedAnywhere(id)) {
+    showToast('Articolo già movimentato (magazzino, cicli, documenti o piani): non può essere eliminato. Segnalo come obsoleto per impedirne il riuso.', 'error');
+    return;
+  }
   askConfirm(`Eliminare "${it.name}"?`, () => {
     if (currentBomId === id) currentBomId = null;
     removeConUndo('items', id, `"${it.name}" eliminato`, renderCatalogs);

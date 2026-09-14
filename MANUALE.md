@@ -101,11 +101,20 @@ Vale la pena dirlo subito, perché evita di cercare funzioni che non ci sono.
 - **Non schedula la produzione.** Il *Carico centri* mostra le ore che i piani chiedono a ciascun
   centro settimana per settimana, e segnala il sovraccarico. Non lo risolve: non c'è calendario,
   non c'è data di avvio di una fase, la capacità è **infinita**.
-- **Non schedula, ma l'avanzamento ce l'ha.** Dalla 0.74 gli **ordini di produzione**
-  (→ [cap. 22](#22-ordini-di-produzione-odp)) seguono una parte fase per fase: si dichiarano pezzi
-  fatti e scarti, e il magazzino si muove ai due estremi del ciclo. Quello che continua a mancare è
-  il *quando*: nessuna data di avvio, nessun calendario, nessuna capacità finita.
+- **Non schedula.** L'avanzamento c'è, e da due strade che rispondono a due domande diverse.
+  Nella tabella *Da fabbricare* di un piano si dichiara **quanti pezzi sono stati fatti** (dalla
+  0.77.0): è una dichiarazione per **parte finita**, non per fase superata — un pezzo fermo a metà
+  ciclo conta ancora come tutto da fare — e serve a non rimandare al terzista una lavorazione già
+  fatta. Gli **ordini di produzione** (→ [cap. 22](#22-ordini-di-produzione-odp)) seguono invece una
+  parte **fase per fase**: lì si dichiarano pezzi buoni e scarti, e il magazzino si muove ai due
+  estremi del ciclo.
+  Quello che continua a mancare è il *quando*: nessuna data di avvio, nessun calendario, nessuna
+  capacità finita. E fuori da un ordine di produzione il magazzino resta com'era — si muove con i
+  movimenti e con i ricevimenti, perché due strade per la stessa giacenza darebbero due verità.
 - **Non è un gestionale amministrativo.** Niente fatture, niente contabilità, niente DDT.
+- **Non archivia i documenti nel database.** Disegni e schede tecniche si allegano agli articoli
+  (dalla 0.77.0), ma i file stanno **su questo computer**, fuori dall'archivio: il backup JSON ne
+  porta l'elenco e non il contenuto. Prima di trasferirti su un altro PC vanno riscaricati a mano.
 - **Non è multi-utente in tempo reale.** Ogni PC ha il suo archivio. Due colleghi che lavorano su
   due PC lavorano su due copie diverse: si allineano con un backup
   (→ [cap. 30](#30-backup-e-manutenzione)). L'archivio condiviso è progettato ma non ancora
@@ -546,8 +555,8 @@ Nella barra dei filtri, a destra: **Colonne** e **+ Nuovo articolo**.
 | Sottofamiglia | Tutte le sottofamiglie · *(quelle della famiglia scelta)* |
 | ★ Solo preferiti | Interruttore: mostra solo gli articoli marcati preferiti |
 
-**Colonne disponibili** (pulsante **Colonne**): Indicatori, **Codice**, **Nome**, Tipo, Famiglia,
-U.M., Costo unitario, Dettaglio. Codice e nome non si nascondono: sono l'identità della riga.
+**Colonne disponibili** (pulsante **Colonne**): Indicatori, **Codice**, **Descrizione**, Tipo, Famiglia,
+U.M., Costo unitario, Dettaglio. Codice e descrizione non si nascondono: sono l'identità della riga.
 La scelta resta anche domani, ed è **separata** da quella di *Progetto* — le due anagrafiche hanno
 le stesse colonne ma si guardano per motivi diversi.
 
@@ -614,7 +623,7 @@ un costo che non c'è.
 | **Parti da** | solo in creazione | Ricerca live: si sceglie un articolo esistente e la scheda si precompila con i suoi dati. Facoltativo. |
 | **Tipo** | sempre | **Bloccato in modifica**: un commerciale non diventa una parte. |
 | **Codice** | sempre | Proposto automaticamente (→ [cap. 9](#9-i-codici-automatici)). **Appena lo si edita a mano, l'app smette di rigenerarlo.** |
-| **Nome** | tutti i tipi tranne le parti | Testo libero. |
+| **Descrizione** | tutti i tipi tranne le parti | Testo libero. |
 | **Concetto** + **Descrizione** | **solo parti** | Il nome di una parte è composto: `ALBERO` + `motore 20×100` → `ALBERO motore 20×100`. Il concetto è **obbligatorio** e si sceglie dall'elenco di *Gestione → Concetti*. Sotto i due campi c'è l'anteprima del nome che ne esce. |
 | **Unità di misura** | sempre | Dall'elenco di *Gestione → Unità di misura*. |
 | **Approvvigionamento** | solo parti | *Produzione interna* / *Acquisto da fornitore* (→ [cap. 7](#7-anagrafica--progetto)). |
@@ -641,6 +650,66 @@ fondo la **riga autore**: chi ha creato il record e chi l'ha aggiornato per ulti
 | **Dove è usato** | Chi lo contiene, con simulazione del costo (→ [cap. 11](#11-dove-è-usato-e-simulazione-del-costo)) |
 | **Scheda completa** | La scheda di sola lettura, tutto insieme |
 | **Duplica** | Crea un nuovo articolo copiando questo |
+
+### Allegati: i documenti dell'articolo
+
+Disegni, schede tecniche e cataloghi in PDF si appendono a un articolo dal pulsante 📁
+**Allegati** sulla riga di catalogo, o dal pannello laterale (Ctrl+I), che ne mostra il numero.
+Accanto c'è il pulsante **apri documento**: apre il PDF in una scheda nuova, e se i documenti
+sono più di uno apre l'elenco invece di indovinare quale serva.
+
+**I PDF non stanno dentro Bomtrack.** Stanno in una **cartella d'archivio**, e l'app ne memorizza
+soltanto il percorso. La cartella può essere sul PC oppure essere quella locale di un servizio
+sincronizzato (OneDrive, Dropbox): in quel caso i documenti sono già su tutte le macchine, senza
+che Bomtrack sincronizzi niente. Il vantaggio si vede in tre punti: il backup JSON porta davvero i
+collegamenti, lo stesso catalogo non viene copiato per ogni codice che lo cita, e un disegno
+aggiornato nella cartella è aggiornato anche in Bomtrack, senza riallegare niente.
+
+**La cartella la sceglie ogni PC, una volta.** Non sta nel database di proposito: ogni macchina ha
+il suo archivio, e scriverlo nel database imporrebbe a tutti la lettera di unità di chi l'ha
+configurato per primo. Si sceglie con la finestra di sistema, dalla scheda Allegati o da
+*Gestione → Backup*, e il browser se la ricorda. Può chiedere una conferma del permesso alla
+prima apertura di giornata: è normale, e si concede con un click.
+
+> ⚠️ **Serve Chrome o Edge**, e Bomtrack va aperta dal suo indirizzo. Aprendo `index.html`
+> con un doppio click il browser non ha nessuna origine sotto cui ricordare un permesso, e
+> l'archivio non è disponibile: la scheda lo dice in chiaro, e lì resta il vecchio caricamento
+> del file dentro l'app.
+
+**Un documento vale per più codici.** È il caso normale dei commerciali: lo stesso catalogo
+appeso a tutti gli articoli di una serie. Il documento è censito una volta sola e i codici ci si
+*collegano*, con queste conseguenze:
+
+- la **descrizione** appartiene al documento — `SKF-CAT-RS4412-IT-rev3.pdf` non dice niente a
+  nessuno, e la descrizione è ciò che si legge nella scheda; riscriverla da un codice la
+  corregge per tutti;
+- la **pagina** appartiene invece al singolo collegamento: un catalogo di trecento pagine si apre
+  dove serve a *quel* codice;
+- **scollegare** toglie il documento da un codice; il file resta in archivio e resta allegato agli
+  altri. Un documento citato da almeno un codice non si elimina dall'elenco;
+- se il PDF viene **rinominato o spostato**, si corregge in un punto solo con **Ricollega**
+  (*Gestione → Backup*), e tutti i codici che lo citavano seguono.
+
+**Quando qualcosa non va, il messaggio dice quale delle tre cose è successa:**
+
+| Messaggio | Cosa vuol dire | Che fare |
+|---|---|---|
+| **NESSUN DOCUMENTO SALVATO** | A quel codice non è ancora collegato niente | Collegare un documento |
+| **Archivio allegati non impostato su questo PC** | Il documento c'è, ma questa macchina non sa dove cercarlo | Scegliere la cartella (il pulsante è lì) |
+| **DOCUMENTO NON TROVATO** | Il file non è più in quella cartella: rinominato, spostato, o non ancora sincronizzato | Verificare l'archivio e **Ricollega**; se è il cloud, aspettare la sincronizzazione |
+
+**Un PDF che sta fuori dall'archivio non si può collegare**: sul desktop di chi lo sceglie esiste,
+sugli altri PC no. Il pannello lo dice e offre di **copiarlo nell'archivio**, senza mai
+sovrascrivere un file che ha già quel nome.
+
+**La verifica.** In *Gestione → Backup*, **Verifica archivio** scorre la cartella e nomina i
+documenti che non ci sono più: una volta per documento, non una per collegamento. Serve perché
+un collegamento rotto è l'unico difetto di questo modo di lavorare che non si annuncia da sé —
+lo si scoprirebbe il giorno che qualcuno prova ad aprire il disegno.
+
+**Gli allegati caricati dentro l'app** prima della versione 0.78.0 restano dove sono e continuano
+a funzionare, in una sezione separata della scheda. Di quelli il backup JSON porta l'elenco e non
+il contenuto: prima di trasferire i dati su un altro PC vanno riscaricati a mano.
 
 ---
 
@@ -827,7 +896,7 @@ Gruppi · Sottogruppi); **macchina di appartenenza**; il menu della distinta ape
 
 | Campo | Note |
 |---|---|
-| Codice · U.M. · Nome | **Bloccati**: si modificano in *Anagrafica → Progetto* |
+| Codice · U.M. · Descrizione | **Bloccati**: si modificano in *Anagrafica → Progetto* |
 | **Spese generali % (override)** | Sostituisce la percentuale globale, solo per questa macchina |
 | **Margine % (override)** | Idem |
 | Note | Testo libero |
@@ -1169,14 +1238,26 @@ Gli **indicatori di riga**:
 | `✓ coperto` | Non serve ordinare niente |
 | *(impegno)* | Quanta parte è impegnata da altri piani |
 
-**Da far lavorare fuori** — le fasi di ciclo affidate a un terzista. **Il netto non si applica
-qui**, ed è dichiarato in pagina: una fase non sta a scaffale, e sapere quanti pezzi sono già stati
-lavorati l'app adesso li sa — glieli dicono gli ordini di produzione
-(→ [cap. 22](#22-ordini-di-produzione-odp)) — ma nettarli richiede di decidere cosa fare delle fasi
-coperte da ordini di *altri* piani, che è la stessa discussione dell'impegnato sul materiale:
-finché non è fatta, qui la quantità resta lorda.
+**Da far lavorare fuori** — le fasi di ciclo affidate a un terzista. Le quantità sono **al netto
+dei pezzi dichiarati fatti** in *Da fabbricare*: una parte finita ha già attraversato tutte le sue
+fasi, e mandarla fuori un'altra volta vorrebbe dire pagare due volte lo stesso lavoro. Una parte
+ferma a metà ciclo conta invece ancora per intero — si dichiara la parte finita, non la fase
+superata — quindi il conto è prudente: si rischia di riproporre una lavorazione già avviata, mai
+di dimenticarne una da fare.
 
-**Da fabbricare** — le parti a produzione interna che il piano richiede.
+Una fase **coperta da un ordine di produzione** (→ [cap. 22](#22-ordini-di-produzione-odp)) è il
+caso in cui la fase superata si sa davvero: quella esce da qui e porta il badge «coperta da
+ODP-…», perché l'ordine di lavoro si genera da lì, quando la fase precedente è chiusa.
+
+**Da fabbricare** — le parti a produzione interna che il piano richiede, con l'**avanzamento**:
+quante ne sono state fatte e quante ne restano. Il pulsante 🏭 in fondo alla riga apre la scheda in
+cui si dichiara: si scrive quanti pezzi sono stati fatti (il modulo propone il residuo, che è il
+caso più frequente), si può aggiungere una nota, e resta lo storico di chi ha dichiarato cosa e
+quando. Un numero **negativo** corregge un conteggio sbagliato, come una rettifica di magazzino:
+lo storico non si riscrive, si aggiunge.
+
+Dichiarare pezzi fatti **non muove il magazzino** e non annulla le righe d'acquisto del piano: il
+materiale per una parte si compra prima di farla.
 
 **Carico dei centri** — la stessa tavola del [cap. 24](#24-carico-dei-centri-di-lavoro), ristretta
 a questo piano.
@@ -1978,10 +2059,12 @@ Sono cinque cose, e quattro si possono già preparare oggi.
 | **Il primo limite che si incontra** | Non è lo spazio, è la **banda**. Si risolve scaricando a ogni giro solo quello che è cambiato, non tutto |
 | **Cosa cresce davvero** | I **movimenti di magazzino** e le **revisioni** rilasciate. Il catalogo, per quanto grande, pesa poco |
 
-> ⚠️ **Gli allegati cambiano il conto di colpo.** Oggi l'app non ha disegni, PDF né foto. Il
-> giorno in cui una richiesta d'offerta portasse con sé il disegno, 1 GB sono circa **mille PDF da
-> 1 MB**: poche centinaia di articoli con un disegno e due revisioni. È la funzione che, più di
-> ogni crescita del catalogo, porta Bomtrack fuori dal piano gratuito.
+> ✅ **Gli allegati non pesano su questo conto.** Era la voce che più di ogni altra avrebbe
+> portato Bomtrack fuori dal piano gratuito — 1 GB sono circa **mille PDF da 1 MB**, cioè poche
+> centinaia di articoli con un disegno — e dalla 0.78.0 non lo fa più: i PDF stanno in una
+> cartella fuori dall'app (→ [cap. 8](#8-la-scheda-articolo-campo-per-campo)), e di essi il
+> database porta il **percorso**, che pesa quanto una riga di testo. Restano da contare solo i
+> file caricati dentro l'app prima di quella versione.
 
 ### Fino ad allora
 
@@ -2197,10 +2280,17 @@ JSON.
 | `bomtrack_theme` | Il tema scelto |
 | `bomtrack_session` | La sessione aperta |
 | `bomtrack_columns` | Le colonne nascoste, per vista |
+| `bomtrack_archivio_nome` | Il nome della cartella d'archivio scelta su questo PC |
 | *(chiave email)* | L'email ricordata da «Ricordami su questo PC» |
 
-Le ultime quattro sono **preferenze personali**, non dati aziendali: non entrano nel backup e non
-si condividono.
+Le ultime cinque sono **preferenze personali di questa macchina**, non dati aziendali: non entrano
+nel backup e non si condividono. La cartella d'archivio sta fra queste di proposito: ogni PC ha la
+sua, e importarla da un backup imporrebbe a tutti la lettera di unità del primo che l'ha scelta.
+
+**Fuori da `localStorage`** stanno due cose, entrambe fatte di file. In **IndexedDB** i byte degli
+allegati caricati dentro l'app prima della 0.78.0. Nella **cartella d'archivio** i PDF dei
+documenti (→ [cap. 8](#8-la-scheda-articolo-campo-per-campo)): quella cartella non appartiene a
+Bomtrack, che ci guarda dentro e basta.
 
 **Lo schema è versionato** (`SCHEMA_VERSION = 2`; la v1 usava id interi, la v2 usa UUID e
 timestamp). Le migrazioni sono **idempotenti**: un backup vecchio si auto-migra all'import.
@@ -2214,6 +2304,9 @@ timestamp). Le migrazioni sono **idempotenti**: un backup vecchio si auto-migra 
 | `items` | **Gli articoli** — tutti e sei i tipi | `components`, `operations`, `cycle`, `priceList` |
 | `revisions` | Le revisioni congelate | — |
 | `movements` | I movimenti di magazzino | — |
+| `productions` | Le dichiarazioni di avanzamento di produzione | — |
+| `attachmentDocs` | **I documenti d'archivio**: il percorso di un PDF dentro la cartella, e la sua descrizione. Uno per file, mai duplicato | — |
+| `attachments` | **I legami** fra un articolo e un allegato: con `docId` è un documento d'archivio (e può portare la `page`), senza è un file custodito in IndexedDB | — |
 | `suppliers` · `customers` | Fornitori e clienti | — |
 | `workCenters` | I centri di lavoro | `suppliers` (fornitori conto lavoro) |
 | `families` | Le famiglie articolo | `subs` (sottofamiglie) |
@@ -2261,6 +2354,8 @@ Ogni record porta `id` (UUID), `createdAt` / `updatedAt`, `createdBy` / `updated
 | `views-jobs.js` · `views-docs.js` | Commesse · RFQ, ODA, ODL |
 | `views-prod.js` | Ordini di produzione: fasi congelate, avanzamento, movimenti |
 | `views-manage.js` | Gestione |
+| `produzione.js` | Avanzamento di produzione |
+| `allegati.js` · `archivio.js` | Allegati e documenti degli articoli · la cartella d'archivio (scelta, permesso, lettura, copia, verifica) |
 | `export-lists.js` · `import-catalog.js` · `import-export.js` | Export elenchi · import articoli · import distinte, backup, avvio |
 | `cloud-map.js` | Traduzione della forma dati verso un futuro backend. Funzioni pure, nessun codice di rete |
 | `vendor/` | jsPDF, jsPDF-AutoTable, SheetJS |

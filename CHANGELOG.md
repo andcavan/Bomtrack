@@ -2,7 +2,7 @@
 
 Le revisioni seguono il versionamento semantico `0.MINOR.PATCH`: **MINOR** per nuove funzionalità, **PATCH** per correzioni. La versione in cima è quella in `APP_VERSION` (`core.js`) e mostrata nell'header dell'app.
 
-### 0.74.0 — 2026-09-14
+### 0.79.0 — 2026-09-14
 
 **Nasce l'ordine di produzione (ODP): la successione delle fasi, e il magazzino che si muove anche per chi lavora in casa.**
 
@@ -56,9 +56,155 @@ Il pulsante «Sblocca per modifica» di un **ordine di lavoro** chiamava `rfqUnl
 Il fabbisogno dichiarava di non poter nettare le lavorazioni perché «l'app non ha un avanzamento di produzione». Adesso ce l'ha, e la frase è stata **riscritta invece che lasciata a mentire**: nettare una fase richiede di decidere cosa fare di quelle coperte da ordini di *altri* piani, che è la stessa discussione dell'impegnato sul materiale. Va fatta intera, e non è stata fatta: finché non lo è, la lavorazione resta lorda e la pagina dice perché. Stessa sorte per il limite dichiarato al primo capitolo del manuale.
 
 **Note**
-- **42 casi nuovi** in `test/produzione.test.js`, e i tre che portano il peso sono i tre cicli: *solo interne* (il materiale esce una volta, il pezzo entra una volta, nessun passaggio), *solo esterne* (due movimenti e **niente** fra Beta e Gamma — il caso che fissa la correzione), *misto*. Poi la successione col rifiuto che nomina la fase bloccante, lo scarto che restringe la fase seguente, la forzatura tracciata, il codice parte che non compare mai presso un terzista prima del versamento, il riordino del ciclo che non sposta un ordine lanciato, la riga di ODL identica a quella del piano, e la convivenza provata — lanciata una parte, la sua fase esce dal piano e le altre restano. La suite passa da 1620 a **1662** casi.
-- Nuovo file `views-prod.js`. `README.md`, `MANUALE.md` (capitolo 22 nuovo, i successivi scalano di uno) e `docs/cloud-schema.md` aggiornati: la regola dei due estremi è riscritta nella sua forma generale, con la ragione per cui fra le fasi non si scrive niente.
-- **Non fatto, e detto per non farlo nascere per sbaglio**: nessuna schedulazione (niente date di avvio, niente capacità finita), nessun netto sulle lavorazioni, nessun codice per il semilavorato fra due fasi, e il carico centri continua a mettere le ore nella settimana in cui il pezzo serve.
+- **43 casi nuovi** in `test/odp.test.js`, e i tre che portano il peso sono i tre cicli: *solo interne* (il materiale esce una volta, il pezzo entra una volta, nessun passaggio), *solo esterne* (due movimenti e **niente** fra Beta e Gamma — il caso che fissa la correzione), *misto*. Poi la successione col rifiuto che nomina la fase bloccante, lo scarto che restringe la fase seguente, la forzatura tracciata, il codice parte che non compare mai presso un terzista prima del versamento, il riordino del ciclo che non sposta un ordine lanciato, la riga di ODL identica a quella del piano, e la convivenza provata — lanciata una parte, la sua fase esce dal piano e le altre restano. La suite passa a **1825** casi.
+- Nuovo file `views-prod.js` (aggiunto anche alla cache del service worker: uno script fuori da lì funziona online e sparisce offline). `README.md`, `MANUALE.md` (capitolo 22 nuovo, i successivi scalano di uno) e `docs/cloud-schema.md` aggiornati: la regola dei due estremi è riscritta nella sua forma generale, con la ragione per cui fra le fasi non si scrive niente.
+- **Due avanzamenti, e perché restano due.** La 0.77.0 aveva già portato un avanzamento: nella tabella *Da fabbricare* si dichiara quanti pezzi di una parte sono stati fatti, e le lavorazioni già fatte non si rimandano al terzista. Risponde a una domanda diversa da questa — «quanti ne sono stati fatti» contro «a che punto è questo pezzo, fase per fase» — e dichiara di non muovere il magazzino, mentre l'ordine di produzione lo muove ai due estremi del ciclo. Convivono, e la tabella *Da fabbricare* li mostra insieme: i pezzi dichiarati fatti accanto all'ordine che li ha lanciati.
+Su una cosa dovevano però mettersi d'accordo, ed è stata sistemata qui: **un ordine di produzione si lancia per il residuo, non per il lordo**. Con quattro pezzi già dichiarati fatti su dieci, l'ordine nasce da sei — lanciarne dieci significherebbe rifare un lavoro che qualcuno ha appena dichiarato di aver fatto, che è esattamente ciò che il netto delle lavorazioni esiste per evitare. Il lordo resta in colonna, come sulle righe d'acquisto.
+
+**Non fatto, e detto per non farlo nascere per sbaglio**: nessuna schedulazione (niente date di avvio, niente capacità finita), nessun netto sulle lavorazioni, nessun codice per il semilavorato fra due fasi, e il carico centri continua a mettere le ore nella settimana in cui il pezzo serve.
+
+### 0.78.0 — 2026-09-12
+
+Gli allegati cambiano forma: i PDF escono dal database e vanno in una **cartella d'archivio**, di cui Bomtrack memorizza soltanto il percorso. La suite passa da 1749 a **1782** casi.
+
+**L'archivio è una cartella, non il database**
+Fino alla 0.77.0 un allegato veniva caricato *dentro* Bomtrack: i byte in IndexedDB, i dati nel database. Funzionava, e pagava tre prezzi che si vedevano tutti. Il backup JSON non se li portava dietro — era scritto in tre posti, ma restava una scheda vuota su ogni PC nuovo. Un catalogo che vale per quaranta codici veniva copiato quaranta volte. E il PDF dentro il browser smetteva di essere il PDF che il fornitore aggiorna: diventava una fotografia di com'era il giorno che qualcuno l'ha caricato.
+
+Ora la scelta è opposta. L'archivio **fisico** resta fuori: una cartella sul PC, o la cartella locale di un servizio sincronizzato — OneDrive, Dropbox — che è già su tutte le macchine di chi usa Bomtrack. L'app ne memorizza il **percorso relativo**, che è un dato come gli altri: passa da `Store`, entra nel backup JSON, e ripristinato altrove continua a valere purché quel PC abbia la sua copia dell'archivio. Chi aggiorna un disegno lo aggiorna nella cartella, con il programma vero, e Bomtrack punta già alla versione nuova senza che nessuno riallegi niente.
+
+**La cartella è un'impostazione di questo PC**
+Non sta nel database, e di proposito: ogni macchina ha il suo archivio, e scriverlo nel database vorrebbe dire imporre a tutti la lettera di unità di chi l'ha configurato per primo. Si sceglie una volta, con la finestra di sistema — un browser non apre un percorso scritto a mano, e non lo farà mai: è la ragione per cui esiste — e il riferimento si conserva, quindi non lo si rifà a ogni avvio. Il pulsante sta nella scheda **Allegati** e in **Gestione › Backup**: è una configurazione che deve poter sistemare chiunque apra un documento, non solo chi ha accesso a Gestione.
+
+Il prezzo è dichiarato dove serve: funziona su **Chrome ed Edge**, e solo se Bomtrack è aperta dal suo indirizzo. Aperta con un doppio click su `index.html` il browser non ha nessuna origine sotto cui ricordare un permesso, e l'archivio non è disponibile — lì la scheda lo dice in chiaro invece di mostrare un pulsante che non fa niente, e resta il vecchio caricamento nel database, perché togliere a qualcuno l'unico modo che ha di allegare non è una semplificazione.
+
+**Un documento, tanti codici**
+È il caso che ha deciso la forma dei dati, ed è quello vero dei commerciali: lo stesso catalogo appeso a tutti gli articoli di una serie. Il documento (`attachmentDocs`) è censito **una volta sola**, i codici ci si **collegano** — e da lì viene tutto il resto. Rinominare o spostare un PDF si corregge in un punto, con «Ricollega», e i quaranta codici seguono; aprendo un documento si vede da quanti codici è citato; scollegare da un codice non è eliminare il documento, e un documento citato non si elimina, come il cliente citato da una commessa. Con un record per articolo lo stesso percorso sarebbe stato scritto quaranta volte, e il giorno del rinomina ci sarebbero state quaranta righe da correggere a mano, sperando di trovarle tutte.
+
+**Descrizione e pagina**
+I nomi dei file dei fornitori non dicono niente: `SKF-CAT-RS4412-IT-rev3.pdf` non si riconosce in una scheda. Ogni documento ha quindi una **descrizione**, ed è quella che si legge; la descrizione appartiene al documento, quindi riscriverla da un codice la corregge per tutti. La **pagina** invece appartiene al singolo collegamento: un catalogo di trecento pagine si apre dove serve a *quel* codice, e il numero resta scritto anche in chiaro, perché un catalogo si consulta anche stampato.
+
+**Apri documento, e i tre messaggi**
+Un pulsante nuovo sulla riga di catalogo e nel pannello laterale (Ctrl+I) apre il documento del codice; con più documenti apre l'elenco, invece di indovinare. Gli esiti sono **tre**, non due, perché sono tre rimedi diversi: *NESSUN DOCUMENTO SALVATO* quando al codice non è ancora collegato niente; *archivio non impostato su questo PC*, con il pulsante che lo imposta lì per lì, quando è la macchina a non sapere dove guardare; *DOCUMENTO NON TROVATO*, col nome cercato e la cartella dove l'ha cercato, quando il file da lì è sparito.
+
+**La verifica dell'archivio**
+Il difetto di questo disegno è il collegamento che si rompe **in silenzio**: qualcuno rinomina un PDF e nessuno lo sa finché non prova ad aprirlo, magari mesi dopo, magari davanti a un fornitore. In *Gestione › Backup* un comando scorre la cartella e nomina i documenti che non ci sono più — una volta per documento, non una per collegamento — e da lì si ricollegano.
+
+**Copia nell'archivio**
+Un PDF scelto da fuori — sul desktop, in una mail scaricata — non si può collegare: su ogni altro PC quel percorso non esiste. Il pannello lo dice e offre di copiarlo dentro l'archivio, senza mai sovrascrivere un nome già preso: il file che c'è appartiene a qualcun altro, e il codice che lo cita non saprebbe mai di aver perso il suo.
+
+**Note**
+- **33 casi nuovi** in `test/archivio.test.js`. L'harness guadagna una **cartella d'archivio finta** — scorribile, leggibile, scrivibile, con il permesso — che permette di provare le cose che nel browser vero nessuno prova a mano: il file rinominato, il permesso negato, il PC non configurato.
+- L'IndexedDB finto dell'harness aveva **una sola tabella per tutti i nomi**. Finché esisteva solo il deposito dei byte non si notava; con la tabella `config` accanto, il riferimento alla cartella sarebbe risultato un file senza padrone e «Recupera spazio allegati» l'avrebbe buttato via. Ora le tabelle sono separate davvero, e un test lo tiene fermo.
+- Collezione nuova `attachmentDocs`, dichiarata in `SCHEMA` e seminata da `migrateDB`. Resta **fuori da `REFS`**, come `orderId` sulle righe di movimento e per la stessa ragione: REFS è la mappa degli id *legacy* da riscrivere, e questi nascono con id UUID dal primo giorno.
+- Gli allegati caricati nel database prima di questa versione **restano e continuano a funzionare**: la sezione «File nel database» compare nella scheda solo se ce n'è almeno uno, così a chi parte da zero non si racconta una forma che non deve più usare.
+
+### 0.77.0 — 2026-09-11
+
+Tre funzionalità nuove, scelte fra le mancanze che il manuale dichiara da sé. La suite passa da 1696 a **1743** casi.
+
+**Avanzamento di produzione**
+Era la prima voce di «cosa Bomtrack non fa», e la sua assenza si vedeva in un punto preciso: sul fabbisogno, accanto alle lavorazioni da mandare fuori, c'era scritto che il netto non si poteva applicare perché «sapere quanti pezzi sono già stati lavorati richiederebbe un avanzamento di produzione che l'app non ha». Ora ce l'ha. Nella tabella **Da fabbricare** ogni parte ha due colonne nuove — *fatti* e *restano* — e un pulsante che apre la scheda dell'avanzamento: si dichiara quanti pezzi sono stati fatti, con una nota, e si vede lo storico di chi ha dichiarato cosa e quando.
+
+Non è un campo che si sovrascrive ma una **dichiarazione per volta**, sommata quando serve: è la stessa scelta che l'app fa per il magazzino, dove la giacenza non è un campo ma la somma dei movimenti, e per la stessa ragione — un totale che si ricostruisce si può spiegare, e si corregge senza riscrivere il passato. Un numero negativo corregge un conteggio sbagliato, come una rettifica, e la correzione resta visibile.
+
+**Le lavorazioni già fatte non si commissionano due volte**
+È la conseguenza diretta, ed è il motivo per cui la funzione esiste: una parte dichiarata finita ha attraversato tutte le sue fasi, quindi sparisce da «da far lavorare fuori» invece di finire in un ordine di lavoro che pagherebbe una seconda volta lo stesso lavoro. Quantità, ore e importi delle fasi seguono il netto. Il limite è dichiarato in chiaro dove si legge: una parte ferma **a metà ciclo** conta ancora per intero, perché si dichiara la parte finita e non la fase superata — il conto è prudente per scelta, si rischia di riproporre una lavorazione già avviata e mai di dimenticarne una da fare. Senza nessuna dichiarazione tutto si comporta **esattamente** come prima: i piani già aperti non cambiano da soli.
+
+Dichiarare pezzi fatti **non muove il magazzino** e non tocca le righe d'acquisto del piano: il materiale per una parte si compra prima di farla, e averla fatta non annulla quell'acquisto. Due strade per la stessa giacenza darebbero due verità, ed è la cosa che questa funzione evita con più cura.
+
+**Allegati: disegni e schede tecniche sugli articoli**
+Ogni articolo ha ora una scheda **Allegati**, dal pulsante sulla riga di catalogo accanto al listino — e dal **pannello laterale** (Ctrl+I) in Acquisti, Progetto e Magazzino, dove il comando porta il conteggio nell'etichetta come già fa «Movimenti». Il comando resta visibile anche a chi ha la vista in sola lettura: scaricare un disegno e modificare l'anagrafica sono due permessi diversi, e chi va in officina col foglio in mano non è detto che abbia il secondo. Da lì: si aggiungono disegni, PDF, foto e file CAD fino a 25 MB l'uno, si riscaricano con un click, e il numero di allegati si vede dall'elenco senza doverli aprire. La scheda articolo li elenca, in sola lettura come tutto il resto di quella scheda.
+
+I **file** stanno in IndexedDB, i **dati** (nome, dimensione, a quale articolo, chi e quando) in `db.attachments` come ogni altra collezione. La divisione non è un dettaglio tecnico: un solo disegno pesa più di tutto il database, e metterlo in `localStorage` non l'avrebbe fatto crescere — l'avrebbe fatto **smettere di salvare**, insieme a tutto il resto del lavoro. Il prezzo va detto, ed è scritto in tre posti: **il backup JSON non contiene i file**, ne porta l'elenco. Ripristinandolo su un altro PC si vede che cosa manca invece di trovare una scheda vuota; prima di trasferirsi i file vanno riscaricati a mano. In Gestione › Backup un pulsante recupera lo spazio dei file rimasti senza più un articolo.
+
+**L'app si installa e funziona senza rete**
+`manifest.webmanifest` e `sw.js`: Bomtrack si può installare come applicazione, con un'icona sua, e una volta aperta funziona offline — manuale compreso, che è proprio quello che serve consultare quando la rete manca. Il service worker mette in cache il programma, mai i dati: quelli restano dove sono sempre stati. Aperta con un doppio click su `file://` non cambia niente: lì i service worker non esistono, l'app se ne accorge e tace, ed è la ragione per cui le librerie di export stanno in `vendor/` invece che nella cache.
+
+**Note**
+- **47 casi nuovi** in tre file: `test/produzione.test.js` (23), `test/allegati.test.js` (15) e `test/pwa.test.js` (11). L'harness guadagna un **IndexedDB finto**, che mancava: era l'ultimo pezzo di piattaforma non simulato.
+- `test/pwa.test.js` guarda le tre cose che si rompono **in silenzio** e solo offline: uno script aggiunto alla pagina e dimenticato nel service worker, la versione della cache non aggiornata (i browser già visitati continuerebbero a servire quella vecchia, per sempre) e un file elencato che non esiste, che facendo fallire `addAll` lascerebbe l'app senza cache senza dirlo.
+- Gli allegati sono nati nella scheda articolo e sono stati **spostati** in una scheda propria: `test/iteminfo.test.js` difende l'invariante «la scheda non modifica niente», ed è una proprietà che vale più di una scorciatoia. Gli editor per articolo stanno sulla riga di catalogo, dove ci sono già il listino e la distinta.
+- Due collezioni nuove — `attachments` e `productions` — dichiarate in `SCHEMA` e in `REFS`, seminate da `migrateDB` e presenti nel backup.
+
+### 0.76.0 — 2026-09-11
+
+Giro di controllo generale sul codice. Nessuna funzionalità nuova: si chiudono difetti trovati leggendo, e si copre con i test la parte che ne era rimasta fuori. La suite passa da 1657 a **1696** casi.
+
+**Due schede aperte non si cancellano più il lavoro a vicenda**
+`Store.commit()` riscrive l'intero archivio con la fotografia che ha in memoria. Con due finestre di Bomtrack aperte — che su un gestionale è la normalità — la seconda che salvava cancellava tutto ciò che la prima aveva fatto nel frattempo: senza un errore, senza un avviso, senza nemmeno il badge «modifiche non salvate», perché la scrittura andava a buon fine. Era perdita di dati certa e invisibile. Ora l'archivio porta un contatore di revisione in una chiave sua, che si legge prima di ogni salvataggio: se qualcun altro ha scritto, il salvataggio si ferma e lo dice. Si può ricaricare (si perde quello che si stava facendo qui) o tenere la propria versione (si perde quello che ha fatto l'altra scheda), e la finestra dice per ciascuna che cosa costa, offrendo l'export di un backup prima di scegliere. **Non si fonde niente, di proposito**: per fondere due fotografie bisognerebbe sapere riga per riga quale delle due versioni vale, e quella risposta non ce l'ha né l'app né chi la usa. L'altra scheda che scrive si fa sentire subito, non al primo salvataggio: chi continua a lavorare su dati ormai vecchi accumula modifiche che poi non potrà più salvare senza cancellare quelle altrui.
+
+**Il totale dei documenti torna con la somma delle righe**
+La colonna Importo arrotondava ogni riga ai centesimi per stamparla, il piede sommava i prodotti a piena precisione e arrotondava solo alla fine. Con i prezzi a quattro decimali che il listino ammette, tre righe da 1×1,005 stampavano 1,01 + 1,01 + 1,01 in colonna e 3,02 sotto. È un PDF che parte verso un fornitore, e un totale che non torna tocca a qualcuno spiegarlo. Ora l'importo si arrotonda una volta sola, dove nasce (`importoRiga` in `core.js`), e il totale somma esattamente ciò che il fornitore legge — a schermo, in PDF e in Excel, dove la colonna si somma per davvero.
+
+**Le condizioni non spariscono più in fondo ai PDF**
+Trasporto, pagamento, conferma e note erano scritte a coordinata crescente, senza mai guardare dove finisse la pagina. Una nota lunga usciva dal margine destro e veniva tagliata; su un ordine con molte righe le condizioni venivano disegnate oltre il bordo, dove non c'è carta. In entrambi i casi il PDF si generava senza un errore, e la mancanza si scopriva solo andando a cercarla. Il testo ora va a capo sulla larghezza utile e passa a una pagina nuova quando serve, anche a metà di una nota più alta di un foglio intero.
+
+**Un fornitore che ha i nostri pezzi non si cancella più**
+`supplierUses()` controllava sette posti ma non i movimenti di magazzino, benché la scheda del movimento **pretenda** il terzista («senza, non si sa da chi sta la merce»). Cancellandolo, il prospetto «presso terzi» raggruppava sotto «senza fornitore» materiale che è nostro e sta fisicamente da qualcuno: la domanda a cui quel prospetto serve a rispondere restava senza risposta, e senza più niente da cui ricostruirla.
+
+**I nomi dei file esportati non si rompono più**
+In officina «AB/123-01» è un codice normale, e «Rossi & C. / Milano» una ragione sociale normale: finivano tali e quali nel nome di PDF ed Excel. Il browser, davanti a un nome invalido, non protesta — tronca, o salva con un altro nome, e il documento non si ritrova. Un solo `nomeFileSicuro()` in `core.js` ripulisce i dieci punti che esportano, lasciando intatti accenti e spazi, che in un nome di file vanno benissimo.
+
+**Il pannello «Aggiungi componenti» non si svuota più da solo**
+Le quantità dovevano restare impostate «finché non si inserisce, si cambia distinta o si chiude il pannello» — così dice il commento che le governa. In realtà si azzeravano a ogni ridisegno della vista: bastava espandere un nodo dell'albero per perdere le quantità messe su dieci articoli, il testo di ricerca e il punto in cui si stava scrivendo. Ora si azzerano solo quando la distinta cambia davvero.
+
+**La schermata d'accesso parte anche dove il browser nega l'archivio**
+Erano gli ultimi tre accessi a `localStorage` senza `try/catch`, e stavano sulla schermata che ogni utente attraversa per forza. In navigazione privata, con i dati dei siti bloccati, o su `file://` con lo storage negato, `renderLogin()` moriva sulla prima riga e la schermata non si disegnava affatto: l'app era inutilizzabile proprio nello scenario che l'avviso «dati non caricati» esiste per raccontare.
+
+**Chiudere la scheda con del lavoro per aria adesso chiede**
+Il salvataggio fallito e i documenti a metà compilazione (`rfqDirty`, `orderDirty`, `odlDirty`) erano già noti all'app, e nessuno li guardava all'uscita. Si chiede solo quando c'è qualcosa in sospeso: un avviso che compare sempre è un avviso che si impara a scacciare senza leggerlo.
+
+**Rinominare un'unità di misura porta con sé la seconda**
+Una barra si gestisce in metri e si compra a chilo: il chilo vive in `altUom` sull'articolo e in `priceUom` sulla riga di listino. La rinomina li lasciava indietro e il conteggio d'uso non li vedeva — al punto che l'unità che convertiva i prezzi di mezzo magazzino risultava «non usata» e si poteva cancellare con un click. Le conversioni continuavano a tornare (i due campi si guardano fra loro, non l'elenco), ma anagrafica ed elenco raccontavano due cose diverse.
+
+**Selezione multipla: da quadratica a lineare**
+Con «Mostra tutti» su qualche migliaio di righe e un Maiusc+click dal primo all'ultimo articolo, l'Ispettore faceva milioni di confronti a ogni ridisegno della griglia — cioè a ogni carattere digitato nel filtro. Tre `Set` al posto di altrettante ricerche lineari.
+
+**Minori**
+- I messaggi di `requirePdf`/`requireXlsx` nominano il file mancante invece della connessione a internet: dalla 0.43.0 le librerie stanno in `vendor/`, e quella frase mandava a cercare il guasto dalla parte sbagliata.
+- I caratteri non bloccano più il primo disegno della pagina: erano un `<link>` normale, e su un PC di officina senza rete l'attesa diventava il timeout del DNS — finestra bianca per secondi, a ogni avvio. Se non arrivano, `style.css` ha già i ripieghi.
+- Tolto `aria-modal` dalle schede: dichiarava inerte tutto il resto della pagina, che qui per scelta non lo è — le schede si lasciano aperte e la vista dietro resta viva. Due schede aperte insieme si dichiaravano entrambe «l'unica». Resta `role="dialog"`.
+- Il filtro del picker catalogo cerca in codice e descrizione, non nel testo dell'intera riga: scrivere «parte» non filtrava più niente, «obsoleto» pescava articoli che non c'entravano.
+- Il report d'import dice «righe saltate» invece di «righe vuote»: contava insieme le righe vuote, quelle senza tipo e quelle dell'altro ambito, e dichiarava «312 righe vuote» di un file pieno.
+- `ico()` fa passare il `title` da `esc()`, unico punto del disegno fuori dalla convenzione; la dimensione del database nella conferma di azzeramento è arrotondata come altrove; tolta `inspectorRigaDi()`, rimasta senza chiamanti, che costruiva un selettore CSS per concatenazione.
+
+**Note**
+- **39 casi nuovi** in tre file: `test/concorrenza.test.js` (due schede sullo stesso archivio, con il `localStorage` condiviso fra due istanze), `test/export-docs.test.js` e `test/anagrafiche.test.js`.
+- Gli export dei documenti avevano un test: **nessuno**, ed è la ragione per cui `docs/analisi-tecnica.md` teneva aperta la deduplica della presentazione (C1) — «un export si verifica sui dati che produce, non sul PDF: serve prima quello». Ora c'è: jsPDF e SheetJS sono sostituiti da due finti che annotano righe, piede e nome del file. Il primo a scriverlo ha subito trovato un limite della correzione sulle pagine, che senza non sarebbe venuto fuori.
+- `test/scripts.test.js` guadagna un controllo sulle **collisioni di nomi globali**. I 26 script condividono un unico scope e due dichiarazioni dello stesso nome non danno errore: vince l'ultima caricata, in silenzio. Oggi i nomi sono 1291 e le collisioni zero; il controllo serve a tenerle zero, senza dover rinunciare all'apertura da `file://` che `C4` dava per prezzo obbligato.
+- Una correzione è stata **annullata** dopo il test: leggere «1.500» come millecinquecento in import. `test/import.test.js` documenta la lettura decimale come scelta deliberata — con un separatore solo non si indovina, e `0.750` sono settantacinque centesimi — e la scelta regge.
+- `docs/analisi-tecnica.md` riallineato: era fermo alla 0.43.0 con il codice alla 0.75.0.
+
+### 0.75.0 — 2026-09-10
+
+**Barra Filtri a scomparsa, con ambito condiviso fra le viste**
+Acquisti, Progetto, Magazzino, Cicli di lavorazione e Gestione DB avevano ciascuno la propria barra filtri, sempre in vista — una ventina di controlli in tutto — e indipendente dalle altre: scegliere una famiglia in Acquisti non aveva alcun effetto su Magazzino. La barra resta esattamente dove è sempre stata, ma ora parte **chiusa**: mostra solo il pulsante **Filtri**, le pasticche di ciò che sta restringendo l'elenco in quel momento e, quando c'è qualcosa da togliere, **Rimuovi filtri**. Aprirla è una sola scelta per tutta l'app — chi la apre in una vista se la ritrova aperta anche nelle altre — perché per chi la usa è la stessa domanda ovunque: «cosa mi mostra questo elenco?».
+
+**Famiglia, sottofamiglia, macchina e gruppo seguono la navigazione**
+Dove una vista li ha già in barra, questi quattro campi diventano anche **condivisi**: sceglierli in Progetto li ritrova già impostati passando a Magazzino o a Gestione DB, così si può restringersi a una macchina o a una famiglia e lavorarci muovendosi fra le viste, senza riselezionarla ogni volta. Una famiglia che in un'altra vista non esiste — materie prime/commerciali e parti restano ambiti diversi, come già nei filtri di sempre — semplicemente non si applica lì, e la pasticca segue sempre il campo vero della vista aperta, mai la scelta condivisa: non mente su cosa sta filtrando davanti agli occhi. **Rimuovi filtri** azzera insieme i campi locali della vista e l'ambito condiviso, così la restrizione sparisce per davvero e non ricompare cambiando pagina. Restano fuori, di proposito: il *Carico centri* (filtra per piano e centro di lavoro, un altro genere di domanda) e i filtri delle viste documento — Commesse, Fabbisogno, Richieste, Ordini — che restano quelli di sempre, nella colonna a destra.
+
+**I controlli non si ricreano mai**
+Stesso `id`, stesso comportamento di sempre: aprire o chiudere la barra è solo una classe sul `<body>`, non un ridisegno — altrimenti scrivere nel campo di ricerca avrebbe perso il focus a ogni filtro applicato. Il campo condiviso, quando cambia, chiama in più una funzione che ricorda la scelta; l'unico punto delicato era l'ordine: lo scope condiviso va scritto **dopo** che la vista ha già rifatto le proprie `<option>` (famiglie, macchine), non prima — un `<select>` non accetta un valore che fra le sue opzioni correnti non c'è ancora, e prima di questo aggiustamento la propagazione falliva in silenzio alla prima vista mai visitata in quella sessione.
+
+**Note**
+- **15 casi nuovi** in `test/filters.test.js`, più gli aggiustamenti a `openCycleFor` (che già azzerava i filtri locali entrando direttamente su una parte: ora azzera anche l'ambito condiviso, altrimenti lo riscriverebbe subito dopo sugli stessi campi appena svuotati). La suite passa da 1632 a **1647** casi.
+- Verificato anche nel browser vero, non solo nei test: l'elemento finto dell'harness non simula la selezione via `<option selected>`, quindi l'ordine sync-poi-scope si vede solo lì — la classe di bug che ha portato al punto precedente.
+- `README.md` aggiornato con il nuovo paragrafo della barra Filtri.
+
+### 0.74.0 — 2026-09-10
+
+**La divisione per famiglia si può spegnere, e vive nel pannello Colonne**
+Acquisti, Progetto e Magazzino spezzavano sempre l'elenco in una tabella per gruppo (macrofamiglia, o tipo per gli assiemi): non c'era modo di tornare a una lista sola. Il pannello **Colonne** porta ora anche l'interruttore **Dividi l'elenco per famiglia** — acceso di serie, come oggi — e spegnerlo ridisegna una tabella unica, con la stessa paginazione ("Mostra altri"/"Mostra tutti") di prima. La scelta è per vista come le colonne: si può tenere Acquisti diviso e Magazzino no.
+
+**Il pannello Colonne offre tutti i campi che un elenco può ospitare**
+Fino a ieri il registro delle colonne conteneva solo quelle già mostrate. Acquisti, Progetto e Magazzino guadagnano sottofamiglia, fornitore, doppia unità d'acquisto (UM acquisto/fattore), scorta minima, lotto, note e autore delle modifiche; Magazzino aggiunge anche modalità lotto, presso terzi e in lavorazione; Progetto aggiunge concetto e approvvigionamento, che riguardano solo le parti — e per questo Progetto smette di essere un clone delle colonne di Acquisti e diventa un registro suo. Tutte le colonne nuove nascono **nascoste**: chi non apre mai il pannello continua a vedere l'elenco di sempre, chi le accende le ritrova domani.
+
+**Filtri Macchina e Gruppo in Progetto e Magazzino**
+Accanto a famiglia e sottofamiglia, due nuove tendine restringono l'elenco a una sola macchina o a un solo gruppo — lo stesso filtro che la vista Gestione DB aveva già, ora anche dove si guardano gli articoli invece della distinta. Scegliendo una macchina restano lei, i suoi gruppi, sottogruppi e parti; scegliendo un gruppo ci si restringe a quello. In Magazzino il filtro vale solo per le parti — commerciali e materie prime non sono mai legati a una macchina, come già succede con la famiglia sugli assiemi. Il filtro applicato finisce anche nell'export, come gli altri.
+
+**Note**
+- **12 casi nuovi** fra `test/columns.test.js`, `test/codes.test.js` e `test/export-lists.test.js`: colonne nascoste di serie che si accendono e tornano a spegnersi, l'interruttore di divisione (di serie acceso, per vista, sopravvive al ridisegno), `itemGrid` che disegna una tabella sola a divisione spenta, Progetto che non è più un clone di Acquisti, e i filtri macchina/gruppo su tutto l'albero (macchina → gruppo → sottogruppo → parte) incluso il caso limite di Acquisti, che quei filtri non li ha. La suite passa da 1620 a **1632** casi.
+- `README.md` aggiornato: il paragrafo delle colonne descrive l'interruttore e i campi nuovi, e Progetto/Magazzino descrivono i filtri macchina e gruppo.
 
 ### 0.73.0 — 2026-09-09
 
