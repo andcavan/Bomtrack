@@ -2,6 +2,64 @@
 
 Le revisioni seguono il versionamento semantico `0.MINOR.PATCH`: **MINOR** per nuove funzionalità, **PATCH** per correzioni. La versione in cima è quella in `APP_VERSION` (`core.js`) e mostrata nell'header dell'app.
 
+### 0.74.0 — 2026-09-14
+
+**Nasce l'ordine di produzione (ODP): la successione delle fasi, e il magazzino che si muove anche per chi lavora in casa.**
+
+Bomtrack sapeva cosa serve (fabbisogno), cosa comprare (ODA), cosa far lavorare fuori (ODL) e cosa c'è a scaffale (magazzino). Non sapeva **a che punto è un pezzo**, e il manuale lo dichiarava come limite al primo capitolo. Da lì discendevano tre cose che non tornavano, e la prima è la più grossa: **una parte con il ciclo tutto interno non aveva nessun documento**. Nessuno la lanciava, il suo materiale non usciva mai dal magazzino, e il pezzo finito non entrava mai se non con un *Carico manuale* scritto a mano. Il magazzino si muoveva **solo** passando da un ordine di lavoro, perché gli ancoraggi erano gli estremi delle *tratte esterne*: un ciclo senza fasi esterne non li aveva, e un ciclo misto li aveva solo sul tratto che usciva.
+
+L'ordine di produzione è il documento che mancava: uno per parte da fabbricare, numerazione **ODP-anno-NNN**, con le fasi del ciclo **congelate in successione**.
+
+**La regola del magazzino, e la correzione che l'ha scritta**
+Il registro di magazzino racconta l'uscita e l'entrata **dal magazzino**; l'ordine di produzione racconta **il viaggio**. Sono due libri diversi e non devono raccontarsi a vicenda.
+
+Ne discende la cosa che più distingue questo documento dal conto lavoro come era scritto prima: **fra le fasi non si registra niente**. Un movimento nomina una quantità di un **codice**, e fra la prima e l'ultima fase i pezzi non sono più il materiale e non sono ancora la parte — la parte lo diventano al rientro dell'ultima fase. Scrivere un movimento col codice della parte prima di allora inventa una giacenza che non esiste, e la fa comparire presso un terzista che quella parte non l'ha mai avuta.
+
+Restano quindi **due movimenti soli per ordine**, identici per un ciclo tutto interno, tutto esterno o misto:
+- all'**avvio della prima fase** escono i **codici del ciclo** — *Consumo di produzione* se quella fase è interna, *Uscita a conto lavoro* se è esterna;
+- sull'**ultima fase** entra il **codice della parte**, per i pezzi buoni dichiarati — *Versamento di produzione* se interna, *Rientro da conto lavoro* se esterna.
+
+Dove stanno i pezzi in mezzo lo dice la **fase corrente** dell'ordine, che è il posto in cui quella domanda ha davvero una risposta. Il prospetto *Presso terzi* guadagna quella seconda sorgente e la **dichiara**, invece di fonderla con la prima: le righe di un ordine di produzione portano il nome della fase accanto al codice. I movimenti di un ordine di produzione escono dal saldo per coppia (luogo, articolo), e non è un dettaglio: lì un'uscita di materiale a cui risponde un rientro del codice parte non si chiude mai, e il materiale resterebbe appeso al primo terzista anche dopo che i pezzi sono andati altrove.
+
+Un solo tipo di movimento nuovo: **versamento di produzione**. Non si riusa `carico`, che si chiama «Carico manuale» ed è merce entrata *senza* un ordine — la stessa ragione per cui il rientro da conto lavoro non è un carico manuale. Come il passaggio di lavorazione, non si sceglie a mano dalla rettifica: senza un ordine dietro sarebbe un carico che nessuno spiega.
+
+**La successione, e come si scavalca**
+Una fase non si avvia finché la precedente non è chiusa, e il rifiuto **la nomina con i suoi numeri**: «la fase 10 Tornitura non è chiusa: 6 di 10». Un rifiuto muto manda a cercare per mezz'ora.
+
+**Forza avvio** resta possibile — un pezzo campione da consegnare prima è un caso vero — e pretende un **motivo**, che finisce nello storico come dichiarazione a sé. Una forzatura non è un permesso speso e dimenticato: resta scritta accanto alla fase. Il testo del blocco è **lo stesso** che il mutatore userebbe per rifiutare: due frasi scritte a mano divergerebbero, e chi forza non saprebbe più se sta scavalcando quello che l'app gli ha appena detto.
+
+**Pezzi buoni e scarti, e solo i buoni proseguono**
+Su ogni fase si dichiarano pezzi buoni e scarti; la fase si chiude quando coprono i pezzi **entrati**. Cento lanciati, 95 buoni e 5 scarti alla fase 10 significa che alla 20 ne entrano **95**, e che a magazzino entra la **resa vera**, non la quantità lanciata. È la lettura onesta, e dà la gestione degli scarti senza campi in più.
+
+**Le fasi hanno un id, non un indice**
+È la differenza con le righe di ciclo, dove l'array *è* la definizione e la posizione è l'identità. Qui la fase porta un avanzamento: un'identità posizionale si sposterebbe sotto i piedi al primo riordino del ciclo, e l'avanzamento finirebbe sulla fase sbagliata. Congelando le fasi con un id proprio, **riordinare il ciclo non sposta niente** su un ordine già lanciato — e c'è un caso che lo verifica. La `phaseKey` resta sulla fase, ma solo come ponte verso il fabbisogno, dove continua a valere con i limiti già dichiarati.
+
+L'avanzamento è un **registro di dichiarazioni**, non un campo: si calcola, come l'esistente si calcola da ricevimenti e movimenti. Nessun saldo scritto da qualche parte, quindi niente che possa divergere. Annullare una dichiarazione toglie **i suoi** movimenti, non quelli della fase: è per questo che ogni movimento porta l'id di chi l'ha generato.
+
+**Nel fabbisogno**
+Quarto pulsante, **Genera ordini di produzione**, uno per parte. Le parti da fabbricare diventano righe di documento con una chiave loro (`make#<id>`): senza il prefisso collidevano con la stessa parte comprata, e un ordine di produzione avrebbe bloccato un ordine d'acquisto su un articolo che nei due casi è una cosa diversa. Il **netto non si applica**: lanciare un pezzo è una decisione di produzione, non di acquisto. Una parte che si produce in casa non entra più nemmeno nelle richieste d'offerta — non si chiede a nessuno.
+
+**Da fabbricare** smette di essere l'unica sezione muta del piano: fin qui non diceva né quando la parte servisse né se fosse già stata lanciata. Ora porta la data e il riferimento all'ordine, come le altre due.
+
+**La convivenza, e cosa non è stato tolto**
+Un ordine di produzione copre la sua parte **e le sue fasi esterne**: quelle escono dalla generazione diretta di ordini di lavoro dal piano e mostrano «coperta da ODP-…», perché l'ordine di lavoro si genera da lì — dove la successione dice anche *quando*. Le fasi **non** coperte restano generabili dal piano come prima, e un ordine di lavoro senza ODP dietro si comporta esattamente come prima, movimenti compresi. Ai dati esistenti non succede niente: due collezioni vuote e quattro campi nulli in più, e ogni condizione nuova è un `if (odpId)`.
+
+**Dall'ordine di produzione all'ordine di lavoro**
+Dalla fase esterna si commissiona la tratta al terzista: la riga passa dalla **stessa fabbrica** del piano e dell'ODL scritto a mano, e un caso la confronta campo per campo. La quantità sono i pezzi che ci sono davvero — i buoni usciti dalla fase precedente, non quelli lanciati. L'unione delle fasi in tratta non legge il ciclo vivo ma quella **congelata**: se il ciclo è cambiato dopo il lancio, al terzista si chiede quello che l'ordine gli ha promesso.
+
+Su quella riga i comandi di conto lavoro dell'ODL diventano un **rimando** all'ordine di produzione, e la guardia sta **anche nel mutatore**, non solo nell'interfaccia che non disegna i comandi. I *pezzi rientrati* li scrive la dichiarazione fatta sull'ordine: il campo resta quello di sempre, con gli stessi lettori — il conteggio, lo stato automatico, l'elenco, gli export — e cambia solo chi lo scrive.
+
+**Corretto per strada**
+Il pulsante «Sblocca per modifica» di un **ordine di lavoro** chiamava `rfqUnlock`, che su un id di ODL non trova niente e torna in silenzio: il pulsante c'era e non sbloccava nulla. Il gestore si sceglie ora da una mappa invece che da una catena di ternari con un ramo mancante.
+
+**Una frase che aveva smesso di essere vera**
+Il fabbisogno dichiarava di non poter nettare le lavorazioni perché «l'app non ha un avanzamento di produzione». Adesso ce l'ha, e la frase è stata **riscritta invece che lasciata a mentire**: nettare una fase richiede di decidere cosa fare di quelle coperte da ordini di *altri* piani, che è la stessa discussione dell'impegnato sul materiale. Va fatta intera, e non è stata fatta: finché non lo è, la lavorazione resta lorda e la pagina dice perché. Stessa sorte per il limite dichiarato al primo capitolo del manuale.
+
+**Note**
+- **42 casi nuovi** in `test/produzione.test.js`, e i tre che portano il peso sono i tre cicli: *solo interne* (il materiale esce una volta, il pezzo entra una volta, nessun passaggio), *solo esterne* (due movimenti e **niente** fra Beta e Gamma — il caso che fissa la correzione), *misto*. Poi la successione col rifiuto che nomina la fase bloccante, lo scarto che restringe la fase seguente, la forzatura tracciata, il codice parte che non compare mai presso un terzista prima del versamento, il riordino del ciclo che non sposta un ordine lanciato, la riga di ODL identica a quella del piano, e la convivenza provata — lanciata una parte, la sua fase esce dal piano e le altre restano. La suite passa da 1620 a **1662** casi.
+- Nuovo file `views-prod.js`. `README.md`, `MANUALE.md` (capitolo 22 nuovo, i successivi scalano di uno) e `docs/cloud-schema.md` aggiornati: la regola dei due estremi è riscritta nella sua forma generale, con la ragione per cui fra le fasi non si scrive niente.
+- **Non fatto, e detto per non farlo nascere per sbaglio**: nessuna schedulazione (niente date di avvio, niente capacità finita), nessun netto sulle lavorazioni, nessun codice per il semilavorato fra due fasi, e il carico centri continua a mettere le ore nella settimana in cui il pezzo serve.
+
 ### 0.73.0 — 2026-09-09
 
 **Manuale d'uso**

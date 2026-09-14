@@ -62,14 +62,18 @@ immaginarle.
 | `rfqs[].lines` | `rfq_lines` | id uuid PK, rfq_id uuid FK, item_id FK **nullable** (riga manuale, o riga di conto lavoro), phase_key text **nullable**, phase_keys text **nullable** (tutte le fasi della tratta, separate da virgola), code, description, uom, qty, price nullable, delivery_date, note |
 | `orders` | `orders` | id uuid PK, number unique per anno, title, date, status ('bozza'\|'inviato'\|'confermato'\|'parziale'\|'evaso'\|'annullato'), supplier_id FK, transport, payment, rfq_id FK nullable, plan_id FK nullable, supplier_confirmation, notes, notes_internal, active, created_at, updated_at |
 | `orders[].lines` | `order_lines` | id uuid PK, order_id uuid FK, item_id FK **nullable**, phase_key text **nullable**, phase_keys text **nullable**, code, description, uom, qty, price nullable, delivery_date, received numeric, note |
-| `workOrders` | `work_orders` | id uuid PK, number unique per anno (**ODL-**), title, date, status (stesso vocabolario di `orders`), supplier_id FK (il **terzista**), transport, payment, rfq_id FK nullable, plan_id FK nullable, job_id FK nullable, supplier_confirmation, notes, notes_internal, active, created_at, updated_at |
-| `workOrders[].lines` | `work_order_lines` | id uuid PK, work_order_id uuid FK, **item_id sempre NULL**, phase_key text (la **prima** fase della tratta), phase_keys text (tutte le fasi della tratta), code (della parte), description, uom, qty (pezzi), price (tariffa per pezzo) nullable, delivery_date, confirmed_date, received numeric, note |
+| `workOrders` | `work_orders` | id uuid PK, number unique per anno (**ODL-**), title, date, status (stesso vocabolario di `orders`), supplier_id FK (il **terzista**), transport, payment, rfq_id FK nullable, plan_id FK nullable, job_id FK nullable, supplier_confirmation, notes, notes_internal, odp_id uuid FK **nullable** (l'ordine di produzione che l'ha generato), active, created_at, updated_at |
+| `workOrders[].lines` | `work_order_lines` | id uuid PK, work_order_id uuid FK, **item_id sempre NULL**, phase_key text (la **prima** fase della tratta), phase_keys text (tutte le fasi della tratta), code (della parte), description, uom, qty (pezzi), price (tariffa per pezzo) nullable, delivery_date, confirmed_date, received numeric, note, odp_id uuid FK **nullable**, odp_phase_id uuid FK **nullable** |
+| `prodOrders` | `production_orders` | id uuid PK, number unique per anno (**ODP-**), item_id uuid FK (la **parte**), code, name, uom (congelati), qty numeric (pezzi lanciati), date, due_date, status ('bozza'\|'lanciato'\|'corso'\|'completato'\|'chiuso'\|'annullato'), title, notes, notes_internal, plan_id FK nullable, job_id FK nullable, active, created_at, updated_at |
+| `prodOrders[].phases` | `production_order_phases` | id uuid PK **proprio**, production_order_id uuid FK, seq int (10, 20, 30…), op_index int (posizione d'origine nel ciclo), phase_key text (ponte verso il fabbisogno), work_center_id FK nullable, wc_name (congelato), supplier_id FK **nullable** (nullo = fase interna), supplier_name (congelato), run_from int, run_to int, passata int, cost_mode, hours, days, rate, cost, note — **nessuna colonna di stato** |
+| `prodOrders[].materials` | `production_order_materials` | id uuid PK, production_order_id uuid FK, item_id uuid FK, code, name, uom (congelati), per_pezzo numeric, qty numeric |
+| `prodDecls` | `production_declarations` | id uuid PK, odp_id uuid FK, phase_id uuid FK, kind ('avvio'\|'avanzamento'\|'forzatura'\|'chiusura'), date, qty numeric, scrap numeric, note, motivo (solo su `forzatura`), created_by, created_at |
 | `plans` | `production_plans` | id uuid PK, number unique per anno, title, date, notes, active, created_at, updated_at |
 | `plans[].lines` | `production_plan_lines` | id uuid PK, plan_id uuid FK, item_id uuid FK, qty numeric |
 | `revisions` | `item_revisions` | id uuid PK, item_id uuid FK, rev, date, motivo, **snapshot jsonb**, created_by, created_at |
 | `trash` | `trash` | id uuid PK, coll, deleted_at, deleted_by uuid FK, **record jsonb** — le eliminazioni recuperabili, ripulite dopo `TRASH_DAYS` |
 | `jobs` | `jobs` | id uuid PK, number unique per anno, customer, title, customer_ref, status ('aperta'\|'produzione'\|'chiusa'\|'annullata'), date, due_date, notes, active, created_at, updated_at |
-| `movements` | `stock_movements` | id uuid PK, item_id uuid FK, kind ('rettifica'\|'carico'\|'scarico'\|'clOut'\|'clIn'\|'clStep'), qty numeric **con segno** (positiva e senza effetto sulla giacenza su `clStep`), date, note, supplier_id uuid FK **nullable** (su `clStep`: **dove va**, nullo = torna da noi), from_supplier_id uuid FK **nullable** (solo `clStep`: **da dove viene**, nullo = parte da noi), order_id uuid FK **nullable**, line_id **nullable**, created_by, created_at |
+| `movements` | `stock_movements` | id uuid PK, item_id uuid FK, kind ('rettifica'\|'carico'\|'scarico'\|'clOut'\|'clIn'\|'clStep'\|'versamento'), qty numeric **con segno** (positiva e senza effetto sulla giacenza su `clStep`), date, note, supplier_id uuid FK **nullable** (su `clStep`: **dove va**, nullo = torna da noi), from_supplier_id uuid FK **nullable** (solo `clStep`: **da dove viene**, nullo = parte da noi), order_id uuid FK **nullable** (un ordine d'acquisto, di lavoro **o di produzione**), line_id **nullable** (su un ordine di produzione è l'id della **fase**), decl_id **nullable** (la dichiarazione che l'ha generato), created_by, created_at |
 | `settings` | `settings` | una riga per team (o coppie chiave/valore). **Non è in `SCHEMA`**: è un oggetto solo, senza id né `updatedAt`, e `pendingChanges()` la segnala confrontando il contenuto (`settings: true`). `flattenDB()` non la esporta e `tablesForChanges()` non ne ricava nessuna tabella: l'adapter deve trattarla a parte, ed è il motivo per cui il flag è un booleano e non un elenco di id |
 
 **Vincoli che il modello locale dà per scontati** e che in cloud vanno scritti:
@@ -217,18 +221,58 @@ immaginarle.
   40 Beta ha **due** ordini di lavoro da Beta, e ciascuno è prima e ultima riga
   di sé stesso. Con gli ancoraggi letti dal documento il materiale uscirebbe due
   volte e il pezzo finito si caricherebbe due volte.
-  - alla **prima tratta esterna** esce il materiale del ciclo (`clOut`), e
-    scarica;
-  - all'**ultima tratta esterna** entra il pezzo finito (`clIn`), e carica;
-  - a ogni altro estremo si sposta il pezzo stesso (`clStep`), e non carica né
-    scarica.
+
+  Dove esiste un **ordine di produzione** gli estremi sono i suoi, e la regola
+  vale per un ciclo di qualunque forma — tutto interno, tutto esterno o misto:
+  - all'**avvio della prima fase** escono i **codici del ciclo**: `scarico` se
+    quella fase è interna, `clOut` (intestato al terzista) se è esterna;
+  - sull'**ultima fase** entra il **codice della parte**, per i pezzi buoni
+    dichiarati: `versamento` se la fase è interna, `clIn` se è esterna;
+  - **fra le fasi non si scrive niente.**
+
+  Quel «niente» è la parte che conta, ed è il motivo per cui `clStep` non serve
+  a un ordine di produzione. Un movimento nomina una quantità di un **codice**,
+  e fra la prima e l'ultima fase i pezzi non sono più il materiale e non sono
+  ancora la parte: la parte lo diventano al rientro dell'ultima fase. Un
+  movimento col codice parte prima di allora inventa una giacenza che non
+  esiste, e la fa comparire nel prospetto *presso terzi* di chi non l'ha mai
+  avuta. Dove stanno i pezzi lo dice la **fase corrente** dell'ordine, che è il
+  posto in cui quella domanda ha davvero una risposta.
+
+  Conseguenza sul prospetto: i movimenti di un ordine di produzione **escono**
+  dal saldo per coppia (luogo, articolo). Lì un `clOut` di materiale a cui
+  risponde un `clIn` del codice parte non si chiude mai, e il materiale
+  resterebbe appeso al primo terzista anche dopo che i pezzi sono andati
+  altrove. Per gli ordini di produzione il prospetto ha una **seconda sorgente**,
+  letta dagli ordini aperti, e le due restano distinte invece di fondersi.
+
+  Un ordine di lavoro **senza** un ordine di produzione dietro conserva gli
+  ancoraggi di prima — prima e ultima tratta esterna, `clStep` in mezzo — e
+  quindi i dati esistenti non si muovono. È la ragione per cui `work_orders`
+  porta `odp_id`: ogni condizione nuova è un `if (odp_id)`, e su tutto ciò che
+  c'era è nullo.
 
   Quale materiale esce lo dice il **ciclo della parte** (`item_cycle_rows` con
   `kind='item'`), moltiplicato per i pezzi: è lo stesso che il fabbisogno ha già
-  fatto comprare. Le fasi interne **dopo** l'ultima tratta esterna non spostano
-  il carico — il pezzo entra quando torna dal terzista, e la lavorazione che
-  resta la si fa su un pezzo già a scaffale. Non è un vincolo esprimibile in SQL:
-  i movimenti restano righe libere, ed è l'interfaccia a doverlo imporre.
+  fatto comprare. Su un ordine di produzione quelle righe sono **congelate** in
+  `production_order_materials`, così una modifica al ciclo non riscrive
+  retroattivamente quanto è già uscito. Non è un vincolo esprimibile in SQL: i
+  movimenti restano righe libere, ed è l'interfaccia a doverlo imporre.
+- **Le fasi di un ordine di produzione hanno un `id` proprio, e nessuno stato.**
+  È la differenza con `item_cycle_rows`, dove l'array *è* la definizione e la
+  posizione è l'identità: qui la fase porta un avanzamento, e un'identità
+  posizionale si sposterebbe sotto i piedi al primo riordino del ciclo,
+  mandando le dichiarazioni sulla fase sbagliata. `phase_key` resta sulla fase,
+  ma solo come **ponte verso il fabbisogno**, dove continua a valere con i suoi
+  limiti già dichiarati.
+  L'avanzamento — pezzi fatti, scarti, avvii, forzature, chiusure — sta in
+  `production_declarations`, piatta come `stock_movements` e per la stessa
+  ragione: sono **eventi**, non stato. Nessuna colonna di saldo sulla fase,
+  quindi niente che possa divergere. In cloud la lettura conviene come vista
+  (`production_phase_progress`), mai come colonne scrivibili dal client.
+  Solo i **pezzi buoni** proseguono: quanti ne entrano in una fase è quanti ne
+  sono usciti buoni dalla precedente, e la quantità versata a magazzino può
+  essere minore di quella lanciata.
 - **`clStep` è un movimento di luogo, non di quantità.** È l'unica eccezione alla
   regola dell'esistente, e il codice la scrive in un predicato solo
   (`movimentoToccaMagazzino`) invece che in un `if` sparso in ogni punto che
@@ -309,12 +353,20 @@ tutti. Sta nel registro (`SCHEMA` in `store.js`) ed è verificata in
 `test/sync.test.js`.
 
 **Merge per riga** — `item_prices`, `rfq_lines`, `order_lines`,
-`production_plan_lines`, `sub_families`. Righe con identità propria, dove
+`production_plan_lines`, `sub_families`, `production_order_phases`,
+`production_order_materials`. Righe con identità propria, dove
 l'aggiunta concorrente **è lo scenario normale, non un conflitto**: due colleghi
 che registrano una quotazione sullo stesso articolo hanno due id diversi e
 sopravvivono entrambe. Il conflitto vero è altrove, su `items.active_price_id`:
 è un campo scalare del padre, lì vince l'ultimo che salva e **l'utente va
 avvisato**, perché con il prezzo in uso cambia il costo di ogni distinta a monte.
+
+Le fasi di un ordine di produzione stanno qui e **non** fra le sostituzioni,
+al contrario di `item_cycle_rows` da cui nascono: là l'array è la definizione e
+le righe non hanno un id, qui ogni fase ha il suo e due reparti che dichiarano
+l'avanzamento su due fasi diverse sono lo scenario normale, non un conflitto.
+Le `production_declarations` sono append-only come `stock_movements`, e per la
+stessa ragione.
 
 **Sostituzione dell'insieme** — `item_components`, `item_operations`,
 `item_cycle_rows`. L'array *è* la definizione dell'oggetto: metà distinta di uno

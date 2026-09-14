@@ -329,6 +329,47 @@ test sull'export prima del refactor — non dopo.
 
 ---
 
+## Risolto nella 0.74.0
+
+Lavoro sugli **ordini di produzione**. Tre voci, e la prima non era stata
+censita da nessuno perché non si vedeva: era un'assenza, non un difetto.
+
+### 30. Una parte a ciclo tutto interno non muoveva mai il magazzino
+Gli ancoraggi del conto lavoro (`clLineRole`, `views-stock.js`) sono gli estremi
+delle **tratte esterne** del ciclo. Una parte senza fasi esterne non ne ha
+nessuno: il suo materiale non usciva mai e il pezzo finito non entrava mai, se
+non con un carico scritto a mano. Non c'era nemmeno un documento da cui farlo.
+
+Chiuso con l'ordine di produzione, che porta gli ancoraggi sugli estremi del
+**ciclo** invece che su quelli delle tratte esterne, e quindi vale identico per
+un ciclo interno, esterno o misto.
+
+### 31. `clStep` nominava i pezzi col codice della parte
+Il passaggio di lavorazione registra un movimento sul **codice della parte**
+prima che la parte esista: la parte lo diventa al rientro dell'ultima fase. Il
+movimento non tocca la giacenza — `movimentoToccaMagazzino` lo esclude — ma
+entra nel saldo per coppia (luogo, articolo), e faceva comparire nel prospetto
+*presso terzi* una quantità di un codice che quel terzista non aveva mai avuto.
+
+Negli ordini di produzione fra le fasi **non si scrive niente**, e il luogo lo
+dà la fase corrente. `clStep` resta per gli ordini di lavoro esistenti, che non
+cambiano comportamento: è la ragione per cui `work_orders.odp_id` esiste ed è
+nullo su tutto ciò che c'era.
+
+### 32. Il pulsante «Sblocca per modifica» di un ODL non sbloccava niente
+`docLockBanner` (`views-docs.js:26`) sceglieva il gestore con
+`docKind === 'order' ? 'ordUnlock' : 'rfqUnlock'`, e l'ODL — terzo tipo,
+aggiunto dopo — ricadeva su `rfqUnlock`. Quella funzione su un id di ordine di
+lavoro non trova niente e **torna in silenzio**: il pulsante c'era, si premeva,
+e non succedeva nulla. Sostituito con una mappa, che un tipo nuovo non può far
+ricadere sul ramo sbagliato senza accorgersene.
+
+È il difetto tipico della catena di ternari cresciuta con un caso alla volta, e
+vale la pena cercarne altri con la stessa forma prima che qualcuno li trovi
+usando l'app.
+
+---
+
 ## Aperto
 
 ### A. Sicurezza

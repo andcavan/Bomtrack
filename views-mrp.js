@@ -697,10 +697,15 @@ function mrpLoadItems(entries, soloCentro) {
 // Molto più povera di una riga d'acquisto, e non per pigrizia: **una lavorazione
 // non si mette a scaffale**. Non ha giacenza, non ha in arrivo, non ha impegni,
 // non ha scorta minima né lotto — e quindi non ha un netto. `qtyOrder` vale
-// sempre `qty`, anche a fabbisogno netto acceso: nettarla richiederebbe di
-// sapere quanti pezzi sono già stati lavorati, cioè un avanzamento di produzione
-// che Bomtrack non ha. Fingere di saperlo produrrebbe quantità che nessuno può
-// spiegare; dirlo è meno comodo e più onesto.
+// sempre `qty`, anche a fabbisogno netto acceso.
+//
+// Fino alla 0.73 il motivo era che l'app non aveva un avanzamento di
+// produzione. Dalla 0.74 ce l'ha — gli **ordini di produzione** sanno quanti
+// pezzi ogni fase ha lavorato — e il motivo va riscritto invece che lasciato a
+// mentire: nettare una fase richiede di decidere cosa fare di quelle coperte da
+// ordini di **altri** piani, che è la stessa discussione dell'impegnato sul
+// materiale. Va fatta intera, e non è stata fatta: finché non lo è, la
+// lavorazione resta lorda e la pagina lo dichiara.
 //
 // Il prezzo è **per pezzo**, in entrambi i modi di costo: è la forma con cui
 // finisce sulla riga di documento, dove la quantità sono i pezzi.
@@ -1726,7 +1731,7 @@ function renderPlanEdit(id) {
 
     <div class="mrp-section">
       <div class="cycle-section-head"><h3>${ico('wrench', 'tinted pill', '')} Da far lavorare fuori</h3></div>
-      <p class="empty-text" style="text-align:left;padding:0 0 8px">Le fasi del ciclo affidate a un terzista. Entrano nelle richieste e negli ordini come le righe d'acquisto, un documento per fornitore. <strong>Il fabbisogno netto non si applica</strong>: una lavorazione non sta a scaffale, e sapere quanti pezzi sono già stati lavorati richiederebbe un avanzamento di produzione che l'app non ha.</p>
+      <p class="empty-text" style="text-align:left;padding:0 0 8px">Le fasi del ciclo affidate a un terzista. Entrano nelle richieste e negli ordini come le righe d'acquisto, un documento per fornitore. <strong>Il fabbisogno netto non si applica</strong>: una lavorazione non sta a scaffale. I pezzi già lavorati l'app adesso li sa — glieli dicono gli <strong>ordini di produzione</strong> — ma nettarli richiede di decidere cosa fare delle fasi coperte da ordini di <em>altri</em> piani, ed è la stessa discussione dell'impegnato sul materiale: finché non è fatta, qui la quantità resta lorda.</p>
       ${mrpPhaseTable(fasi)}
     </div>
 

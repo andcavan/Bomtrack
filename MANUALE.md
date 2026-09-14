@@ -50,25 +50,26 @@ ciascuna sua tappa.
 19. [Fabbisogno materiali](#19-fabbisogno-materiali)
 20. [Richieste di offerta (RFQ)](#20-richieste-di-offerta-rfq)
 21. [Ordini a fornitore (ODA)](#21-ordini-a-fornitore-oda)
-22. [Ordini di lavoro (ODL) e conto lavoro](#22-ordini-di-lavoro-odl-e-conto-lavoro)
-23. [Carico dei centri di lavoro](#23-carico-dei-centri-di-lavoro)
+22. [Ordini di produzione (ODP)](#22-ordini-di-produzione-odp)
+23. [Ordini di lavoro (ODL) e conto lavoro](#23-ordini-di-lavoro-odl-e-conto-lavoro)
+24. [Carico dei centri di lavoro](#24-carico-dei-centri-di-lavoro)
 
 **Parte VI — Amministrazione**
 
-24. [Gestione](#24-gestione)
-25. [Utenti e ruoli](#25-utenti-e-ruoli)
-26. [Import ed export da Excel](#26-import-ed-export-da-excel)
-27. [Export di elenchi e documenti](#27-export-di-elenchi-e-documenti)
-28. [Stampa](#28-stampa)
-29. [Backup e manutenzione](#29-backup-e-manutenzione)
-30. [Quando l'archivio è condiviso (Supabase)](#30-quando-larchivio-è-condiviso-supabase)
+25. [Gestione](#25-gestione)
+26. [Utenti e ruoli](#26-utenti-e-ruoli)
+27. [Import ed export da Excel](#27-import-ed-export-da-excel)
+28. [Export di elenchi e documenti](#28-export-di-elenchi-e-documenti)
+29. [Stampa](#29-stampa)
+30. [Backup e manutenzione](#30-backup-e-manutenzione)
+31. [Quando l'archivio è condiviso (Supabase)](#31-quando-larchivio-è-condiviso-supabase)
 
 **Parte VII — Riferimenti**
 
-31. [Scorciatoie da tastiera](#31-scorciatoie-da-tastiera)
-32. [Stati dei documenti](#32-stati-dei-documenti)
-33. [Glossario](#33-glossario)
-34. [Domande frequenti](#34-domande-frequenti)
+32. [Scorciatoie da tastiera](#32-scorciatoie-da-tastiera)
+33. [Stati dei documenti](#33-stati-dei-documenti)
+34. [Glossario](#34-glossario)
+35. [Domande frequenti](#35-domande-frequenti)
 - [Appendice A — Come funziona sotto](#appendice-a--come-funziona-sotto)
 
 ---
@@ -100,22 +101,24 @@ Vale la pena dirlo subito, perché evita di cercare funzioni che non ci sono.
 - **Non schedula la produzione.** Il *Carico centri* mostra le ore che i piani chiedono a ciascun
   centro settimana per settimana, e segnala il sovraccarico. Non lo risolve: non c'è calendario,
   non c'è data di avvio di una fase, la capacità è **infinita**.
-- **Non ha l'avanzamento di produzione.** Non si dichiara «pezzo fatto». Il magazzino si muove con
-  i movimenti e con i ricevimenti degli ordini, non con dei versamenti di produzione.
+- **Non schedula, ma l'avanzamento ce l'ha.** Dalla 0.74 gli **ordini di produzione**
+  (→ [cap. 22](#22-ordini-di-produzione-odp)) seguono una parte fase per fase: si dichiarano pezzi
+  fatti e scarti, e il magazzino si muove ai due estremi del ciclo. Quello che continua a mancare è
+  il *quando*: nessuna data di avvio, nessun calendario, nessuna capacità finita.
 - **Non è un gestionale amministrativo.** Niente fatture, niente contabilità, niente DDT.
 - **Non è multi-utente in tempo reale.** Ogni PC ha il suo archivio. Due colleghi che lavorano su
   due PC lavorano su due copie diverse: si allineano con un backup
-  (→ [cap. 29](#29-backup-e-manutenzione)). L'archivio condiviso è progettato ma non ancora
+  (→ [cap. 30](#30-backup-e-manutenzione)). L'archivio condiviso è progettato ma non ancora
   attivo: cosa cambierà, e cosa conviene già fare adesso, sta nel
-  [cap. 30](#30-quando-larchivio-è-condiviso-supabase).
+  [cap. 31](#31-quando-larchivio-è-condiviso-supabase).
 - **I ruoli non sono sicurezza.** Servono a separare le responsabilità tra colleghi, non a
-  proteggere i dati (→ [cap. 25](#25-utenti-e-ruoli)).
+  proteggere i dati (→ [cap. 26](#26-utenti-e-ruoli)).
 
 > ⚠️ **I dati risiedono in questo browser, su questo PC.** Non c'è un server. Svuotare i dati del
 > sito, cambiare browser o cambiare PC significa non trovare più l'archivio. Fai backup regolari:
 > *Gestione → Backup → Esporta JSON*. È l'unica cosa di questo manuale che, se la salti, ti costa
 > davvero cara — e resterà vera anche il giorno in cui l'archivio sarà condiviso
-> (→ [cap. 30](#30-quando-larchivio-è-condiviso-supabase)).
+> (→ [cap. 31](#31-quando-larchivio-è-condiviso-supabase)).
 
 ---
 
@@ -299,7 +302,7 @@ indipendenti: è **una catena**, e ogni anello ha bisogno di quello prima.
 
 ### 4.1 Prima di tutto: preparare gli archivi
 
-*(→ [cap. 24](#24-gestione))*
+*(→ [cap. 25](#25-gestione))*
 
 Si comincia da **⚙️ Gestione**, e conviene farlo in quest'ordine, perché ogni voce serve a
 compilare la successiva:
@@ -429,7 +432,7 @@ non serve registrare anche un movimento. Lo stato dell'ordine passa a *Parziale*
 
 ### 4.6 Far lavorare fuori
 
-*(→ [cap. 22](#22-ordini-di-lavoro-odl-e-conto-lavoro))*
+*(→ [cap. 23](#23-ordini-di-lavoro-odl-e-conto-lavoro))*
 
 Le fasi di ciclo affidate a un terzista sono denaro che esce come qualunque acquisto, e hanno il
 loro documento: l'**ordine di lavoro** (`ODL-2026-001`).
@@ -458,7 +461,7 @@ In ogni momento, il pulsante **Presso terzi** in Magazzino dice cosa sta fuori e
 
 ### 4.7 Guardare la produzione interna
 
-*(→ [cap. 23](#23-carico-dei-centri-di-lavoro))*
+*(→ [cap. 24](#24-carico-dei-centri-di-lavoro))*
 
 *Cicli di lavorazione → **Carico centri***: le ore che i piani aperti chiedono a ciascun centro,
 settimana per settimana, contro la capacità dichiarata. Il sovraccarico si vede in rosso, con le
@@ -1017,7 +1020,7 @@ sottofamiglia, e il filtro di **stato**:
 movimento**, **Quantità**, (per il conto lavoro) **Terzista** e **Ordine di conto lavoro**,
 **Nota**, e il pulsante **Registra**. Ogni tipo porta il suo suggerimento contestuale.
 
-**I sei tipi di movimento:**
+**I sette tipi di movimento:**
 
 | Tipo | Effetto sulla giacenza | Quando si usa |
 |---|---|---|
@@ -1027,6 +1030,12 @@ movimento**, **Quantità**, (per il conto lavoro) **Terzista** e **Ordine di con
 | **Uscita a conto lavoro** | **−** sottrae | materiale spedito a un terzista |
 | **Rientro da conto lavoro** | **+** somma | il pezzo finito che torna |
 | **Passaggio di lavorazione** | **nessuno** | il pezzo va da un terzista al successivo |
+| **Versamento di produzione** | **+** somma | il pezzo finito all'ultima fase di un ordine di produzione |
+
+Gli ultimi due **non si scelgono a mano** dalla rettifica: il passaggio si registra dalla riga di
+un ODL, il versamento da un ordine di produzione (→ [cap. 22](#22-ordini-di-produzione-odp)). Un
+versamento senza un ordine dietro sarebbe un carico che nessuno spiega — per quello c'è il *Carico
+manuale*.
 
 **Perché il passaggio non muove niente.** Un pezzo che torna da Beta per andare da Gamma **cambia
 luogo a quantità invariata**. Contarlo come carico e poi come scarico farebbe comparire a scaffale
@@ -1047,7 +1056,11 @@ In fondo c'è il blocco **«in casa, fra due fasi»**: i pezzi tornati da un ter
 ripartiti per il successivo. È **un luogo a sé** — esistono, non sono a scaffale, e non sono da
 nessuno.
 
-> Anche questo prospetto è **calcolato dai movimenti**, non un saldo scritto da qualche parte.
+> Anche questo prospetto è **calcolato**, non un saldo scritto da qualche parte — ma da **due
+> sorgenti**, e le tiene separate. Gli ordini di lavoro lo alimentano con i loro **movimenti**; gli
+> **ordini di produzione** no, perché fra una fase e l'altra di movimenti non ne scrivono: lì il
+> luogo lo dà la **fase corrente** dell'ordine, e la riga porta il nome della fase accanto al
+> codice (→ [cap. 22](#22-ordini-di-produzione-odp)).
 
 ### I ricevimenti
 
@@ -1158,11 +1171,14 @@ Gli **indicatori di riga**:
 
 **Da far lavorare fuori** — le fasi di ciclo affidate a un terzista. **Il netto non si applica
 qui**, ed è dichiarato in pagina: una fase non sta a scaffale, e sapere quanti pezzi sono già stati
-lavorati richiederebbe un avanzamento di produzione che l'app non ha.
+lavorati l'app adesso li sa — glieli dicono gli ordini di produzione
+(→ [cap. 22](#22-ordini-di-produzione-odp)) — ma nettarli richiede di decidere cosa fare delle fasi
+coperte da ordini di *altri* piani, che è la stessa discussione dell'impegnato sul materiale:
+finché non è fatta, qui la quantità resta lorda.
 
 **Da fabbricare** — le parti a produzione interna che il piano richiede.
 
-**Carico dei centri** — la stessa tavola del [cap. 23](#23-carico-dei-centri-di-lavoro), ristretta
+**Carico dei centri** — la stessa tavola del [cap. 24](#24-carico-dei-centri-di-lavoro), ristretta
 a questo piano.
 
 In fondo, l'elenco dei **documenti generati** dal piano.
@@ -1290,7 +1306,134 @@ In fondo il **Totale imponibile**.
 
 ---
 
-## 22. Ordini di lavoro (ODL) e conto lavoro
+## 22. Ordini di produzione (ODP)
+
+**A cosa serve.** Seguire una parte lungo il suo **ciclo di lavorazione**: quali fasi ha fatto,
+quante ne restano, dove sono i pezzi adesso, e muovere il magazzino nei due soli punti in cui
+va mosso. Numerazione **`ODP-<anno>-NNN`**.
+
+È il documento che fino alla 0.73 mancava, e la sua assenza si sentiva soprattutto su una cosa:
+una parte con il ciclo **tutto interno** non aveva nessun documento: nessuno la lanciava, il suo
+materiale non usciva mai dal magazzino e il pezzo finito non entrava mai, se non con un *Carico
+manuale* scritto a mano.
+
+**Come ci si arriva.** 📨 *Documenti → Ordini di produzione*.
+
+### Da dove nasce
+
+Due strade, e producono lo stesso documento:
+
+- dal **fabbisogno**, col pulsante **Genera ordini di produzione**: dalla sezione *Da fabbricare*,
+  **uno per parte**;
+- **a mano**, con *+ Nuovo ordine di produzione*: si sceglie la parte fra quelle che un ciclo ce
+  l'hanno, i pezzi e la data. Un ordine così **non è legato a nessun piano**, e nel fabbisogno
+  quella parte continuerà a risultare da fabbricare.
+
+### Bozza e lancio
+
+Nasce in **bozza**: quantità, date e commessa si cambiano ancora. **Lancia** apre la produzione e
+da lì **fasi e materiale si congelano**: il ciclo può cambiare domani, l'ordine resta quello che
+è stato promesso.
+
+> Ogni fase congelata ha un **id proprio**, non una posizione. Riordinare le fasi del ciclo dopo
+> il lancio **non sposta niente** su un ordine già aperto — che è il motivo per cui si congela.
+
+### La tabella delle fasi
+
+Si legge dall'alto in basso come si esegue il ciclo. Per ogni fase: numero, lavorazione, **dove**
+(Interna, o il nome del terzista), **da fare / fatti / scarti**, stato e comandi.
+
+| Stato della fase | Significato |
+|---|---|
+| **In attesa** | La precedente non è chiusa. La riga dice *quale* e con quali numeri |
+| **Avviabile** | È il suo turno |
+| **In corso** | Avviata, si dichiara l'avanzamento |
+| **Chiusa** | I pezzi dichiarati coprono quelli entrati |
+
+**Comandi:** *avvia* · *dichiara* · *chiudi* · *riapri* · *forza avvio* · *genera ordine di lavoro*.
+Compaiono **solo dove sono leciti**: una fase in attesa non mostra un pulsante spento, dice perché
+e da chi.
+
+### La successione, e come si scavalca
+
+Una fase **non si avvia** finché la precedente non è chiusa, e il rifiuto la nomina:
+«la fase 10 Tornitura non è chiusa: 6 di 10».
+
+**Forza avvio** resta possibile — un pezzo campione da consegnare prima è un caso vero — e
+pretende un **motivo**. La forzatura finisce nello storico dell'ordine con il suo motivo, e la
+fase resta marcata: non è un permesso speso e dimenticato.
+
+### Pezzi buoni e scarti
+
+Su ogni fase si dichiarano **pezzi buoni** e **scarti**. La fase si chiude quando la somma dei due
+copre i pezzi **entrati**.
+
+> **Solo i pezzi buoni proseguono.** 100 lanciati, 95 buoni e 5 scarti alla fase 10 significa che
+> alla 20 ne entrano **95**, e che a magazzino entrerà la **resa vera**, non la quantità lanciata.
+
+Una dichiarazione sbagliata si **annulla** dallo storico, e con lei se ne vanno i movimenti di
+magazzino che aveva generato — solo i suoi.
+
+### Il magazzino: due movimenti, e il silenzio in mezzo
+
+Vale identico per un ciclo **tutto interno**, **tutto esterno** o **misto**.
+
+| Momento | Se la fase è… | Movimento | Codice | Effetto |
+|---|---|---|---|---|
+| **Avvio della prima fase** | interna | Consumo di produzione | i **codici del ciclo** | **−** |
+| **Avvio della prima fase** | esterna | Uscita a conto lavoro | i **codici del ciclo** | **−** |
+| **Fra le fasi** | — | **nessuno** | — | nessuno |
+| **Ultima fase** | interna | Versamento di produzione | il **codice della parte** | **+** |
+| **Ultima fase** | esterna | Rientro da conto lavoro | il **codice della parte** | **+** |
+
+**Perché in mezzo non si scrive niente.** Un movimento nomina una quantità di un **codice**. Fra la
+prima e l'ultima fase i pezzi non sono più il materiale e non sono ancora la parte: la parte lo
+diventano al rientro dell'ultima fase. Scrivere un movimento col codice della parte prima di allora
+inventerebbe una giacenza che non esiste, e la farebbe comparire presso un terzista che quella
+parte non l'ha mai avuta.
+
+**Dove sono i pezzi, allora.** Lo dice la **fase corrente** dell'ordine — in casa, o presso il
+terzista di quella fase — e il prospetto *Presso terzi* del Magazzino legge anche da lì, marcando
+le righe con la fase. Sono due letture distinte e restano distinte: quella dei movimenti, per gli
+ordini di lavoro, e quella degli ordini di produzione.
+
+Il **materiale esce una volta sola**, all'avvio della prima fase, ed è quello scritto nel ciclo —
+le stesse righe che il fabbisogno ha già fatto comprare. La scheda propone il **residuo**, e a
+residuo zero lo dice.
+
+### Le lavorazioni esterne
+
+Su una fase in conto lavoro compare **genera ordine di lavoro**: ne nasce un ODL per quel terzista,
+con la tariffa del ciclo e **i pezzi che ci sono davvero** (i buoni usciti dalla fase precedente,
+non quelli lanciati). Le fasi **consecutive** dello stesso terzista fanno **una riga sola**: sono
+una lavorazione da commissionare, non due.
+
+> Su quella riga i comandi di conto lavoro dell'ODL diventano un **rimando** all'ordine di
+> produzione. Il magazzino ha **un padrone solo**: due strade per lo stesso gesto sarebbero due
+> registrazioni. Anche i **pezzi rientrati** dell'ODL li scrive la dichiarazione fatta qui.
+
+### Nel fabbisogno
+
+- *Da fabbricare* dice ora **quando** la parte serve e **se è già stata lanciata**, col numero
+  dell'ordine.
+- *Da far lavorare fuori*: una fase coperta da un ordine di produzione porta **«coperta da
+  ODP-…»** ed esce dalla generazione diretta di ordini di lavoro — l'ordine si genera da lì,
+  quando la fase precedente è chiusa. Le fasi **non** coperte restano generabili dal piano come
+  prima.
+
+### Da sapere
+
+- **Il fabbisogno netto non si applica** a un ordine di produzione: lanciare un pezzo è una
+  decisione di produzione, non di acquisto.
+- Un ordine di lavoro **senza** un ordine di produzione dietro si comporta esattamente come prima,
+  movimenti compresi. Chi usa entrambe le strade sullo stesso codice vede due letture del *Presso
+  terzi*, ed è per questo che il prospetto le tiene separate invece di fonderle.
+- **Annullare non è eliminare**: un ordine annullato smette di coprire la parte nel fabbisogno, ma
+  i movimenti già registrati restano. Eliminarlo invece toglie anche quelli, e la scheda lo avvisa.
+
+---
+
+## 23. Ordini di lavoro (ODL) e conto lavoro
 
 Questo è il capitolo più delicato, e conviene leggerlo per intero prima di registrare il primo
 movimento di conto lavoro. Numerazione **`ODL-<anno>-NNN`**.
@@ -1380,7 +1523,7 @@ zero lo dice, invece di riproporre il modulo come se niente fosse.
 
 ---
 
-## 23. Carico dei centri di lavoro
+## 24. Carico dei centri di lavoro
 
 **A cosa serve.** Sapere quante ore i piani stanno chiedendo a ciascun centro, settimana per
 settimana, e se il centro regge. La schermata si intitola **«Carico centri di lavoro»**.
@@ -1433,7 +1576,7 @@ gli stessi pezzi — **mentre le ore sì**.
 
 # Parte VI — Amministrazione
 
-## 24. Gestione
+## 25. Gestione
 
 **Come ci si arriva.** ⚙️ *Gestione*. **La voce è visibile ai soli amministratori.**
 
@@ -1444,7 +1587,7 @@ Quattordici schede. Sono gli archivi che alimentano i menu a tendina di tutto il
 Elenco con nome, email, ruolo e stato *Attivo / Sospeso*. Azioni per riga: **Modifica**,
 **Imposta password**, **Sospendi / Riattiva**, **Elimina**.
 Form del nuovo utente: Nome e cognome · Email · Username (facoltativo) · **Ruolo** · **Colore** ·
-Password iniziale. → [cap. 25](#25-utenti-e-ruoli)
+Password iniziale. → [cap. 26](#26-utenti-e-ruoli)
 
 ### 🏢 Dati azienda
 
@@ -1531,7 +1674,7 @@ nell'import da Excel vengono registrate automaticamente.
 
 ### ⬆️ Import · 💾 Backup
 
-→ [cap. 26](#26-import-ed-export-da-excel) e [cap. 29](#29-backup-e-manutenzione).
+→ [cap. 27](#27-import-ed-export-da-excel) e [cap. 30](#30-backup-e-manutenzione).
 
 ### Sospendere invece di eliminare
 
@@ -1545,7 +1688,7 @@ nell'export e nell'import Excel.
 
 ---
 
-## 25. Utenti e ruoli
+## 26. Utenti e ruoli
 
 Ogni persona ha un utente, con nome, email, ruolo, colore e stato attivo/sospeso.
 
@@ -1583,11 +1726,11 @@ il record e chi l'ha aggiornato per ultimo**, con data e ora.
 > I permessi diventeranno reali quando l'archivio sarà condiviso, perché lì vivranno sul server
 > e non su questo PC. La matrice qui sopra è già quella che verrà applicata: assegnare i ruoli
 > con criterio adesso non è un esercizio a vuoto
-> (→ [cap. 30](#30-quando-larchivio-è-condiviso-supabase)).
+> (→ [cap. 31](#31-quando-larchivio-è-condiviso-supabase)).
 
 ---
 
-## 26. Import ed export da Excel
+## 27. Import ed export da Excel
 
 **Come ci si arriva.** ⚙️ *Gestione → Import*.
 
@@ -1641,7 +1784,7 @@ con gli **avvisi** e gli **errori**, ciascuno con il foglio e il numero di riga.
 
 ---
 
-## 27. Export di elenchi e documenti
+## 28. Export di elenchi e documenti
 
 Bomtrack ha due famiglie di export, e vale la pena distinguerle.
 
@@ -1679,7 +1822,7 @@ Rifiutando, il file si scarica lo stesso e lo stato non cambia.
 
 ---
 
-## 28. Stampa
+## 29. Stampa
 
 `Ctrl+P`, o il pulsante 🖨 nell'intestazione. Anche il `Ctrl+P` del browser è agganciato: si
 ottiene la stampa pulita, non la pagina grezza.
@@ -1692,7 +1835,7 @@ documento, non l'elenco**.
 
 ---
 
-## 29. Backup e manutenzione
+## 30. Backup e manutenzione
 
 **Come ci si arriva.** ⚙️ *Gestione → Backup*. **Solo amministratori.**
 
@@ -1715,7 +1858,7 @@ ricarica senza conversioni.
 
 Questo comando non andrà in pensione con l'archivio condiviso: lì servirà a tenere una copia
 **fuori** dal servizio che ospita i dati, che è l'unico backup che protegga davvero
-(→ [cap. 30](#30-quando-larchivio-è-condiviso-supabase)).
+(→ [cap. 31](#31-quando-larchivio-è-condiviso-supabase)).
 
 ### Cestino
 
@@ -1744,7 +1887,7 @@ Svuota completamente l'archivio, dati di esempio compresi.
 
 ---
 
-## 30. Quando l'archivio è condiviso (Supabase)
+## 31. Quando l'archivio è condiviso (Supabase)
 
 > ⚠️ **Questo capitolo descrive una condizione che non è ancora attiva.** Oggi Bomtrack lavora
 > **solo in locale**: ogni PC ha il suo archivio, e non c'è nessun collegamento a un server.
@@ -1854,7 +1997,7 @@ che contavano:
 
 # Parte VII — Riferimenti
 
-## 31. Scorciatoie da tastiera
+## 32. Scorciatoie da tastiera
 
 | Tasti | Effetto |
 |---|---|
@@ -1870,7 +2013,7 @@ che contavano:
 
 ---
 
-## 32. Stati dei documenti
+## 33. Stati dei documenti
 
 ### Gli stati
 
@@ -1912,7 +2055,7 @@ dentro**: uscendo e rientrando, il documento torna bloccato.
 
 ---
 
-## 33. Glossario
+## 34. Glossario
 
 | Termine | Significato |
 |---|---|
@@ -1945,20 +2088,20 @@ dentro**: uscendo e rientrando, il documento torna bloccato.
 | **Saturazione** | La percentuale di capacità di un centro occupata in una settimana |
 | **Capacità** | Le ore che un centro può fare in una settimana. **0 = non dichiarata** |
 | **Revisione** | Una fotografia congelata di una distinta, identificata da una lettera |
-| **Archivio condiviso** | Il database unico su cui lavorano tutti i colleghi, al posto di una copia per PC. Progettato, non ancora attivo (→ [cap. 30](#30-quando-larchivio-è-condiviso-supabase)) |
+| **Archivio condiviso** | Il database unico su cui lavorano tutti i colleghi, al posto di una copia per PC. Progettato, non ancora attivo (→ [cap. 31](#31-quando-larchivio-è-condiviso-supabase)) |
 | **Supabase** | Il servizio scelto per ospitare l'archivio condiviso: database, autenticazione e permessi |
 | **Permessi sul server** | I ruoli applicati dal database invece che dall'app. È la differenza fra separare le responsabilità e proteggere davvero i dati |
 
 ---
 
-## 34. Domande frequenti
+## 35. Domande frequenti
 
 **Non trovo un fornitore (o un cliente, o un centro) nel menu a tendina.**
 Probabilmente è **sospeso**. *Gestione →* la sua scheda *→ Riattiva*. Le voci sospese restano negli
 archivi e nei documenti che le citano, ma spariscono dai menu.
 
 **Non riesco a modificare una riga di un ordine.**
-Dipende dallo **stato** (→ [cap. 32](#32-stati-dei-documenti)). Un ordine *Inviato* lascia
+Dipende dallo **stato** (→ [cap. 33](#33-stati-dei-documenti)). Un ordine *Inviato* lascia
 modificare solo la colonna Ricevuto. Se serve davvero, **🔓 Sblocca per modifica**.
 
 **Il costo di una parte è zero.**
@@ -1979,7 +2122,7 @@ non il suo materiale. È il comportamento voluto. Per far comprare il materiale,
 **Ho registrato il ricevimento ma la giacenza non è cambiata (o è cambiata due volte).**
 Il ricevimento di un **ODA carica il magazzino da solo**: non serve anche un movimento di carico.
 Il campo **Rientrati** di un **ODL** invece **non carica**: lì il carico lo fa il movimento di
-*rientro da conto lavoro* (→ [cap. 22](#22-ordini-di-lavoro-odl-e-conto-lavoro)).
+*rientro da conto lavoro* (→ [cap. 23](#23-ordini-di-lavoro-odl-e-conto-lavoro)).
 
 **Ho mandato un pezzo da Beta a Gamma e la giacenza non si muove.**
 È corretto: è un **passaggio di lavorazione**, un cambio di luogo a quantità invariata. Il pezzo
@@ -2011,7 +2154,7 @@ Importa JSON*. Se hai eliminato qualcosa per errore negli ultimi **30 giorni**, 
 Oggi non si può in tempo reale: ogni PC ha la sua copia. Ci si allinea passandosi il **backup
 JSON**. Gli utenti e i ruoli servono a separare le responsabilità su uno stesso PC. L'archivio
 condiviso è progettato — come funzionerà, e cosa conviene preparare da ora, sta nel
-[cap. 30](#30-quando-larchivio-è-condiviso-supabase).
+[cap. 31](#31-quando-larchivio-è-condiviso-supabase).
 
 **L'app non genera il PDF.**
 I pulsanti **Genera documento** sono **disabilitati finché ci sono modifiche non salvate**: premi
@@ -2075,6 +2218,8 @@ timestamp). Le migrazioni sono **idempotenti**: un backup vecchio si auto-migra 
 | `workCenters` | I centri di lavoro | `suppliers` (fornitori conto lavoro) |
 | `families` | Le famiglie articolo | `subs` (sottofamiglie) |
 | `rfqs` · `orders` · `workOrders` | Richieste, ordini, ordini di lavoro | `lines` |
+| `prodOrders` | Gli ordini di produzione | `phases`, `materials` |
+| `prodDecls` | Le dichiarazioni di avanzamento: eventi, non stato | — |
 | `plans` | I piani di fabbisogno | `lines` |
 | `jobs` | Le commesse | — |
 | `users` | Gli utenti (con `passwordHash` e `passwordSalt`) | — |
@@ -2090,7 +2235,7 @@ Ogni record porta `id` (UUID), `createdAt` / `updatedAt`, `createdBy` / `updated
 `itemId`, `qty`, `costOverride`) e `kind: 'op'` (una fase, con `workCenterId`, `supplierId`,
 `costMode`, `hours`, `days`, `rate` o `cost`).
 
-**I movimenti** portano `kind` (uno dei sei tipi), `qty` con segno, e per il conto lavoro
+**I movimenti** portano `kind` (uno dei sette tipi), `qty` con segno, e per il conto lavoro
 `supplierId` (dove va) e `fromSupplierId` (da dove viene).
 
 ## A.4 I file sorgente
@@ -2114,6 +2259,7 @@ Ogni record porta `id` (UUID), `createdAt` / `updatedAt`, `createdBy` / `updated
 | `views-report.js` · `views-item.js` · `views-home.js` | Costificazione · scheda di sola lettura · Riepilogo |
 | `views-mrp.js` | Fabbisogno e Carico centri |
 | `views-jobs.js` · `views-docs.js` | Commesse · RFQ, ODA, ODL |
+| `views-prod.js` | Ordini di produzione: fasi congelate, avanzamento, movimenti |
 | `views-manage.js` | Gestione |
 | `export-lists.js` · `import-catalog.js` · `import-export.js` | Export elenchi · import articoli · import distinte, backup, avvio |
 | `cloud-map.js` | Traduzione della forma dati verso un futuro backend. Funzioni pure, nessun codice di rete |
@@ -2142,7 +2288,7 @@ La suite gira anche in CI a ogni push.
 
 La direzione presa per superarli è un backend con autenticazione e permessi sul server;
 `cloud-map.js` e `docs/cloud-schema.md` sono la preparazione a quel passaggio, e **non**
-contengono codice di rete. Il [cap. 30](#30-quando-larchivio-è-condiviso-supabase) racconta la
+contengono codice di rete. Il [cap. 31](#31-quando-larchivio-è-condiviso-supabase) racconta la
 stessa cosa dal lato di chi userà l'app; qui sotto, cosa esiste già nel codice per arrivarci:
 gli id sono UUID e non contatori locali, ogni record porta `createdAt`/`updatedAt` e
 `createdBy`/`updatedBy`, il registro dello schema dichiara per ogni collezione come andrà
