@@ -13,7 +13,7 @@
 // Revisione in esecuzione, mostrata accanto al logo. Va tenuta allineata alla
 // voce in cima a CHANGELOG.md (l'app si copia a mano tra PC: sapere
 // quale revisione sta girando su una postazione è l'unico modo per capirlo).
-const APP_VERSION = '0.46.0';
+const APP_VERSION = '0.80.0';
 
 let currentUser = null;      // utente della sessione (null = schermata di accesso)
 let currentBomId = null;     // articolo prodotto attualmente aperto nelle Distinte
@@ -32,8 +32,14 @@ let currentPlanId = null;    // piano di produzione aperto
 let mrpGrouped = false;      // lista d'acquisto raggruppata per fornitore
 let mrpNet = false;          // fabbisogno netto (tolti esistente e in arrivo) invece che lordo
 let orderView = 'list';      // 'list' | 'edit'
-let currentOrderId = null;   // ordine aperto in editor
+let currentOrderId = null;   // ordine d'acquisto aperto in editor
 let orderDirty = false;      // modifiche non salvate nell'editor ordine
+let odlView = 'list';        // 'list' | 'edit' — Ordini di lavoro (conto lavoro)
+let currentOdlId = null;     // ordine di lavoro aperto in editor
+let odlDirty = false;        // modifiche non salvate nell'editor ODL
+let odpView = 'list';        // 'list' | 'edit' — Ordini di produzione (ODP)
+let currentOdpId = null;     // ordine di produzione aperto in editor
+let odpDirty = false;        // modifiche non salvate nell'editor ODP
 
 
 // ═══════════════════════════════════════════════════════════
@@ -41,7 +47,28 @@ let orderDirty = false;      // modifiche non salvate nell'editor ordine
 // ═══════════════════════════════════════════════════════════
 function cur() { return (db.settings && db.settings.currency) || '€'; }
 function fmtN(n) { return cur() + (Number(n) || 0).toFixed(2); }
-function esc(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
+// ─── L'importo di una riga di documento ───
+// Quantità × prezzo, arrotondato ai centesimi **una volta sola**.
+//
+// Esiste perché il totale e le righe arrotondavano in due momenti diversi: ogni
+// riga finiva a schermo e in PDF passata per fmtN() — cioè a 2 decimali — mentre
+// il totale sommava i prodotti a piena precisione e arrotondava solo alla fine.
+// Con i prezzi a quattro decimali che il listino ammette, tre righe da 1×1,005
+// stampano 1,01 + 1,01 + 1,01 in colonna e 3,02 nel piede.
+//
+// Su un documento che parte verso un fornitore un totale che non torna con la
+// somma delle righe è un errore che si vede, e che tocca a qualcuno spiegare.
+// Si arrotonda dove l'importo nasce, e si somma ciò che il fornitore legge.
+function importoRiga(l) {
+  return +(((Number(l && l.qty) || 0) * (Number(l && l.price) || 0)).toFixed(2));
+}
+function totaleRighe(lines) { return (lines || []).reduce((s, l) => s + importoRiga(l), 0); }
+// L'apice singolo c'è perché il codice scrive di continuo attributi come
+// onclick="fn('${x}')". Oggi `x` è sempre un id generato, quindi non c'è niente
+// da sfruttare — ma il contratto dell'helper deve reggere l'uso che se ne fa: il
+// primo onclick="fn('${esc(it.name)}')" si romperebbe su un articolo chiamato
+// «L'albero», e su uno chiamato peggio farebbe altro.
+function esc(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;'); }
 
 // ─── L'unità di misura accanto al numero ───
 // Un numero senza unità è un numero da indovinare. «15» in una riga di
@@ -137,6 +164,14 @@ function duplicateCodeGroups() {
 // Stesso motivo dell'indice articoli: `db.suppliers.find(...)` compariva dentro
 // il disegno di ogni riga di elenco e di ogni lavorazione del rollup.
 let _supIdx = null, _wcIdx = null;
+// Famiglie, concetti e utenti tengono anche la lunghezza dell'array da cui sono
+// nati: gli import creano famiglie **dentro il ciclo** e chiedono subito dopo il
+// codice dell'articolo, che passa da getFamily. Un indice fermo alla foto di
+// prima non troverebbe la famiglia appena creata, e il codice uscirebbe senza
+// la sua sigla. È la stessa guardia di itemIndex(), per la stessa ragione.
+let _famIdx = null, _famIdxArr = null, _famIdxLen = -1;
+let _cptIdx = null, _cptIdxLen = -1;
+let _userIdx = null, _userIdxArr = null, _userIdxLen = -1;
 function supplierIndex() {
   if (!_supIdx) _supIdx = new Map((db.suppliers || []).map(s => [s.id, s]));
   return _supIdx;
@@ -147,6 +182,40 @@ function workCenterIndex() {
   return _wcIdx;
 }
 function getWorkCenter(id) { return id ? workCenterIndex().get(id) : undefined; }
+// Famiglie, concetti e autori: stessa ragione, e il carico è lo stesso.
+// getFamily la chiamano familyLabel per ogni riga di catalogo e familySigla per
+// ogni codice generato; actorName la chiama stampLine per ogni scheda.
+function familyIndex() {
+  const arr = db.families || [];
+  if (_famIdx && arr === _famIdxArr && arr.length === _famIdxLen) return _famIdx;
+  _famIdx = new Map(arr.map(f => [f.id, f]));
+  _famIdxArr = arr; _famIdxLen = arr.length;
+  return _famIdx;
+}
+function conceptIndex() {
+  const arr = conceptList();
+  if (_cptIdx && arr.length === _cptIdxLen) return _cptIdx;
+  _cptIdx = new Map(arr.map(c => [c.id, c]));
+  _cptIdxLen = arr.length;
+  return _cptIdx;
+}
+function userIndex() {
+  const arr = db.users || [];
+  if (_userIdx && arr === _userIdxArr && arr.length === _userIdxLen) return _userIdx;
+  _userIdx = new Map(arr.map(u => [u.id, u]));
+  _userIdxArr = arr; _userIdxLen = arr.length;
+  return _userIdx;
+}
+// I nomi dell'anagrafica clienti, pronti da agganciare a un campo di testo con
+// `list=`. È un suggerimento, non un vincolo: la commessa di un cliente nuovo
+// si scrive comunque, e l'anagrafica si compila dopo.
+function customerNames() {
+  return (db.customers || []).filter(c => c.active !== false).map(c => c.name || '')
+    .filter(Boolean).sort((a, b) => a.localeCompare(b));
+}
+function customerDatalist(id) {
+  return `<datalist id="${id}">${customerNames().map(n => `<option value="${esc(n)}"></option>`).join('')}</datalist>`;
+}
 // ─── Indice inverso figlio → padri ───
 // usedBy() scansionava tutto il catalogo a ogni chiamata, e "Dove è usato" la
 // invoca una volta per antenato e una seconda per ogni riga della simulazione:
@@ -171,6 +240,42 @@ function parentIndex() {
   _parentIdx = idx;
   return idx;
 }
+// ─── "Usato da qualche parte", in senso ampio ───
+// usedBy()/parentIndex() rispondono a «è componente/riga di ciclo di un altro
+// articolo?»: basta per bloccare l'eliminazione con un messaggio preciso, ma
+// un codice può essere "in uso" anche solo in un movimento di magazzino, una
+// riga di RFQ/ordine, un piano MRP o una revisione congelata — nessuno di
+// questi lo rende "genitore" di niente, eppure rinominarlo o cancellarlo
+// silenzierebbe quel riferimento.
+//
+// Non serve un secondo elenco di campi da tenere aggiornato a mano: REFS
+// (store.js) è già la mappa completa "quale campo punta a un articolo",
+// scritta per la migrazione v2 e mantenuta apposta perché aggiungerne una
+// fosse una riga sola in un posto solo. La si legge qui, in sola lettura,
+// con lo stesso giro che fa migrateV2() per riscriverli.
+function isItemUsedAnywhere(id) {
+  if (!id) return false;
+  const puntaAllItem = campi => Object.keys(campi).some(k => campi[k] === 'item');
+  for (const coll of Object.keys(REFS)) {
+    const def = REFS[coll];
+    const recs = db[coll] || [];
+    if (def.fields && puntaAllItem(def.fields)) {
+      const chiavi = Object.keys(def.fields).filter(k => def.fields[k] === 'item');
+      if (recs.some(rec => chiavi.some(k => rec[k] === id))) return true;
+    }
+    for (const figlio of Object.keys(def.children || {})) {
+      const campiFiglio = def.children[figlio];
+      if (!puntaAllItem(campiFiglio)) continue;
+      const chiavi = Object.keys(campiFiglio).filter(k => campiFiglio[k] === 'item');
+      if (recs.some(rec => (rec[figlio] || []).some(r => chiavi.some(k => r[k] === id)))) return true;
+    }
+  }
+  // Le righe ODL non hanno un campo itemId proprio: lo portano dentro
+  // `phaseKey` (`itemId#indice#workCenterId`), la stessa eccezione che REFS
+  // documenta per la migrazione — va controllata a parte.
+  return (db.workOrders || []).some(o => (o.lines || [])
+    .some(l => typeof l.phaseKey === 'string' && l.phaseKey.startsWith(id + '#')));
+}
 // Risultati di costOf già calcolati in questo giro di rendering.
 let _costCache = new Map();
 // Azzera indice e cache. Chiamata da Store.commit() — l'unico punto di scrittura
@@ -180,24 +285,50 @@ function invalidateCaches() {
   _itemIdx = null; _itemIdxArr = null; _itemIdxLen = -1;
   _codeIdx = null; _codeIdxArr = null; _codeIdxLen = -1;
   _supIdx = null; _wcIdx = null; _parentIdx = null;
+  _prefixIdx = null; _prefixIdxArr = null; _prefixIdxLen = -1;
+  _famIdx = null; _famIdxArr = null; _famIdxLen = -1;
+  _cptIdx = null; _cptIdxLen = -1;
+  _userIdx = null; _userIdxArr = null; _userIdxLen = -1;
   if (typeof invalidateStock === 'function') invalidateStock();   // sta in views-stock.js, caricato dopo
   if (typeof invalidateItemDocs === 'function') invalidateItemDocs(); // sta in views-item.js, caricato dopo
+  if (typeof invalidateProd === 'function') invalidateProd();       // sta in views-prod.js, caricato dopo
 }
 // ─── Librerie esterne (PDF ed Excel) ───
-// Arrivano da CDN, ma l'app è fatta per aprirsi con un doppio click su file://
-// e girare anche offline. Senza rete `window.jspdf` semplicemente non esiste: la
-// destrutturazione lanciava un TypeError che nessuno intercettava e l'utente
-// premeva "Esporta" senza vedere accadere nulla.
+// Stanno in vendor/, dentro il repo: l'app è fatta per aprirsi con un doppio
+// click su file:// e girare offline. Senza di esse `window.jspdf` semplicemente
+// non esiste: la destrutturazione lanciava un TypeError che nessuno
+// intercettava e l'utente premeva "Esporta" senza vedere accadere nulla.
+//
+// Il messaggio nomina il file, non la rete. Fino alla 0.43.0 le librerie
+// arrivavano da un CDN e «serve la connessione a internet» era la diagnosi
+// giusta; da quando sono nel repo quella frase manda a cercare il guasto dalla
+// parte sbagliata — si controlla la linea mentre manca un file.
 function requirePdf() {
   const lib = typeof window !== 'undefined' && window.jspdf;
   if (lib && lib.jsPDF) return lib.jsPDF;
-  showToast('Libreria PDF non disponibile: serve la connessione a internet al primo caricamento', 'error');
+  showToast('Libreria PDF non disponibile: manca vendor/jspdf.umd.min.js', 'error');
   return null;
 }
 function requireXlsx() {
   if (typeof XLSX !== 'undefined' && XLSX) return XLSX;
-  showToast('Libreria Excel non disponibile: serve la connessione a internet al primo caricamento', 'error');
+  showToast('Libreria Excel non disponibile: manca vendor/xlsx.full.min.js', 'error');
   return null;
+}
+// ─── Nome di un file da scaricare ───
+// Codici articolo e ragioni sociali finiscono nel nome dei PDF e degli Excel
+// esportati, e tutti e due contengono abitualmente caratteri che un nome di file
+// non ammette: in officina «AB/123-01» è un codice normalissimo, e la barra lo
+// è altrettanto in «Rossi & C. / Milano». Il browser, davanti a un nome
+// invalido, non protesta: tronca, oppure salva con un nome che non è quello
+// annunciato — e il file non si ritrova più.
+//
+// Si tiene tutto il resto com'è: accenti e spazi in un nome di file vanno
+// benissimo, e sostituirli renderebbe i documenti meno leggibili senza motivo.
+const FILE_VIETATI = /[\\/:*?"<>|\x00-\x1f]/g;
+function nomeFileSicuro(s, ripiego) {
+  const pulito = String(s == null ? '' : s).replace(FILE_VIETATI, '-')
+    .replace(/\s+/g, ' ').replace(/^[\s.]+|[\s.]+$/g, '').slice(0, 120).trim();
+  return pulito || (ripiego || 'documento');
 }
 // ─── Ridisegno che non fa perdere il posto ───
 // Riscrive l'innerHTML di un contenitore preservando ciò che un ridisegno
@@ -248,7 +379,6 @@ function addressLines(o) {
   const l2 = [cityPart, o.province ? '(' + o.province + ')' : ''].filter(Boolean).join(' ');
   return [l1, l2, o.country].map(s => (s || '').trim()).filter(Boolean);
 }
-function addressOneLine(o) { return addressLines(o).join(', '); }
 // Tassonomia tipi articolo e regole di contenimento (distinta meccanica)
 const ALL_TYPES = ['macchina', 'gruppo', 'sottogruppo', 'parte', 'materiale', 'acquistato'];
 const ALLOWED_CHILDREN = {
@@ -288,7 +418,9 @@ function roleGuard(area) {
   return false;
 }
 // Area di scrittura corrispondente a ciascuna vista (per il banner di sola lettura)
-const VIEW_AREA = { home: null, bom: 'bom', buy: 'catalog', design: 'catalog', stock: 'catalog', cycles: 'catalog', report: null, jobs: 'docs', mrp: 'docs', rfq: 'docs', orders: 'docs', manage: 'manage' };
+// `load` (Carico centri) è null come `report`: è un prospetto derivato, in sola
+// lettura, da cui non si scrive niente.
+const VIEW_AREA = { home: null, bom: 'bom', buy: 'catalog', design: 'catalog', stock: 'catalog', cycles: 'catalog', load: null, report: null, jobs: 'docs', mrp: 'docs', rfq: 'docs', orders: 'docs', odl: 'docs', odp: 'docs', manage: 'manage' };
 
 // Le due viste di anagrafica: ciò che si compra e ciò che si progetta.
 // Ogni vista ha i suoi filtri (prefisso degli id nella pagina) e la creazione
@@ -355,6 +487,10 @@ function uomFactor(it, uom) {
   if (!uom || !hasAltUom(it) || uom === (it.uom || '')) return 1;
   return uom === altUomOf(it) ? altFactorOf(it) : 1;
 }
+// Gestione → altra unità (15 m → 120 kg). Nell'app non la chiama nessuno — la
+// conversione che serve va sempre nell'altro verso, ed è fromAltUom — ma è metà
+// del contratto e ha i suoi test: senza, la coppia sarebbe zoppa e chi arriva
+// dovrebbe riscriverla per verificare che l'inversa torni.
 // Gestione → altra unità (15 m → 120 kg)
 function toAltUom(it, qty, uom) { return (Number(qty) || 0) * uomFactor(it, uom); }
 // Altra unità → gestione (120 kg → 15 m). È la direzione che riporta a casa i
@@ -373,7 +509,7 @@ function itemUomOptions(it, selected) {
 
 // ── Concetti (parte "standardizzata" del nome di una Parte) ──
 function conceptList() { return (db.settings && db.settings.concepts) || []; }
-function conceptById(id) { return conceptList().find(c => c.id === id); }
+function conceptById(id) { return id ? conceptIndex().get(id) : undefined; }
 function conceptName(id) { const c = conceptById(id); return c ? c.name : ''; }
 function conceptOptions(selectedId) {
   const sel = selectedId || '';
@@ -394,7 +530,7 @@ function ensureUom(code) {
 }
 
 // ─── Famiglie / sottofamiglie (materie prime e componenti commerciali) ───
-function getFamily(id) { return (db.families || []).find(f => f.id === id); }
+function getFamily(id) { return id ? familyIndex().get(id) : undefined; }
 function familyName(id) { const f = getFamily(id); return f ? f.name : ''; }
 function subFamilyName(famId, subId) { const f = getFamily(famId); const s = f && (f.subs || []).find(x => x.id === subId); return s ? s.name : ''; }
 // Tipi articolo che usano famiglie/sottofamiglie e codifica per famiglia
@@ -420,6 +556,81 @@ function subFamilySigla(famId, subId) {
   const f = getFamily(famId); const s = f && (f.subs || []).find(x => x.id === subId);
   return s ? (s.sigla || siglaFromName(s.name)) : '';
 }
+// ─── Unicità delle sigle ───
+// La sigla compone il codice: CMM-MEC-CUS-007. Se due macrofamiglie commerciali
+// portano entrambe MEC, da quel codice non si risale più a quale delle due
+// appartenga — e un codice che non identifica la sua famiglia ha perso la
+// ragione per cui è costruito così.
+//
+// Il campo di gara è quello che il codice non ha già fissato da sé: per una
+// macrofamiglia è il suo ambito (il prefisso CMM/MAT/PRT separa già i tre), per
+// una sottofamiglia è la macrofamiglia che la contiene (il segmento precedente
+// l'ha già scelta). Fuori di lì la stessa sigla non crea ambiguità e si può
+// ripetere: pretendere di più esaurirebbe presto le sigle di tre lettere.
+function siglaKey(s) { return String(s || '').trim().toUpperCase(); }
+// `exceptId` è chi sta salvando: senza, modificare una famiglia senza toccarne
+// la sigla la farebbe collidere con sé stessa. Stessa forma di validateItemCode.
+function validateFamilySigla(sigla, kind, exceptId, dedotta) {
+  const k = siglaKey(sigla); if (!k) return null;
+  const amb = kind || 'acquistato';
+  const altra = (db.families || []).find(f => f.id !== exceptId
+    && (f.kind || 'acquistato') === amb
+    && siglaKey(f.sigla || siglaFromName(f.name)) === k);
+  if (!altra) return null;
+  return siglaInUso(k, 'la macrofamiglia', altra.name, dedotta);
+}
+function validateSubFamilySigla(sigla, familyId, exceptSubId, dedotta) {
+  const k = siglaKey(sigla); if (!k) return null;
+  const f = getFamily(familyId); if (!f) return null;
+  const altra = (f.subs || []).find(s => s.id !== exceptSubId
+    && siglaKey(s.sigla || siglaFromName(s.name)) === k);
+  if (!altra) return null;
+  return siglaInUso(k, 'la sottofamiglia', altra.name, dedotta);
+}
+// Chi lascia vuoto il campo sigla non ha scritto MEC da nessuna parte: senza
+// dire che è dedotta dal nome, l'errore sembrerebbe arrivare dal nulla.
+function siglaInUso(k, cosa, nome, dedotta) {
+  return dedotta
+    ? `Sigla "${k}", dedotta dal nome, già usata da "${nome}": indicane una diversa`
+    : `Sigla "${k}" già usata da ${cosa} "${nome}"`;
+}
+// Le sigle ripetute che erano già in archivio. Da questa versione non se ne
+// possono più introdurre, ma quelle che c'erano restano e non bloccano il
+// lavoro: si mostrano in Gestione perché qualcuno decida quale cambiare —
+// rifarle da soli cambierebbe di nascosto il prefisso dei codici futuri.
+// Stessa scelta, e stessa forma, di duplicateCodeGroups().
+function duplicateSiglaGroups(kind) {
+  const out = [];
+  // `extra` porta l'ambito o la famiglia del gruppo: sono le due chiavi con cui
+  // chi disegna ritrova la riga da segnare in rosso. Il nome da solo non basta,
+  // due famiglie di ambiti diversi possono chiamarsi uguale.
+  const raggruppa = (voci, dove, extra) => {
+    const per = new Map();
+    voci.forEach(v => {
+      const k = siglaKey(v.sigla || siglaFromName(v.name)); if (!k) return;
+      let l = per.get(k); if (!l) { l = []; per.set(k, l); }
+      l.push(v.name || '(senza nome)');
+    });
+    per.forEach((nomi, sigla) => {
+      if (nomi.length > 1) out.push(Object.assign({ sigla, dove, nomi }, extra));
+    });
+  };
+  const fam = (db.families || []).filter(f => !kind || (f.kind || 'acquistato') === kind);
+  // Le macrofamiglie si confrontano dentro il proprio ambito e non fra ambiti:
+  // Meccanico commerciale e Meccanica generale a materie prime portano
+  // entrambe MEC senza che nessun codice diventi ambiguo — CMM-MEC e MAT-MEC
+  // sono già distinti dal prefisso. Raggrupparle tutte insieme segnalerebbe
+  // come problema proprio il caso che la regola ammette.
+  const perAmbito = new Map();
+  fam.forEach(f => {
+    const a = f.kind || 'acquistato';
+    let l = perAmbito.get(a); if (!l) { l = []; perAmbito.set(a, l); }
+    l.push(f);
+  });
+  perAmbito.forEach((lista, ambito) => raggruppa(lista, 'macrofamiglie', { kind: ambito }));
+  fam.forEach(f => raggruppa(f.subs || [], f.name, { kind: f.kind || 'acquistato', familyId: f.id }));
+  return out.sort((a, b) => a.dove.localeCompare(b.dove) || a.sigla.localeCompare(b.sigla));
+}
 function escapeRegExp(s) { return String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
 // Numero di cifre della parte incrementale (configurabile in Impostazioni)
 function codeDigits() {
@@ -427,13 +638,32 @@ function codeDigits() {
   return (n >= 1 && n <= 10) ? n : 3;
 }
 // Prossimo codice libero per un prefisso, es. 'MAT-ACC-LAM-' → 'MAT-ACC-LAM-003'
-function nextCodeForPrefix(prefix) {
-  const re = new RegExp('^' + escapeRegExp(prefix) + '(\\d+)$');
-  let max = 0;
-  (db.items || []).forEach(it => {
-    const m = it.code && String(it.code).match(re);
-    if (m) { const n = parseInt(m[1], 10); if (n > max) max = n; }
+// Il massimo progressivo già assegnato, per ogni prefisso, in una passata sola.
+//
+// Prima si compilava una regex e la si provava su **ogni** articolo, a ogni
+// chiamata. Durante un import è una chiamata per riga nuova: cinquemila righe
+// contro cinquemila articoli fanno venticinque milioni di confronti, ed è lo
+// stesso costo quadratico che codeIndex() toglie alla *ricerca* e che era
+// rimasto intatto sulla *generazione*. Qui la passata è una e vale per tutti i
+// prefissi insieme.
+let _prefixIdx = null, _prefixIdxArr = null, _prefixIdxLen = -1;
+function prefixIndex() {
+  const arr = db.items || [];
+  if (_prefixIdx && arr === _prefixIdxArr && arr.length === _prefixIdxLen) return _prefixIdx;
+  const m = new Map();
+  arr.forEach(it => {
+    // La coda di cifre e ciò che le sta davanti: «MAT-ACC-001» → «MAT-ACC-» + 1.
+    const t = String(it.code || '').match(/^(.*?)(\d+)$/);
+    if (!t) return;
+    const n = parseInt(t[2], 10);
+    const era = m.get(t[1]);
+    if (era === undefined || n > era) m.set(t[1], n);
   });
+  _prefixIdx = m; _prefixIdxArr = arr; _prefixIdxLen = arr.length;
+  return m;
+}
+function nextCodeForPrefix(prefix) {
+  const max = prefixIndex().get(prefix) || 0;
   return prefix + String(max + 1).padStart(codeDigits(), '0');
 }
 // Codice per famiglia: materie prime, commerciali e parti non legate a una macchina
@@ -491,22 +721,54 @@ function usedCodeNumbers(items) {
 }
 // Prossimo progressivo: sottogruppi a scendere da 10^incrN-1, gli altri a salire.
 // Restituisce null quando la numerazione è esaurita.
-function nextCodeNumber(type, siblings, sm) {
+//
+// `altri` sono gli articoli che condividono lo stesso prefisso ma non il tipo.
+// Sottogruppi e parti vivono entrambi in MAC-GRP-###, uno scendendo da 999 e
+// l'altro salendo da 1: filtrando per tipo non si vedevano, e quando i due
+// blocchi si incontravano l'app generava un codice già preso — per poi
+// rifiutarlo da sé con «codice già in uso», sullo stesso codice a ogni
+// tentativo. Un vicolo cieco da cui si usciva solo scrivendolo a mano.
+function nextCodeNumber(type, siblings, sm, altri) {
   const used = usedCodeNumbers(siblings);
+  const presi = new Set(usedCodeNumbers((siblings || []).concat(altri || [])));
+  const max = 10 ** sm.incrN - 1;
+  // Si continua nella direzione del proprio blocco finché non si trova un
+  // numero che nessuno dei due sta usando.
+  const libero = (n, passo, limite) => {
+    while (presi.has(n)) n += passo;
+    return (passo < 0 ? n < limite : n > limite) ? null : n;
+  };
   if (type === 'sottogruppo') {
-    const n = used.length ? Math.min(...used) - 1 : 10 ** sm.incrN - 1;
-    return n < 0 ? null : n;
+    const n = used.length ? Math.min(...used) - 1 : max;
+    return n < 0 ? null : libero(n, -1, 0);
   }
   if (type === 'parte') {
     const n = used.length ? Math.max(...used) + 1 : 1;
-    return n > 10 ** sm.incrN - 1 ? null : n;
+    return n > max ? null : libero(n, 1, max);
   }
   // macchina e gruppo: progressivo S## a salire da 0
   const n = used.length ? Math.max(...used) + 1 : 0;
   return n > 10 ** sm.incrS - 1 ? null : n;
 }
+// ─── Perché il codice non è stato generato ───
+// genItemCode() è logica di dominio e non deve parlare all'interfaccia: durante
+// un import viene chiamata una volta per riga, e sparava un toast per ognuna —
+// decine di riquadri sovrapposti su un file che invece ha un report suo, fatto
+// apposta per raccontare riga per riga cos'è successo.
+//
+// Dice qui perché non ce l'ha fatta, e chi ha davanti una persona lo mostra
+// (genItemCodeUI), chi sta leggendo un file lo scrive nel report.
+let codeGenError = '';
+function codeFallito(msg) { codeGenError = msg; return ''; }
+// La versione per le schede: genera e, se non ci riesce, lo dice.
+function genItemCodeUI(it) {
+  const c = genItemCode(it);
+  if (!c && codeGenError) showToast(codeGenError, 'error');
+  return c;
+}
 // Codice automatico dell'articolo (bozza o esistente). '' quando non è generabile.
 function genItemCode(it) {
+  codeGenError = '';
   if (!it) return '';
   const type = it.type;
   if (type === 'materiale' || type === 'acquistato') return genFamilyCode(type, it.familyId, it.subFamilyId);
@@ -517,7 +779,7 @@ function genItemCode(it) {
     // Progressivo tra le macchine che condividono la stessa sigla (esclusa se stessa in modifica)
     const siblings = machineItems().filter(m => m.sigla === it.sigla && m.id !== it.id);
     const n = nextCodeNumber('macchina', siblings, sm);
-    if (n == null) { showToast('Numerazione macchine esaurita', 'error'); return ''; }
+    if (n == null) return codeFallito('Numerazione macchine esaurita');
     return `${it.sigla}-S${String(n).padStart(sm.incrS, '0')}`;
   }
 
@@ -527,7 +789,7 @@ function genItemCode(it) {
     const sm = machineScheme(mac);
     const siblings = groupItemsFor(mac.id).filter(g => g.sigla === it.sigla && g.id !== it.id);
     const n = nextCodeNumber('gruppo', siblings, sm);
-    if (n == null) { showToast('Numerazione gruppi esaurita', 'error'); return ''; }
+    if (n == null) return codeFallito('Numerazione gruppi esaurita');
     return `${mac.sigla}-${it.sigla}-S${String(n).padStart(sm.incrS, '0')}`;
   }
 
@@ -536,10 +798,14 @@ function genItemCode(it) {
     // La parte senza macchina/gruppo mantiene la codifica per famiglia
     if (!mac || !grp) return type === 'parte' ? genFamilyCode(type, it.familyId, it.subFamilyId) : '';
     const sm = machineScheme(mac);
-    const siblings = (db.items || []).filter(i =>
-      i.type === type && i.machineItemId === mac.id && i.groupItemId === grp.id && i.id !== it.id);
-    const n = nextCodeNumber(type, siblings, sm);
-    if (n == null) { showToast(`Numerazione ${type === 'parte' ? 'parti' : 'sottogruppi'} esaurita`, 'error'); return ''; }
+    const stessoGruppo = i => i.machineItemId === mac.id && i.groupItemId === grp.id && i.id !== it.id;
+    const siblings = (db.items || []).filter(i => i.type === type && stessoGruppo(i));
+    // L'altro blocco che abita lo stesso prefisso: le parti per un sottogruppo,
+    // i sottogruppi per una parte. Vedi il commento su nextCodeNumber.
+    const altroTipo = type === 'parte' ? 'sottogruppo' : 'parte';
+    const altri = (db.items || []).filter(i => i.type === altroTipo && stessoGruppo(i));
+    const n = nextCodeNumber(type, siblings, sm, altri);
+    if (n == null) return codeFallito(`Numerazione ${type === 'parte' ? 'parti' : 'sottogruppi'} esaurita`);
     return `${mac.sigla}-${grp.sigla}-${String(n).padStart(sm.incrN, '0')}`;
   }
   return '';
@@ -566,7 +832,13 @@ function showToast(m, t = 'success', azione) {
   _toastAzione = (azione && typeof azione.fn === 'function') ? azione.fn : null;
   el.innerHTML = esc(m) + (_toastAzione
     ? ` <button class="toast-action" onclick="toastAzione()">${esc(azione.label || 'Annulla')}</button>` : '');
-  el.style.background = t === 'error' ? 'var(--red)' : 'var(--green)';
+  // I solidi, non i colori da leggere: sopra ci va il bianco (vedi style.css)
+  el.style.background = t === 'error' ? 'var(--red-solid)' : 'var(--green-solid)';
+  // Un errore interrompe, una conferma aspetta il proprio turno: sono le due
+  // urgenze che una live region sa distinguere, ed è la differenza fra sapere
+  // subito che il salvataggio è stato rifiutato e scoprirlo dopo.
+  el.setAttribute('aria-live', t === 'error' ? 'assertive' : 'polite');
+  el.setAttribute('role', t === 'error' ? 'alert' : 'status');
   el.classList.add('show');
   clearTimeout(_toastTimer);
   _toastTimer = setTimeout(() => { el.classList.remove('show'); _toastAzione = null; }, _toastAzione ? TOAST_AZIONE_MS : TOAST_MS);
@@ -627,11 +899,94 @@ function showPersistErrorModal(kind, info) {
          <p><strong>Le modifiche non vengono salvate.</strong> Esporta un backup e segnala il problema.</p>`;
   // Il backup contiene gli utenti: il pulsante compare solo a chi può esportarlo.
   const btnBackup = canWrite('manage')
-    ? `<button class="add-btn-sm" onclick="closeModal(); exportBackup()">⬇ Esporta backup JSON ora</button>` : '';
+    ? `<button class="add-btn-sm" onclick="closeModal(); exportBackup()">${ico('download', 'tinted', '')} Esporta backup JSON ora</button>` : '';
   // Chiave propria: l'avviso si affianca a quello che è aperto invece di
   // buttar via un form a metà compilazione.
-  openModal(`<h3>⚠ Salvataggio non riuscito</h3>${testo}
+  openModal(`<h3>${ico('warning', 'tinted pill', '')} Salvataggio non riuscito</h3>${testo}
     <div class="modal-actions"><button class="btn-ghost" onclick="closeModal()">Ho capito</button>${btnBackup}</div>`, false, 'avviso');
+}
+// ─── Un'altra scheda ha modificato l'archivio ───
+// Terzo della famiglia, dopo onPersistError (non si è riusciti a scrivere) e
+// onLoadError (non si è riusciti a leggere): qui si **sarebbe** riusciti a
+// scrivere, ed è proprio per questo che ci si ferma. Sotto c'è il lavoro di
+// qualcun altro, e sovrascriverlo non darebbe nessun errore a nessuno dei due.
+//
+// Non si offre una fusione, perché non esiste: per fondere due fotografie del
+// database bisognerebbe sapere, riga per riga, quale delle due versioni è
+// quella buona, e quella risposta non ce l'ha né l'app né chi la usa. Si
+// offrono le due scelte che si possono davvero fare — ricaricare (si perde
+// quello che si stava facendo qui) o tenere la propria versione (si perde
+// quello che ha fatto l'altra scheda) — dicendo per ciascuna che cosa costa.
+let conflittoMostrato = false;
+function onExternalChange() {
+  renderUnsavedBadge();
+  if (conflittoMostrato) return;
+  conflittoMostrato = true;
+  setTimeout(showExternalChangeModal, 0);
+}
+function showExternalChangeModal() {
+  const btnBackup = canWrite('manage')
+    ? `<button class="btn-outline" onclick="exportBackup()">${ico('download', 'tinted', '')} Esporta backup</button>` : '';
+  openModal(`<h3>${ico('warning', 'tinted pill', '')} Modificato in un'altra scheda</h3>
+    <p>Questi dati sono stati modificati altrove — un'altra scheda o un'altra finestra con Bomtrack aperto — dopo che questa scheda li ha caricati.</p>
+    <p><strong>L'ultima modifica non è stata salvata</strong>, di proposito: salvarla adesso cancellerebbe tutto il lavoro fatto nell'altra scheda, senza lasciarne traccia.</p>
+    <p>Prima di decidere conviene esportare un backup: qualunque strada si prenda, una delle due versioni resta indietro.</p>
+    <div class="modal-actions">
+      ${btnBackup}
+      <button class="btn-outline" onclick="forzaSalvataggio()">Tieni questa versione</button>
+      <button class="add-btn-sm" onclick="location.reload()">Ricarica dall'archivio</button>
+    </div>`, false, 'avviso');
+}
+// «Tieni questa versione»: si riscrive sopra, consapevolmente. Il conflitto si
+// considera chiuso, così il prossimo avviso riguarderà una modifica nuova.
+function forzaSalvataggio() {
+  Store.forzaProssimaScrittura();
+  const ok = Store.commit();
+  conflittoMostrato = false;
+  closeModal();
+  if (ok) savedToast('Versione di questa scheda salvata');
+}
+// ─── Archivio locale illeggibile all'avvio ───
+// Gemello di onPersistError, dall'altro capo: là non si è riusciti a scrivere,
+// qui non si è riusciti a leggere. È la situazione più spaventosa che l'app
+// possa presentare — si apre e il lavoro di mesi non c'è — e merita di essere
+// spiegata per intero, a partire dal fatto che i dati sono quasi sempre ancora
+// recuperabili.
+function onLoadError(info) {
+  if (typeof document === 'undefined' || !document.getElementById('modal-root')) return;
+  // Differito come per i salvataggi: init() sta ancora montando la schermata di
+  // accesso, e un pannello aperto adesso finirebbe sotto.
+  setTimeout(() => showLoadErrorModal(info), 0);
+}
+function showLoadErrorModal(info) {
+  const kb = info && info.bytes ? ` (erano circa ${Math.round(info.bytes / 1024)} KB)` : '';
+  const dove = info && info.rescued
+    ? `Sono stati messi da parte così com'erano, sotto la voce <span style="font-family:var(--mono)">${esc(DB_KEY_RESCUE)}</span> dell'archivio locale del browser, e restano recuperabili a mano.`
+    : 'Una copia di scorta era già stata messa da parte in precedenza, e non è stata toccata.';
+  const testo = info && info.kind === 'parse'
+    ? `<p>I dati salvati su questo computer non si riescono più a leggere${kb}: il contenuto risulta interrotto o alterato.</p>
+       <p><strong>Non sono stati cancellati.</strong> ${dove}</p>
+       <p>Quello che vedi adesso è un database di esempio, e <strong>non è ancora stato salvato</strong>: finché non modifichi qualcosa, l'originale resta dov'è. Prima di lavorare, reimporta l'ultimo backup JSON — o fai vedere questa schermata a chi segue l'app.</p>`
+    : `<p>Il browser non consente di leggere l'archivio locale: succede in navigazione privata, o quando i dati dei siti sono bloccati.</p>
+       <p>Quello che vedi è un database di esempio. <strong>Non lavorarci sopra</strong>: alla chiusura non resterebbe nulla.</p>`;
+  // Chiave propria, come per l'avviso di salvataggio: si affianca a ciò che è
+  // aperto invece di buttar via un form a metà.
+  openModal(`<h3>${ico('warning', 'tinted pill', '')} Dati non caricati</h3>${testo}
+    <div class="modal-actions"><button class="btn-ghost" onclick="closeModal()">Ho capito</button></div>`, false, 'avviso');
+}
+// ─── C'è del lavoro che una chiusura porterebbe via? ───
+// Due sorgenti distinte, e basta una delle due:
+//   - il salvataggio è fallito (quota esaurita, archivio negato): ciò che si
+//     vede a schermo non è mai arrivato su disco;
+//   - un documento è aperto a metà compilazione. I tre flag esistono già, li
+//     alzano gli editor di richieste, ordini e ordini di lavoro.
+// Sta accanto a renderUnsavedBadge() perché è lo stesso stato, detto in un
+// altro momento: quello lo mostra mentre si lavora, questo lo difende all'uscita.
+function lavoroInSospeso() {
+  if (typeof Store !== 'undefined' && Store.isUnsaved && Store.isUnsaved()) return true;
+  return !!(typeof rfqDirty !== 'undefined' && rfqDirty)
+    || !!(typeof orderDirty !== 'undefined' && orderDirty)
+    || !!(typeof odlDirty !== 'undefined' && odlDirty);
 }
 // Indicatore fisso nell'header finché c'è divergenza tra memoria e persistito.
 function renderUnsavedBadge() {
@@ -642,6 +997,23 @@ function renderUnsavedBadge() {
   el.title = aperto ? 'Le ultime modifiche sono rimaste solo in memoria: esporta un backup prima di chiudere la scheda' : '';
 }
 
+// ─── La conferma di un salvataggio riuscito ───
+// «Aggiornato», «Eliminato», «Impostazioni salvate»: sono la conferma di un
+// fatto, e vanno dette solo se il fatto è avvenuto. Fino alla 0.59 arrivavano
+// comunque — con l'archivio pieno o in navigazione privata si vedeva il toast
+// verde e, sopra, la finestra rossa che diceva che non era stato salvato
+// niente. Due messaggi opposti sullo stesso gesto: chi legge sceglie quello che
+// preferisce, e di solito sceglie male.
+//
+// Non serve controllare l'esito a ogni chiamata: Store.isUnsaved() è già il
+// flag autorevole, alzato da commitFailed() e abbassato dal primo salvataggio
+// che riesce. Quando è alzato tace il toast, e a parlare resta l'avviso di
+// salvataggio non riuscito — che è esplicito e non sparisce da solo.
+function savedToast(msg) {
+  if (Store.isUnsaved()) return false;
+  showToast(msg);
+  return true;
+}
 // ─── Errori non previsti ───
 // Fuori da store.js non c'era nessuna rete: un'eccezione dentro un render*
 // lasciava la vista a metà — mezza tabella, un pannello vuoto — senza dire
@@ -683,13 +1055,13 @@ function onAppError(kind, msg, err) {
   return rec;
 }
 function showAppErrorModal(rec) {
-  openModal(`<h3>⚠ Errore non previsto</h3>
+  openModal(`<h3>${ico('warning', 'tinted pill', '')} Errore non previsto</h3>
     <p>Qualcosa è andato storto mentre l'app disegnava la pagina: <strong>quello che vedi a schermo potrebbe essere incompleto</strong>. I dati salvati non sono stati toccati.</p>
     <p>Ricarica la pagina per tornare a uno stato pulito. Se l'errore si ripete, scarica il registro e allegalo alla segnalazione.</p>
-    <p class="muted" style="font-family:var(--mono,monospace);font-size:12px">${esc(rec.msg)}</p>
+    <p class="empty-text" style="text-align:left;font-family:var(--mono,monospace);font-size:12px">${esc(rec.msg)}</p>
     <div class="modal-actions">
       <button class="btn-ghost" onclick="closeModal()">Ho capito</button>
-      <button class="btn-ghost" onclick="downloadErrorLog()">⬇ Scarica registro errori</button>
+      <button class="btn-ghost" onclick="downloadErrorLog()">${ico('download', 'tinted', '')} Scarica registro errori</button>
       <button class="add-btn-sm" onclick="location.reload()">↻ Ricarica la pagina</button>
     </div>`, false, 'avviso');
 }
@@ -699,7 +1071,7 @@ function downloadErrorLog() {
     `[${r.ts}] ${r.kind} · vista: ${r.view} · Bomtrack ${r.version}\n${r.msg}\n${r.stack}`).join('\n\n───\n\n');
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob([testo], { type: 'text/plain' }));
-  a.download = `bomtrack-errori-${new Date().toISOString().slice(0, 10)}.txt`;
+  a.download = `bomtrack-errori-${oggiISO()}.txt`;
   a.click();
   URL.revokeObjectURL(a.href);
 }
@@ -729,6 +1101,12 @@ function openModal(h, wide, key) {
   // Con la pagina viva dietro, un form aperto si può lasciare lì e aprirne un
   // altro: prima l'overlay lo impediva, ora va chiesto. Vale solo per i form,
   // le schede di consultazione non hanno niente da perdere.
+  // L'unico confirm() nativo rimasto, e resta per una ragione di forma, non di
+  // pigrizia: openModal è **sincrona** — restituisce il pannello, e ottanta
+  // chiamanti ci scrivono dentro subito dopo — mentre askConfirm risponde con
+  // una richiamata. Sostituirlo qui vorrebbe dire rendere asincrona l'apertura
+  // di ogni scheda dell'app. Il prezzo è un riquadro di sistema fuori tema in un
+  // caso che capita di rado; il resto dell'app askConfirm ce l'ha.
   if (p && k === 'form' && !confirm('Una scheda è già aperta: le modifiche non salvate andranno perse. Continuare?')) return null;
   const nuovo = !p;
   if (nuovo) {
@@ -737,8 +1115,16 @@ function openModal(h, wide, key) {
     // Una scheda è un dialogo: chi naviga con un lettore di schermo deve
     // sentirsi dire che ne è stata aperta una, non trovarsi del testo nuovo
     // in mezzo alla pagina senza sapere da dove arriva.
+    //
+    // `role` sì, `aria-modal` no. Quest'ultimo dichiara che tutto il resto della
+    // pagina è inerte, e qui non lo è per scelta: le schede si lasciano aperte,
+    // se ne apre un'altra accanto, la vista dietro resta viva e usabile. Il Tab
+    // esce eccome — e chi usa un lettore di schermo si trovava a leggere del
+    // contenuto che l'attributo gli aveva appena dichiarato inesistente.
+    // Dicevano il falso anche due schede aperte insieme, entrambe «l'unica».
+    // Si toglie l'attributo invece di rinchiudere il Tab: la pagina viva dietro
+    // è il disegno, non un difetto da correggere.
     p.setAttribute('role', 'dialog');
-    p.setAttribute('aria-modal', 'true');
     // Dove tornare quando si chiude: senza, il focus finisce a inizio pagina e
     // chi usa la tastiera deve rifare tutta la strada per riprendere il lavoro.
     p._focusPrima = document.activeElement || null;
@@ -842,8 +1228,22 @@ function panelTop() {
   return Array.prototype.reduce.call(root.children,
     (best, el) => (!best || (+el.style.zIndex || 0) >= (+best.style.zIndex || 0)) ? el : best, null);
 }
+// Lo stato di una scheda vive in una variabile globale (window.__priceItemId e
+// simili, vedi il commento sopra openModal). Chiudendo la scheda quella
+// variabile restava a puntare all'articolo di prima: il listino chiuso, e un
+// ridisegno arrivato da altrove continuava a lavorare sull'articolo sbagliato.
+//
+// Ogni chiave dichiara come si ripulisce, e core.js non ha bisogno di sapere
+// cosa siano quelle variabili — le registra chi le usa, accanto a dove le usa.
+// Si accumulano invece di sostituirsi: la chiave di serie ('form') è condivisa
+// da schede di file diversi, e l'ultimo a registrarsi non deve zittire gli altri.
+const PANEL_CLEANUP = {};
+function onPanelClose(key, fn) { (PANEL_CLEANUP[key] = PANEL_CLEANUP[key] || []).push(fn); }
+function panelCleanup(key) { (PANEL_CLEANUP[key] || []).forEach(fn => fn()); }
 function closePanel(p) {
   const torna = p && p._focusPrima;
+  const k = p && p.dataset && p.dataset.panelKey;
+  if (k) panelCleanup(k);
   if (p && p.parentNode) p.parentNode.removeChild(p);
   if (!panelRoot() || !panelRoot().children.length) _panelZ = PANEL_Z;   // gli z-index non crescono all'infinito
   // Il focus torna da dove era partito: chi ha aperto la scheda dal pulsante ✏
@@ -853,7 +1253,15 @@ function closePanel(p) {
 // Chiude la scheda in primo piano: le decine di "Annulla" e i salvataggi che
 // chiamano closeModal() intendono sempre quella con cui si sta lavorando.
 function closeModal() { closePanel(panelTop()); }
-function closeAllPanels() { const r = panelRoot(); if (r) r.innerHTML = ''; _panelZ = PANEL_Z; }
+function closeAllPanels() {
+  const r = panelRoot();
+  if (r) Array.prototype.forEach.call(r.children, el => {
+    const k = el.dataset && el.dataset.panelKey;
+    if (k) panelCleanup(k);
+  });
+  if (r) r.innerHTML = '';
+  _panelZ = PANEL_Z;
+}
 
 // ─── Conferme in scheda ───
 // confirm() nativo blocca il browser, esce dallo stile dell'app e non lascia
@@ -866,7 +1274,7 @@ let _confirmFn = null;
 function askConfirm(message, onYes, opts) {
   const o = opts || {};
   _confirmFn = typeof onYes === 'function' ? onYes : null;
-  openModal(`<h3>${esc(o.title || '❓ Conferma')}</h3>
+  openModal(`<h3>${ico('warning', 'tinted pill', '')} ${esc(o.title || 'Conferma')}</h3>
     <p class="confirm-text">${esc(message).replace(/\n/g, '<br>')}</p>
     <div class="modal-actions">
       <button class="btn-ghost" onclick="confirmNo()">${esc(o.cancel || 'Annulla')}</button>
@@ -880,9 +1288,22 @@ function confirmNo() { _confirmFn = null; closeModal(); }
 // prezzo?" è la prima domanda che arriva.
 function actorName(id) {
   if (!id) return '';
-  const u = (db.users || []).find(x => x.id === id);
+  const u = userIndex().get(id);
   return u ? u.name : 'utente rimosso';
 }
+// ─── Date ───
+// Oggi secondo il calendario di chi lavora, non secondo Greenwich: alle 23 del
+// 30 settembre in Italia è ancora il 30, e un semaforo che dicesse «1 ottobre»
+// segnalerebbe in ritardo qualcosa che non lo è. Al contrario, fra mezzanotte e
+// le due `toISOString()` dà ancora il giorno prima — ed era così che
+// l'import datava le quotazioni, dove la data **è** l'identità della riga.
+function oggiISO() {
+  const n = new Date();
+  return new Date(n.getTime() - n.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+}
+// Una data ISO detta all'italiana. Stava in views-docs.js e la usavano altre
+// quattro viste: è gemella di fmtStamp, e il suo posto è qui.
+function fmtDateIt(d) { return d ? new Date(d).toLocaleDateString('it-IT') : ''; }
 function fmtStamp(iso) {
   if (!iso) return '';
   const d = new Date(iso);
@@ -896,7 +1317,17 @@ function stampLine(rec) {
   if (rec.createdAt) parts.push(`Creato${rec.createdBy ? ' da ' + esc(actorName(rec.createdBy)) : ''} il ${esc(fmtStamp(rec.createdAt))}`);
   if (rec.updatedAt && rec.updatedAt !== rec.createdAt) parts.push(`aggiornato${rec.updatedBy ? ' da ' + esc(actorName(rec.updatedBy)) : ''} il ${esc(fmtStamp(rec.updatedAt))}`);
   if (!parts.length) return '';
-  return `<p class="stamp-line">🕓 ${parts.join(' · ')}</p>`;
+  return `<p class="stamp-line">${ico('clock', 'tinted', '')} ${parts.join(' · ')}</p>`;
+}
+// Versione testuale, una riga, per una cella di tabella: l'ultimo tocco (o la
+// creazione, se non è mai stato aggiornato) invece della frase intera di
+// `stampLine`, che è pensata per il fondo di una scheda.
+function recordAuthorShort(rec) {
+  if (!rec) return '—';
+  const at = rec.updatedAt || rec.createdAt;
+  if (!at) return '—';
+  const by = rec.updatedAt ? rec.updatedBy : rec.createdBy;
+  return (by ? actorName(by) + ' · ' : '') + fmtDateIt(at);
 }
 function confirmYes() {
   const fn = _confirmFn; _confirmFn = null;
@@ -938,26 +1369,124 @@ if (typeof document !== 'undefined') {
     else if ((e.ctrlKey || e.metaKey) && (e.key === 'k' || e.key === 'K') && currentUser) {
       globalSearchModal(); e.preventDefault();
     }
+    // Ctrl+I: apre e chiude il pannello laterale, senza andare a cercare il
+    // pulsante ogni volta che serve un po' di larghezza in più.
+    else if ((e.ctrlKey || e.metaKey) && (e.key === 'i' || e.key === 'I') && currentUser) {
+      inspectorToggle(); e.preventDefault();
+    }
+    // Frecce, Invio ed Esc sull'elenco: li gestisce il pannello, che sa se c'è
+    // una riga scelta e se il fuoco è dentro un campo. Se non se ne occupa lui,
+    // i tasti restano al browser.
+    else if (currentUser && typeof inspectorKey === 'function' && inspectorKey(e)) e.preventDefault();
   });
   // Il Ctrl+P del browser deve trovare l'intestazione già compilata.
   // Riferimento differito: printHeadFill sta in uno script caricato dopo questo.
   window.addEventListener('beforeprint', () => printHeadFill());
+  // Chiudere la scheda con del lavoro per aria: si chiede, non si lascia andare.
+  //
+  // Due cose diverse finiscono qui. La prima è il salvataggio **fallito**:
+  // showPersistErrorModal() dice testualmente «chiudendo questa scheda
+  // andrebbero persi», e il badge ⚠ in testata lo ricorda — ma finché non c'era
+  // questa riga la scheda si chiudeva senza una parola, e quel lavoro spariva
+  // davvero. La seconda sono i documenti a metà compilazione: rfqDirty,
+  // orderDirty e odlDirty esistono già e nessuno li guardava all'uscita.
+  //
+  // Il testo non lo decide l'app: i browser mostrano da anni una frase loro, e
+  // l'unica cosa che conta è **restituire qualcosa** da preventDefault. Si tace
+  // quando non c'è niente in sospeso, perché un avviso che compare sempre è un
+  // avviso che si impara a scacciare senza leggerlo.
+  window.addEventListener('beforeunload', e => {
+    if (!lavoroInSospeso()) return;
+    e.preventDefault();
+    e.returnValue = '';       // richiesto dai browser più vecchi
+    return '';
+  });
   // Rete per tutto ciò che non ha un try/catch proprio. `error` cattura anche il
-  // caricamento fallito degli script CDN, che però hanno già le loro guardie
-  // (requirePdf/requireXlsx) e non vanno segnalati due volte.
+  // caricamento fallito di uno script, che però ha già le sue guardie
+  // (requirePdf/requireXlsx) e non va segnalato due volte.
   window.addEventListener('error', e => {
     if (e.target && e.target !== window && e.target.tagName) return;   // risorsa non caricata, non un'eccezione
     onAppError('errore', e.message || 'errore sconosciuto', e.error);
   });
   // Indietro/Avanti del browser e link con hash: la navigazione risponde
   // all'indirizzo. Riferimento differito: onHashChange sta in shell.js.
+  // L'altra scheda che scrive si fa sentire **subito**, non al primo
+  // salvataggio di questa: chi continua a lavorare su dati ormai vecchi accumula
+  // modifiche che poi non potrà più salvare senza cancellare quelle altrui.
+  // L'evento `storage` arriva solo alle **altre** schede, mai a chi ha scritto.
+  window.addEventListener('storage', e => {
+    if (e.key && e.key !== DB_KEY_REV && e.key !== DB_KEY) return;
+    if (typeof Store !== 'undefined' && Store.revisione && Store.revisione() !== undefined) onExternalChange();
+  });
+  // ── L'app anche senza rete ──
+  // Il service worker mette in cache i file del programma (non i dati: quelli
+  // stanno in localStorage e non passano di lì) così l'app si apre offline e si
+  // può installare sul PC dell'officina.
+  //
+  // Su file:// non esiste e il browser lo rifiuta: è il modo in cui l'app si
+  // apre col doppio click, ed è **il caso normale**, non un ripiego. Per questo
+  // l'errore si ignora in silenzio invece di finire in onAppError — non c'è
+  // niente che non va, e un avviso a ogni avvio sarebbe rumore. Le librerie di
+  // export stanno in vendor/ proprio perché l'offline non dipenda da qui.
+  if (typeof navigator !== 'undefined' && navigator.serviceWorker && location.protocol !== 'file:') {
+    navigator.serviceWorker.register('sw.js').catch(() => { /* niente cache: l'app funziona lo stesso */ });
+  }
   window.addEventListener('hashchange', () => onHashChange());
   window.addEventListener('unhandledrejection', e => {
     const r = e.reason;
     onAppError('promessa', r && r.message ? r.message : String(r), r instanceof Error ? r : null);
   });
 }
+// Il valore di un campo scritto a mano, ripulito ai bordi. I form passano da
+// val(), che il trim lo fa da sempre; i campi di richieste, ordini, piani e
+// commesse scrivono invece `this.value` grezzo dentro il loro setter, e gli
+// spazi restavano nel dato.
+//
+// Sul Cliente di una commessa non è cosmesi: quel testo **è la chiave** verso
+// l'anagrafica, e « Rossi Srl » con gli spazi si porta dietro un valore che
+// coincide con il cliente solo perché ogni confronto, altrove, ricorda di
+// togliere gli spazi. Basta che uno se ne dimentichi.
+//
+// Vale sui campi commessi con onchange — cioè quando si esce dal campo, non
+// mentre si scrive — quindi il cursore non ne risente.
+function campoTesto(v) { return typeof v === 'string' ? v.trim() : v; }
+// ─── Le chiavi dell'archivio locale ───
+// Tutte con l'underscore: `bomtrack_v1`, `bomtrack_session`, `bomtrack_theme`.
+// Due preferenze usavano il punto (`bomtrack.columns`, `bomtrack.inspector`) e
+// nessuna regola distingueva i due gruppi — contengono la stessa cosa, comodità
+// personali di chi guarda lo schermo — con l'effetto che nessuna pulizia o
+// diagnostica poteva raccoglierle per prefisso.
+//
+// Rinominare una chiave, però, vuol dire buttare via ciò che c'era dentro: le
+// colonne che qualcuno ha nascosto in Anagrafica sono una scelta fatta a mano,
+// e ricomparirebbero tutte senza spiegazione. Il travaso avviene una volta,
+// alla prima lettura, e la chiave vecchia si toglie subito dopo.
+function localPref(key, keyVecchia) {
+  try {
+    const v = localStorage.getItem(key);
+    if (v != null) return v;
+    if (!keyVecchia) return null;
+    const vecchio = localStorage.getItem(keyVecchia);
+    if (vecchio == null) return null;
+    localStorage.setItem(key, vecchio);
+    localStorage.removeItem(keyVecchia);
+    return vecchio;
+  } catch (e) { return null; }   // modo privato o spazio esaurito: si riparte dai valori di serie
+}
 function val(id) { const e = document.getElementById(id); return e ? e.value.trim() : ''; }
+// Il valore di un campo che non può restare vuoto. Torna '' e lo dice, così il
+// chiamante fa `const n = requireVal('x', 'Nome richiesto'); if (!n) return;`.
+//
+// Esiste perché la validazione stava solo sul ramo «aggiungi»: addSupplier
+// chiedeva il nome, saveSupplier lo lasciava svuotare — e un fornitore con nome
+// vuoto compare come riga bianca in Gestione, mentre ogni richiesta e ordine
+// intestati a lui stampano «senza fornitore» in PDF senza che niente lo segnali.
+// Lo stesso valeva per i centri di lavoro, le famiglie e le sottofamiglie.
+function requireVal(id, messaggio) {
+  const v = val(id);
+  if (!v) showToast(messaggio || 'Campo obbligatorio', 'error');
+  return v;
+}
 function setVal(id, v) { const e = document.getElementById(id); if (e) e.value = v; }
 // ─── Digitazione: rinvio del ridisegno ───
 // I campi di ricerca ridisegnano interi elenchi a ogni carattere. Con poche

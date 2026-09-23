@@ -35,7 +35,7 @@ describe('Calendario: da dove arrivano le date', () => {
     assert.equal(e.length, 2, 'una commessa chiusa non è più una scadenza');
     assert.equal(e[0].data, '2020-01-01');
     assert.equal(e[0].gravita, 'alta');
-    assert.match(e[0].azione, /openJobEdit\('j1'\)/, 'ogni voce porta dove si risolve');
+    assert.match(e[0].azione, /homeApri\('job','j1'\)/, 'ogni voce porta dove si risolve');
     assert.equal(e[1].gravita, 'info');
   });
 
@@ -55,7 +55,7 @@ describe('Calendario: da dove arrivano le date', () => {
     assert.equal(f[0].data, giorni(a, 3), 'serve fra 13 giorni, consegna in 10: si ordina fra 3');
     assert.equal(f[0].gravita, 'media', 'dentro la finestra d\'avviso');
     assert.match(f[0].testo, /2 articoli/);
-    assert.match(f[0].azione, /openPlanEdit\('pl1'\)/);
+    assert.match(f[0].azione, /homeApri\('plan','pl1'\)/);
   });
 
   it('un ordine da ricevere compare alla data confermata; evaso o ricevuto no', () => {
@@ -77,6 +77,27 @@ describe('Calendario: da dove arrivano le date', () => {
     const a = app();
     a.eval(`db.orders = [{ id: 'o1', number: 'ODA-1', status: 'inviato', active: true, lines: [{ id: 'r1', qty: 5, received: 2, deliveryDate: '2020-02-01' }] }]`);
     assert.equal(eventi(a)[0].gravita, 'alta');
+  });
+
+  it('un ODL da far rientrare sta accanto agli ordini, e apre l\'ODL', () => {
+    const a = app();
+    const d = giorni(a, 20);
+    a.eval(`db.workOrders = [{ id: 'w1', number: 'ODL-1', status: 'inviato', active: true, lines: [{ id: 'r1', qty: 3, received: 0, deliveryDate: '${d}' }] }]`);
+    const e = eventi(a);
+    assert.equal(e.length, 1);
+    assert.match(e[0].testo, /ODL-1/);
+    assert.match(e[0].azione, /homeApri\('odl','w1'\)/);
+  });
+
+  it('un ordine di produzione lanciato mostra la data di fine; una bozza no', () => {
+    const a = app();
+    a.eval(`db.prodOrders = [
+      { id: 'p1', number: 'ODP-1', status: 'lanciato', dueDate: '2020-03-01', active: true },
+      { id: 'p2', number: 'ODP-2', status: 'bozza', dueDate: '2020-03-01', active: true }]`);
+    const e = eventi(a);
+    assert.equal(e.length, 1);
+    assert.equal(e[0].gravita, 'alta');
+    assert.match(e[0].azione, /homeApri\('odp','p1'\)/);
   });
 
   it('le voci sono in ordine di data, e a parità la più grave prima', () => {

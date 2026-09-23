@@ -7,6 +7,17 @@
 // ═══════════════════════════════════════════════════════════
 
 const DB_KEY = 'bomtrack_v1';       // non rinominare: la versione vive dentro il blob
+// Dove finisce un blob che non si riesce più a leggere. Un JSON troncato —
+// scrittura interrotta, spazio finito a metà, chiavetta sfilata — è quasi tutto
+// ancora lì, e un recupero a mano ne salva la maggior parte. Fino alla 0.59 si
+// ripartiva dai dati demo e li si salvava sopra: l'unica copia rimasta spariva
+// prima che qualcuno potesse guardarla.
+const DB_KEY_RESCUE = 'bomtrack_v1_illeggibile';
+// Il contatore di revisione dell'archivio. Sta in una chiave **sua**, minuscola,
+// e non dentro il blob: si legge prima di ogni salvataggio, e rileggere e
+// analizzare qualche megabyte di JSON a ogni scrittura costerebbe molto più del
+// salvataggio stesso.
+const DB_KEY_REV = 'bomtrack_v1_rev';
 const SCHEMA_VERSION = 2;           // v1 = id interi legacy (implicita), v2 = uuid + timestamp
 const TRASH_DAYS = 30;              // per quanto un'eliminazione resta recuperabile
 
@@ -16,9 +27,20 @@ const defaultDB = {
     { id: 's2', name: 'SKF', referente: '', email: '', active: true },
     { id: 's3', name: 'Würth', referente: '', email: '', active: true },
   ],
+  // Clienti: l'anagrafica a monte delle commesse. Nessun seed — un cliente
+  // inventato in un database vuoto è un cliente che qualcuno prima o poi
+  // fattura.
+  customers: [],
   rfqs: [],
-  orders: [],
+  orders: [],       // ordini d'acquisto (ODA): merce
+  workOrders: [],   // ordini di lavoro (ODL): lavorazioni affidate a un terzista
   plans: [],        // piani di produzione (fabbisogno materiali)
+  prodOrders: [],   // ordini di produzione (ODP): la successione delle fasi di una parte
+  prodDecls: [],    // dichiarazioni di avanzamento: eventi, non stato (vedi SCHEMA)
+  // `suppliers` (opzionale, assente sui centri esistenti finché non se ne
+  // registra uno): fornitori conto lavoro abituali per quel centro, ciascuno
+  // con la propria tariffa — { id, supplierId, rate, note }. Vedi wcRateFor
+  // in costing.js e wcSupplierOptions in views-catalog.js.
   workCenters: [
     { id: 'w1', name: 'Taglio laser', hourlyRate: 45, active: true },
     { id: 'w2', name: 'Saldatura', hourlyRate: 38, active: true },
@@ -219,12 +241,23 @@ const USER_ROLES = ['admin', 'acquisti', 'progettazione', 'lettore'];
 // ── ID e timestamp ──────────────────────────────────────────
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 function newId() {
-  if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
-  // fallback per contesti senza randomUUID (browser datati su file://)
-  const b = crypto.getRandomValues(new Uint8Array(16));
-  b[6] = (b[6] & 0x0f) | 0x40; b[8] = (b[8] & 0x3f) | 0x80;
-  const h = Array.from(b, x => x.toString(16).padStart(2, '0')).join('');
-  return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
+  const c = typeof crypto !== 'undefined' ? crypto : null;
+  if (c && c.randomUUID) return c.randomUUID();
+  // Fallback per contesti senza randomUUID (browser datati su file://). La
+  // guardia stava su `crypto` e su randomUUID insieme, ma poi il fallback
+  // usava `crypto` scoperto: proprio dove l'oggetto può mancare del tutto —
+  // che è il contesto per cui il fallback esiste — si prendeva un
+  // ReferenceError invece del ripiego.
+  if (c && c.getRandomValues) {
+    const b = c.getRandomValues(new Uint8Array(16));
+    b[6] = (b[6] & 0x0f) | 0x40; b[8] = (b[8] & 0x3f) | 0x80;
+    const h = Array.from(b, x => x.toString(16).padStart(2, '0')).join('');
+    return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
+  }
+  // Ultimo ripiego, senza sorgente crittografica: gli id devono solo essere
+  // distinti fra loro, non imprevedibili — non aprono niente e non firmano niente.
+  const r = () => Math.floor(Math.random() * 0x10000).toString(16).padStart(4, '0');
+  return `${r()}${r()}-${r()}-4${r().slice(1)}-${((8 + Math.floor(Math.random() * 4)).toString(16)) + r().slice(1)}-${r()}${r()}${r()}`;
 }
 function gid() { return newId(); }
 function nowISO() { return new Date().toISOString(); }
@@ -285,16 +318,79 @@ const SCHEMA = {
   // revisione non va mai fusa con niente, e normalizzarla significherebbe darle
   // la stessa forma dei dati vivi, cioè invitare qualcuno a modificarla.
   revisions: { table: 'item_revisions' },
-  // Movimenti di magazzino: rettifiche e consumi. I **carichi da ordine non
-  // stanno qui** — quelli li racconta già `received` sulla riga d'ordine, e
-  // scriverli in due posti significherebbe tenerli d'accordo a mano.
+  // Movimenti di magazzino: rettifiche, consumi e conto lavoro. I **carichi da
+  // ordine non stanno qui** — quelli li racconta già `received` sulla riga
+  // d'ordine, e scriverli in due posti significherebbe tenerli d'accordo a mano.
+  //
+  // L'eccezione apparente sono i due movimenti di conto lavoro, che portano un
+  // `orderId`: la regola regge lo stesso, perché la riga d'ordine che li
+  // giustifica **non ha un articolo** e quindi non carica niente da sé. Lì il
+  // movimento non duplica il ricevimento: è l'unica scrittura che muove il
+  // magazzino, e l'ordine dice solo da dove viene.
   movements: { table: 'stock_movements' },
+  // Allegati: **solo i dati**. I byte dei file stanno in IndexedDB (allegati.js)
+  // e non passano né da qui né dal backup JSON — un disegno pesa più di tutto il
+  // database, e localStorage non li reggerebbe. Il record dice che il file
+  // esiste, come si chiama e a chi appartiene: ripristinando un backup su un
+  // altro PC l'elenco c'è e i file no, il che è preferibile a non sapere
+  // nemmeno che cosa manca.
+  attachments: { table: 'attachments' },
+  // I documenti dell'archivio esterno: non i byte e nemmeno l'elenco di ciò che
+  // l'app custodisce, ma **dove sta un PDF dentro la cartella d'archivio** —
+  // quella che ogni PC configura per sé (archivio.js). Qui il backup JSON è
+  // completo davvero: un percorso relativo è un dato, e ripristinandolo su un
+  // altro PC il collegamento continua a valere purché quella macchina abbia la
+  // sua copia dell'archivio.
+  //
+  // È una collezione a sé e non un campo su `attachments` perché **lo stesso
+  // documento vale per più codici**: il catalogo di un commerciale sta appeso a
+  // tutti gli articoli di quella serie. Con un record per articolo lo stesso
+  // percorso sarebbe scritto quaranta volte, e il giorno in cui quel file viene
+  // rinominato ci sarebbero quaranta righe da correggere a mano, sperando di
+  // trovarle tutte. Così se ne corregge una.
+  attachmentDocs: { table: 'attachment_docs' },
+  // Avanzamento di produzione: una dichiarazione per volta, mai un saldo
+  // riscritto. Stessa scelta dei movimenti di magazzino — la giacenza non è un
+  // campo — e per la stessa ragione: un totale che si ricostruisce si può
+  // spiegare, e correggere senza riscrivere il passato.
+  productions: { table: 'productions' },
   suppliers: { table: 'suppliers' },
+  // Clienti: anagrafica autonoma, come i fornitori. La commessa ne cita il
+  // nome, non l'id — vedi il commento su `jobs`.
+  customers: { table: 'customers' },
   workCenters: { table: 'work_centers' },
   families: { table: 'families', children: { subs: { table: 'sub_families', rowId: 'id', merge: 'row' } } },
   rfqs: { table: 'rfqs', children: { lines: { table: 'rfq_lines', rowId: 'id', merge: 'row' } } },
   orders: { table: 'orders', children: { lines: { table: 'order_lines', rowId: 'id', merge: 'row' } } },
+  // Ordini di lavoro: la stessa forma degli ordini d'acquisto, e una collezione
+  // a sé. Le due cose che si comprano da un fornitore — merce e lavorazioni —
+  // hanno numerazione, elenco e stampa distinti perché sono due documenti
+  // diversi nella realtà: uno chiede della roba, l'altro manda dei pezzi a
+  // lavorare. Tenerli in una tabella sola costringeva ogni conto a filtrare per
+  // un campo, ed è il tipo di distinzione che prima o poi qualcuno dimentica.
+  workOrders: { table: 'work_orders', children: { lines: { table: 'work_order_lines', rowId: 'id', merge: 'row' } } },
   plans: { table: 'production_plans', children: { lines: { table: 'production_plan_lines', rowId: 'id', merge: 'row' } } },
+  // ─── Ordini di produzione (ODP) ───
+  // Il documento che segue una parte lungo il suo ciclo: le fasi congelate in
+  // successione, e il magazzino mosso ai **due estremi veri del ciclo** — esce
+  // il materiale alla prima fase, entra il pezzo finito alla chiusura
+  // dell'ultima. Fra le fasi non si scrive niente: un movimento nomina una
+  // quantità di un **codice**, e in mezzo i pezzi non sono più il materiale e
+  // non sono ancora la parte. Dove stanno lo dice l'ODP, non la giacenza.
+  //
+  // Le fasi hanno un `id` proprio e non un indice: è la differenza con
+  // `item_cycle_rows`, dove l'array *è* la definizione e la posizione è
+  // l'identità. Qui la fase porta un avanzamento, e un'identità posizionale si
+  // sposterebbe sotto i piedi al primo riordino del ciclo.
+  prodOrders: { table: 'production_orders', children: {
+    phases: { table: 'production_order_phases', rowId: 'id', merge: 'row' },
+    materials: { table: 'production_order_materials', rowId: 'id', merge: 'row' },
+  } },
+  // Le dichiarazioni di avanzamento sono **eventi**, e stanno piatte come i
+  // movimenti: l'avanzamento di una fase si calcola da qui, esattamente come
+  // l'esistente si calcola da ricevimenti e movimenti. Nessun campo di saldo
+  // sulla fase, quindi niente che possa divergere.
+  prodDecls: { table: 'production_declarations' },
   // Commesse: il cliente e la data a monte di tutto. Un piano ne cita una, e da
   // lì la citazione scende su richieste e ordini — è la catena che risponde a
   // «cosa abbiamo ordinato per la commessa 240?».
@@ -310,28 +406,153 @@ const SCHEMA = {
   // del backend. `secret` è l'elenco dei campi che l'adapter deve togliere.
   users: { table: 'profiles', secret: ['passwordHash', 'passwordSalt'] },
 };
+// ── Riferimenti fra collezioni ──────────────────────────────
+// Quali campi puntano a che cosa. Serve alla migrazione v2, che riscrive gli id
+// legacy in UUID e deve poterli seguire **tutti**: fino alla 0.59 ne rimappava
+// quattro su tredici, e chi apriva l'app con dati v1 si ritrovava ordini senza
+// fornitore, righe senza articolo e movimenti di magazzino orfani — già
+// salvati, perché la migrazione salva. Elencarli qui, accanto a SCHEMA, è la
+// stessa scelta che ha fatto nascere SCHEMA: un posto solo, così una collezione
+// aggiunta domani non viene dimenticata come lo sono state queste.
+//
+// La destinazione ('item', 'supplier', …) non è decorazione. Gli id legacy
+// erano prefissati per tipo — s1, w1, f1, f1s1 — ma gli articoli portavano
+// numeri nudi, e una mappa unica poteva scambiare l'articolo 3 per il
+// fornitore 3. Una mappa per tipo non può sbagliarsi.
+//
+// Il cestino resta fuori: conserva il record intero com'era, e riscriverne i
+// riferimenti significherebbe rimettere le mani dentro una fotografia. Un
+// record v1 ripristinato dal cestino esce con gli id di allora — è un caso che
+// non si dà (il cestino è nato dopo la v2) e che comunque va risolto guardando,
+// non indovinando.
+//
+// **Due riferimenti che questa mappa non copre**, scritti qui perché non si
+// scoprano il giorno in cui servisse una v3:
+//   - `plans.jobId`, `rfqs/orders.planId|jobId` e `productions.planId` non ci
+//     sono. Oggi è innocuo — commesse, piani e avanzamento sono nati dopo la v2,
+//     e nessun blob v1 li contiene.
+//   - `rfq_lines/order_lines.phaseKey` **contiene un itemId dentro una stringa**
+//     (`itemId#indice#workCenterId`). Una rimappatura non saprebbe seguirlo lì
+//     dentro: dovrebbe riscrivere la chiave, non sostituire un campo.
+const REFS = {
+  items: {
+    fields: { supplierId: 'supplier', familyId: 'family', subFamilyId: 'subFamily',
+      machineItemId: 'item', groupItemId: 'item' },
+    children: {
+      components: { itemId: 'item' },
+      operations: { workCenterId: 'workCenter' },
+      cycle: { itemId: 'item', workCenterId: 'workCenter', supplierId: 'supplier' },
+      priceList: { supplierId: 'supplier' },
+    },
+  },
+  revisions: { fields: { itemId: 'item' } },
+  // `orderId` e `lineId` restano fuori: REFS non ha una destinazione 'order',
+  // e gli ordini non sono mai stati rimappati. Va scritto, non lasciato muto.
+  movements: { fields: { itemId: 'item', supplierId: 'supplier', fromSupplierId: 'supplier' } },
+  // `docId` resta fuori, come `orderId` sulle righe di movimento e per la stessa
+  // ragione: REFS è la mappa degli id **legacy** da riscrivere nella migrazione
+  // v2, e non ha (né avrebbe senso che avesse) una destinazione
+  // 'attachmentDoc' — i documenti d'archivio nascono nella 0.78.0, con id UUID
+  // dal primo giorno, e nessun database antico ne contiene.
+  attachments: { fields: { itemId: 'item' } },
+  productions: { fields: { itemId: 'item' } },
+  rfqs: { fields: { supplierId: 'supplier' }, children: { lines: { itemId: 'item' } } },
+  orders: { fields: { supplierId: 'supplier' }, children: { lines: { itemId: 'item' } } },
+  // Le righe di un ODL non hanno un articolo: portano una `phaseKey`, che un
+  // itemId ce l'ha dentro ma dentro una stringa — vedi la nota qui sopra.
+  workOrders: { fields: { supplierId: 'supplier' }, children: { lines: {} } },
+  plans: { children: { lines: { itemId: 'item' } } },
+  prodOrders: {
+    fields: { itemId: 'item' },
+    children: {
+      phases: { workCenterId: 'workCenter', supplierId: 'supplier' },
+      materials: { itemId: 'item' },
+    },
+  },
+  // `odpId` e `phaseId` restano fuori, come `orderId`/`lineId` sui movimenti:
+  // REFS non ha una destinazione 'prodOrder', e le dichiarazioni non sono mai
+  // state rimappate. Va scritto, non lasciato muto.
+  prodDecls: { fields: {} },
+};
 const COLLECTIONS = Object.keys(SCHEMA);
 function childrenOf(coll) { return (SCHEMA[coll] && SCHEMA[coll].children) || {}; }
 
 function siglaFromName(name) {
   return String(name || '').replace(/[^a-zA-Z]/g, '').toUpperCase().slice(0, 3) || 'XXX';
 }
+// La prima sigla libera vicina a quella proposta. Serve agli import, dove le
+// famiglie si creano da sole e non c'è nessuno a cui chiedere: un file di 500
+// articoli non deve fallire per tre lettere in comune — ma chi importa deve
+// leggere nel report che è successo, o se ne accorgerebbe dai codici.
+//
+// Si allunga prima sul nome («Meccanica» → MEC, MECC, MECCA), che resta
+// leggibile, e solo dopo si numera. Il tetto è 6 caratteri, quanto il campo
+// sigla accetta in Gestione.
+const SIGLA_MAX = 6;
+function siglaLibera(name, base, prese) {
+  const libera = x => x && !prese.has(x);
+  const proposta = String(base || '').trim().toUpperCase().slice(0, SIGLA_MAX);
+  if (libera(proposta)) return proposta;
+  const pulito = String(name || '').replace(/[^a-zA-Z]/g, '').toUpperCase();
+  for (let n = 4; n <= SIGLA_MAX; n++) {
+    if (pulito.length < n) break;
+    if (libera(pulito.slice(0, n))) return pulito.slice(0, n);
+  }
+  const radice = (proposta || siglaFromName(name));
+  for (let n = 2; n < 1000; n++) {
+    const suff = String(n);
+    const cand = radice.slice(0, SIGLA_MAX - suff.length) + suff;
+    if (libera(cand)) return cand;
+  }
+  return proposta || 'XXX';
+}
 function isAssembly(t) { return t === 'macchina' || t === 'gruppo' || t === 'sottogruppo'; }
 
 // ── Caricamento e migrazioni ────────────────────────────────
+// L'esito dell'ultimo caricamento, per chi deve dirlo all'utente. `null` = tutto
+// bene. La segnalazione sta in core.js dietro l'hook onLoadError, come per i
+// salvataggi falliti: store.js resta senza codice di interfaccia.
+let dbLoadError = null;
 function loadDB() {
-  try {
-    const r = adapter.read();
-    if (r) { db = JSON.parse(r); migrateDB(); markSynced(); return; }
-  } catch (e) { console.error('Errore lettura locale:', e); }
+  dbLoadError = null;
+  let grezzo = null;
+  try { grezzo = adapter.read(); }
+  catch (e) { dbLoadError = { kind: 'read', err: e }; console.error('Archivio locale non leggibile:', e); }
+  // La revisione di partenza: da qui in poi le scritture di questa scheda si
+  // misurano su questa. Va letta anche quando il blob non c'è (archivio vuoto).
+  try { revVista = adapter.leggiRev ? adapter.leggiRev() : 0; } catch (e) { revVista = 0; }
+  if (grezzo) {
+    try { db = JSON.parse(grezzo); migrateDB(); markSynced(); return; }
+    catch (e) {
+      console.error('Dati salvati illeggibili:', e);
+      let salvato = false;
+      try { salvato = !!(adapter.rescue && adapter.rescue(grezzo)); }
+      catch (e2) { /* nemmeno lo spazio per la copia: l'originale è ancora al suo posto */ }
+      dbLoadError = { kind: 'parse', err: e, bytes: grezzo.length, rescued: salvato };
+    }
+  }
   db = JSON.parse(JSON.stringify(defaultDB));
   migrateDB();
-  saveDB();
+  // Con un archivio illeggibile alle spalle NON si salva: sovrascrivere adesso
+  // vorrebbe dire cancellare i dati veri prima che l'utente sappia che ci sono
+  // ancora. Il primo salvataggio lo farà lui, dopo aver letto l'avviso.
+  if (!dbLoadError) saveDB();
   markSynced();
+  if (dbLoadError && typeof onLoadError === 'function') onLoadError(dbLoadError);
 }
 function migrateDB() {
   // Normalizzazioni legacy (idempotenti, sempre eseguite)
   if (!db.suppliers) db.suppliers = [];
+  if (!db.customers) db.customers = [];
+  // Allegati: collezione nata nella 0.77.0. Un database salvato prima non ce
+  // l'ha, e ogni lettura dovrebbe ricordarsi di difendersi — qui si ricorda una
+  // volta sola, come per tutte le altre.
+  if (!db.attachments) db.attachments = [];
+  // Documenti d'archivio: collezione nata nella 0.78.0. Stessa ragione della
+  // riga qui sopra — una collezione dichiarata esiste sempre, così nessuna
+  // lettura deve ricordarsi di difendersi.
+  if (!db.attachmentDocs) db.attachmentDocs = [];
+  if (!db.productions) db.productions = [];
   if (!db.rfqs) db.rfqs = [];
   if (!db.orders) db.orders = [];
   if (!db.plans) db.plans = [];
@@ -350,7 +571,30 @@ function migrateDB() {
   });
   if (!db.items) db.items = [];
   if (!db.revisions) db.revisions = [];   // storico delle distinte rilasciate
-  if (!db.movements) db.movements = [];   // rettifiche e consumi di magazzino
+  // Capacità del centro, in ore a settimana. **Zero significa «non dichiarata»**,
+  // non «nessuna capacità»: senza questa distinzione ogni centro esistente
+  // risulterebbe sovraccarico al primo caricamento, e il prospetto del carico
+  // nascerebbe già da ignorare.
+  (db.workCenters || []).forEach(w => { if (w.capacityHours == null) w.capacityHours = 0; });
+  if (!db.workOrders) db.workOrders = [];   // ordini di lavoro (conto lavoro)
+  if (!db.movements) db.movements = [];   // rettifiche, consumi e conto lavoro
+  // Contorno del conto lavoro: da chi sta la merce e quale ordine la giustifica.
+  // Nullo su tutti i movimenti precedenti, e la colonna deve esserci comunque —
+  // righe con e senza la stessa colonna sono l'incoerenza che queste
+  // normalizzazioni esistono per evitare.
+  db.movements.forEach(m => {
+    if (m.supplierId === undefined) m.supplierId = null;
+    // Sui passaggi di lavorazione (clStep) `supplierId` è **dove va** e questo è
+    // **da dove viene**: nullo da una parte o dall'altra significa «da noi».
+    if (m.fromSupplierId === undefined) m.fromSupplierId = null;
+    if (m.orderId === undefined) m.orderId = null;
+    if (m.lineId === undefined) m.lineId = null;
+    // Quale dichiarazione di produzione ha generato questo movimento. Serve a
+    // poterlo togliere **esattamente** quando quella dichiarazione viene
+    // annullata: senza, si dovrebbe indovinare quale dei movimenti della fase
+    // apparteneva a quale dichiarazione.
+    if (m.declId === undefined) m.declId = null;
+  });
   if (!db.jobs) db.jobs = [];             // commesse cliente
   if (!db.reminders) db.reminders = [];   // promemoria del calendario
   // Cestino: le eliminazioni recenti, recuperabili. Si svuota da solo passata
@@ -422,6 +666,17 @@ function migrateDB() {
     if (s.defaultPayment == null) s.defaultPayment = '';
     ensureAddr(s);
   });
+  // Clienti: stessa anagrafica dei fornitori, senza le condizioni predefinite
+  // (le condizioni le detta chi vende, e qui si compra).
+  (db.customers || []).forEach(c => {
+    if (c.referente == null) c.referente = '';
+    if (c.email == null) c.email = '';
+    if (c.phone == null) c.phone = '';
+    if (c.vat == null) c.vat = '';
+    if (c.notes == null) c.notes = '';
+    if (c.active == null) c.active = true;
+    ensureAddr(c);
+  });
   // RFQ: modello a fornitore singolo + campi riga (prezzo unitario e data consegna)
   (db.rfqs || []).forEach(r => {
     if (r.supplierId == null) r.supplierId = (r.supplierIds && r.supplierIds[0]) || null;
@@ -429,6 +684,7 @@ function migrateDB() {
     if (r.payment == null) r.payment = '';
     if (r.notesInternal == null) r.notesInternal = '';
     if (r.planId == null) r.planId = null;   // richiesta nata da un piano di fabbisogno
+    if (r.jobId == null) r.jobId = null;    // e la commessa da cui quel piano discende
     (r.lines || []).forEach(l => {
       if (l.price == null) {
         const o = r.offers && r.supplierId && r.offers[r.supplierId];
@@ -436,16 +692,29 @@ function migrateDB() {
       }
       if (l.deliveryDate == null) l.deliveryDate = '';
       if (l.note == null) l.note = '';
+      // Riga di conto lavoro: la fase del ciclo da cui viene. Nulla su tutte le
+      // altre, e la colonna deve esserci comunque — vedi il commento qui sotto
+      // sugli ordini: righe con e senza la stessa colonna sono l'incoerenza che
+      // queste normalizzazioni esistono per evitare.
+      if (l.phaseKey == null) l.phaseKey = null;
+      if (l.phaseKeys == null) l.phaseKeys = l.phaseKey || null;
     });
     delete r.supplierIds; delete r.offers; delete r.awards;
   });
-  // Ordini a fornitore: normalizzazione campi riga (prezzo, consegna, ricevuto)
-  (db.orders || []).forEach(o => {
+  // Ordini a fornitore e ordini di lavoro: stessa forma, stessa normalizzazione.
+  // Sono due collezioni e non una perché sono due documenti diversi — merce e
+  // lavorazioni — ma i campi che li reggono sono gli stessi, e scriverli due
+  // volte significherebbe che la seconda copia prima o poi resta indietro.
+  [].concat(db.orders || [], db.workOrders || []).forEach(o => {
     if (o.transport == null) o.transport = '';
     if (o.payment == null) o.payment = '';
-    if (o.requestedDelivery == null) o.requestedDelivery = '';
+    delete o.requestedDelivery;   // rimosso: ridondante con la data di consegna per riga, che sola aveva effetto
     if (o.rfqId == null) o.rfqId = null;
     if (o.planId == null) o.planId = null;   // ordine nato da un piano di fabbisogno
+    if (o.jobId == null) o.jobId = null;
+    // Senza questa normalizzazione i documenti creati prima delle commesse non
+    // hanno il campo affatto, e flattenDB() produce righe con e senza quella
+    // colonna: è l'incoerenza che tutte le righe qui sopra esistono per evitare.
     if (o.supplierConfirmation == null) o.supplierConfirmation = '';
     if (o.notesInternal == null) o.notesInternal = '';
     (o.lines || []).forEach(l => {
@@ -453,6 +722,29 @@ function migrateDB() {
       if (l.deliveryDate == null) l.deliveryDate = '';
       if (l.received == null) l.received = 0;
       if (l.note == null) l.note = '';
+      if (l.phaseKey == null) l.phaseKey = null;   // riga di conto lavoro
+      // Le fasi **consecutive** dello stesso terzista stanno in una riga sola, e
+      // `phaseKey` ne nomina solo la prima: senza l'elenco completo le altre
+      // risulterebbero ancora da documentare e il fabbisogno le riproporrebbe.
+      // Sulle righe scritte prima che le tratte esistessero la riga copre una
+      // fase sola, e le due colonne dicono la stessa cosa.
+      if (l.phaseKeys == null) l.phaseKeys = l.phaseKey || null;
+    });
+  });
+  // Un ODL nasce sempre da una fase di ciclo, quindi le sue righe non hanno mai
+  // un articolo: il vincolo va reso vero anche sui dati, non solo sperato.
+  // È la stessa garanzia contro il doppio conteggio di magazzino descritta in
+  // docs/cloud-schema.md, applicata all'ingresso invece che all'uscita.
+  (db.workOrders || []).forEach(o => (o.lines || []).forEach(l => { l.itemId = null; }));
+  // ─── Il legame con l'ordine di produzione ───
+  // Nullo su tutto ciò che esiste già, ed è esattamente questo che lascia gli
+  // ordini di lavoro emessi prima comportarsi **come prima**: ogni condizione
+  // nuova è un `if (l.odpId)`, e su di loro non scatta mai.
+  (db.workOrders || []).forEach(o => {
+    if (o.odpId === undefined) o.odpId = null;
+    (o.lines || []).forEach(l => {
+      if (l.odpId === undefined) l.odpId = null;
+      if (l.odpPhaseId === undefined) l.odpPhaseId = null;
     });
   });
   // Piani di produzione. L'unico stato è aperto/chiuso, e decide se il piano
@@ -465,6 +757,43 @@ function migrateDB() {
     if (p.notes == null) p.notes = '';
     if (!Array.isArray(p.lines)) p.lines = [];
     p.lines.forEach(l => { if (l.qty == null) l.qty = 0; });
+  });
+  // ─── Ordini di produzione e dichiarazioni ───
+  if (!db.prodOrders) db.prodOrders = [];
+  if (!db.prodDecls) db.prodDecls = [];
+  db.prodOrders.forEach(o => {
+    ['title', 'notes', 'notesInternal', 'code', 'name', 'uom', 'date', 'dueDate'].forEach(k => { if (o[k] == null) o[k] = ''; });
+    if (o.itemId === undefined) o.itemId = null;
+    if (o.planId === undefined) o.planId = null;
+    if (o.jobId === undefined) o.jobId = null;
+    if (o.qty == null) o.qty = 0;
+    if (!o.status) o.status = 'bozza';
+    if (o.active == null) o.active = true;
+    if (!Array.isArray(o.phases)) o.phases = [];
+    if (!Array.isArray(o.materials)) o.materials = [];
+    // Una fase senza id sarebbe una fase che le dichiarazioni non sanno
+    // nominare: l'identità è l'id, non la posizione, ed è il punto per cui
+    // riordinare il ciclo non sposta più niente su un ordine già lanciato.
+    o.phases.forEach(f => {
+      if (!f.id) f.id = newId();
+      if (f.supplierId === undefined) f.supplierId = null;
+      if (f.phaseKey === undefined) f.phaseKey = null;
+      ['seq', 'opIndex', 'runFrom', 'runTo', 'passata', 'hours', 'days', 'rate', 'cost'].forEach(k => { if (f[k] == null) f[k] = 0; });
+      if (!f.costMode) f.costMode = 'fisso';
+      if (f.note == null) f.note = '';
+    });
+    o.materials.forEach(m => {
+      if (!m.id) m.id = newId();
+      if (m.qty == null) m.qty = 0;
+      if (m.perPezzo == null) m.perPezzo = 0;
+    });
+  });
+  db.prodDecls.forEach(d => {
+    if (!d.kind) d.kind = 'avanzamento';
+    if (d.qty == null) d.qty = 0;
+    if (d.scrap == null) d.scrap = 0;
+    if (d.note == null) d.note = '';
+    if (d.motivo == null) d.motivo = '';
   });
   // Seed una-tantum delle famiglie materie prime predefinite mancanti (non ripristina quelle cancellate)
   if (!db.settings.mpFamiliesSeeded) {
@@ -483,6 +812,11 @@ function migrateDB() {
   // Famiglie: tipizzazione (materie prime vs commerciali) + sigla per codifica automatica.
   // Va DOPO i seed: le famiglie appena seminate non hanno sigla e la codifica per
   // famiglia (MAT-ACC-LAM-001) la richiede subito, non al ricaricamento successivo.
+  // Le sigle dedotte qui possono uscire duplicate («Meccanico» e «Meccanica»
+  // danno entrambe MEC) e restano tali di proposito: da questa versione l'app
+  // impedisce di introdurne di nuove, ma non riscrive quelle che c'erano —
+  // cambierebbe di nascosto il prefisso dei codici futuri di una famiglia.
+  // Chi è duplicato lo si vede segnalato in Gestione (duplicateSiglaGroups).
   (db.families || []).forEach(f => {
     if (!f.kind) f.kind = 'acquistato'; // le famiglie storiche erano tutte commerciali
     if (!f.sigla) f.sigla = siglaFromName(f.name);
@@ -547,14 +881,45 @@ function migrateDB() {
         it.sourcing = (it.cycle || []).length ? 'make' : 'buy';
       }
     }
-    // Righe lavorazione del ciclo: da ore × tariffa a costo fisso (conserva il valore già calcolato)
+    // Righe lavorazione del ciclo. Le ore sono un attributo di **tempo**, presenti
+    // su ogni riga qualunque sia il modo di costo: a costo fisso non concorrono al
+    // costo — il prezzo concordato col terzista è quello, non ore × tariffa — ma
+    // dicono quanto la fase occupa il centro, ed è da lì che nasce il carico.
     (it.cycle || []).forEach(row => {
-      if (row.kind !== 'op' || row.cost != null) return;
+      if (row.kind !== 'op') return;
       const wc = db.workCenters.find(w => w.id === row.workCenterId);
-      row.cost = (row.costOverride != null && row.costOverride !== '')
-        ? (Number(row.costOverride) || 0)
-        : (Number(row.hours) || 0) * (wc ? (Number(wc.hourlyRate) || 0) : 0);
-      delete row.hours; delete row.costOverride;
+      const tariffa = wc ? (Number(wc.hourlyRate) || 0) : 0;
+      if (row.costMode == null) {
+        // Riga precedente al modo di costo: da ore × tariffa a costo fisso,
+        // conservando il valore già calcolato. `hours` non si cancella più.
+        row.costMode = 'fisso';
+        if (row.cost == null) {
+          row.cost = (row.costOverride != null && row.costOverride !== '')
+            ? (Number(row.costOverride) || 0)
+            : (Number(row.hours) || 0) * tariffa;
+        }
+        delete row.costOverride;
+      } else if (row.costMode === 'orario' && row.hours == null && row.cost != null) {
+        // Riparazione. Fino alla 0.64.2 questa normalizzazione cancellava `hours`
+        // da ogni riga senza `cost`, cioè da **tutte** quelle a costo orario — che
+        // il costo non ce l'hanno per definizione. La fase valeva zero al primo
+        // riavvio, e in silenzio. Le ore si ricostruiscono dividendo per la stessa
+        // tariffa con cui erano state moltiplicate: quella del **centro**, non
+        // `row.rate`, perché era il centro che il difetto usava. Dividere per altro
+        // sbaglierebbe proprio dove il fornitore ha una tariffa propria.
+        row.hours = tariffa > 0 ? +(Number(row.cost) / tariffa).toFixed(4) : 0;
+      }
+      // Dove il centro manca o ha tariffa zero le ore non sono ricostruibili e
+      // restano zero: non si inventano. Quelle righe le nomina il riepilogo.
+      if (row.hours == null) row.hours = 0;
+      if (row.rate == null) row.rate = 0;
+      if (row.note == null) row.note = '';
+      // Giorni di attraversamento di una fase in **conto lavoro**. Il tempo di
+      // una lavorazione esterna non è occupazione di una macchina nostra: il
+      // pezzo esce e torna, e quello che serve sapere è quando torna. Zero su
+      // tutte le fasi precedenti, e su quelle interne resta zero per sempre —
+      // lì il tempo sono le ore.
+      if (row.days == null) row.days = 0;
     });
   });
   // Migrazioni versionate
@@ -563,30 +928,36 @@ function migrateDB() {
 // v2: id legacy (interi/sigle) → UUID su tutte le entità e i riferimenti,
 // timestamp createdAt/updatedAt, rimozione contatore nextId.
 function migrateV2() {
-  const idMap = {};
-  const mapId = rec => { if (rec.id != null && !UUID_RE.test(String(rec.id))) idMap[rec.id] = newId(); };
-  db.suppliers.forEach(mapId);
-  db.workCenters.forEach(mapId);
-  db.families.forEach(f => { mapId(f); (f.subs || []).forEach(mapId); });
-  db.items.forEach(mapId);
+  // Una mappa per tipo, non una sola: vedi il commento su REFS.
+  const maps = { item: {}, supplier: {}, workCenter: {}, family: {}, subFamily: {} };
+  const mapId = (tipo, rec) => {
+    if (rec.id != null && !UUID_RE.test(String(rec.id))) maps[tipo][rec.id] = newId();
+  };
+  db.suppliers.forEach(r => mapId('supplier', r));
+  db.workCenters.forEach(r => mapId('workCenter', r));
+  db.families.forEach(f => { mapId('family', f); (f.subs || []).forEach(s => mapId('subFamily', s)); });
+  db.items.forEach(r => mapId('item', r));
 
-  const re = id => (id != null && idMap[id] != null) ? idMap[id] : id;
-  const rewritePK = rec => { rec.id = re(rec.id); };
-  db.suppliers.forEach(rewritePK);
-  db.workCenters.forEach(rewritePK);
-  db.families.forEach(f => { rewritePK(f); (f.subs || []).forEach(rewritePK); });
-  db.items.forEach(rewritePK);
+  const re = (tipo, id) => (id != null && maps[tipo][id] != null) ? maps[tipo][id] : id;
+  const rewritePK = (tipo, rec) => { rec.id = re(tipo, rec.id); };
+  db.suppliers.forEach(r => rewritePK('supplier', r));
+  db.workCenters.forEach(r => rewritePK('workCenter', r));
+  db.families.forEach(f => { rewritePK('family', f); (f.subs || []).forEach(s => rewritePK('subFamily', s)); });
+  db.items.forEach(r => rewritePK('item', r));
 
-  db.items.forEach(it => {
-    if (it.supplierId != null) it.supplierId = re(it.supplierId);
-    if (it.familyId != null) it.familyId = re(it.familyId);
-    if (it.subFamilyId != null) it.subFamilyId = re(it.subFamilyId);
-    (it.components || []).forEach(c => { c.itemId = re(c.itemId); });
-    (it.operations || []).forEach(o => { o.workCenterId = re(o.workCenterId); });
-    (it.cycle || []).forEach(row => {
-      if (row.itemId != null) row.itemId = re(row.itemId);
-      if (row.workCenterId != null) row.workCenterId = re(row.workCenterId);
-      if (row.supplierId != null) row.supplierId = re(row.supplierId);
+  // I riferimenti, tutti, letti da REFS: aggiungerne uno è una riga là sopra,
+  // non una riga qui e il ricordo di doverla scrivere.
+  const riscrivi = (rec, campi) => {
+    if (!rec) return;
+    Object.keys(campi).forEach(k => { if (rec[k] != null) rec[k] = re(campi[k], rec[k]); });
+  };
+  Object.keys(REFS).forEach(coll => {
+    const def = REFS[coll];
+    (db[coll] || []).forEach(rec => {
+      if (def.fields) riscrivi(rec, def.fields);
+      Object.keys(def.children || {}).forEach(figlio => {
+        (rec[figlio] || []).forEach(r => riscrivi(r, def.children[figlio]));
+      });
     });
   });
 
@@ -666,16 +1037,73 @@ function snapshotCounts(data) {
 let _baseIds = null;        // Map collezione → Map(id → updatedAt)
 let _baseSettings = '';
 function safeStringify(v) { try { return JSON.stringify(v); } catch (e) { return ''; } }
-function markSynced() {
+// ── Firma di un record ai fini della sincronizzazione ───────
+// Il suo `updatedAt`, più quello delle righe figlie che hanno un'identità
+// propria.
+//
+// I figli contano perché senza di loro il conto è cieco a metà delle modifiche:
+// rinominare una sottofamiglia tocca la sottofamiglia, non la famiglia, e fino
+// alla 0.59 `pendingChanges()` restituiva `{}` — quella rinomina non sarebbe
+// mai partita. Si poteva chiedere a ogni chiamante di toccare anche il padre,
+// ma è un'invariante affidata alla disciplina di quaranta punti di codice, ed
+// era già rotta in due; qui non c'è niente da ricordarsi.
+//
+// I figli 'replace' (componenti, operazioni, ciclo) restano fuori di proposito:
+// non hanno id né `updatedAt` propri, e *sono* la definizione del padre — chi
+// li tocca tocca il padre, che è la stessa ragione per cui in cloud si
+// riscrivono in blocco.
+function recSignature(coll, r) {
+  let s = r.updatedAt || '';
+  const figli = childrenOf(coll);
+  Object.keys(figli).forEach(k => {
+    const rowId = figli[k].rowId;
+    if (!rowId) return;
+    (r[k] || []).forEach(x => {
+      if (x && x[rowId] != null) s += '|' + x[rowId] + ':' + (x.updatedAt || '');
+    });
+  });
+  return s;
+}
+function snapshotSignatures() {
   const m = new Map();
   COLLECTIONS.forEach(c => {
     const inner = new Map();
-    (db[c] || []).forEach(r => { if (r && r.id != null) inner.set(r.id, r.updatedAt || ''); });
+    (db[c] || []).forEach(r => { if (r && r.id != null) inner.set(r.id, recSignature(c, r)); });
     m.set(c, inner);
   });
-  _baseIds = m;
+  return m;
+}
+// Il conto delle modifiche e la fotografia che lo azzera si prendono **insieme**:
+// è l'unico modo perché «questo è quello che mando» e «questo è quello che
+// smetto di considerare da mandare» siano la stessa cosa. Fra la richiesta e la
+// risposta c'è la rete, e in quel tempo chi lavora continua a scrivere: una
+// fotografia scattata al ritorno inghiottirebbe quelle modifiche marcandole
+// come già inviate. Sparirebbero senza che nessuno se ne accorga.
+//
+//   const { changes, mark } = Store.takeChanges();
+//   await invia(changes);
+//   Store.markSynced(mark);
+function takeChanges() {
+  return {
+    changes: pendingChanges(),
+    mark: { ids: snapshotSignatures(), settings: safeStringify(db.settings) },
+  };
+}
+// Senza argomento rifotografa l'adesso: è il caso del caricamento, dove la
+// fotografia *è* lo stato appena letto. Con l'argomento vale la fotografia
+// presa da takeChanges() prima dell'invio.
+function markSynced(mark) {
+  if (mark && mark.ids) { _baseIds = mark.ids; _baseSettings = mark.settings; return; }
+  _baseIds = snapshotSignatures();
   _baseSettings = safeStringify(db.settings);
 }
+// Dopo un ripristino di backup, un azzeramento o un reset la fotografia non
+// vale più niente: il database in memoria non discende da quello che il backend
+// ha visto, e un confronto per `updatedAt` direbbe «niente da mandare» proprio
+// mentre è cambiato tutto. Si dichiara di non sapere — `pendingChanges()`
+// tornerà `null` — e il riallineamento tocca all'adapter, che è l'unico a poter
+// confrontare le due parti.
+function markUnknown() { _baseIds = null; _baseSettings = null; }
 // { items: { upsert: [id…], remove: [id…] }, …, settings: true }
 // Le collezioni senza modifiche non compaiono. `null` = nessuna fotografia
 // ancora presa (database mai caricato).
@@ -689,7 +1117,7 @@ function pendingChanges() {
       if (!r || r.id == null) return;
       visti.add(r.id);
       const era = prima.get(r.id);
-      if (era === undefined || era !== (r.updatedAt || '')) upsert.push(r.id);
+      if (era === undefined || era !== recSignature(c, r)) upsert.push(r.id);
     });
     prima.forEach((_, id) => { if (!visti.has(id)) remove.push(id); });
     if (upsert.length || remove.length) out[c] = { upsert, remove };
@@ -717,6 +1145,17 @@ const LocalAdapter = {
   read() { return localStorage.getItem(DB_KEY); },
   write(payload) { localStorage.setItem(DB_KEY, payload); },
   size() { try { return (localStorage.getItem(DB_KEY) || '').length; } catch (e) { return 0; } },
+  // Mette da parte un blob illeggibile perché resti recuperabile a mano. Una
+  // copia sola: se il caricamento fallisce una seconda volta, la prima copia è
+  // quella buona — la seconda sarebbe già il database demo salvato sopra.
+  rescue(payload) {
+    if (localStorage.getItem(DB_KEY_RESCUE) != null) return false;
+    localStorage.setItem(DB_KEY_RESCUE, payload);
+    return true;
+  },
+  rescued() { return localStorage.getItem(DB_KEY_RESCUE); },
+  leggiRev() { const v = localStorage.getItem(DB_KEY_REV); return v == null ? 0 : (+v || 0); },
+  scriviRev(n) { localStorage.setItem(DB_KEY_REV, String(n)); },
 };
 let adapter = LocalAdapter;
 
@@ -726,6 +1165,25 @@ let adapter = LocalAdapter;
 // chiusura del browser sparisce tutto. Va detto, e va detto in modo che non si
 // possa non vederlo — non con un toast che sparisce in due secondi e mezzo.
 let dbUnsaved = false;
+// ─── Due schede sulla stessa app ───
+// `commit()` riscrive **tutta** la chiave con la fotografia che questa scheda ha
+// in memoria. Con due finestre aperte — cosa normalissima su un gestionale — la
+// seconda che salva cancellava tutto il lavoro fatto nella prima da quando era
+// stata aperta. Senza un errore, senza un avviso: la setItem riesce, quindi
+// nemmeno il badge «modifiche non salvate» si accendeva. Era perdita di dati
+// certa e invisibile.
+//
+// Il rimedio è deliberatamente minimo: **non si fonde niente**. Fondere due
+// fotografie di un gestionale richiede di sapere quale delle due versioni di
+// ogni riga vale, e quella risposta non ce l'ha nessuno qui. Ci si limita ad
+// accorgersene e a smettere di sovrascrivere di nascosto — che è il difetto.
+//
+// `revVista` è la revisione che questa scheda ha letto per ultima. Se
+// nell'archivio ce n'è una più alta, qualcun altro ha scritto nel frattempo.
+let revVista = 0;
+// Alzato da Store.forzaProssimaScrittura(): vale per un solo salvataggio, ed è
+// il modo in cui l'utente dice «lo so, tieni la mia versione».
+let forzaScrittura = false;
 function isQuotaError(e) {
   return !!e && (e.name === 'QuotaExceededError' || e.name === 'NS_ERROR_DOM_QUOTA_REACHED'
               || e.code === 22 || e.code === 1014);
@@ -754,8 +1212,30 @@ const Store = {
     let payload;
     try { payload = JSON.stringify(db); }
     catch (e) { return commitFailed('serialize', e, 0); }
+    // Ha scritto qualcun altro da quando questa scheda ha letto? Se sì ci si
+    // ferma: scrivere adesso cancellerebbe il suo lavoro, ed è esattamente il
+    // guasto che questa guardia esiste per impedire. Si controlla **prima** di
+    // scrivere e la lettura è di un numero, non dell'archivio.
+    //
+    // `forzaScrittura` è la via d'uscita, per chi ha visto l'avviso e decide
+    // consapevolmente che la versione buona è la propria.
+    let revAttuale = revVista;
+    try { if (adapter.leggiRev) revAttuale = adapter.leggiRev(); }
+    catch (e) { revAttuale = revVista; }   // archivio non leggibile: ci pensa la write qui sotto
+    if (revAttuale !== revVista && !forzaScrittura) {
+      dbUnsaved = true;
+      if (typeof onExternalChange === 'function') onExternalChange();
+      else if (typeof showToast === 'function') showToast("Dati modificati in un'altra scheda: ricarica prima di salvare", 'error');
+      return false;
+    }
+    forzaScrittura = false;
     try {
       adapter.write(payload);
+      // La revisione sale **dopo** una scrittura riuscita: se la write fallisce
+      // il numero non deve muoversi, altrimenti le altre schede vedrebbero un
+      // conflitto che non c'è stato.
+      revVista = revAttuale + 1;
+      try { if (adapter.scriviRev) adapter.scriviRev(revVista); } catch (e) { /* il blob è salvo: il contatore si riallinea al prossimo caricamento */ }
       if (dbUnsaved) {
         dbUnsaved = false;
         if (typeof onPersistRecovered === 'function') onPersistRecovered();
@@ -768,6 +1248,14 @@ const Store = {
   // Vero finché una modifica è rimasta solo in memoria. Chiudere la scheda in
   // questo stato perde tutto il lavoro fatto dal primo errore in poi.
   isUnsaved() { return dbUnsaved; },
+  // Il prossimo commit() scrive anche se un'altra scheda ha modificato
+  // l'archivio: lo chiama chi ha letto l'avviso e ha scelto di tenere la
+  // propria versione. Vale una volta sola, di proposito — una scelta fatta su
+  // un conflitto non si estende a quelli che verranno.
+  forzaProssimaScrittura() { forzaScrittura = true; },
+  // La revisione dell'archivio vista da questa scheda, per i test e per la
+  // diagnostica. Non serve alle viste.
+  revisione() { return revVista; },
   // Dimensione del database persistito, per far vedere il limite arrivare.
   sizeInfo() {
     let bytes = 0;
@@ -783,11 +1271,15 @@ const Store = {
   // riuscito. In locale nessuno li chiama: il salvataggio riscrive tutto.
   pendingChanges() { return pendingChanges(); },
   hasPendingChanges() { return hasPendingChanges(); },
-  markSynced() { markSynced(); },
+  // Da preferire a pendingChanges() quando si sta per inviare: prende il conto
+  // e la fotografia nello stesso istante. Vedi il commento su takeChanges().
+  takeChanges() { return takeChanges(); },
+  markSynced(mark) { markSynced(mark); },
   schema() { return SCHEMA; },
   reset() {
     db = JSON.parse(JSON.stringify(defaultDB));
     migrateDB();
+    markUnknown();
     this.commit();
   },
   // Svuota il database: nessun dato di esempio, nessuna anagrafica, nessuna
@@ -812,6 +1304,7 @@ const Store = {
     db.settings.concepts = [];
     db.settings.mpFamiliesSeeded = true;
     db.settings.partFamiliesSeeded = true;
+    markUnknown();
     this.commit();
   },
   getAll(coll) { return db[coll] || []; },
@@ -873,7 +1366,12 @@ const Store = {
     if (!Array.isArray(db[t.coll])) db[t.coll] = [];
     // Se un record con lo stesso id è tornato nel frattempo (import, ripristino
     // doppio), non si duplica: vince quello vivo.
-    if (!db[t.coll].some(r => r.id === t.record.id)) db[t.coll].push(t.record);
+    //
+    // Il touch non è cosmesi: in cloud l'eliminazione lascia un tombstone, e un
+    // record che rientra con l'updatedAt che aveva *prima* di essere eliminato è
+    // più vecchio del tombstone — il pull successivo lo ricancellerebbe. Il
+    // ripristino è un fatto nuovo e va datato come tale.
+    if (!db[t.coll].some(r => r.id === t.record.id)) db[t.coll].push(touch(t.record));
     db.trash.splice(i, 1);
     this.commit();
     return t;
@@ -896,9 +1394,12 @@ const Store = {
     if (err) throw new Error(err);
     db = data;
     migrateDB();
+    markUnknown();
     this.commit();
   },
 };
 
 // Shim: i punti di mutazione esistenti nelle viste chiamano saveDB()
-function saveDB() { Store.commit(); }
+// Ritorna l'esito: false se i byte non sono arrivati nell'archivio. Chi
+// annuncia «salvato» dovrebbe guardarlo — o usare savedToast(), che lo fa.
+function saveDB() { return Store.commit(); }

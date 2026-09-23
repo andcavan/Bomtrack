@@ -1,7 +1,7 @@
 // ═══════════════════════════════════════════════════════════
 //  BOMTRACK — views-manage.js
 // ═══════════════════════════════════════════════════════════
-// Vista Gestione: utenti, dati azienda, fornitori, famiglie, centri di lavoro,
+// Vista Gestione: utenti, dati azienda, fornitori, clienti, famiglie, centri di lavoro,
 // concetti, unità di misura e impostazioni.
 // Classic script, scope globale condiviso con gli altri: nessun modulo e
 // nessun build, così index.html continua ad aprirsi con un doppio click.
@@ -10,19 +10,20 @@
 //  VISTA: GESTIONE
 // ═══════════════════════════════════════════════════════════
 const MGMT_TABS = [
-  { id: 'users', label: '👥 Utenti' },
-  { id: 'company', label: '🏢 Dati azienda' },
-  { id: 'suppliers', label: '🏭 Fornitori' },
-  { id: 'terms', label: '🚚 Condizioni offerta' },
-  { id: 'fam-acquistato', label: '🛒 Famiglie commerciali' },
-  { id: 'fam-materiale', label: '🧱 Famiglie materie prime' },
-  { id: 'fam-parte', label: '⚙️ Famiglie parti' },
-  { id: 'concepts', label: '🏷 Concetti' },
-  { id: 'workcenters', label: '🔧 Centri di lavoro' },
-  { id: 'uoms', label: '📏 Unità di misura' },
-  { id: 'settings', label: '📐 Impostazioni' },
-  { id: 'import', label: '⬆ Import' },
-  { id: 'backup', label: '💾 Backup' },
+  { id: 'users', label: ico('users', 'tinted', '') + ' Utenti' },
+  { id: 'company', label: ico('building', 'tinted', '') + ' Dati azienda' },
+  { id: 'suppliers', label: ico('factory', 'tinted', '') + ' Fornitori' },
+  { id: 'customers', label: ico('contacts', 'tinted', '') + ' Clienti' },
+  { id: 'terms', label: ico('truck', 'tinted', '') + ' Condizioni offerta' },
+  { id: 'fam-acquistato', label: ico('cart', 'tinted', '') + ' Famiglie commerciali' },
+  { id: 'fam-materiale', label: ico('package', 'tinted', '') + ' Famiglie materie prime' },
+  { id: 'fam-parte', label: ico('wrench', 'tinted', '') + ' Famiglie parti' },
+  { id: 'concepts', label: ico('tag', 'tinted', '') + ' Concetti' },
+  { id: 'workcenters', label: ico('wrench', 'tinted', '') + ' Centri di lavoro' },
+  { id: 'uoms', label: ico('ruler', 'tinted', '') + ' Unità di misura' },
+  { id: 'settings', label: ico('settings', 'tinted', '') + ' Impostazioni' },
+  { id: 'import', label: ico('upload', 'tinted', '') + ' Import' },
+  { id: 'backup', label: ico('save', 'tinted', '') + ' Backup' },
 ];
 function renderManage() {
   document.getElementById('mgmt-tabs').innerHTML = MGMT_TABS.map(t =>
@@ -32,6 +33,7 @@ function renderManage() {
   else if (mgmtTab === 'company') c.innerHTML = renderCompany();
   else if (mgmtTab === 'terms') c.innerHTML = renderTerms();
   else if (mgmtTab === 'suppliers') c.innerHTML = renderSuppliers();
+  else if (mgmtTab === 'customers') c.innerHTML = renderCustomers();
   else if (mgmtTab === 'fam-acquistato') c.innerHTML = renderFamilies('acquistato');
   else if (mgmtTab === 'fam-materiale') c.innerHTML = renderFamilies('materiale');
   else if (mgmtTab === 'fam-parte') c.innerHTML = renderFamilies('parte');
@@ -61,10 +63,10 @@ function renderUsers() {
       <span class="doc-badge">${esc(roleLabel(u.role))}</span>
       <span class="doc-badge ${susp ? 'st-sospeso' : 'st-attivo'}">${susp ? 'Sospeso' : 'Attivo'}</span>
       <div class="mgmt-item-actions">
-        <button class="mini-btn" onclick="editUserModal('${u.id}')" title="Modifica">✏</button>
-        <button class="mini-btn" onclick="resetUserPasswordModal('${u.id}')" title="Imposta password">🔑</button>
-        <button class="mini-btn" onclick="toggleUserActive('${u.id}')" title="${susp ? 'Riattiva' : 'Sospendi'}">${susp ? '✓' : '⏸'}</button>
-        <button class="mini-btn danger" onclick="delUser('${u.id}')" title="Elimina">🗑</button>
+        <button class="mini-btn" onclick="editUserModal('${u.id}')" title="Modifica">${ico('edit', 'tinted', 'Modifica')}</button>
+        <button class="mini-btn" onclick="resetUserPasswordModal('${u.id}')" title="Imposta password">${ico('key', 'tinted', 'Imposta password')}</button>
+        <button class="mini-btn" onclick="toggleUserActive('${u.id}')" title="${susp ? 'Riattiva' : 'Sospendi'}">${susp ? ico('check', 'tinted', 'Riattiva') : ico('pause', 'tinted', 'Sospendi')}</button>
+        <button class="mini-btn danger" onclick="delUser('${u.id}')" title="Elimina">${ico('trash', 'tinted', 'Elimina')}</button>
       </div></div>`;
   }).join('') || '<div class="empty-text">Nessun utente.</div>';
   return `<div class="mgmt-panel"><div class="mgmt-list">${list}</div>
@@ -81,7 +83,7 @@ function renderUsers() {
       <strong>Ufficio acquisti</strong>: richieste e ordini ·
       <strong>Progettazione</strong>: articoli e distinte ·
       <strong>Lettore</strong>: sola lettura.<br>
-      ⚠ Con i dati nel browser questi ruoli separano le responsabilità, non proteggono i dati: la protezione vera arriverà con l'accesso Supabase.</p></div>`;
+      ${ico('warning', 'tinted', '')} Con i dati nel browser questi ruoli separano le responsabilità, non proteggono i dati: la protezione vera arriverà con l'accesso Supabase.</p></div>`;
 }
 function addUser() {
   if (!roleGuard('manage')) return;
@@ -95,12 +97,12 @@ function addUser() {
     color: safeColor(val('nu-color')), active: true };
   setUserPassword(u, pwd);
   Store.insert('users', u);
-  renderManage(); showToast('Utente creato');
+  renderManage(); savedToast('Utente creato');
 }
 function editUserModal(id) {
   if (!roleGuard('manage')) return;
   const u = getUser(id); if (!u) return;
-  openModal(`<h3>✏ Modifica utente</h3>
+  openModal(`<h3>${ico('edit', 'tinted pill', '')} Modifica utente</h3>
     <div class="modal-field"><label>Nome e cognome</label><input id="eu-name" value="${esc(u.name)}"></div>
     <div class="modal-grid">
       <div class="modal-field"><label>Email</label><input id="eu-email" value="${esc(u.email || '')}"></div>
@@ -126,12 +128,12 @@ function saveUserEdit(id) {
   Object.assign(u, { name, email, username: val('eu-username'), role, color: safeColor(val('eu-color')) });
   touch(u); saveDB(); closeModal();
   if (currentUser && currentUser.id === id) { currentUser = u; renderUserPill(); renderNav(); }
-  renderManage(); showToast('Utente aggiornato');
+  renderManage(); savedToast('Utente aggiornato');
 }
 function resetUserPasswordModal(id) {
   if (!roleGuard('manage')) return;
   const u = getUser(id); if (!u) return;
-  openModal(`<h3>🔑 Password di ${esc(u.name)}</h3>
+  openModal(`<h3>${ico('key', 'tinted pill', '')} Password di ${esc(u.name)}</h3>
     <div class="modal-field"><label>Nuova password</label><input type="password" id="ru-pwd"></div>
     <div class="modal-actions"><button class="btn-ghost" onclick="closeModal()">Annulla</button>
       <button class="add-btn-sm" onclick="saveUserPassword('${id}')">Imposta</button></div>`);
@@ -142,7 +144,7 @@ function saveUserPassword(id) {
   const pwd = document.getElementById('ru-pwd').value;
   if (pwd.length < 4) { showToast('La password deve avere almeno 4 caratteri', 'error'); return; }
   setUserPassword(u, pwd);
-  touch(u); saveDB(); closeModal(); showToast('Password impostata');
+  touch(u); saveDB(); closeModal(); savedToast('Password impostata');
 }
 function toggleUserActive(id) {
   if (!roleGuard('manage')) return;
@@ -173,7 +175,7 @@ function renderTerms() {
       <span class="mgmt-item-name">${esc(o)}${o === def ? ' <span class="terms-default">predefinito</span>' : ''}</span>
       <div class="mgmt-item-actions">
         <button class="mini-btn" onclick="termsSetDefault('${kind}',${i})" title="Imposta/rimuovi predefinito">${o === def ? '★' : '☆'}</button>
-        <button class="mini-btn danger" onclick="termsDel('${kind}',${i})">🗑</button>
+        <button class="mini-btn danger" onclick="termsDel('${kind}',${i})" title="Elimina">${ico('trash', 'tinted', 'Elimina')}</button>
       </div></div>`).join('') || '<div class="empty-text">Nessuna voce.</div>';
     return `<h3 class="settings-group-title">${title}</h3>
       <div class="mgmt-list">${list}</div>
@@ -181,8 +183,8 @@ function renderTerms() {
   };
   return `<div class="mgmt-panel">
     <p class="empty-text" style="text-align:left;padding:4px 0 12px">Gestisci le voci selezionabili per Trasporto e Pagamento nelle richieste di offerta. La voce con ★ precompila automaticamente le nuove richieste.</p>
-    ${sect('transport', '🚚 Tipi di trasporto / resa', s.transportDefault)}
-    ${sect('payment', '💳 Tipi di pagamento', s.paymentDefault)}</div>`;
+    ${sect('transport', ico('truck', 'tinted', '') + ' Tipi di trasporto / resa', s.transportDefault)}
+    ${sect('payment', ico('card', 'tinted', '') + ' Tipi di pagamento', s.paymentDefault)}</div>`;
 }
 function termsAdd(kind) {
   if (!roleGuard('manage')) return;
@@ -191,7 +193,7 @@ function termsAdd(kind) {
   db.settings[key] = db.settings[key] || [];
   if (db.settings[key].includes(v)) { showToast('Voce già presente', 'error'); return; }
   db.settings[key].push(v);
-  saveDB(); renderManage(); showToast('Aggiunto');
+  saveDB(); renderManage(); savedToast('Aggiunto');
 }
 function termsDel(kind, i) {
   if (!roleGuard('manage')) return;
@@ -199,7 +201,7 @@ function termsDel(kind, i) {
   const v = arr[i]; if (v == null) return;
   db.settings[key] = arr.filter((_, idx) => idx !== i);
   if (db.settings[kind + 'Default'] === v) db.settings[kind + 'Default'] = '';
-  saveDB(); renderManage(); showToast('Eliminato');
+  saveDB(); renderManage(); savedToast('Eliminato');
 }
 function termsSetDefault(kind, i) {
   if (!roleGuard('manage')) return;
@@ -212,7 +214,7 @@ function termsSetDefault(kind, i) {
 function renderCompany() {
   const co = db.settings.company || {};
   return `<div class="mgmt-panel">
-    <h3 class="settings-group-title">🏢 Dati azienda (richiedente)</h3>
+    <h3 class="settings-group-title">${ico('building', 'tinted', '')} Dati azienda (richiedente)</h3>
     <p class="empty-text" style="text-align:left;padding:4px 0 12px">Questi dati identificano la tua azienda e vengono stampati come intestazione del richiedente sui documenti di richiesta di offerta.</p>
     <div class="modal-grid">
       <div class="modal-field"><label>Ragione sociale</label><input id="co-name" value="${esc(co.name || '')}"></div>
@@ -230,18 +232,47 @@ function saveCompany() {
     name: val('co-name'), referente: val('co-ref'), email: val('co-email'),
     phone: val('co-phone'), vat: val('co-vat'),
   }, readAddressFields('co'));
-  saveDB(); renderManage(); showToast('Dati azienda salvati');
+  saveDB(); renderManage(); savedToast('Dati azienda salvati');
 }
 
+// ─── Sospendere una voce di anagrafica ───
+// `active` era migrato, documentato nello schema cloud, esportato in Excel e
+// **letto** in mezza app — i fornitori attivi nel menu dell'import, i clienti
+// attivi nei suggerimenti della commessa, i centri attivi nella scelta della
+// lavorazione — ma nessun comando lo poteva mettere a false: solo gli utenti
+// avevano il pulsante. Era una promessa che l'app non manteneva.
+//
+// Sospendere non è eliminare, ed è la ragione per cui serve: un fornitore con
+// cui non si lavora più non si può cancellare (lo citano ordini e quotazioni di
+// anni), ma non deve nemmeno continuare a comparire in ogni menu.
+function toggleActive(coll, id, nome) {
+  if (!roleGuard('manage')) return;
+  const r = (db[coll] || []).find(x => x.id === id); if (!r) return;
+  r.active = r.active === false;
+  touch(r); saveDB(); renderManage();
+  savedToast(`${nome} ${r.active ? 'riattivato' : 'sospeso'}`);
+}
+// Il pulsante e la pastiglia, uguali per le tre anagrafiche.
+function activeBadge(r) {
+  const susp = r.active === false;
+  return `<span class="doc-badge ${susp ? 'st-sospeso' : 'st-attivo'}">${susp ? 'Sospeso' : 'Attivo'}</span>`;
+}
+function activeBtn(coll, r, nome) {
+  const susp = r.active === false;
+  const testo = susp ? 'Riattiva' : 'Sospendi: resta negli archivi, sparisce dai menu';
+  return `<button class="mini-btn" onclick="toggleActive('${coll}','${r.id}',${JSON.stringify(nome)})" title="${esc(testo)}">${susp ? ico('check', 'tinted', 'Riattiva') : ico('pause', 'tinted', 'Sospendi')}</button>`;
+}
 function renderSuppliers() {
   const list = db.suppliers.map(s => {
     const loc = [s.city, s.province ? '(' + s.province + ')' : ''].filter(Boolean).join(' ');
     return `<div class="mgmt-item">
     <span class="mgmt-item-name">${esc(s.name)}</span>
     <span class="mgmt-item-meta">${esc(s.referente || '')} ${s.email ? '· ' + esc(s.email) : ''} ${s.phone ? '· ' + esc(s.phone) : ''} ${loc ? '· ' + esc(loc) : ''}</span>
+    ${activeBadge(s)}
     <div class="mgmt-item-actions">
-      <button class="mini-btn" onclick="editSupplierModal('${s.id}')">✏</button>
-      <button class="mini-btn danger" onclick="delSupplier('${s.id}')">🗑</button></div></div>`;
+      ${activeBtn('suppliers', s, 'Fornitore')}
+      <button class="mini-btn" onclick="editSupplierModal('${s.id}')" title="Modifica fornitore">${ico('edit', 'tinted', 'Modifica fornitore')}</button>
+      <button class="mini-btn danger" onclick="delSupplier('${s.id}')" title="Elimina fornitore">${ico('trash', 'tinted', 'Elimina fornitore')}</button></div></div>`;
   }).join('') || '<div class="empty-text">Nessun fornitore.</div>';
   return `<div class="mgmt-panel"><div class="mgmt-list">${list}</div>
     <div class="mgmt-form">
@@ -250,7 +281,7 @@ function renderSuppliers() {
       <input id="sup-email" placeholder="Email">
       <input id="sup-phone" placeholder="Telefono">
       <button class="add-btn-sm" onclick="addSupplier()">+ Aggiungi</button></div>
-    <p class="empty-text" style="text-align:left;padding:6px 0 0">Indirizzo completo e P.IVA si inseriscono con ✏ Modifica.</p></div>`;
+    <p class="empty-text" style="text-align:left;padding:6px 0 0">Indirizzo completo e P.IVA si inseriscono con ${ico('edit', 'tinted', '')} Modifica.</p></div>`;
 }
 function addSupplier() {
   if (!roleGuard('manage')) return;
@@ -258,7 +289,7 @@ function addSupplier() {
   Store.insert('suppliers', { id: gid(), name: n, referente: val('sup-ref'), email: val('sup-email'),
     phone: val('sup-phone'), vat: '', street: '', streetNumber: '', zip: '', city: '', province: '', country: '',
     defaultTransport: '', defaultPayment: '', active: true });
-  renderManage(); showToast('Fornitore aggiunto');
+  renderManage(); savedToast('Fornitore aggiunto');
 }
 function addressFieldsHtml(pfx, o) {
   o = o || {};
@@ -274,8 +305,9 @@ function readAddressFields(pfx) {
     city: val(pfx + '-city'), province: val(pfx + '-prov').toUpperCase(), country: val(pfx + '-country') };
 }
 function editSupplierModal(id) {
+  if (!roleGuard('manage')) return;
   const s = db.suppliers.find(x => x.id === id); if (!s) return;
-  openModal(`<h3>✏ Modifica fornitore</h3>
+  openModal(`<h3>${ico('edit', 'tinted pill', '')} Modifica fornitore</h3>
     <div class="modal-grid">
       <div class="modal-field"><label>Nome</label><input id="es-name" value="${esc(s.name)}"></div>
       <div class="modal-field"><label>Referente</label><input id="es-ref" value="${esc(s.referente || '')}"></div>
@@ -296,16 +328,18 @@ function editSupplierModal(id) {
 function saveSupplier(id) {
   if (!roleGuard('manage')) return;
   const s = db.suppliers.find(x => x.id === id); if (!s) return;
-  s.name = val('es-name'); s.referente = val('es-ref'); s.email = val('es-email');
+  const nome = requireVal('es-name', 'Nome richiesto'); if (!nome) return;
+  s.name = nome; s.referente = val('es-ref'); s.email = val('es-email');
   s.phone = val('es-phone'); s.vat = val('es-vat');
   s.defaultPayment = val('es-dpayment'); s.defaultTransport = val('es-dtransport');
   Object.assign(s, readAddressFields('es'));
   touch(s);
-  saveDB(); closeModal(); renderManage(); showToast('Aggiornato');
+  saveDB(); closeModal(); renderManage(); savedToast('Aggiornato');
 }
-// Dove compare un fornitore: articoli, quotazioni a listino, documenti e
-// lavorazioni esterne di ciclo. Controllare i soli articoli lasciava riferimenti
-// orfani — uno storico prezzi che punta a un fornitore che non esiste più.
+// Dove compare un fornitore: articoli, quotazioni a listino, documenti,
+// lavorazioni esterne di ciclo e movimenti di magazzino. Controllare i soli
+// articoli lasciava riferimenti orfani — uno storico prezzi che punta a un
+// fornitore che non esiste più.
 function supplierUses(id) {
   const usi = [];
   const n = (a) => a.length;
@@ -319,6 +353,19 @@ function supplierUses(id) {
   if (n(rfqs)) usi.push(rfqs.length + (rfqs.length === 1 ? ' richiesta' : ' richieste'));
   const ordini = (db.orders || []).filter(o => o.supplierId === id);
   if (n(ordini)) usi.push(ordini.length + (ordini.length === 1 ? ' ordine' : ' ordini'));
+  const odl = (db.workOrders || []).filter(o => o.supplierId === id);
+  if (n(odl)) usi.push(odl.length + (odl.length === 1 ? ' ordine di lavoro' : ' ordini di lavoro'));
+  const contoLavoro = (db.workCenters || []).filter(w => (w.suppliers || []).some(s => s.supplierId === id));
+  if (n(contoLavoro)) usi.push(contoLavoro.length + (contoLavoro.length === 1 ? ' centro di lavoro (conto lavoro)' : ' centri di lavoro (conto lavoro)'));
+  // I movimenti di conto lavoro. Non è un caso di confine: la scheda del
+  // movimento **pretende** il terzista (`views-stock.js`, «senza, non si sa da
+  // chi sta la merce»), quindi il riferimento c'è sempre. Cancellando il
+  // fornitore, il prospetto «presso terzi» raggruppava sotto «senza fornitore»
+  // materiale che è nostro e sta fisicamente da qualcuno: la domanda a cui quel
+  // prospetto serve a rispondere — da chi stanno i pezzi — restava senza
+  // risposta, e senza più niente da cui ricostruirla.
+  const movimenti = (db.movements || []).filter(m => m.supplierId === id || m.fromSupplierId === id);
+  if (n(movimenti)) usi.push(movimenti.length + (movimenti.length === 1 ? ' movimento di magazzino' : ' movimenti di magazzino'));
   return usi;
 }
 function delSupplier(id) {
@@ -330,20 +377,133 @@ function delSupplier(id) {
   });
 }
 
+// ─── Clienti ───
+// L'anagrafica a monte delle commesse. Il campo Cliente della commessa resta
+// testo — cambiare quel campo in un id vorrebbe dire riscrivere elenco,
+// ricerca ed export delle commesse, e le commesse già scritte a mano
+// resterebbero senza cliente — ma da qui si precompila, così due commesse
+// dello stesso cliente non si chiamano più «Rossi Srl» e «Rossi S.r.l.».
+function renderCustomers() {
+  const list = (db.customers || []).map(c => {
+    const loc = [c.city, c.province ? '(' + c.province + ')' : ''].filter(Boolean).join(' ');
+    return `<div class="mgmt-item">
+    <span class="mgmt-item-name">${esc(c.name)}</span>
+    <span class="mgmt-item-meta">${esc(c.referente || '')} ${c.email ? '· ' + esc(c.email) : ''} ${c.phone ? '· ' + esc(c.phone) : ''} ${loc ? '· ' + esc(loc) : ''}</span>
+    ${activeBadge(c)}
+    <div class="mgmt-item-actions">
+      ${activeBtn('customers', c, 'Cliente')}
+      <button class="mini-btn" onclick="editCustomerModal('${c.id}')" title="Modifica cliente">${ico('edit', 'tinted', 'Modifica cliente')}</button>
+      <button class="mini-btn danger" onclick="delCustomer('${c.id}')" title="Elimina cliente">${ico('trash', 'tinted', 'Elimina cliente')}</button></div></div>`;
+  }).join('') || '<div class="empty-text">Nessun cliente.</div>';
+  return `<div class="mgmt-panel"><div class="mgmt-list">${list}</div>
+    <div class="mgmt-form">
+      <input id="cli-name" placeholder="Nome cliente">
+      <input id="cli-ref" placeholder="Referente">
+      <input id="cli-email" placeholder="Email">
+      <input id="cli-phone" placeholder="Telefono">
+      <button class="add-btn-sm" onclick="addCustomer()">+ Aggiungi</button></div>
+    <p class="empty-text" style="text-align:left;padding:6px 0 0">Indirizzo completo, P.IVA e note si inseriscono con ${ico('edit', 'tinted', '')} Modifica. I nomi di qui si propongono nel campo <strong>Cliente</strong> della commessa.</p></div>`;
+}
+// Il nome è la chiave con cui la commessa cita il cliente: due clienti omonimi
+// renderebbero il riferimento ambiguo proprio dove serve a qualcosa.
+function customerNameTaken(name, exceptId) {
+  const n = String(name || '').trim().toLowerCase();
+  return (db.customers || []).some(c => c.id !== exceptId && (c.name || '').trim().toLowerCase() === n);
+}
+function addCustomer() {
+  if (!roleGuard('manage')) return;
+  const n = val('cli-name'); if (!n) { showToast('Nome richiesto', 'error'); return; }
+  if (customerNameTaken(n)) { showToast('Cliente già in anagrafica', 'error'); return; }
+  Store.insert('customers', { id: gid(), name: n, referente: val('cli-ref'), email: val('cli-email'),
+    phone: val('cli-phone'), vat: '', street: '', streetNumber: '', zip: '', city: '', province: '', country: '',
+    notes: '', active: true });
+  renderManage(); savedToast('Cliente aggiunto');
+}
+function editCustomerModal(id) {
+  if (!roleGuard('manage')) return;
+  const c = (db.customers || []).find(x => x.id === id); if (!c) return;
+  openModal(`<h3>${ico('edit', 'tinted pill', '')} Modifica cliente</h3>
+    <div class="modal-grid">
+      <div class="modal-field"><label>Nome</label><input id="ec-name" value="${esc(c.name)}"></div>
+      <div class="modal-field"><label>Referente</label><input id="ec-ref" value="${esc(c.referente || '')}"></div>
+      <div class="modal-field"><label>Email</label><input id="ec-email" value="${esc(c.email || '')}"></div>
+      <div class="modal-field"><label>Telefono</label><input id="ec-phone" value="${esc(c.phone || '')}"></div>
+      <div class="modal-field"><label>P.IVA / C.F.</label><input id="ec-vat" value="${esc(c.vat || '')}"></div>
+      ${addressFieldsHtml('ec', c)}
+      <div class="modal-field" style="grid-column:1/-1"><label>Note</label><input id="ec-notes" value="${esc(c.notes || '')}"></div>
+    </div>
+    <div class="modal-actions"><button class="btn-ghost" onclick="closeModal()">Annulla</button>
+      <button class="add-btn-sm" onclick="saveCustomer('${id}')">Salva</button></div>`, true);
+}
+function saveCustomer(id) {
+  if (!roleGuard('manage')) return;
+  const c = (db.customers || []).find(x => x.id === id); if (!c) return;
+  const nome = val('ec-name');
+  if (!nome) { showToast('Nome richiesto', 'error'); return; }
+  if (customerNameTaken(nome, id)) { showToast('Cliente già in anagrafica', 'error'); return; }
+  // Le commesse citano il cliente per nome: rinominarlo qui e non lì le
+  // lascerebbe appese a un nome che in anagrafica non esiste più.
+  const vecchio = c.name;
+  c.name = nome; c.referente = val('ec-ref'); c.email = val('ec-email');
+  c.phone = val('ec-phone'); c.vat = val('ec-vat'); c.notes = val('ec-notes');
+  Object.assign(c, readAddressFields('ec'));
+  touch(c);
+  const rinominate = renameJobCustomer(vecchio, nome);
+  saveDB(); closeModal(); renderManage();
+  showToast(rinominate ? `Aggiornato · ${rinominate} ${rinominate === 1 ? 'commessa allineata' : 'commesse allineate'}` : 'Aggiornato');
+}
+// Propaga il nuovo nome alle commesse che portavano il vecchio.
+function renameJobCustomer(vecchio, nuovo) {
+  const da = String(vecchio || '').trim().toLowerCase();
+  if (!da || da === String(nuovo || '').trim().toLowerCase()) return 0;
+  let n = 0;
+  (db.jobs || []).forEach(j => {
+    if ((j.customer || '').trim().toLowerCase() === da) { j.customer = nuovo; touch(j); n++; }
+  });
+  return n;
+}
+// Dove compare un cliente: nelle commesse, per nome.
+function customerJobs(id) {
+  const c = (db.customers || []).find(x => x.id === id);
+  if (!c) return [];
+  const n = (c.name || '').trim().toLowerCase();
+  if (!n) return [];
+  return (db.jobs || []).filter(j => (j.customer || '').trim().toLowerCase() === n);
+}
+function delCustomer(id) {
+  if (!roleGuard('manage')) return;
+  const usate = customerJobs(id);
+  if (usate.length) {
+    showToast('Cliente usato in ' + usate.length + (usate.length === 1 ? ' commessa' : ' commesse'), 'error');
+    return;
+  }
+  askConfirm('Eliminare il cliente?', () => {
+    removeConUndo('customers', id, 'Cliente eliminato', renderManage);
+  });
+}
+
 // ─── Famiglie / sottofamiglie ───
-function familyPanelHtml(f) {
+// Le sigle ripetute si segnano in rosso dove stanno, non solo in un elenco a
+// parte: l'elenco dice che il problema esiste, il rosso dice quale riga toccare.
+function siglaHtml(sigla, ripetute, size) {
+  const dup = ripetute && ripetute.has(siglaKey(sigla));
+  const col = dup ? 'var(--red)' : 'var(--text-dim)';
+  return `<span style="font-family:var(--mono);color:${col};font-size:${size}"${dup ? ' title="Sigla ripetuta: dal codice non si risale più a quale delle due viene un articolo"' : ''}>[${esc(sigla)}]${dup ? ' ⚠' : ''}</span>`;
+}
+function familyPanelHtml(f, gruppi, dupFam) {
+  const dupSub = new Set(gruppi.filter(g => g.familyId === f.id).map(g => g.sigla));
   const subs = (f.subs || []).map(s => `<div class="mgmt-item" style="padding:6px 12px">
-      <span class="mgmt-item-name" style="font-size:13px;font-weight:500">${esc(s.name)} <span style="font-family:var(--mono);color:var(--text-dim);font-size:11px">[${esc(s.sigla || siglaFromName(s.name))}]</span></span>
+      <span class="mgmt-item-name" style="font-size:13px;font-weight:500">${esc(s.name)} ${siglaHtml(s.sigla || siglaFromName(s.name), dupSub, '11px')}</span>
       <div class="mgmt-item-actions">
-        <button class="mini-btn" onclick="editSubFamilyModal('${f.id}','${s.id}')">✏</button>
-        <button class="mini-btn danger" onclick="delSubFamily('${f.id}','${s.id}')">🗑</button></div></div>`).join('')
+        <button class="mini-btn" onclick="editSubFamilyModal('${f.id}','${s.id}')" title="Modifica sottofamiglia">${ico('edit', 'tinted', 'Modifica sottofamiglia')}</button>
+        <button class="mini-btn danger" onclick="delSubFamily('${f.id}','${s.id}')" title="Elimina sottofamiglia">${ico('trash', 'tinted', 'Elimina sottofamiglia')}</button></div></div>`).join('')
     || '<div class="empty-text" style="padding:6px 0">Nessuna sottofamiglia.</div>';
   return `<div class="mgmt-panel" style="margin-bottom:12px">
       <div class="mgmt-item" style="background:transparent;border:none;padding:0 0 10px">
-        <span class="mgmt-item-name" style="font-size:15px;color:var(--accent)">🗂 ${esc(f.name)} <span style="font-family:var(--mono);color:var(--text-dim);font-size:12px">[${esc(f.sigla || siglaFromName(f.name))}]</span></span>
+        <span class="mgmt-item-name" style="font-size:15px;color:var(--accent)">${ico('folder', 'tinted', '')} ${esc(f.name)} ${siglaHtml(f.sigla || siglaFromName(f.name), dupFam, '12px')}</span>
         <div class="mgmt-item-actions">
-          <button class="mini-btn" onclick="editFamilyModal('${f.id}')">✏</button>
-          <button class="mini-btn danger" onclick="delFamily('${f.id}')">🗑</button></div></div>
+          <button class="mini-btn" onclick="editFamilyModal('${f.id}')" title="Modifica macrofamiglia">${ico('edit', 'tinted', 'Modifica macrofamiglia')}</button>
+          <button class="mini-btn danger" onclick="delFamily('${f.id}')" title="Elimina macrofamiglia">${ico('trash', 'tinted', 'Elimina macrofamiglia')}</button></div></div>
       <div class="mgmt-list" style="margin-bottom:10px">${subs}</div>
       <div class="mgmt-form">
         <input id="sub-name-${f.id}" placeholder="Nuova sottofamiglia">
@@ -356,25 +516,47 @@ function renderFamilies(kind) {
   const hint = kind === 'materiale' ? 'Nuova macrofamiglia (es. Acciaio)'
     : kind === 'parte' ? 'Nuova macrofamiglia (es. Lavorazioni meccaniche)'
     : 'Nuova macrofamiglia (es. Idraulico)';
-  const blocks = (db.families || []).filter(f => (f.kind || 'acquistato') === kind).map(familyPanelHtml).join('')
+  const gruppi = duplicateSiglaGroups(kind);
+  const dupFam = new Set(gruppi.filter(g => g.dove === 'macrofamiglie').map(g => g.sigla));
+  const blocks = (db.families || []).filter(f => (f.kind || 'acquistato') === kind)
+    .map(f => familyPanelHtml(f, gruppi, dupFam)).join('')
     || '<div class="empty-text">Nessuna macrofamiglia.</div>';
-  return `<div>${blocks}
+  return `<div>${siglaWarnHtml(gruppi)}${blocks}
     <div class="mgmt-panel"><div class="mgmt-form">
       <input id="fam-name-${kind}" placeholder="${hint}">
       <input id="fam-sigla-${kind}" placeholder="Sigla" maxlength="6" style="max-width:90px">
       <button class="add-btn-sm" onclick="addFamily('${kind}')">+ Aggiungi macrofamiglia</button></div></div></div>`;
+}
+// Le sigle già ripetute quando la regola è entrata in vigore. Non si correggono
+// d'ufficio: cambiare una sigla cambia il prefisso dei codici futuri di quella
+// famiglia, e a decidere quale delle due tenere è una persona. Stessa scelta,
+// e stesso tono, del controllo sui codici articolo duplicati in Gestione › Backup.
+function siglaWarnHtml(gruppi) {
+  if (!gruppi.length) return '';
+  const righe = gruppi.map(g => `<div class="mgmt-item">
+      <span class="mgmt-item-name"><span style="font-family:var(--mono);font-weight:700;color:var(--red)">${esc(g.sigla)}</span>
+        — ${g.dove === 'macrofamiglie' ? 'macrofamiglie' : 'sottofamiglie di ' + esc(g.dove)}: ${g.nomi.map(esc).join(', ')}</span>
+    </div>`).join('');
+  return `<div class="mgmt-panel" style="margin-bottom:12px;border-color:var(--red)">
+    <strong>${ico('warning', 'tinted', '')} Sigle ripetute (${gruppi.length})</strong>
+    <p class="empty-text" style="text-align:left;padding:6px 0">La sigla compone il codice articolo — <span style="font-family:var(--mono)">CMM-MEC-CUS-007</span> — e ripetuta lo rende ambiguo: da quel codice non si risale più a quale delle due famiglie viene l'articolo. Da questa versione non se ne possono creare di nuove; queste erano già in archivio e vanno sciolte a mano, decidendo quale cambiare. I codici già assegnati non cambiano.</p>
+    <div class="mgmt-list">${righe}</div></div>`;
 }
 function addFamily(kind) {
   if (!roleGuard('manage')) return;
   kind = kind || 'acquistato';
   const n = val('fam-name-' + kind); if (!n) { showToast('Nome richiesto', 'error'); return; }
   const sg = val('fam-sigla-' + kind);
-  Store.insert('families', { id: gid(), name: n, kind, sigla: sg ? sg.toUpperCase() : siglaFromName(n), subs: [] });
-  renderManage(); showToast('Macrofamiglia aggiunta');
+  const sigla = sg ? sg.toUpperCase() : siglaFromName(n);
+  const err = validateFamilySigla(sigla, kind, null, !sg);
+  if (err) { showToast(err, 'error'); return; }
+  Store.insert('families', { id: gid(), name: n, kind, sigla, subs: [] });
+  renderManage(); savedToast('Macrofamiglia aggiunta');
 }
 function editFamilyModal(id) {
+  if (!roleGuard('manage')) return;
   const f = getFamily(id); if (!f) return;
-  openModal(`<h3>✏ Modifica macrofamiglia</h3>
+  openModal(`<h3>${ico('edit', 'tinted pill', '')} Modifica macrofamiglia</h3>
     <div class="modal-grid">
       <div class="modal-field"><label>Nome</label><input id="ef-name" value="${esc(f.name)}"></div>
       <div class="modal-field"><label>Sigla (per codifica)</label><input id="ef-sigla" value="${esc(f.sigla || siglaFromName(f.name))}" maxlength="6"></div>
@@ -385,10 +567,17 @@ function editFamilyModal(id) {
 function saveFamily(id) {
   if (!roleGuard('manage')) return;
   const f = getFamily(id); if (!f) return;
-  f.name = val('ef-name') || f.name;
-  const sg = val('ef-sigla'); f.sigla = sg ? sg.toUpperCase() : siglaFromName(f.name);
+  // Il vecchio `val(...) || f.name` faceva sopravvivere il nome di prima e poi
+  // annunciava «Aggiornata»: chi aveva svuotato il campo credeva di aver
+  // rinominato, e non era successo niente.
+  const nome = requireVal('ef-name', 'Nome richiesto'); if (!nome) return;
+  const sg = val('ef-sigla');
+  const sigla = sg ? sg.toUpperCase() : siglaFromName(nome);
+  const err = validateFamilySigla(sigla, f.kind, f.id, !sg);
+  if (err) { showToast(err, 'error'); return; }
+  f.name = nome; f.sigla = sigla;
   touch(f);
-  saveDB(); closeModal(); renderManage(); showToast('Aggiornata');
+  saveDB(); closeModal(); renderManage(); savedToast('Aggiornata');
 }
 function delFamily(id) {
   if (!roleGuard('manage')) return;
@@ -404,13 +593,17 @@ function addSubFamily(familyId) {
   const n = val('sub-name-' + familyId); if (!n) { showToast('Nome richiesto', 'error'); return; }
   if (!f.subs) f.subs = [];
   const sg = val('sub-sigla-' + familyId);
-  f.subs.push(stampNew({ id: gid(), name: n, sigla: sg ? sg.toUpperCase() : siglaFromName(n) }));
+  const sigla = sg ? sg.toUpperCase() : siglaFromName(n);
+  const err = validateSubFamilySigla(sigla, familyId, null, !sg);
+  if (err) { showToast(err, 'error'); return; }
+  f.subs.push(stampNew({ id: gid(), name: n, sigla }));
   touch(f);
-  saveDB(); renderManage(); showToast('Sottofamiglia aggiunta');
+  saveDB(); renderManage(); savedToast('Sottofamiglia aggiunta');
 }
 function editSubFamilyModal(familyId, subId) {
+  if (!roleGuard('manage')) return;
   const f = getFamily(familyId); const s = f && (f.subs || []).find(x => x.id === subId); if (!s) return;
-  openModal(`<h3>✏ Modifica sottofamiglia</h3>
+  openModal(`<h3>${ico('edit', 'tinted pill', '')} Modifica sottofamiglia</h3>
     <div class="modal-grid">
       <div class="modal-field"><label>Nome (in ${esc(f.name)})</label><input id="esf-name" value="${esc(s.name)}"></div>
       <div class="modal-field"><label>Sigla (per codifica)</label><input id="esf-sigla" value="${esc(s.sigla || siglaFromName(s.name))}" maxlength="6"></div>
@@ -421,10 +614,14 @@ function editSubFamilyModal(familyId, subId) {
 function saveSubFamily(familyId, subId) {
   if (!roleGuard('manage')) return;
   const f = getFamily(familyId); const s = f && (f.subs || []).find(x => x.id === subId); if (!s) return;
-  s.name = val('esf-name') || s.name;
-  const sg = val('esf-sigla'); s.sigla = sg ? sg.toUpperCase() : siglaFromName(s.name);
+  const nome = requireVal('esf-name', 'Nome richiesto'); if (!nome) return;
+  const sg = val('esf-sigla');
+  const sigla = sg ? sg.toUpperCase() : siglaFromName(nome);
+  const err = validateSubFamilySigla(sigla, familyId, subId, !sg);
+  if (err) { showToast(err, 'error'); return; }
+  s.name = nome; s.sigla = sigla;
   touch(s);
-  saveDB(); closeModal(); renderManage(); showToast('Aggiornata');
+  saveDB(); closeModal(); renderManage(); savedToast('Aggiornata');
 }
 function delSubFamily(familyId, subId) {
   if (!roleGuard('manage')) return;
@@ -433,53 +630,120 @@ function delSubFamily(familyId, subId) {
   askConfirm('Eliminare la sottofamiglia?', () => {
     const f = getFamily(familyId); if (!f) return;
     f.subs = (f.subs || []).filter(x => x.id !== subId);
-    saveDB(); renderManage(); showToast('Eliminata');
+    saveDB(); renderManage(); savedToast('Eliminata');
   });
 }
 
 function renderWorkCenters() {
   const list = db.workCenters.map(w => `<div class="mgmt-item">
     <span class="mgmt-item-name">${esc(w.name)}</span>
-    <span class="mgmt-item-meta">${fmtN(w.hourlyRate)}/h</span>
+    <span class="mgmt-item-meta">${fmtN(w.hourlyRate)}/h${Number(w.capacityHours) > 0 ? ' · ' + fmtQty(w.capacityHours) + ' h/sett' : ''}${(w.suppliers || []).length ? ' · ' + (w.suppliers || []).length + ((w.suppliers || []).length === 1 ? ' fornitore conto lavoro' : ' fornitori conto lavoro') : ''}</span>
+    ${activeBadge(w)}
     <div class="mgmt-item-actions">
-      <button class="mini-btn" onclick="editWcModal('${w.id}')">✏</button>
-      <button class="mini-btn danger" onclick="delWc('${w.id}')">🗑</button></div></div>`).join('') || '<div class="empty-text">Nessun centro di lavoro.</div>';
+      ${activeBtn('workCenters', w, 'Centro di lavoro')}
+      <button class="mini-btn" onclick="editWcModal('${w.id}')" title="Modifica centro di lavoro">${ico('edit', 'tinted', 'Modifica centro di lavoro')}</button>
+      <button class="mini-btn danger" onclick="delWc('${w.id}')" title="Elimina centro di lavoro">${ico('trash', 'tinted', 'Elimina centro di lavoro')}</button></div></div>`).join('') || '<div class="empty-text">Nessun centro di lavoro.</div>';
   return `<div class="mgmt-panel"><div class="mgmt-list">${list}</div>
     <div class="mgmt-form">
       <input id="wc-name" placeholder="Nome (es. Tornitura)">
       <input id="wc-rate" type="number" min="0" step="0.5" placeholder="Tariffa ${esc(cur())}/h" title="Tariffa oraria del centro di lavoro, in ${esc(cur())} per ora">
+      <input id="wc-cap" type="number" min="0" step="1" placeholder="Capacità h/sett" title="Ore disponibili a settimana. Lasciandolo a zero il carico si vede lo stesso, ma nessun sovraccarico viene segnalato">
       <button class="add-btn-sm" onclick="addWc()">+ Aggiungi</button></div></div>`;
 }
 function addWc() {
   if (!roleGuard('manage')) return;
   const n = val('wc-name'); if (!n) { showToast('Nome richiesto', 'error'); return; }
   if (isNeg('wc-rate')) { showToast('La tariffa non può essere negativa', 'error'); return; }
-  Store.insert('workCenters', { id: gid(), name: n, hourlyRate: numVal('wc-rate', 0), active: true });
-  renderManage(); showToast('Centro di lavoro aggiunto');
+  if (isNeg('wc-cap')) { showToast('La capacità non può essere negativa', 'error'); return; }
+  Store.insert('workCenters', { id: gid(), name: n, hourlyRate: numVal('wc-rate', 0),
+    capacityHours: numVal('wc-cap', 0), active: true });
+  renderManage(); savedToast('Centro di lavoro aggiunto');
 }
 function editWcModal(id) {
+  if (!roleGuard('manage')) return;
   const w = db.workCenters.find(x => x.id === id); if (!w) return;
-  openModal(`<h3>✏ Modifica centro di lavoro</h3>
+  window.__wcEditId = id;
+  openModal(`<h3>${ico('edit', 'tinted pill', '')} Modifica centro di lavoro</h3>
     <div class="modal-field"><label>Nome</label><input id="ew-name" value="${esc(w.name)}"></div>
     <div class="modal-field"><label>Tariffa (${cur()}/h)</label><input id="ew-rate" type="number" min="0" step="0.5" value="${w.hourlyRate}"></div>
+    <div class="modal-field"><label>Capacità (h/settimana)</label>
+      <input id="ew-cap" type="number" min="0" step="1" value="${Number(w.capacityHours) || 0}">
+      <p class="empty-text" style="text-align:left;padding:4px 0 0">Ore disponibili a settimana, per il <strong>Carico centri</strong>. <strong>Zero significa «non dichiarata»</strong>, non «nessuna capacità»: il carico si vede lo stesso, ma nessun sovraccarico viene segnalato — altrimenti ogni centro risulterebbe sfondato dal primo giorno.</p></div>
     <div class="modal-actions"><button class="btn-ghost" onclick="closeModal()">Annulla</button>
-      <button class="add-btn-sm" onclick="saveWc('${id}')">Salva</button></div>`);
+      <button class="add-btn-sm" onclick="saveWc('${id}')">Salva</button></div>
+    <div class="settings-group-title">${ico('factory', 'tinted', '')} Fornitori conto lavoro</div>
+    <p style="color:var(--text-dim);margin-bottom:10px">Chi esegue questa lavorazione all'esterno, con la propria tariffa — proposta (e modificabile) quando si sceglie il fornitore in un ciclo.</p>
+    <div id="wc-sup-body">${wcSuppliersBody(id)}</div>`, true, 'wc-edit');
 }
+onPanelClose('wc-edit', () => { window.__wcEditId = null; });
 function saveWc(id) {
   if (!roleGuard('manage')) return;
   const w = db.workCenters.find(x => x.id === id); if (!w) return;
+  const nome = requireVal('ew-name', 'Nome richiesto'); if (!nome) return;
   if (isNeg('ew-rate')) { showToast('La tariffa non può essere negativa', 'error'); return; }
-  w.name = val('ew-name'); w.hourlyRate = numVal('ew-rate', 0);
+  if (isNeg('ew-cap')) { showToast('La capacità non può essere negativa', 'error'); return; }
+  w.name = nome; w.hourlyRate = numVal('ew-rate', 0); w.capacityHours = numVal('ew-cap', 0);
   touch(w);
-  saveDB(); closeModal(); renderManage(); showToast('Aggiornato');
+  saveDB(); renderManage(); savedToast('Aggiornato');
 }
 function delWc(id) {
   if (!roleGuard('manage')) return;
-  const used = db.items.filter(i => (i.operations || []).some(o => o.workCenterId === id));
-  if (used.length) { showToast('Usato in ' + used.length + ' distinte', 'error'); return; }
+  const usedAssiemi = db.items.filter(i => (i.operations || []).some(o => o.workCenterId === id));
+  const usedCicli = db.items.filter(i => (i.cycle || []).some(r => r.kind === 'op' && r.workCenterId === id));
+  const used = usedAssiemi.length + usedCicli.length;
+  if (used) { showToast('Usato in ' + used + ' distinte', 'error'); return; }
   askConfirm('Eliminare il centro di lavoro?', () => {
     removeConUndo('workCenters', id, 'Centro di lavoro eliminato', renderManage);
   });
+}
+// ─── Fornitori conto lavoro di un centro di lavoro ───
+// Stesso schema del listino prezzi articoli (views-catalog.js): un elenco di
+// righe fornitore-tariffa sull'entità che le possiede, senza il concetto di
+// "quotazione in uso" che lì serve e qui no — la scelta di quale fornitore
+// usare si fa riga per riga nel ciclo, non qui.
+function wcSuppliersBody(wcId) {
+  const w = db.workCenters.find(x => x.id === wcId); if (!w) return '';
+  const righe = (w.suppliers || []).map(s => `<tr>
+    <td><select onchange="wcSupplierSetField('${wcId}','${s.id}','supplierId',this.value)">${supplierOptions(s.supplierId || '')}</select></td>
+    <td><input type="number" class="num" min="0" step="0.5" value="${s.rate || 0}" onchange="wcSupplierSetField('${wcId}','${s.id}','rate',this.value)"></td>
+    <td><input type="text" value="${esc(s.note || '')}" placeholder="opzionale" onchange="wcSupplierSetField('${wcId}','${s.id}','note',this.value)"></td>
+    <td class="pl-act"><button class="mini-btn danger" title="Rimuovi" onclick="wcSupplierDelRow('${wcId}','${s.id}')">${ico('trash', 'tinted', 'Rimuovi')}</button></td>
+  </tr>`).join('');
+  const vuoto = `<tr><td colspan="4" class="empty-text">Nessun fornitore conto lavoro registrato.</td></tr>`;
+  // price-table: stessa classe del listino prezzi articoli, non solo lo stesso
+  // schema — senza, select e input restavano alla loro larghezza nativa
+  // (diversa riga per riga, secondo il testo scelto) invece di riempire la
+  // colonna: è la disallineatura che si vedeva a schermo.
+  return `<div class="table-wrap"><table class="price-table">
+      <thead><tr><th scope="col">Fornitore</th><th scope="col">Tariffa (${esc(cur())}/h)</th><th scope="col">Nota</th><th scope="col"></th></tr></thead>
+      <tbody>${righe || vuoto}</tbody></table></div>
+    <div style="margin-top:10px"><button class="add-btn-sm" onclick="wcSupplierAddRow('${wcId}')">+ Aggiungi fornitore</button></div>`;
+}
+function wcSuppliersRefresh() {
+  const host = document.getElementById('wc-sup-body');
+  if (host && window.__wcEditId) host.innerHTML = wcSuppliersBody(window.__wcEditId);
+}
+function wcSupplierAddRow(wcId) {
+  if (!roleGuard('manage')) return;
+  const w = db.workCenters.find(x => x.id === wcId); if (!w) return;
+  if (!Array.isArray(w.suppliers)) w.suppliers = [];
+  w.suppliers.push({ id: gid(), supplierId: null, rate: 0, note: '' });
+  touch(w); saveDB(); wcSuppliersRefresh(); renderManage();
+}
+function wcSupplierSetField(wcId, rowId, field, value) {
+  if (!roleGuard('manage')) { wcSuppliersRefresh(); return; }
+  const w = db.workCenters.find(x => x.id === wcId); if (!w) return;
+  const row = (w.suppliers || []).find(x => x.id === rowId); if (!row) return;
+  if (field === 'rate') row.rate = clampNum(parseFloat(value), 0);
+  else if (field === 'supplierId') row.supplierId = value || null;
+  else row.note = value;
+  touch(w); saveDB(); wcSuppliersRefresh(); renderManage();
+}
+function wcSupplierDelRow(wcId, rowId) {
+  if (!roleGuard('manage')) return;
+  const w = db.workCenters.find(x => x.id === wcId); if (!w) return;
+  w.suppliers = (w.suppliers || []).filter(x => x.id !== rowId);
+  touch(w); saveDB(); wcSuppliersRefresh(); renderManage();
 }
 
 // ─── Unità di misura ───
@@ -495,8 +759,8 @@ function renderConcepts() {
       <span class="mgmt-item-name">${esc(c.name)}</span>
       <span class="mgmt-item-meta">${used ? 'usato ' + used + '×' : 'non usato'}</span>
       <div class="mgmt-item-actions">
-        <button class="mini-btn" onclick="editConceptModal(${i})">✏</button>
-        <button class="mini-btn danger" onclick="delConcept(${i})">🗑</button>
+        <button class="mini-btn" onclick="editConceptModal(${i})" title="Modifica concetto">${ico('edit', 'tinted', 'Modifica concetto')}</button>
+        <button class="mini-btn danger" onclick="delConcept(${i})" title="Elimina concetto">${ico('trash', 'tinted', 'Elimina concetto')}</button>
       </div></div>`;
   }).join('') || '<div class="empty-text">Nessun concetto.</div>';
   return `<div class="mgmt-panel">
@@ -511,27 +775,27 @@ function addConcept() {
   const name = val('concept-name').trim().toUpperCase(); if (!name) { showToast('Nome richiesto', 'error'); return; }
   if (conceptList().some(c => c.name === name)) { showToast('Concetto già presente', 'error'); return; }
   db.settings.concepts.push({ id: gid(), name });
-  saveDB(); renderManage(); showToast('Concetto aggiunto');
+  saveDB(); renderManage(); savedToast('Concetto aggiunto');
 }
 function editConceptModal(i) {
   if (!roleGuard('manage')) return;
   const c = conceptList()[i]; if (!c) return;
-  openModal(`<h3>✏ Modifica concetto</h3>
-    <div class="modal-field"><label>Concetto</label><input id="ec-name" value="${esc(c.name)}" style="text-transform:uppercase" oninput="this.value=this.value.toUpperCase()"></div>
+  openModal(`<h3>${ico('edit', 'tinted pill', '')} Modifica concetto</h3>
+    <div class="modal-field"><label>Concetto</label><input id="ecpt-name" value="${esc(c.name)}" style="text-transform:uppercase" oninput="this.value=this.value.toUpperCase()"></div>
     <div class="modal-actions"><button class="btn-ghost" onclick="closeModal()">Annulla</button>
       <button class="add-btn-sm" onclick="saveConcept(${i})">Salva</button></div>`);
 }
 function saveConcept(i) {
   if (!roleGuard('manage')) return;
   const c = conceptList()[i]; if (!c) return;
-  const name = val('ec-name').trim().toUpperCase(); if (!name) { showToast('Nome richiesto', 'error'); return; }
+  const name = val('ecpt-name').trim().toUpperCase(); if (!name) { showToast('Nome richiesto', 'error'); return; }
   if (name !== c.name) {
     // Un concetto in uso è congelato: i nomi delle parti già composte non devono cambiare da soli
     if (conceptUsage(c.id)) { showToast('Concetto in uso: rinomina non consentita', 'error'); return; }
     if (conceptList().some((x, j) => j !== i && x.name === name)) { showToast('Concetto già presente', 'error'); return; }
   }
   c.name = name;
-  saveDB(); closeModal(); renderManage(); showToast('Aggiornato');
+  saveDB(); closeModal(); renderManage(); savedToast('Aggiornato');
 }
 function delConcept(i) {
   if (!roleGuard('manage')) return;
@@ -540,15 +804,28 @@ function delConcept(i) {
   if (used) { showToast(`Usato in ${used} parti`, 'error'); return; }
   askConfirm(`Eliminare il concetto "${c.name}"?`, () => {
     db.settings.concepts = conceptList().filter((_, j) => j !== i);
-    saveDB(); renderManage(); showToast('Eliminato');
+    saveDB(); renderManage(); savedToast('Eliminato');
   });
 }
 
+// Quante volte una U.M. è in uso. Conta anche la **seconda** unità degli
+// articoli e quella delle righe di listino: una barra si gestisce in metri e si
+// compra a chilo, e il chilo vive in altUom/priceUom, non in uom.
+//
+// Contarle non è pignoleria: su questo numero delUom decide se lasciar
+// cancellare. Senza, l'unità che converte i prezzi di mezzo magazzino risultava
+// «non usata» e spariva dall'elenco con un click, mentre gli articoli
+// continuavano a portarsela scritta dentro.
 function uomUsage(code) {
   let n = 0;
-  (db.items || []).forEach(i => { if (i.uom === code) n++; });
+  (db.items || []).forEach(i => {
+    if (i.uom === code) n++;
+    if (i.altUom === code) n++;
+    (i.priceList || []).forEach(r => { if (r.priceUom === code) n++; });
+  });
   (db.rfqs || []).forEach(r => (r.lines || []).forEach(l => { if (l.uom === code) n++; }));
   (db.orders || []).forEach(o => (o.lines || []).forEach(l => { if (l.uom === code) n++; }));
+  (db.workOrders || []).forEach(o => (o.lines || []).forEach(l => { if (l.uom === code) n++; }));
   return n;
 }
 function renderUoms() {
@@ -560,8 +837,8 @@ function renderUoms() {
       <span class="mgmt-item-meta">${esc(u.name || '—')}${used ? ' · usata ' + used + '×' : ''}</span>
       <div class="mgmt-item-actions">
         <button class="mini-btn" onclick="uomSetDefault(${i})" title="Imposta come predefinita">${u.code === def ? '★' : '☆'}</button>
-        <button class="mini-btn" onclick="editUomModal(${i})">✏</button>
-        <button class="mini-btn danger" onclick="delUom(${i})">🗑</button>
+        <button class="mini-btn" onclick="editUomModal(${i})" title="Modifica unità di misura">${ico('edit', 'tinted', 'Modifica unità di misura')}</button>
+        <button class="mini-btn danger" onclick="delUom(${i})" title="Elimina unità di misura">${ico('trash', 'tinted', 'Elimina unità di misura')}</button>
       </div></div>`;
   }).join('') || '<div class="empty-text">Nessuna unità di misura.</div>';
   return `<div class="mgmt-panel">
@@ -575,32 +852,49 @@ function renderUoms() {
 function addUom() {
   if (!roleGuard('manage')) return;
   const code = val('uom-code'); if (!code) { showToast('Codice richiesto', 'error'); return; }
-  if (uomList().some(u => u.code === code)) { showToast('Unità di misura già presente', 'error'); return; }
+  // Confronto senza distinguere maiuscole: «kg» e «KG» convivevano come due
+  // unità distinte, uomUsage() le contava separate e renameUom() ne propagava
+  // una sola, lasciando le altre righe appese al codice vecchio.
+  if (uomList().some(u => (u.code || '').toLowerCase() === code.toLowerCase())) { showToast('Unità di misura già presente', 'error'); return; }
   db.settings.uoms.push({ code, name: val('uom-name') });
-  saveDB(); renderManage(); showToast('Unità di misura aggiunta');
+  saveDB(); renderManage(); savedToast('Unità di misura aggiunta');
 }
 function editUomModal(i) {
+  if (!roleGuard('manage')) return;
   const u = uomList()[i]; if (!u) return;
-  openModal(`<h3>✏ Modifica unità di misura</h3>
-    <div class="modal-field"><label>Codice</label><input id="eu-code" maxlength="10" value="${esc(u.code)}"></div>
-    <div class="modal-field"><label>Descrizione</label><input id="eu-name" value="${esc(u.name || '')}"></div>
+  openModal(`<h3>${ico('edit', 'tinted pill', '')} Modifica unità di misura</h3>
+    <div class="modal-field"><label>Codice</label><input id="euom-code" maxlength="10" value="${esc(u.code)}"></div>
+    <div class="modal-field"><label>Descrizione</label><input id="euom-name" value="${esc(u.name || '')}"></div>
     <div class="modal-actions"><button class="btn-ghost" onclick="closeModal()">Annulla</button>
       <button class="add-btn-sm" onclick="saveUom(${i})">Salva</button></div>`);
 }
 function saveUom(i) {
   if (!roleGuard('manage')) return;
   const u = uomList()[i]; if (!u) return;
-  const code = val('eu-code'); if (!code) { showToast('Codice richiesto', 'error'); return; }
+  const code = val('euom-code'); if (!code) { showToast('Codice richiesto', 'error'); return; }
   if (code !== u.code && uomList().some((x, j) => j !== i && x.code === code)) { showToast('Codice già in uso', 'error'); return; }
   if (code !== u.code) renameUom(u.code, code);
-  u.code = code; u.name = val('eu-name');
-  saveDB(); closeModal(); renderManage(); showToast('Aggiornato');
+  u.code = code; u.name = val('euom-name');
+  saveDB(); closeModal(); renderManage(); savedToast('Aggiornato');
 }
 // Propaga il nuovo codice ovunque sia referenziato (l'U.M. è salvata per valore)
+// Rinominare propaga ovunque quel codice sia scritto — seconda unità e righe di
+// listino comprese. Lasciandole indietro, l'articolo restava con un codice U.M.
+// che nell'elenco non esisteva più: le conversioni continuavano a tornare
+// (altUom e priceUom si guardano fra loro, non l'elenco), ma l'anagrafica e
+// l'elenco raccontavano due cose diverse, e la differenza non si vedeva da
+// nessuna parte finché qualcuno non apriva quel singolo articolo.
 function renameUom(oldCode, newCode) {
-  (db.items || []).forEach(it => { if (it.uom === oldCode) { it.uom = newCode; touch(it); } });
+  (db.items || []).forEach(it => {
+    let tocca = false;
+    if (it.uom === oldCode) { it.uom = newCode; tocca = true; }
+    if (it.altUom === oldCode) { it.altUom = newCode; tocca = true; }
+    (it.priceList || []).forEach(r => { if (r.priceUom === oldCode) { r.priceUom = newCode; tocca = true; } });
+    if (tocca) touch(it);
+  });
   (db.rfqs || []).forEach(r => (r.lines || []).forEach(l => { if (l.uom === oldCode) l.uom = newCode; }));
   (db.orders || []).forEach(o => (o.lines || []).forEach(l => { if (l.uom === oldCode) l.uom = newCode; }));
+  (db.workOrders || []).forEach(o => (o.lines || []).forEach(l => { if (l.uom === oldCode) l.uom = newCode; }));
   if (db.settings.uomDefault === oldCode) db.settings.uomDefault = newCode;
 }
 function delUom(i) {
@@ -611,7 +905,7 @@ function delUom(i) {
   askConfirm(`Eliminare l'unità di misura "${u.code}"?`, () => {
     db.settings.uoms = uomList().filter((_, j) => j !== i);
     if (db.settings.uomDefault === u.code) db.settings.uomDefault = '';
-    saveDB(); renderManage(); showToast('Eliminata');
+    saveDB(); renderManage(); savedToast('Eliminata');
   });
 }
 function uomSetDefault(i) {
@@ -624,7 +918,7 @@ function uomSetDefault(i) {
 function renderSettings() {
   const s = db.settings;
   return `<div class="mgmt-panel">
-    <h3 class="settings-group-title">💶 Costi e margini</h3>
+    <h3 class="settings-group-title">${ico('euro', 'tinted', '')} Costi e margini</h3>
     <div class="modal-grid">
       <div class="modal-field"><label>Spese generali / overhead (%)</label><input type="number" id="set-ov" min="0" max="1000" step="0.1" value="${s.overheadPct}"></div>
       <div class="modal-field"><label>Margine / markup (%)</label><input type="number" id="set-mg" min="0" max="1000" step="0.1" value="${s.marginPct}"></div>
@@ -633,7 +927,7 @@ function renderSettings() {
     </div>
     <p class="empty-text" style="text-align:left;padding:4px 0 12px">Le percentuali sono i valori di default applicati a tutti i prodotti. Si possono sovrascrivere per singola macchina dalla "Modifica testata".<br>L'approvvigionamento è quello proposto alle <strong>nuove</strong> parti, e da esso dipende anche da dove viene il costo: dal ciclo se prodotta in casa, dal listino se acquistata. Su ciascuna parte resta modificabile nella sua scheda; quelle già a catalogo non si toccano.</p>
 
-    <h3 class="settings-group-title">🏷 Codifica automatica articoli</h3>
+    <h3 class="settings-group-title">${ico('tag', 'tinted', '')} Codifica automatica articoli</h3>
     <div class="modal-grid">
       <div class="modal-field"><label>Cifre parte incrementale codice</label><input type="number" id="set-digits" min="1" max="10" step="1" value="${codeDigits()}"></div>
       <div class="modal-field"><label>Prefisso codice — Commerciali</label><input id="set-pfx-acq" maxlength="10" value="${esc(s.codePrefixAcquistato || 'CMM')}" placeholder="CMM"></div>
@@ -642,7 +936,7 @@ function renderSettings() {
     </div>
     <p class="empty-text" style="text-align:left;padding:4px 0 12px">Le cifre della parte incrementale determinano lo zero-padding del progressivo (es. 3 → <span style="font-family:var(--mono)">${esc(s.codePrefixMateriale || 'MAT')}-ACC-LAM-001</span>). Il prefisso codice è la sigla iniziale usata nei codici automatici per commerciali, materie prime e parti.<br>Macchine, gruppi, sottogruppi e le parti legate a una macchina usano invece la <strong>codifica gerarchica</strong> (es. <span style="font-family:var(--mono)">TRN-BAS-001</span>), il cui schema si configura sulla singola macchina.</p>
 
-    <h3 class="settings-group-title">🔒 Accesso</h3>
+    <h3 class="settings-group-title">${ico('lock', 'tinted', '')} Accesso</h3>
     <div class="modal-grid">
       <div class="modal-field"><label>Durata della sessione salvata (giorni)</label><input type="number" id="set-session" min="0" max="365" step="1" value="${sessionMaxDays()}"></div>
     </div>
@@ -664,5 +958,5 @@ function saveSettings() {
   db.settings.codePrefixMateriale = (val('set-pfx-mat') || 'MAT').toUpperCase();
   db.settings.codePrefixParte = (val('set-pfx-prt') || 'PRT').toUpperCase();
   db.settings.sessionDays = numVal('set-session', 0, 365);
-  saveDB(); renderManage(); showToast('Impostazioni salvate');
+  saveDB(); renderManage(); savedToast('Impostazioni salvate');
 }

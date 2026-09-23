@@ -32,13 +32,15 @@ function globalSearchHits(q) {
   });
   doc(db.rfqs, 'rfq', 'RDO', d => 'Richiesta · ' + (supplierName(d.supplierId) || 'senza fornitore'));
   doc(db.orders, 'order', 'ODA', d => 'Ordine · ' + (supplierName(d.supplierId) || 'senza fornitore'));
+  doc(db.workOrders, 'odl', 'ODL', d => 'Ordine di lavoro · ' + (supplierName(d.supplierId) || 'senza terzista'));
+  doc(db.prodOrders, 'odp', 'ODP', d => 'Ordine di produzione · ' + ((d.code || '') + ' ' + (d.name || '')).trim());
   doc(db.plans, 'plan', 'FAB', d => 'Piano di produzione · ' + (d.lines || []).length + ' righe');
   // Chi ha il codice che inizia con quanto digitato viene prima: è la ricerca
   // di chi sa già cosa cerca e lo sta scrivendo.
   return hits.sort((a, b) => a.exact - b.exact || String(a.code).localeCompare(String(b.code))).slice(0, GS_MAX);
 }
 function globalSearchModal() {
-  openModal(`<h3>🔎 Cerca ovunque</h3>
+  openModal(`<h3>${ico('search', 'tinted pill', '')} Cerca ovunque</h3>
     <div class="modal-field">
       <input type="text" id="gs-input" placeholder="Codice, nome, numero di documento..." autocomplete="off"
         oninput="debounced('gs', renderGlobalSearch, 90)" onkeydown="globalSearchKey(event)"></div>
@@ -82,6 +84,8 @@ function globalSearchOpen(i) {
     else { setView(scopeOf(it.type)); editItemModal(it.id); }
   } else if (h.kind === 'rfq') { setView('rfq'); openRfqEdit(h.id); }
   else if (h.kind === 'order') { setView('orders'); openOrderEdit(h.id); }
+  else if (h.kind === 'odl') { setView('odl'); openOdlEdit(h.id); }
+  else if (h.kind === 'odp') { setView('odp'); openOdpEdit(h.id); }
   else if (h.kind === 'plan') { setView('mrp'); openPlanEdit(h.id); }
 }
 
@@ -101,6 +105,8 @@ function printSubtitle() {
   if (activeView === 'mrp') { const p = getPlan(currentPlanId); return p ? p.number + ' ' + (p.title || '') : ''; }
   if (activeView === 'rfq') { const r = getRfq(currentRfqId); return r ? r.number + ' ' + (r.title || '') : ''; }
   if (activeView === 'orders') { const o = getOrder(currentOrderId); return o ? o.number + ' ' + (o.title || '') : ''; }
+  if (activeView === 'odl') { const o = getOdl(currentOdlId); return o ? o.number + ' ' + (o.title || '') : ''; }
+  if (activeView === 'odp') { const o = getOdp(currentOdpId); return o ? o.number + ' ' + (o.code || '') : ''; }
   return '';
 }
 function printHeadFill() {
@@ -115,6 +121,17 @@ function printHeadFill() {
 }
 function printView() { printHeadFill(); window.print(); }
 
+// ─── Manuale d'uso ───
+// `manuale.html` sta nella cartella dell'app, accanto a index.html: si apre
+// senza rete, come tutto il resto, e viaggia con la cartella quando la si copia
+// su un altro PC. In una scheda nuova, perché il manuale si consulta **mentre**
+// si lavora — chi cerca come si registra un rientro da conto lavoro ha l'ordine
+// di lavoro aperto davanti, e non deve perderlo per leggere come si fa.
+// Il manuale legge `bomtrack_theme` e si apre nel tema scelto qui.
+function openManual() {
+  window.open('manuale.html', 'bomtrack-manuale');
+}
+
 // ═══════════════════════════════════════════════════════════
 //  NAVIGAZIONE
 // ═══════════════════════════════════════════════════════════
@@ -125,27 +142,37 @@ function printView() { printHeadFill(); window.print(); }
 // Icona ed etichetta restano separate: su schermi stretti l'etichetta del
 // gruppo sparisce e la barra resta su una riga sola (vedi .nav-label).
 const NAV = [
-  { id: 'home', icon: '🏠', label: 'Riepilogo', views: [
+  { id: 'home', icon: 'home', label: 'Riepilogo', views: [
     { id: 'home', label: 'Riepilogo' }] },
-  { id: 'anag', icon: '📇', label: 'Anagrafica', views: [
+  { id: 'anag', icon: 'contacts', label: 'Anagrafica', views: [
     { id: 'buy', label: 'Acquisti' },
     { id: 'design', label: 'Progetto' }] },
   // Il magazzino sta accanto alle anagrafiche perché elenca gli stessi articoli,
   // ma è un gruppo suo: non conosce la divisione fra acquisti e progetto —
   // commerciali, materie prime e parti stanno sullo stesso scaffale.
-  { id: 'stock', icon: '📦', label: 'Magazzino', views: [
+  { id: 'stock', icon: 'package', label: 'Magazzino', views: [
     { id: 'stock', label: 'Magazzino' }] },
-  { id: 'cicli', icon: '🔧', label: 'Cicli di lavorazione', views: [
-    { id: 'cycles', label: 'Cicli di lavorazione' }] },
-  { id: 'db', icon: '🌳', label: 'Distinta base', views: [
+  { id: 'cicli', icon: 'wrench', label: 'Cicli di lavorazione', views: [
+    { id: 'cycles', label: 'Cicli di lavorazione' },
+    // Il carico aggregato non appartiene a nessun piano: infilarlo dentro un
+    // piano lo farebbe cercare nel posto sbagliato. Il carico del singolo piano
+    // resta comunque in fondo alla sua scheda.
+    { id: 'load', label: 'Carico centri' }] },
+  { id: 'db', icon: 'tree', label: 'Distinta base', views: [
     { id: 'bom', label: 'Gestione DB' },
     { id: 'report', label: 'Visualizza DB' }] },
-  { id: 'docs', icon: '📨', label: 'Documenti', views: [
+  { id: 'docs', icon: 'mail', label: 'Documenti', views: [
     { id: 'jobs', label: 'Commesse' },
     { id: 'mrp', label: 'Fabbisogno' },
+    // L'ordine di produzione sta prima dell'ordine di lavoro perché è lui a
+    // generarlo: la fase esterna si commissiona da lì.
+    { id: 'odp', label: 'Ordini di produzione' },
     { id: 'rfq', label: 'Richieste offerta' },
-    { id: 'orders', label: 'Ordini' }] },
-  { id: 'manage', icon: '⚙', label: 'Gestione', views: [
+    { id: 'orders', label: 'Ordini' },
+    // ODA e ODL sono due documenti diversi e stanno in due elenchi: uno compra
+    // merce, l'altro manda pezzi a lavorare.
+    { id: 'odl', label: 'Ordini di lavoro' }] },
+  { id: 'manage', icon: 'settings', label: 'Gestione', views: [
     { id: 'manage', label: 'Gestione' }] },
 ];
 function navGroups() { return NAV.filter(g => g.id !== 'manage' || isAdmin()); }
@@ -164,16 +191,21 @@ function openNavGroup(gid) {
 }
 function renderNav() {
   const attivo = groupOfView(activeView);
+  // aria-label esplicito, non affidato al testo: sotto i 1330px la media query
+  // nasconde .nav-label, e display:none toglie quel testo anche all'albero di
+  // accessibilità — il pulsante resterebbe senza nome. a11yFields non lo ripara,
+  // perché ripara solo i pulsanti che il testo non ce l'hanno per niente, e qui
+  // ce l'hanno: semplicemente non si vede e non si sente.
   document.getElementById('main-nav').innerHTML = navGroups().map(g =>
-    `<button class="nav-btn ${attivo && attivo.id === g.id ? 'active' : ''}" onclick="openNavGroup('${g.id}')" title="${esc(g.label)}">
-       <span class="nav-ico">${g.icon}</span><span class="nav-label">${esc(g.label)}</span></button>`).join('');
+    `<button class="nav-btn ${attivo && attivo.id === g.id ? 'active' : ''}" onclick="openNavGroup('${g.id}')" title="${esc(g.label)}" aria-label="${esc(g.label)}">
+       <span class="nav-ico">${ico(g.icon, 'tinted pill')}</span><span class="nav-label">${esc(g.label)}</span></button>`).join('');
   // Seconda riga: le voci del gruppo aperto. Con una voce sola non c'è niente
   // da scegliere e la riga sparisce invece di ripetere il nome del gruppo.
   const sub = document.getElementById('sub-nav');
   if (!sub) return;
   const voci = attivo && attivo.views.length > 1 ? attivo.views : [];
   sub.innerHTML = voci.map(w =>
-    `<button class="subnav-btn ${activeView === w.id ? 'active' : ''}" onclick="setView('${w.id}')">${esc(w.label)}</button>`).join('');
+    `<button class="subnav-btn ${activeView === w.id ? 'active' : ''}" onclick="setView('${w.id}')" title="${esc(w.label)}" aria-current="${activeView === w.id ? 'page' : 'false'}">${esc(w.label)}</button>`).join('');
 }
 // ─── Navigazione e indirizzo ───
 // La vista aperta finisce nell'hash dell'indirizzo. Non è un vezzo: senza,
@@ -214,6 +246,10 @@ function setView(v) {
   if (g) lastViewOfGroup[g.id] = v;
   document.querySelectorAll('.view-panel').forEach(p => p.classList.remove('active'));
   const panel = document.getElementById('view-' + v);
+  // Senza guardia un id mancante lasciava l'app con TUTTE le viste nascoste:
+  // le .view-panel sono già state spente qui sopra, e l'eccezione fermava il
+  // resto della funzione. Meglio non cambiare vista che restare al buio.
+  if (!panel) { onAppError('view', 'Pannello mancante: view-' + v); return; }
   panel.classList.add('active');
   // Sola lettura per il ruolo: la UI nasconde le azioni, le guardie bloccano comunque
   const area = VIEW_AREA[v];
@@ -229,9 +265,16 @@ function setView(v) {
   else if (v === 'mrp') renderMrp();
   else if (v === 'rfq') renderRfq();
   else if (v === 'orders') renderOrders();
+  else if (v === 'odl') renderOdl();
+  else if (v === 'odp') renderOdp();
+  else if (v === 'load') renderLoad();
   else if (v === 'manage') renderManage();
   showReadOnlyBanner(panel, area);
   a11yFields(panel);   // etichette ai campi e nomi ai pulsanti-icona della vista appena disegnata
+  // Il pannello laterale appartiene alla vista che lo ha riempito: cambiando
+  // vista la riga scelta altrove non vuol più dire niente, e i suoi comandi
+  // agirebbero su qualcosa che non si sta più guardando.
+  inspectorClear();
 }
 // Il banner va messo dopo il render: le viste documenti si riscrivono per intero
 function showReadOnlyBanner(panel, area) {
@@ -240,6 +283,8 @@ function showReadOnlyBanner(panel, area) {
   if (!area || canWrite(area)) return;
   const b = document.createElement('div');
   b.className = 'ro-banner';
-  b.textContent = `👁 Sola lettura — il ruolo "${roleLabel(currentUser && currentUser.role)}" non modifica ${AREA_LABELS[area]}.`;
+  // innerHTML e non textContent: il testo porta un'icona, e i due pezzi che
+  // vengono dai dati passano da esc() come ovunque.
+  b.innerHTML = `${ico('eye', 'tinted', '')} Sola lettura — il ruolo "${esc(roleLabel(currentUser && currentUser.role))}" non modifica ${esc(AREA_LABELS[area])}.`;
   panel.insertBefore(b, panel.firstChild);
 }

@@ -76,7 +76,7 @@ describe('Export impostazioni — un foglio per scheda di Gestione', () => {
   const nomi = sheets(a).map(s => s.name);
 
   it('esporta tutte le schede di Gestione, nessuna esclusa', () => {
-    assert.deepEqual(nomi, ['Azienda', 'Utenti', 'Fornitori', 'Condizioni offerta',
+    assert.deepEqual(nomi, ['Azienda', 'Utenti', 'Fornitori', 'Clienti', 'Condizioni offerta',
       'Famiglie commerciali', 'Famiglie materie prime', 'Famiglie parti',
       'Concetti', 'Centri di lavoro', 'Unità di misura', 'Impostazioni']);
   });
@@ -376,5 +376,186 @@ describe('Report import impostazioni — i conteggi dicono cosa è successo', ()
     a.asRole('lettore');
     a.eval('onImportSettings({ target: { files: [{}], value: "" } })');
     assert.equal(a.snapshot().suppliers.length, 1);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════
+//  I singoli fogli, alle loro condizioni al contorno
+// ═══════════════════════════════════════════════════════════
+// Fin qui erano esercitati solo di rimbalzo, attraverso importSettingsSheets:
+// i casi limite — la riga senza nome, la colonna assente, la provincia in
+// minuscolo, il booleano che deve poter dire «no» — non avevano un test loro,
+// e sono esattamente quelli che un foglio compilato a mano produce.
+function rep() { return { sheets: [], missing: [], errors: [], warnings: [] }; }
+function applica(a, fn, righe) {
+  return JSON.parse(a.eval(
+    '(() => { const rp = ' + JSON.stringify(rep()) + ';'
+    + ' const out = ' + fn + '(' + JSON.stringify(righe) + ', rp);'
+    + ' return JSON.stringify({ out, errors: rp.errors, warnings: rp.warnings }); })()'));
+}
+
+describe('Foglio Fornitori', () => {
+  const conRossi = () => makeDb({ suppliers: [{ id: 's1', name: 'Rossi', active: true, province: 'MO' }] });
+
+  it('una riga senza nome, ma con altro dentro, è un errore che dice la riga', () => {
+    const a = app(conRossi());
+    const r = applica(a, 'applySuppliersSheet', [{ Nome: '', Email: 'x@y.it' }]);
+    assert.equal(r.errors.length, 1);
+    assert.match(r.errors[0], /riga 2/, 'la riga 1 è l-intestazione');
+  });
+
+  it('una riga del tutto vuota si salta senza rumore', () => {
+    const a = app(conRossi());
+    const r = applica(a, 'applySuppliersSheet', [{ Nome: '', Email: '' }]);
+    assert.deepEqual(r.errors, []);
+    assert.equal(r.out.skipped, 1);
+  });
+
+  it('il nome è la chiave: si riconosce ignorando le maiuscole', () => {
+    const a = app(conRossi());
+    applica(a, 'applySuppliersSheet', [{ Nome: 'ROSSI', Referente: 'Anna' }]);
+    assert.equal(a.eval('db.suppliers.length'), 1, 'non è un fornitore nuovo');
+    assert.equal(a.eval('db.suppliers[0].referente'), 'Anna');
+  });
+
+  it('la provincia entra in maiuscolo comunque la si scriva', () => {
+    const a = app(conRossi());
+    applica(a, 'applySuppliersSheet', [{ Nome: 'Rossi', Provincia: 'bo' }]);
+    assert.equal(a.eval('db.suppliers[0].province'), 'BO');
+  });
+
+  it('una colonna assente lascia il campo com-era', () => {
+    const a = app(conRossi());
+    applica(a, 'applySuppliersSheet', [{ Nome: 'Rossi', Referente: 'Anna' }]);
+    assert.equal(a.eval('db.suppliers[0].province'), 'MO', 'la colonna Provincia non c-era nel foglio');
+  });
+
+  it('una cella vuota, invece, svuota il campo', () => {
+    const a = app(conRossi());
+    applica(a, 'applySuppliersSheet', [{ Nome: 'Rossi', Provincia: '' }]);
+    assert.equal(a.eval('db.suppliers[0].province'), '', 'scritta vuota è un-istruzione, assente è un silenzio');
+  });
+
+  it('«Attivo» può anche spegnere, e riaccendere', () => {
+    const a = app(conRossi());
+    applica(a, 'applySuppliersSheet', [{ Nome: 'Rossi', Attivo: 'No' }]);
+    assert.equal(a.eval('db.suppliers[0].active'), false);
+    applica(a, 'applySuppliersSheet', [{ Nome: 'Rossi', Attivo: 'Sì' }]);
+    assert.equal(a.eval('db.suppliers[0].active'), true);
+  });
+
+  it('una riga che non cambia niente si conta come saltata, non aggiornata', () => {
+    const a = app(conRossi());
+    const r = applica(a, 'applySuppliersSheet', [{ Nome: 'Rossi', Provincia: 'MO' }]);
+    assert.equal(r.out.updated, 0);
+    assert.equal(r.out.skipped, 1, 'i conteggi dicono quante righe hanno fatto qualcosa');
+  });
+
+  it('il nome non si rinomina da qui: è la chiave', () => {
+    const a = app(conRossi());
+    applica(a, 'applySuppliersSheet', [{ Nome: 'Rossi Srl' }]);
+    assert.equal(a.eval('db.suppliers.length'), 2, 'un nome diverso è un fornitore nuovo, non una rinomina');
+  });
+});
+
+describe('Foglio Clienti', () => {
+  it('nasce con tutti i campi, non a metà', () => {
+    const a = app(makeDb());
+    applica(a, 'applyCustomersSheet', [{ Nome: 'Bianchi Spa', Email: 'b@b.it' }]);
+    const c = a.snapshot().customers[0];
+    ['referente', 'email', 'phone', 'vat', 'street', 'streetNumber', 'zip', 'city', 'province', 'country', 'notes']
+      .forEach(k => assert.notEqual(c[k], undefined, 'campo mancante: ' + k));
+    assert.equal(c.active, true);
+    assert.equal(c.email, 'b@b.it');
+  });
+
+  it('la chiave è il nome, come per i fornitori', () => {
+    const a = app(makeDb({ customers: [{ id: 'c1', name: 'Bianchi', active: true }] }));
+    applica(a, 'applyCustomersSheet', [{ Nome: 'bianchi', Telefono: '051' }]);
+    assert.equal(a.eval('db.customers.length'), 1);
+    assert.equal(a.eval('db.customers[0].phone'), '051');
+  });
+
+  it('una riga senza nome è un errore che nomina il foglio', () => {
+    const a = app(makeDb());
+    const r = applica(a, 'applyCustomersSheet', [{ Nome: '', Note: 'qualcosa' }]);
+    assert.match(r.errors[0], /^Clienti, riga 2/);
+  });
+});
+
+describe('Foglio Centri di lavoro', () => {
+  it('una tariffa non valida ferma la riga e lo dice', () => {
+    const a = app(makeDb({ workCenters: [{ id: 'w1', name: 'Tornitura', hourlyRate: 40, active: true }] }));
+    const r = applica(a, 'applyWorkCentersSheet', [{ Nome: 'Tornitura', 'Tariffa oraria': '-5' }]);
+    assert.equal(r.errors.length, 1);
+    assert.equal(a.eval('db.workCenters[0].hourlyRate'), 40, 'e la tariffa di prima resta');
+  });
+
+  it('la tariffa italiana con la virgola entra giusta', () => {
+    const a = app(makeDb({ workCenters: [{ id: 'w1', name: 'Tornitura', hourlyRate: 40, active: true }] }));
+    applica(a, 'applyWorkCentersSheet', [{ Nome: 'Tornitura', 'Tariffa oraria': '42,50' }]);
+    assert.equal(a.eval('db.workCenters[0].hourlyRate'), 42.5);
+  });
+
+  it('«Attivo» si può spegnere anche qui', () => {
+    const a = app(makeDb({ workCenters: [{ id: 'w1', name: 'Tornitura', hourlyRate: 40, active: true }] }));
+    const r = applica(a, 'applyWorkCentersSheet', [{ Nome: 'Tornitura', Attivo: 'No' }]);
+    assert.equal(a.eval('db.workCenters[0].active'), false);
+    assert.equal(r.out.updated, 1, 'lo stato da solo è un aggiornamento');
+  });
+
+  it('un centro nuovo nasce sospeso se il foglio lo dice', () => {
+    const a = app(makeDb({ workCenters: [] }));
+    applica(a, 'applyWorkCentersSheet', [{ Nome: 'Fresatura', 'Tariffa oraria': 30, Attivo: 'No' }]);
+    assert.equal(a.snapshot().workCenters[0].active, false);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════
+//  Il giro completo delle impostazioni, foglio per foglio
+// ═══════════════════════════════════════════════════════════
+describe('Export impostazioni — cosa contiene il file', () => {
+  it('ogni foglio dichiarato ha la sua intestazione e le sue colonne', () => {
+    const a = app(makeDb());
+    const fogli = JSON.parse(a.eval('JSON.stringify(settingsSheets())'));
+    assert.ok(fogli.length >= 8, 'i fogli sono tutti quelli delle schede di Gestione');
+    fogli.forEach(f => {
+      assert.ok(f.name, 'foglio senza nome');
+      assert.ok(Array.isArray(f.aoa) && f.aoa.length >= 1, f.name + ': nessuna intestazione');
+      assert.ok(f.aoa[0].length > 0, f.name + ': intestazione vuota');
+      if (f.cols) assert.equal(f.cols.length, f.aoa[0].length, f.name + ': larghezze e colonne non coincidono');
+    });
+  });
+
+  it('il foglio Clienti c-è, con lo stato attivo', () => {
+    const a = app(makeDb({ customers: [{ id: 'c1', name: 'Bianchi', active: false }] }));
+    const fogli = JSON.parse(a.eval('JSON.stringify(settingsSheets())'));
+    const cli = fogli.find(f => f.key === 'customers');
+    assert.ok(cli, 'nessun foglio Clienti');
+    assert.ok(cli.aoa[0].includes('Attivo'));
+    assert.equal(cli.aoa[1][cli.aoa[0].indexOf('Attivo')], 'No');
+  });
+
+  it('i centri di lavoro esportano lo stato, come le altre anagrafiche', () => {
+    const a = app(makeDb({ workCenters: [{ id: 'w1', name: 'Tornitura', hourlyRate: 40, active: false }] }));
+    const fogli = JSON.parse(a.eval('JSON.stringify(settingsSheets())'));
+    const w = fogli.find(f => f.key === 'workcenters');
+    assert.ok(w.aoa[0].includes('Attivo'), 'senza, un centro sospeso rinasce attivo');
+    assert.equal(w.aoa[1][w.aoa[0].indexOf('Attivo')], 'No');
+  });
+
+  it('ogni foglio esportato ha chi lo sa rileggere', () => {
+    const a = app(makeDb());
+    const chiavi = JSON.parse(a.eval('JSON.stringify(settingsSheets().map(s => s.key))'));
+    const letti = JSON.parse(a.eval('JSON.stringify(SETTINGS_SHEET_DEFS.map(d => d.key))'));
+    const orfani = chiavi.filter(k => !letti.includes(k) && k !== 'terms' && k !== 'uoms' && k !== 'concepts' && k !== 'company');
+    assert.deepEqual(orfani, [], 'un foglio che nessuno rilegge è un giro che si interrompe');
+  });
+
+  it('le istruzioni nominano ogni scheda del file', () => {
+    const a = app(makeDb());
+    const info = a.eval('JSON.stringify(settingsInfoAoa())');
+    ['Fornitori', 'Clienti', 'Utenti', 'Centri di lavoro'].forEach(n =>
+      assert.match(info, new RegExp(n), 'le istruzioni non parlano di ' + n));
   });
 });

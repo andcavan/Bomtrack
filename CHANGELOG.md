@@ -2,22 +2,1005 @@
 
 Le revisioni seguono il versionamento semantico `0.MINOR.PATCH`: **MINOR** per nuove funzionalità, **PATCH** per correzioni. La versione in cima è quella in `APP_VERSION` (`core.js`) e mostrata nell'header dell'app.
 
-### 0.46.0 — 2026-09-23
+### 0.80.0 — 2026-09-23
 
 **Il Riepilogo ha un calendario.** I segnali dicevano *quante* cose sono in ritardo, non *quando* scadono. Le date c'erano già tutte — consegna della commessa, data entro cui ordinare, consegna confermata dal fornitore — ma ognuna nella sua vista: due scadenze sullo stesso martedì si scoprivano il martedì.
 
 **Aggiunto**
 - 📅 **Calendario scadenze** nel Riepilogo: griglia del mese (da lunedì), pallini colorati per gravità — rosso scaduto, arancio entro 7 giorni (la stessa soglia del fabbisogno), blu in programma — e sotto l'agenda del giorno scelto. Ogni voce porta al documento dove si risolve.
-- Le date arrivano da dove sono già: **commesse** (consegna al cliente), **fabbisogno** (data entro cui ordinare, al netto, raggruppata per piano e giorno), **piani** (quando devono essere pronti), **ordini** (consegna confermata, o richiesta, delle righe non ancora ricevute; segnalate quelle confermate in ritardo), **richieste inviate** senza risposta.
+- Le date arrivano da dove sono già: **commesse** (consegna al cliente), **fabbisogno** (data entro cui ordinare, al netto, raggruppata per piano e giorno), **piani** (quando devono essere pronti), **ordini d'acquisto e ODL** (consegna confermata, o richiesta, delle righe non ancora ricevute; segnalate quelle confermate in ritardo), **ordini di produzione** lanciati o in corso (data di fine), **richieste inviate** senza risposta. Ogni voce si apre con `homeApri()`, la stessa strada dei segnali.
 - **Scadute e non risolte** sempre in cima, qualunque mese si stia sfogliando: sfogliare avanti non deve nascondere proprio quello che è già in ritardo.
-- 📌 **Promemoria** scritti a mano, per le scadenze che non stanno in nessun documento: data, importanza, commessa facoltativa, note. «✓ Fatto» li toglie dal calendario senza cancellarli; eliminati vanno nel cestino. Nuova collezione `reminders` (creata vuota sui database esistenti, nessun cambio di versione dello schema).
+- 📌 **Promemoria** scritti a mano, per le scadenze che non stanno in nessun documento: data, importanza, commessa facoltativa, note. «✓ Fatto» li toglie dal calendario senza cancellarli; eliminati vanno nel cestino. Nuova collezione `reminders` (creata vuota sui database esistenti).
 - Su telefono la griglia lascia il posto all'elenco dei **prossimi 14 giorni**.
 
 **Permessi**
 - I promemoria li scrivono amministratori, acquisti e progettazione (nuova area `agenda`); il lettore li vede e basta.
 
 **Verifica**
-- 18 nuovi controlli in `test/calendar.test.js` (suite da 989 a 1007): origine e gravità di ogni tipo di data, raggruppamento, griglia a cavallo di mese e d'anno, promemoria e ruoli.
+- 20 nuovi controlli in `test/calendar.test.js` (suite da 1825 a 1845): origine e gravità di ogni tipo di data, raggruppamento, griglia a cavallo di mese e d'anno, promemoria e ruoli.
+### 0.79.0 — 2026-09-14
+
+**Nasce l'ordine di produzione (ODP): la successione delle fasi, e il magazzino che si muove anche per chi lavora in casa.**
+
+Bomtrack sapeva cosa serve (fabbisogno), cosa comprare (ODA), cosa far lavorare fuori (ODL) e cosa c'è a scaffale (magazzino). Non sapeva **a che punto è un pezzo**, e il manuale lo dichiarava come limite al primo capitolo. Da lì discendevano tre cose che non tornavano, e la prima è la più grossa: **una parte con il ciclo tutto interno non aveva nessun documento**. Nessuno la lanciava, il suo materiale non usciva mai dal magazzino, e il pezzo finito non entrava mai se non con un *Carico manuale* scritto a mano. Il magazzino si muoveva **solo** passando da un ordine di lavoro, perché gli ancoraggi erano gli estremi delle *tratte esterne*: un ciclo senza fasi esterne non li aveva, e un ciclo misto li aveva solo sul tratto che usciva.
+
+L'ordine di produzione è il documento che mancava: uno per parte da fabbricare, numerazione **ODP-anno-NNN**, con le fasi del ciclo **congelate in successione**.
+
+**La regola del magazzino, e la correzione che l'ha scritta**
+Il registro di magazzino racconta l'uscita e l'entrata **dal magazzino**; l'ordine di produzione racconta **il viaggio**. Sono due libri diversi e non devono raccontarsi a vicenda.
+
+Ne discende la cosa che più distingue questo documento dal conto lavoro come era scritto prima: **fra le fasi non si registra niente**. Un movimento nomina una quantità di un **codice**, e fra la prima e l'ultima fase i pezzi non sono più il materiale e non sono ancora la parte — la parte lo diventano al rientro dell'ultima fase. Scrivere un movimento col codice della parte prima di allora inventa una giacenza che non esiste, e la fa comparire presso un terzista che quella parte non l'ha mai avuta.
+
+Restano quindi **due movimenti soli per ordine**, identici per un ciclo tutto interno, tutto esterno o misto:
+- all'**avvio della prima fase** escono i **codici del ciclo** — *Consumo di produzione* se quella fase è interna, *Uscita a conto lavoro* se è esterna;
+- sull'**ultima fase** entra il **codice della parte**, per i pezzi buoni dichiarati — *Versamento di produzione* se interna, *Rientro da conto lavoro* se esterna.
+
+Dove stanno i pezzi in mezzo lo dice la **fase corrente** dell'ordine, che è il posto in cui quella domanda ha davvero una risposta. Il prospetto *Presso terzi* guadagna quella seconda sorgente e la **dichiara**, invece di fonderla con la prima: le righe di un ordine di produzione portano il nome della fase accanto al codice. I movimenti di un ordine di produzione escono dal saldo per coppia (luogo, articolo), e non è un dettaglio: lì un'uscita di materiale a cui risponde un rientro del codice parte non si chiude mai, e il materiale resterebbe appeso al primo terzista anche dopo che i pezzi sono andati altrove.
+
+Un solo tipo di movimento nuovo: **versamento di produzione**. Non si riusa `carico`, che si chiama «Carico manuale» ed è merce entrata *senza* un ordine — la stessa ragione per cui il rientro da conto lavoro non è un carico manuale. Come il passaggio di lavorazione, non si sceglie a mano dalla rettifica: senza un ordine dietro sarebbe un carico che nessuno spiega.
+
+**La successione, e come si scavalca**
+Una fase non si avvia finché la precedente non è chiusa, e il rifiuto **la nomina con i suoi numeri**: «la fase 10 Tornitura non è chiusa: 6 di 10». Un rifiuto muto manda a cercare per mezz'ora.
+
+**Forza avvio** resta possibile — un pezzo campione da consegnare prima è un caso vero — e pretende un **motivo**, che finisce nello storico come dichiarazione a sé. Una forzatura non è un permesso speso e dimenticato: resta scritta accanto alla fase. Il testo del blocco è **lo stesso** che il mutatore userebbe per rifiutare: due frasi scritte a mano divergerebbero, e chi forza non saprebbe più se sta scavalcando quello che l'app gli ha appena detto.
+
+**Pezzi buoni e scarti, e solo i buoni proseguono**
+Su ogni fase si dichiarano pezzi buoni e scarti; la fase si chiude quando coprono i pezzi **entrati**. Cento lanciati, 95 buoni e 5 scarti alla fase 10 significa che alla 20 ne entrano **95**, e che a magazzino entra la **resa vera**, non la quantità lanciata. È la lettura onesta, e dà la gestione degli scarti senza campi in più.
+
+**Le fasi hanno un id, non un indice**
+È la differenza con le righe di ciclo, dove l'array *è* la definizione e la posizione è l'identità. Qui la fase porta un avanzamento: un'identità posizionale si sposterebbe sotto i piedi al primo riordino del ciclo, e l'avanzamento finirebbe sulla fase sbagliata. Congelando le fasi con un id proprio, **riordinare il ciclo non sposta niente** su un ordine già lanciato — e c'è un caso che lo verifica. La `phaseKey` resta sulla fase, ma solo come ponte verso il fabbisogno, dove continua a valere con i limiti già dichiarati.
+
+L'avanzamento è un **registro di dichiarazioni**, non un campo: si calcola, come l'esistente si calcola da ricevimenti e movimenti. Nessun saldo scritto da qualche parte, quindi niente che possa divergere. Annullare una dichiarazione toglie **i suoi** movimenti, non quelli della fase: è per questo che ogni movimento porta l'id di chi l'ha generato.
+
+**Nel fabbisogno**
+Quarto pulsante, **Genera ordini di produzione**, uno per parte. Le parti da fabbricare diventano righe di documento con una chiave loro (`make#<id>`): senza il prefisso collidevano con la stessa parte comprata, e un ordine di produzione avrebbe bloccato un ordine d'acquisto su un articolo che nei due casi è una cosa diversa. Il **netto non si applica**: lanciare un pezzo è una decisione di produzione, non di acquisto. Una parte che si produce in casa non entra più nemmeno nelle richieste d'offerta — non si chiede a nessuno.
+
+**Da fabbricare** smette di essere l'unica sezione muta del piano: fin qui non diceva né quando la parte servisse né se fosse già stata lanciata. Ora porta la data e il riferimento all'ordine, come le altre due.
+
+**La convivenza, e cosa non è stato tolto**
+Un ordine di produzione copre la sua parte **e le sue fasi esterne**: quelle escono dalla generazione diretta di ordini di lavoro dal piano e mostrano «coperta da ODP-…», perché l'ordine di lavoro si genera da lì — dove la successione dice anche *quando*. Le fasi **non** coperte restano generabili dal piano come prima, e un ordine di lavoro senza ODP dietro si comporta esattamente come prima, movimenti compresi. Ai dati esistenti non succede niente: due collezioni vuote e quattro campi nulli in più, e ogni condizione nuova è un `if (odpId)`.
+
+**Dall'ordine di produzione all'ordine di lavoro**
+Dalla fase esterna si commissiona la tratta al terzista: la riga passa dalla **stessa fabbrica** del piano e dell'ODL scritto a mano, e un caso la confronta campo per campo. La quantità sono i pezzi che ci sono davvero — i buoni usciti dalla fase precedente, non quelli lanciati. L'unione delle fasi in tratta non legge il ciclo vivo ma quella **congelata**: se il ciclo è cambiato dopo il lancio, al terzista si chiede quello che l'ordine gli ha promesso.
+
+Su quella riga i comandi di conto lavoro dell'ODL diventano un **rimando** all'ordine di produzione, e la guardia sta **anche nel mutatore**, non solo nell'interfaccia che non disegna i comandi. I *pezzi rientrati* li scrive la dichiarazione fatta sull'ordine: il campo resta quello di sempre, con gli stessi lettori — il conteggio, lo stato automatico, l'elenco, gli export — e cambia solo chi lo scrive.
+
+**Corretto per strada**
+Il pulsante «Sblocca per modifica» di un **ordine di lavoro** chiamava `rfqUnlock`, che su un id di ODL non trova niente e torna in silenzio: il pulsante c'era e non sbloccava nulla. Il gestore si sceglie ora da una mappa invece che da una catena di ternari con un ramo mancante.
+
+**Una frase che aveva smesso di essere vera**
+Il fabbisogno dichiarava di non poter nettare le lavorazioni perché «l'app non ha un avanzamento di produzione». Adesso ce l'ha, e la frase è stata **riscritta invece che lasciata a mentire**: nettare una fase richiede di decidere cosa fare di quelle coperte da ordini di *altri* piani, che è la stessa discussione dell'impegnato sul materiale. Va fatta intera, e non è stata fatta: finché non lo è, la lavorazione resta lorda e la pagina dice perché. Stessa sorte per il limite dichiarato al primo capitolo del manuale.
+
+**Note**
+- **43 casi nuovi** in `test/odp.test.js`, e i tre che portano il peso sono i tre cicli: *solo interne* (il materiale esce una volta, il pezzo entra una volta, nessun passaggio), *solo esterne* (due movimenti e **niente** fra Beta e Gamma — il caso che fissa la correzione), *misto*. Poi la successione col rifiuto che nomina la fase bloccante, lo scarto che restringe la fase seguente, la forzatura tracciata, il codice parte che non compare mai presso un terzista prima del versamento, il riordino del ciclo che non sposta un ordine lanciato, la riga di ODL identica a quella del piano, e la convivenza provata — lanciata una parte, la sua fase esce dal piano e le altre restano. La suite passa a **1825** casi.
+- Nuovo file `views-prod.js` (aggiunto anche alla cache del service worker: uno script fuori da lì funziona online e sparisce offline). `README.md`, `MANUALE.md` (capitolo 22 nuovo, i successivi scalano di uno) e `docs/cloud-schema.md` aggiornati: la regola dei due estremi è riscritta nella sua forma generale, con la ragione per cui fra le fasi non si scrive niente.
+- **Due avanzamenti, e perché restano due.** La 0.77.0 aveva già portato un avanzamento: nella tabella *Da fabbricare* si dichiara quanti pezzi di una parte sono stati fatti, e le lavorazioni già fatte non si rimandano al terzista. Risponde a una domanda diversa da questa — «quanti ne sono stati fatti» contro «a che punto è questo pezzo, fase per fase» — e dichiara di non muovere il magazzino, mentre l'ordine di produzione lo muove ai due estremi del ciclo. Convivono, e la tabella *Da fabbricare* li mostra insieme: i pezzi dichiarati fatti accanto all'ordine che li ha lanciati.
+Su una cosa dovevano però mettersi d'accordo, ed è stata sistemata qui: **un ordine di produzione si lancia per il residuo, non per il lordo**. Con quattro pezzi già dichiarati fatti su dieci, l'ordine nasce da sei — lanciarne dieci significherebbe rifare un lavoro che qualcuno ha appena dichiarato di aver fatto, che è esattamente ciò che il netto delle lavorazioni esiste per evitare. Il lordo resta in colonna, come sulle righe d'acquisto.
+
+**Non fatto, e detto per non farlo nascere per sbaglio**: nessuna schedulazione (niente date di avvio, niente capacità finita), nessun netto sulle lavorazioni, nessun codice per il semilavorato fra due fasi, e il carico centri continua a mettere le ore nella settimana in cui il pezzo serve.
+
+### 0.78.0 — 2026-09-12
+
+Gli allegati cambiano forma: i PDF escono dal database e vanno in una **cartella d'archivio**, di cui Bomtrack memorizza soltanto il percorso. La suite passa da 1749 a **1782** casi.
+
+**L'archivio è una cartella, non il database**
+Fino alla 0.77.0 un allegato veniva caricato *dentro* Bomtrack: i byte in IndexedDB, i dati nel database. Funzionava, e pagava tre prezzi che si vedevano tutti. Il backup JSON non se li portava dietro — era scritto in tre posti, ma restava una scheda vuota su ogni PC nuovo. Un catalogo che vale per quaranta codici veniva copiato quaranta volte. E il PDF dentro il browser smetteva di essere il PDF che il fornitore aggiorna: diventava una fotografia di com'era il giorno che qualcuno l'ha caricato.
+
+Ora la scelta è opposta. L'archivio **fisico** resta fuori: una cartella sul PC, o la cartella locale di un servizio sincronizzato — OneDrive, Dropbox — che è già su tutte le macchine di chi usa Bomtrack. L'app ne memorizza il **percorso relativo**, che è un dato come gli altri: passa da `Store`, entra nel backup JSON, e ripristinato altrove continua a valere purché quel PC abbia la sua copia dell'archivio. Chi aggiorna un disegno lo aggiorna nella cartella, con il programma vero, e Bomtrack punta già alla versione nuova senza che nessuno riallegi niente.
+
+**La cartella è un'impostazione di questo PC**
+Non sta nel database, e di proposito: ogni macchina ha il suo archivio, e scriverlo nel database vorrebbe dire imporre a tutti la lettera di unità di chi l'ha configurato per primo. Si sceglie una volta, con la finestra di sistema — un browser non apre un percorso scritto a mano, e non lo farà mai: è la ragione per cui esiste — e il riferimento si conserva, quindi non lo si rifà a ogni avvio. Il pulsante sta nella scheda **Allegati** e in **Gestione › Backup**: è una configurazione che deve poter sistemare chiunque apra un documento, non solo chi ha accesso a Gestione.
+
+Il prezzo è dichiarato dove serve: funziona su **Chrome ed Edge**, e solo se Bomtrack è aperta dal suo indirizzo. Aperta con un doppio click su `index.html` il browser non ha nessuna origine sotto cui ricordare un permesso, e l'archivio non è disponibile — lì la scheda lo dice in chiaro invece di mostrare un pulsante che non fa niente, e resta il vecchio caricamento nel database, perché togliere a qualcuno l'unico modo che ha di allegare non è una semplificazione.
+
+**Un documento, tanti codici**
+È il caso che ha deciso la forma dei dati, ed è quello vero dei commerciali: lo stesso catalogo appeso a tutti gli articoli di una serie. Il documento (`attachmentDocs`) è censito **una volta sola**, i codici ci si **collegano** — e da lì viene tutto il resto. Rinominare o spostare un PDF si corregge in un punto, con «Ricollega», e i quaranta codici seguono; aprendo un documento si vede da quanti codici è citato; scollegare da un codice non è eliminare il documento, e un documento citato non si elimina, come il cliente citato da una commessa. Con un record per articolo lo stesso percorso sarebbe stato scritto quaranta volte, e il giorno del rinomina ci sarebbero state quaranta righe da correggere a mano, sperando di trovarle tutte.
+
+**Descrizione e pagina**
+I nomi dei file dei fornitori non dicono niente: `SKF-CAT-RS4412-IT-rev3.pdf` non si riconosce in una scheda. Ogni documento ha quindi una **descrizione**, ed è quella che si legge; la descrizione appartiene al documento, quindi riscriverla da un codice la corregge per tutti. La **pagina** invece appartiene al singolo collegamento: un catalogo di trecento pagine si apre dove serve a *quel* codice, e il numero resta scritto anche in chiaro, perché un catalogo si consulta anche stampato.
+
+**Apri documento, e i tre messaggi**
+Un pulsante nuovo sulla riga di catalogo e nel pannello laterale (Ctrl+I) apre il documento del codice; con più documenti apre l'elenco, invece di indovinare. Gli esiti sono **tre**, non due, perché sono tre rimedi diversi: *NESSUN DOCUMENTO SALVATO* quando al codice non è ancora collegato niente; *archivio non impostato su questo PC*, con il pulsante che lo imposta lì per lì, quando è la macchina a non sapere dove guardare; *DOCUMENTO NON TROVATO*, col nome cercato e la cartella dove l'ha cercato, quando il file da lì è sparito.
+
+**La verifica dell'archivio**
+Il difetto di questo disegno è il collegamento che si rompe **in silenzio**: qualcuno rinomina un PDF e nessuno lo sa finché non prova ad aprirlo, magari mesi dopo, magari davanti a un fornitore. In *Gestione › Backup* un comando scorre la cartella e nomina i documenti che non ci sono più — una volta per documento, non una per collegamento — e da lì si ricollegano.
+
+**Copia nell'archivio**
+Un PDF scelto da fuori — sul desktop, in una mail scaricata — non si può collegare: su ogni altro PC quel percorso non esiste. Il pannello lo dice e offre di copiarlo dentro l'archivio, senza mai sovrascrivere un nome già preso: il file che c'è appartiene a qualcun altro, e il codice che lo cita non saprebbe mai di aver perso il suo.
+
+**Note**
+- **33 casi nuovi** in `test/archivio.test.js`. L'harness guadagna una **cartella d'archivio finta** — scorribile, leggibile, scrivibile, con il permesso — che permette di provare le cose che nel browser vero nessuno prova a mano: il file rinominato, il permesso negato, il PC non configurato.
+- L'IndexedDB finto dell'harness aveva **una sola tabella per tutti i nomi**. Finché esisteva solo il deposito dei byte non si notava; con la tabella `config` accanto, il riferimento alla cartella sarebbe risultato un file senza padrone e «Recupera spazio allegati» l'avrebbe buttato via. Ora le tabelle sono separate davvero, e un test lo tiene fermo.
+- Collezione nuova `attachmentDocs`, dichiarata in `SCHEMA` e seminata da `migrateDB`. Resta **fuori da `REFS`**, come `orderId` sulle righe di movimento e per la stessa ragione: REFS è la mappa degli id *legacy* da riscrivere, e questi nascono con id UUID dal primo giorno.
+- Gli allegati caricati nel database prima di questa versione **restano e continuano a funzionare**: la sezione «File nel database» compare nella scheda solo se ce n'è almeno uno, così a chi parte da zero non si racconta una forma che non deve più usare.
+
+### 0.77.0 — 2026-09-11
+
+Tre funzionalità nuove, scelte fra le mancanze che il manuale dichiara da sé. La suite passa da 1696 a **1743** casi.
+
+**Avanzamento di produzione**
+Era la prima voce di «cosa Bomtrack non fa», e la sua assenza si vedeva in un punto preciso: sul fabbisogno, accanto alle lavorazioni da mandare fuori, c'era scritto che il netto non si poteva applicare perché «sapere quanti pezzi sono già stati lavorati richiederebbe un avanzamento di produzione che l'app non ha». Ora ce l'ha. Nella tabella **Da fabbricare** ogni parte ha due colonne nuove — *fatti* e *restano* — e un pulsante che apre la scheda dell'avanzamento: si dichiara quanti pezzi sono stati fatti, con una nota, e si vede lo storico di chi ha dichiarato cosa e quando.
+
+Non è un campo che si sovrascrive ma una **dichiarazione per volta**, sommata quando serve: è la stessa scelta che l'app fa per il magazzino, dove la giacenza non è un campo ma la somma dei movimenti, e per la stessa ragione — un totale che si ricostruisce si può spiegare, e si corregge senza riscrivere il passato. Un numero negativo corregge un conteggio sbagliato, come una rettifica, e la correzione resta visibile.
+
+**Le lavorazioni già fatte non si commissionano due volte**
+È la conseguenza diretta, ed è il motivo per cui la funzione esiste: una parte dichiarata finita ha attraversato tutte le sue fasi, quindi sparisce da «da far lavorare fuori» invece di finire in un ordine di lavoro che pagherebbe una seconda volta lo stesso lavoro. Quantità, ore e importi delle fasi seguono il netto. Il limite è dichiarato in chiaro dove si legge: una parte ferma **a metà ciclo** conta ancora per intero, perché si dichiara la parte finita e non la fase superata — il conto è prudente per scelta, si rischia di riproporre una lavorazione già avviata e mai di dimenticarne una da fare. Senza nessuna dichiarazione tutto si comporta **esattamente** come prima: i piani già aperti non cambiano da soli.
+
+Dichiarare pezzi fatti **non muove il magazzino** e non tocca le righe d'acquisto del piano: il materiale per una parte si compra prima di farla, e averla fatta non annulla quell'acquisto. Due strade per la stessa giacenza darebbero due verità, ed è la cosa che questa funzione evita con più cura.
+
+**Allegati: disegni e schede tecniche sugli articoli**
+Ogni articolo ha ora una scheda **Allegati**, dal pulsante sulla riga di catalogo accanto al listino — e dal **pannello laterale** (Ctrl+I) in Acquisti, Progetto e Magazzino, dove il comando porta il conteggio nell'etichetta come già fa «Movimenti». Il comando resta visibile anche a chi ha la vista in sola lettura: scaricare un disegno e modificare l'anagrafica sono due permessi diversi, e chi va in officina col foglio in mano non è detto che abbia il secondo. Da lì: si aggiungono disegni, PDF, foto e file CAD fino a 25 MB l'uno, si riscaricano con un click, e il numero di allegati si vede dall'elenco senza doverli aprire. La scheda articolo li elenca, in sola lettura come tutto il resto di quella scheda.
+
+I **file** stanno in IndexedDB, i **dati** (nome, dimensione, a quale articolo, chi e quando) in `db.attachments` come ogni altra collezione. La divisione non è un dettaglio tecnico: un solo disegno pesa più di tutto il database, e metterlo in `localStorage` non l'avrebbe fatto crescere — l'avrebbe fatto **smettere di salvare**, insieme a tutto il resto del lavoro. Il prezzo va detto, ed è scritto in tre posti: **il backup JSON non contiene i file**, ne porta l'elenco. Ripristinandolo su un altro PC si vede che cosa manca invece di trovare una scheda vuota; prima di trasferirsi i file vanno riscaricati a mano. In Gestione › Backup un pulsante recupera lo spazio dei file rimasti senza più un articolo.
+
+**L'app si installa e funziona senza rete**
+`manifest.webmanifest` e `sw.js`: Bomtrack si può installare come applicazione, con un'icona sua, e una volta aperta funziona offline — manuale compreso, che è proprio quello che serve consultare quando la rete manca. Il service worker mette in cache il programma, mai i dati: quelli restano dove sono sempre stati. Aperta con un doppio click su `file://` non cambia niente: lì i service worker non esistono, l'app se ne accorge e tace, ed è la ragione per cui le librerie di export stanno in `vendor/` invece che nella cache.
+
+**Note**
+- **47 casi nuovi** in tre file: `test/produzione.test.js` (23), `test/allegati.test.js` (15) e `test/pwa.test.js` (11). L'harness guadagna un **IndexedDB finto**, che mancava: era l'ultimo pezzo di piattaforma non simulato.
+- `test/pwa.test.js` guarda le tre cose che si rompono **in silenzio** e solo offline: uno script aggiunto alla pagina e dimenticato nel service worker, la versione della cache non aggiornata (i browser già visitati continuerebbero a servire quella vecchia, per sempre) e un file elencato che non esiste, che facendo fallire `addAll` lascerebbe l'app senza cache senza dirlo.
+- Gli allegati sono nati nella scheda articolo e sono stati **spostati** in una scheda propria: `test/iteminfo.test.js` difende l'invariante «la scheda non modifica niente», ed è una proprietà che vale più di una scorciatoia. Gli editor per articolo stanno sulla riga di catalogo, dove ci sono già il listino e la distinta.
+- Due collezioni nuove — `attachments` e `productions` — dichiarate in `SCHEMA` e in `REFS`, seminate da `migrateDB` e presenti nel backup.
+
+### 0.76.0 — 2026-09-11
+
+Giro di controllo generale sul codice. Nessuna funzionalità nuova: si chiudono difetti trovati leggendo, e si copre con i test la parte che ne era rimasta fuori. La suite passa da 1657 a **1696** casi.
+
+**Due schede aperte non si cancellano più il lavoro a vicenda**
+`Store.commit()` riscrive l'intero archivio con la fotografia che ha in memoria. Con due finestre di Bomtrack aperte — che su un gestionale è la normalità — la seconda che salvava cancellava tutto ciò che la prima aveva fatto nel frattempo: senza un errore, senza un avviso, senza nemmeno il badge «modifiche non salvate», perché la scrittura andava a buon fine. Era perdita di dati certa e invisibile. Ora l'archivio porta un contatore di revisione in una chiave sua, che si legge prima di ogni salvataggio: se qualcun altro ha scritto, il salvataggio si ferma e lo dice. Si può ricaricare (si perde quello che si stava facendo qui) o tenere la propria versione (si perde quello che ha fatto l'altra scheda), e la finestra dice per ciascuna che cosa costa, offrendo l'export di un backup prima di scegliere. **Non si fonde niente, di proposito**: per fondere due fotografie bisognerebbe sapere riga per riga quale delle due versioni vale, e quella risposta non ce l'ha né l'app né chi la usa. L'altra scheda che scrive si fa sentire subito, non al primo salvataggio: chi continua a lavorare su dati ormai vecchi accumula modifiche che poi non potrà più salvare senza cancellare quelle altrui.
+
+**Il totale dei documenti torna con la somma delle righe**
+La colonna Importo arrotondava ogni riga ai centesimi per stamparla, il piede sommava i prodotti a piena precisione e arrotondava solo alla fine. Con i prezzi a quattro decimali che il listino ammette, tre righe da 1×1,005 stampavano 1,01 + 1,01 + 1,01 in colonna e 3,02 sotto. È un PDF che parte verso un fornitore, e un totale che non torna tocca a qualcuno spiegarlo. Ora l'importo si arrotonda una volta sola, dove nasce (`importoRiga` in `core.js`), e il totale somma esattamente ciò che il fornitore legge — a schermo, in PDF e in Excel, dove la colonna si somma per davvero.
+
+**Le condizioni non spariscono più in fondo ai PDF**
+Trasporto, pagamento, conferma e note erano scritte a coordinata crescente, senza mai guardare dove finisse la pagina. Una nota lunga usciva dal margine destro e veniva tagliata; su un ordine con molte righe le condizioni venivano disegnate oltre il bordo, dove non c'è carta. In entrambi i casi il PDF si generava senza un errore, e la mancanza si scopriva solo andando a cercarla. Il testo ora va a capo sulla larghezza utile e passa a una pagina nuova quando serve, anche a metà di una nota più alta di un foglio intero.
+
+**Un fornitore che ha i nostri pezzi non si cancella più**
+`supplierUses()` controllava sette posti ma non i movimenti di magazzino, benché la scheda del movimento **pretenda** il terzista («senza, non si sa da chi sta la merce»). Cancellandolo, il prospetto «presso terzi» raggruppava sotto «senza fornitore» materiale che è nostro e sta fisicamente da qualcuno: la domanda a cui quel prospetto serve a rispondere restava senza risposta, e senza più niente da cui ricostruirla.
+
+**I nomi dei file esportati non si rompono più**
+In officina «AB/123-01» è un codice normale, e «Rossi & C. / Milano» una ragione sociale normale: finivano tali e quali nel nome di PDF ed Excel. Il browser, davanti a un nome invalido, non protesta — tronca, o salva con un altro nome, e il documento non si ritrova. Un solo `nomeFileSicuro()` in `core.js` ripulisce i dieci punti che esportano, lasciando intatti accenti e spazi, che in un nome di file vanno benissimo.
+
+**Il pannello «Aggiungi componenti» non si svuota più da solo**
+Le quantità dovevano restare impostate «finché non si inserisce, si cambia distinta o si chiude il pannello» — così dice il commento che le governa. In realtà si azzeravano a ogni ridisegno della vista: bastava espandere un nodo dell'albero per perdere le quantità messe su dieci articoli, il testo di ricerca e il punto in cui si stava scrivendo. Ora si azzerano solo quando la distinta cambia davvero.
+
+**La schermata d'accesso parte anche dove il browser nega l'archivio**
+Erano gli ultimi tre accessi a `localStorage` senza `try/catch`, e stavano sulla schermata che ogni utente attraversa per forza. In navigazione privata, con i dati dei siti bloccati, o su `file://` con lo storage negato, `renderLogin()` moriva sulla prima riga e la schermata non si disegnava affatto: l'app era inutilizzabile proprio nello scenario che l'avviso «dati non caricati» esiste per raccontare.
+
+**Chiudere la scheda con del lavoro per aria adesso chiede**
+Il salvataggio fallito e i documenti a metà compilazione (`rfqDirty`, `orderDirty`, `odlDirty`) erano già noti all'app, e nessuno li guardava all'uscita. Si chiede solo quando c'è qualcosa in sospeso: un avviso che compare sempre è un avviso che si impara a scacciare senza leggerlo.
+
+**Rinominare un'unità di misura porta con sé la seconda**
+Una barra si gestisce in metri e si compra a chilo: il chilo vive in `altUom` sull'articolo e in `priceUom` sulla riga di listino. La rinomina li lasciava indietro e il conteggio d'uso non li vedeva — al punto che l'unità che convertiva i prezzi di mezzo magazzino risultava «non usata» e si poteva cancellare con un click. Le conversioni continuavano a tornare (i due campi si guardano fra loro, non l'elenco), ma anagrafica ed elenco raccontavano due cose diverse.
+
+**Selezione multipla: da quadratica a lineare**
+Con «Mostra tutti» su qualche migliaio di righe e un Maiusc+click dal primo all'ultimo articolo, l'Ispettore faceva milioni di confronti a ogni ridisegno della griglia — cioè a ogni carattere digitato nel filtro. Tre `Set` al posto di altrettante ricerche lineari.
+
+**Minori**
+- I messaggi di `requirePdf`/`requireXlsx` nominano il file mancante invece della connessione a internet: dalla 0.43.0 le librerie stanno in `vendor/`, e quella frase mandava a cercare il guasto dalla parte sbagliata.
+- I caratteri non bloccano più il primo disegno della pagina: erano un `<link>` normale, e su un PC di officina senza rete l'attesa diventava il timeout del DNS — finestra bianca per secondi, a ogni avvio. Se non arrivano, `style.css` ha già i ripieghi.
+- Tolto `aria-modal` dalle schede: dichiarava inerte tutto il resto della pagina, che qui per scelta non lo è — le schede si lasciano aperte e la vista dietro resta viva. Due schede aperte insieme si dichiaravano entrambe «l'unica». Resta `role="dialog"`.
+- Il filtro del picker catalogo cerca in codice e descrizione, non nel testo dell'intera riga: scrivere «parte» non filtrava più niente, «obsoleto» pescava articoli che non c'entravano.
+- Il report d'import dice «righe saltate» invece di «righe vuote»: contava insieme le righe vuote, quelle senza tipo e quelle dell'altro ambito, e dichiarava «312 righe vuote» di un file pieno.
+- `ico()` fa passare il `title` da `esc()`, unico punto del disegno fuori dalla convenzione; la dimensione del database nella conferma di azzeramento è arrotondata come altrove; tolta `inspectorRigaDi()`, rimasta senza chiamanti, che costruiva un selettore CSS per concatenazione.
+
+**Note**
+- **39 casi nuovi** in tre file: `test/concorrenza.test.js` (due schede sullo stesso archivio, con il `localStorage` condiviso fra due istanze), `test/export-docs.test.js` e `test/anagrafiche.test.js`.
+- Gli export dei documenti avevano un test: **nessuno**, ed è la ragione per cui `docs/analisi-tecnica.md` teneva aperta la deduplica della presentazione (C1) — «un export si verifica sui dati che produce, non sul PDF: serve prima quello». Ora c'è: jsPDF e SheetJS sono sostituiti da due finti che annotano righe, piede e nome del file. Il primo a scriverlo ha subito trovato un limite della correzione sulle pagine, che senza non sarebbe venuto fuori.
+- `test/scripts.test.js` guadagna un controllo sulle **collisioni di nomi globali**. I 26 script condividono un unico scope e due dichiarazioni dello stesso nome non danno errore: vince l'ultima caricata, in silenzio. Oggi i nomi sono 1291 e le collisioni zero; il controllo serve a tenerle zero, senza dover rinunciare all'apertura da `file://` che `C4` dava per prezzo obbligato.
+- Una correzione è stata **annullata** dopo il test: leggere «1.500» come millecinquecento in import. `test/import.test.js` documenta la lettura decimale come scelta deliberata — con un separatore solo non si indovina, e `0.750` sono settantacinque centesimi — e la scelta regge.
+- `docs/analisi-tecnica.md` riallineato: era fermo alla 0.43.0 con il codice alla 0.75.0.
+
+### 0.75.0 — 2026-09-10
+
+**Barra Filtri a scomparsa, con ambito condiviso fra le viste**
+Acquisti, Progetto, Magazzino, Cicli di lavorazione e Gestione DB avevano ciascuno la propria barra filtri, sempre in vista — una ventina di controlli in tutto — e indipendente dalle altre: scegliere una famiglia in Acquisti non aveva alcun effetto su Magazzino. La barra resta esattamente dove è sempre stata, ma ora parte **chiusa**: mostra solo il pulsante **Filtri**, le pasticche di ciò che sta restringendo l'elenco in quel momento e, quando c'è qualcosa da togliere, **Rimuovi filtri**. Aprirla è una sola scelta per tutta l'app — chi la apre in una vista se la ritrova aperta anche nelle altre — perché per chi la usa è la stessa domanda ovunque: «cosa mi mostra questo elenco?».
+
+**Famiglia, sottofamiglia, macchina e gruppo seguono la navigazione**
+Dove una vista li ha già in barra, questi quattro campi diventano anche **condivisi**: sceglierli in Progetto li ritrova già impostati passando a Magazzino o a Gestione DB, così si può restringersi a una macchina o a una famiglia e lavorarci muovendosi fra le viste, senza riselezionarla ogni volta. Una famiglia che in un'altra vista non esiste — materie prime/commerciali e parti restano ambiti diversi, come già nei filtri di sempre — semplicemente non si applica lì, e la pasticca segue sempre il campo vero della vista aperta, mai la scelta condivisa: non mente su cosa sta filtrando davanti agli occhi. **Rimuovi filtri** azzera insieme i campi locali della vista e l'ambito condiviso, così la restrizione sparisce per davvero e non ricompare cambiando pagina. Restano fuori, di proposito: il *Carico centri* (filtra per piano e centro di lavoro, un altro genere di domanda) e i filtri delle viste documento — Commesse, Fabbisogno, Richieste, Ordini — che restano quelli di sempre, nella colonna a destra.
+
+**I controlli non si ricreano mai**
+Stesso `id`, stesso comportamento di sempre: aprire o chiudere la barra è solo una classe sul `<body>`, non un ridisegno — altrimenti scrivere nel campo di ricerca avrebbe perso il focus a ogni filtro applicato. Il campo condiviso, quando cambia, chiama in più una funzione che ricorda la scelta; l'unico punto delicato era l'ordine: lo scope condiviso va scritto **dopo** che la vista ha già rifatto le proprie `<option>` (famiglie, macchine), non prima — un `<select>` non accetta un valore che fra le sue opzioni correnti non c'è ancora, e prima di questo aggiustamento la propagazione falliva in silenzio alla prima vista mai visitata in quella sessione.
+
+**Note**
+- **15 casi nuovi** in `test/filters.test.js`, più gli aggiustamenti a `openCycleFor` (che già azzerava i filtri locali entrando direttamente su una parte: ora azzera anche l'ambito condiviso, altrimenti lo riscriverebbe subito dopo sugli stessi campi appena svuotati). La suite passa da 1632 a **1647** casi.
+- Verificato anche nel browser vero, non solo nei test: l'elemento finto dell'harness non simula la selezione via `<option selected>`, quindi l'ordine sync-poi-scope si vede solo lì — la classe di bug che ha portato al punto precedente.
+- `README.md` aggiornato con il nuovo paragrafo della barra Filtri.
+
+### 0.74.0 — 2026-09-10
+
+**La divisione per famiglia si può spegnere, e vive nel pannello Colonne**
+Acquisti, Progetto e Magazzino spezzavano sempre l'elenco in una tabella per gruppo (macrofamiglia, o tipo per gli assiemi): non c'era modo di tornare a una lista sola. Il pannello **Colonne** porta ora anche l'interruttore **Dividi l'elenco per famiglia** — acceso di serie, come oggi — e spegnerlo ridisegna una tabella unica, con la stessa paginazione ("Mostra altri"/"Mostra tutti") di prima. La scelta è per vista come le colonne: si può tenere Acquisti diviso e Magazzino no.
+
+**Il pannello Colonne offre tutti i campi che un elenco può ospitare**
+Fino a ieri il registro delle colonne conteneva solo quelle già mostrate. Acquisti, Progetto e Magazzino guadagnano sottofamiglia, fornitore, doppia unità d'acquisto (UM acquisto/fattore), scorta minima, lotto, note e autore delle modifiche; Magazzino aggiunge anche modalità lotto, presso terzi e in lavorazione; Progetto aggiunge concetto e approvvigionamento, che riguardano solo le parti — e per questo Progetto smette di essere un clone delle colonne di Acquisti e diventa un registro suo. Tutte le colonne nuove nascono **nascoste**: chi non apre mai il pannello continua a vedere l'elenco di sempre, chi le accende le ritrova domani.
+
+**Filtri Macchina e Gruppo in Progetto e Magazzino**
+Accanto a famiglia e sottofamiglia, due nuove tendine restringono l'elenco a una sola macchina o a un solo gruppo — lo stesso filtro che la vista Gestione DB aveva già, ora anche dove si guardano gli articoli invece della distinta. Scegliendo una macchina restano lei, i suoi gruppi, sottogruppi e parti; scegliendo un gruppo ci si restringe a quello. In Magazzino il filtro vale solo per le parti — commerciali e materie prime non sono mai legati a una macchina, come già succede con la famiglia sugli assiemi. Il filtro applicato finisce anche nell'export, come gli altri.
+
+**Note**
+- **12 casi nuovi** fra `test/columns.test.js`, `test/codes.test.js` e `test/export-lists.test.js`: colonne nascoste di serie che si accendono e tornano a spegnersi, l'interruttore di divisione (di serie acceso, per vista, sopravvive al ridisegno), `itemGrid` che disegna una tabella sola a divisione spenta, Progetto che non è più un clone di Acquisti, e i filtri macchina/gruppo su tutto l'albero (macchina → gruppo → sottogruppo → parte) incluso il caso limite di Acquisti, che quei filtri non li ha. La suite passa da 1620 a **1632** casi.
+- `README.md` aggiornato: il paragrafo delle colonne descrive l'interruttore e i campi nuovi, e Progetto/Magazzino descrivono i filtri macchina e gruppo.
+
+### 0.73.0 — 2026-09-09
+
+**Manuale d'uso**
+Nasce `MANUALE.md`: il manuale operativo dell'app, scritto per chi la usa invece che per chi la sviluppa. Trentaquattro capitoli più un'appendice tecnica, con indice cliccabile.
+
+Il README raccontava già quasi ogni funzione, ma la raccontava **per funzione e per motivo**: perché il passaggio di lavorazione non muove la giacenza, perché il netto non si applica alle lavorazioni. Chi arriva nuovo ha però un'altra domanda — *da dove comincio, e poi cosa faccio* — e a quella il README non rispondeva da nessuna parte. Il manuale è organizzato **per compito**, e il suo capitolo portante è il **flusso di lavoro**: lo schema del giro completo, dagli archivi di Gestione alla merce che entra a magazzino, e ogni tappa in prosa con il rimando al capitolo di dettaglio (preparare gli archivi → costruire il prodotto dal basso → costificare → commessa e piano → comprare → far lavorare fuori → chiudere il giro).
+
+Ogni capitolo di schermata segue la stessa griglia — *a cosa serve, come ci si arriva, cosa si vede, comandi, filtri, finestre, da sapere* — così la risposta sta sempre nello stesso punto della pagina. I pulsanti sono chiamati **con il nome esatto che hanno a video**: un manuale che li chiama in un altro modo è peggio di nessun manuale.
+
+Sono documentati per esteso i punti su cui si sbaglia davvero: i **sei tipi di movimento** con il loro effetto sulla giacenza, i **due soli punti in cui il conto lavoro muove il magazzino** (e perché gli estremi sono quelli del ciclo, non quelli del documento), la differenza fra *Rientrati* su un ODL e il carico vero, la tabella di **cosa resta modificabile in ciascuno stato** con le transizioni automatiche, e i quattro avvertimenti del Carico centri. Chiudono un **glossario** di trenta voci (tratta, passata, impegnato, libero, saturazione, concetto…) e una sezione di **domande frequenti** che parte dai sintomi — «il costo di una parte è zero», «non trovo un fornitore nel menu», «ho perso i dati».
+
+L'**appendice tecnica** raccoglie quello che serve a chi installa, sposta o sviluppa: stack e assenza di build, le chiavi di `localStorage` con la distinzione fra archivio e preferenze personali, le collezioni del modello dati, la mappa dei file sorgente, i test e i limiti architetturali.
+
+I limiti dichiarati stanno **nel primo capitolo**, non in fondo: nessuna schedulazione, nessun avanzamento di produzione, un archivio per browser, e i ruoli che separano le responsabilità senza essere sicurezza. Un manuale che li nasconde in appendice fa cercare per mezz'ora una funzione che non esiste.
+
+**Il manuale dice già come si lavorerà con l'archivio condiviso**
+Nuovo capitolo 30, «Quando l'archivio è condiviso (Supabase)», in fondo alla parte Amministrazione. Si apre dichiarando che **non è ancora attivo** — chi legge il resto del manuale non deve cercare funzioni che non troverà — e poi risponde alle domande che si fanno prima di passare, non dopo.
+
+Il cuore del capitolo è **chi vince quando due persone toccano la stessa cosa**, perché in squadra è l'unica domanda che conta e la risposta non è la stessa dappertutto: due quotazioni sullo stesso articolo **convivono**, una distinta salvata da due persone no — l'ultimo sostituisce l'insieme, perché metà distinta di uno e metà dell'altro è un prodotto che nessuno ha progettato. Da lì la regola pratica: sulle righe di un listino o di un ordine si lavora insieme senza pensarci, su una distinta ci si mette d'accordo.
+
+Poi le cose che vanno **decise prima e preparate adesso**: un solo archivio di verità (due archivi divergenti non si fondono, e uno dei due lavori va rifatto), le password che non migrano, i codici duplicati da ripulire finché sono un fastidio di uno solo, il backup fuori sede — che il piano gratuito non fa — e il ping contro la sospensione dopo sette giorni d'inattività, da predisporre prima di agosto e non il 25 agosto. Chiude con quanto regge il piano gratuito (il primo limite è la banda, non lo spazio) e con l'avviso che **gli allegati cambiano il conto di colpo**: 1 GB sono circa mille PDF da 1 MB.
+
+Una sezione dice **cosa non cambia**, ed è quasi tutto: schermate, comandi, flusso di lavoro, codici, ruoli, cestino, export. È il motivo per cui il manuale non andrà riscritto.
+
+Sei rimandi nei punti dove l'uso cambia davvero — i limiti dichiarati al capitolo 1, l'avviso sui dati nel browser, i ruoli che non sono sicurezza, il backup, le domande frequenti e l'appendice tecnica — più tre voci di glossario. La parte Riferimenti scala di uno.
+
+**Il manuale sta dentro l'app**
+Un pulsante 📖 nell'intestazione, accanto a Stampa, apre `manuale.html` in una scheda sua. Il manuale si consulta **mentre** si lavora — chi cerca come si registra un rientro da conto lavoro ha l'ordine di lavoro aperto davanti, e non deve perderlo per leggere come si fa.
+
+`manuale.html` sta nella cartella accanto a `index.html` e **non chiede niente alla rete**: il markdown è già impaginato nel file, indice e ancore compresi, quindi la pagina resta leggibile e navigabile anche **senza JavaScript** — che aggiunge soltanto il filtro dei capitoli, l'evidenziazione di dove si è e il cassetto dell'indice sugli schermi stretti. Come tutto il resto dell'app viaggia con la cartella, quindi il manuale c'è anche sul PC in officina che la rete non ce l'ha. Usa i token di tema e i font di Bomtrack, e legge `bomtrack_theme`: chi ha scelto il chiaro nell'app apre il manuale in chiaro.
+
+`genera-manuale.py` rigenera `manuale.html` da `MANUALE.md` con un comando solo (`python genera-manuale.py`), guscio della pagina incluso nello script. Il markdown resta **l'unica fonte**: due copie da aggiornare a mano avrebbero cominciato a divergere il giorno dopo. Nuova icona `book`, tracciata sulla stessa griglia 24×24 delle altre.
+
+Il README rimanda al manuale in testa, e resta quello che era: la documentazione funzionale, orientata al perché delle scelte.
+
+### 0.72.1 — 2026-09-08
+
+Controllo mirato sul conto lavoro e sugli ordini di lavoro, dopo la segnalazione di una tabella disallineata in Gestione (già corretta a parte). Tre punti rimasti aperti da quel controllo, tutti chiusi qui.
+
+**Corretto: una fase interna mandata fuori apposta non muoveva mai il magazzino**
+L'app permette di mettere in un ordine di lavoro anche una fase che il ciclo fa in casa ("il ciclo la fa in casa: mettendola qui la si manda fuori questa volta") — un caso vero, non un errore da impedire. Ma quella fase non coincideva mai con la prima o l'ultima tratta **esterna del ciclo**, semplicemente perché non lo è: restava sempre un passaggio, e né la spedizione né il rientro toccavano mai la giacenza. Ora una fase così, non incatenata alle tratte esterne che il ciclo dichiara, esce e rientra ai suoi due estremi come qualunque lavorazione esterna — senza cambiare nulla per le tratte che il ciclo dichiara davvero esterne, singole o a più passate.
+
+**Corretto: cambiare Interna/Conto lavoro su una fase di ciclo poteva azzerare ore o giorni**
+Il tempo di una fase si misura in due unità diverse — ore su una interna, giorni di attraversamento su una in conto lavoro — e i due campi non stanno mai a video insieme. Cambiando il fornitore, la riga si ridisegna un istante dopo il salvataggio: il salvataggio guardava però il fornitore **appena scritto** invece di quello che il campo a video rifletteva ancora, leggeva quindi un input che non c'era e azzerava in silenzio ore o giorni già inseriti. Stesso meccanismo, un'ora mai digitata da nessuno finiva su una fase esterna a costo fisso appena creata, perché il campo Ore (nascosto, a costo fisso su un centro esterno) nasceva con un valore proposto di serie invece che a zero.
+
+**Corretto: nella scheda di un piano, il dettaglio del carico centri mostrava un altro conto**
+La tavola "Carico dei centri" dentro la scheda di un piano dichiara esplicitamente di contare solo quel piano — c'è la frase sopra la tavola che lo dice. Cliccando una cella, però, il dettaglio veniva ricalcolato sui filtri globali della vista Carico centri (di norma: tutti i piani aperti insieme), un numero diverso da quello appena letto in tabella; se il piano era chiuso, poteva anche non trovare nulla. Ora il dettaglio aperto da dentro un piano usa lo stesso conto della tavola che lo ha aperto; dalla vista Carico centri il comportamento resta quello di sempre. Anche il nome del centro, dentro la scheda di un piano, ha smesso di essere un link che cambiava un filtro di un'altra vista senza muovere nulla a video.
+
+**Copertura di test**
+21 casi nuovi fra `test/contolavoro.test.js`, `test/cycle-op.test.js` e `test/carico.test.js`: la fase interna mandata fuori scarica e carica come una vera esterna senza toccare le tratte genuinamente esterne (singole o a più passate); ore e giorni sopravvivono al cambio di fornitore in entrambe le direzioni, e una fase esterna a costo fisso non nasce più con un'ora fantasma; il dettaglio di una cella nella scheda di un piano risponde con lo stesso conto della tavola, un piano cancellato non apre nulla, e la vista Carico centri conserva link e somma su tutti i piani.
+
+### 0.72.0 — 2026-09-08
+
+**Un ordine di lavoro è una tratta, non una fase — e il magazzino si muove ai due estremi del ciclo, non a quelli del documento.**
+
+**Corretto: il magazzino si muoveva alla fase sbagliata**
+Gli ancoraggi del conto lavoro guardavano **le righe del documento**. Una parte con fasi 10 interna, 20 Beta, 30 interna, 40 Beta ha **due** ordini di lavoro da Beta, e ciascuno — essendo prima e ultima riga di sé stesso — offriva sia lo scarico sia il carico: il materiale usciva due volte e il pezzo finito si caricava due volte. Ora gli estremi che contano sono quelli del **ciclo**:
+- alla **prima tratta esterna** esce il **materiale del ciclo**, e scarica;
+- all'**ultima tratta esterna** entra il **pezzo finito**, e carica;
+- a ogni altro estremo si sposta il **pezzo stesso**, e non carica né scarica.
+
+**Un terzo tipo di movimento: il passaggio di lavorazione**
+Il pezzo che torna da un terzista per andarne a un altro non entra e non esce dal magazzino: **cambia luogo a quantità invariata**. Il movimento `clStep` lo dice, e porta due estremi — da chi arriva, a chi va — uno dei quali nullo, perché fra due terzisti il pezzo passa sempre da noi. È l'**unica eccezione** alla regola dell'esistente, scritta in un predicato solo (`movimentoToccaMagazzino`) invece che in un `if` sparso in ogni punto che somma movimenti:
+
+> esistente = Σ ricevuto + Σ movimenti **che toccano il magazzino**
+
+Fra due tratte i pezzi compaiono nel prospetto sotto **«in casa, fra due fasi»**: esistono, non sono a scaffale e non sono da nessun terzista, e questo è l'unico posto che li conta. Il filtro di magazzino diventa *presso terzi o in lavorazione* — la domanda che lo apre è la stessa, «cosa ho in giro?».
+
+**Una riga per tratta, e un documento per passata**
+- Le fasi **consecutive** dello stesso terzista sono **una** lavorazione da commissionare, non due righe da spuntare: stanno in una riga sola — «fasi 20-30» — con prezzo e giorni sommati e il dettaglio di ciascuna nella nota. Spuntarne una e non l'altra produceva un ordine che non stava in piedi.
+- Le fasi dello stesso terzista **non** consecutive vanno in **ordini di lavoro distinti**: fra le due il pezzo torna da noi, e chiedergliele insieme era un ordine che il terzista non poteva eseguire di seguito. Il criterio è la *passata*, e nella scheda di generazione il secondo gruppo si chiama per nome — «Beta — seconda passata» — o due gruppi identici non si distinguerebbero.
+- La **richiesta d'offerta** invece le tiene insieme, ed è voluto: chiedere non è commissionare, e a un preventivo si risponde una volta. Alla conversione in ordine si separano.
+- La riga di documento porta ora `phaseKeys`, l'elenco di **tutte** le fasi che copre. Indicizzando solo la prima, le fasi in mezzo risultavano ancora da documentare e il fabbisogno le riproponeva — in un ordine che le conteneva già.
+
+**Una volta sola, per davvero**
+Niente impediva di registrare due volte la stessa uscita. Il conto si legge dai movimenti, che l'ordine e la riga li portano già: la scheda propone il **residuo**, e a residuo zero lo dice invece di riproporre il modulo come se niente fosse. Superarlo resta possibile — una rispedizione dopo uno scarto è legittima — perché vietarlo avrebbe trasformato un caso vero in un motivo per registrare fuori dall'app.
+
+**Un ordine di lavoro scritto a mano**
+Fin qui un ODL nasceva solo da un piano: l'unico modo di riempirne uno vuoto era la riga manuale, testo libero senza tariffa dal ciclo e senza nessuno dei comandi del conto lavoro. Ora **+ Lavorazione da ciclo** fa scegliere la parte fra quelle che un ciclo ce l'hanno, poi la tratta e i pezzi. Si vedono **tutte** le fasi — anche quelle di un altro terzista e quelle interne, marcate in elenco — perché mandare fuori una lavorazione che di solito si fa in casa è un caso vero, e l'app lo segnala invece di impedirlo. La riga che ne esce passa dalla **stessa fabbrica** di quella generata dal fabbisogno, e un caso lo verifica campo per campo. L'ordine però non è legato a nessun piano, ed è detto in pagina: lì la fase continuerà a risultare da ordinare.
+
+**Carico centri: i codici, e il grafico**
+- Sotto la tavola, **i codici da produrre**: codice, pezzi, settimana e le fasi interne con ore per pezzo e ore totali, ordinati per settimana e per ore decrescenti — la domanda che ci si fa guardandoli è «cosa lancio per primo». «62 ore alla tornitura» senza sapere su quanti pezzi era un numero da credere sulla parola. I **pezzi** non si sommano fra le fasi di uno stesso codice (ogni fase lavora gli stessi pezzi); le **ore** sì.
+- Sopra, un **grafico a barre** per centro: una barra per settimana, la capacità come linea tratteggiata, gli stessi colori della tavola — neutro fino all'85%, arancio fino al 100%, rosso sopra. Un centro senza capacità dichiarata disegna le barre e nient'altro. Il grafico serve a dire **dove guardare**, non sostituisce i numeri: ogni barra porta il suo, e la tavola resta la lettura esatta.
+- SVG scritto a mano, nessuna libreria nuova: le tre in `vendor/` ci sono perché un PDF e un foglio Excel non si scrivono a mano, un grafico a barre sì — e una libreria in più sarebbe un file in più da riverificare a ogni aggiornamento. Ogni blocco porta un `aria-label` che riassume il centro, per chi il disegno non lo vede.
+- Cliccando il nome di un centro le due letture si restringono a quello, e il filtro entra anche nell'intestazione dell'export. L'export ha ora **due sezioni**, in forma lunga.
+
+**Un saldo che si legge in ordine di data**
+Emerso provando il giro con **lo stesso** terzista due volte: il saldo del presso-terzi era la differenza fra due totali, e la prima volta che i perni tornavano da Beta *uscivano* dal suo registro senza esserci mai entrati — da lui erano arrivati come tondo, e la trasformazione non la scrive nessuno. Quella partenza senza arrivo annullava il ritorno vero della seconda tratta, e il prospetto diceva che da Beta non c'era niente mentre i pezzi erano là. Il saldo si calcola ora **in ordine di data**, azzerando a ogni passo quel che andrebbe sotto zero: è la stessa regola già scritta — un saldo negativo è una trasformazione, non un debito — applicata a ogni passaggio invece che al totale.
+
+**Note**
+- **57 casi nuovi**, e i due che portano il peso sono il giro completo delle quattro tratte (il materiale esce **una** volta, il pezzo si carica **una** volta, e i due gesti in mezzo non toccano la giacenza) e il confronto campo per campo fra una riga scritta a mano e una generata dal piano. Poi le tratte e le passate, il residuo che si azzera, l'ordine di lavoro vecchio a una riga per fase che **conserva gli ancoraggi di prima** senza nessuna migrazione, i codici da produrre, e il grafico verificato contro la tavola invece che contro sé stesso. La suite passa da 1550 a **1607** casi.
+- `README.md` e `docs/cloud-schema.md` aggiornati: la regola dell'esistente è riscritta con la sua eccezione, non lasciata in contraddizione.
+
+### 0.71.0 — 2026-09-07
+
+**Corretto: il materiale usciva una volta per fase invece che una volta per pezzo.**
+Un ordine di lavoro ha una riga per fase, e ogni riga offriva *spedisci materiale* e *registra rientro*. Ma le fasi di un ciclo sono lavorazioni sullo **stesso** pezzo: due fasi dallo stesso terzista per quattro pezzi facevano uscire otto materiali e rientrare otto pezzi. L'app non sbagliava un conto — invitava a registrarne uno sbagliato, e il magazzino ci credeva.
+
+**Il materiale esce una volta, e non è una scelta libera**
+- Lo *spedisci materiale* sta ora sulla **prima fase** di ogni parte presente nel documento, il *registra rientro* sull'**ultima**. L'ordine è quello delle fasi del ciclo, non quello delle righe nel documento.
+- Le fasi in mezzo non restano mute: dicono **dove** sono i comandi — «materiale in uscita alla fase 10, rientro alla fase 30» — perché la loro assenza somiglierebbe a un difetto.
+- Ogni parte del documento ha i **propri** ancoraggi: due parti diverse escono e rientrano ciascuna per conto suo, e una parte con una fase sola esce e rientra sulla stessa riga.
+- Il materiale che esce **non si sceglie più da un elenco di tutti gli articoli**: viene dal **ciclo della parte**, con le quantità già calcolate — *q.tà del ciclo × pezzi dell'ordine* — e correggibili. È lo stesso materiale che il fabbisogno ha già fatto comprare, ed è il senso della frase «il materiale in uscita è quello contenuto nel ciclo di lavorazione». La scheda registra un movimento per riga, e una quantità lasciata a zero non ne registra nessuno.
+- Un ciclo **senza** materiale a magazzino lo dice invece di offrire una scheda vuota: quel materiale lo mette il terzista, e non c'è niente da scaricare.
+
+**Un saldo negativo non è merce mancante**
+Emerso provando il giro completo: rientrando **perni** dopo aver spedito **tondo**, il prospetto *presso terzi* mostrava «PERNO −4» — un pezzo che dal terzista non c'era mai stato. Un saldo negativo su un codice è come si vede una **trasformazione**, non un debito: il prospetto ora mostra i soli saldi positivi, e il filtro di magazzino «presso terzi» somma solo quelli. Sommare i negativi scalava da un articolo quello che sta fuori come un altro.
+
+**Note**
+- **11 casi nuovi** in `test/contolavoro.test.js`, e il primo è lo scenario che ha fatto vedere il difetto: due fasi allo stesso terzista per 4 pezzi, dove ora **escono 8 kg di tondo e rientrano 4 perni**, non 8 e 8. Poi gli ancoraggi (compreso quello che verifica che conti l'ordine delle **fasi** e non quello delle righe), il disegno a video con i comandi che compaiono una volta sola e la fase in mezzo che lo spiega, due parti nello stesso ODL, il materiale ricavato dal ciclo con i suoi casi limite, e la quantità a zero che non registra niente. La suite passa da 1539 a **1550** casi.
+- Le righe di conto lavoro rimaste in un ordine d'acquisto da prima della separazione fra ODA e ODL passano dalla stessa scheda: hanno la stessa forma, e la stessa regola.
+
+### 0.70.1 — 2026-09-07
+
+**Corretto**
+- **I due comandi di conto lavoro sotto una riga di ordine di lavoro si accavallavano alla descrizione della riga sopra.** La causa non è di misura ma di natura: `plandoc-link` disegna un riquadro (bordo più 6px di padding verticale) su uno `<span>`, e **un elemento inline con padding verticale non allarga la riga di testo che lo contiene** — il riquadro deborda sopra e sotto, e finisce addosso ai vicini. Nell'elenco dei documenti generati da un piano non si vedeva, perché lì quei riquadri stanno in un contenitore flex, dove diventano blocchi da soli. Sotto una riga di documento non c'era nessun flex a salvarli.
+- La classe dichiara ora `display:inline-block`, e i due comandi hanno una **riga propria** (`line-cl-actions`, disposta in flex) invece di stare dentro `line-note`, che è un blocco pensato per una nota di testo. Il punto di separazione fra i due passa dallo spazio, non più da un `·` in mezzo ai riquadri.
+
+**Lo stesso difetto, altrove**
+Il controllo scritto per impedire il ritorno ne ha trovate **altre sei** con la stessa forma, latenti: `picker-type`, `rfq-pick-type`, `doc-badge`, `home-chip` e le due etichette di riga `rfq-manual-tag` e `rfq-clavoro-tag`. Nessuna si vedeva rotta oggi — vivono quasi sempre dentro contenitori flex, dove il difetto non si manifesta — ma bastava usarne una in mezzo al testo per ritrovare lo stesso accavallamento. Corrette tutte allo stesso modo: dove la classe sta in un flex la dichiarazione non cambia niente, dove sta inline la salva.
+
+**Note**
+- **3 casi nuovi** in `test/theme.test.js`. Il controllo non prova il disegno — la suite non ha un motore di layout — ma il **contratto fra i due file**: le classi che disegnano un riquadro si ricavano da `style.css` (bordo più padding verticale non nullo), gli `<span>` che le portano si ricavano dalle viste, e ognuna deve dichiarare un `display` che il riquadro lo contenga. L'elenco non è scritto a mano: se domani nasce un'altra classe con la stessa forma, la trova questo controllo invece dello schermo. C'è anche il caso che verifica che il controllo **stia provando qualcosa** — se `plandoc-link` smettesse di essere un riquadro, l'altro passerebbe a vuoto.
+- Verificato che il controllo riconosca il difetto rimettendolo per un attimo: togliendo `display:inline-block` da `plandoc-link` la suite fallisce nominando la classe. La suite passa da 1536 a **1539** casi.
+
+### 0.70.0 — 2026-09-07
+
+**Il tempo di una lavorazione esterna si misura in giorni, non in ore.** Una fase interna occupa una macchina, e le sue ore sono quelle che alimentano il *Carico centri*. Una fase in conto lavoro non occupa niente di nostro: il pezzo esce, sta dal terzista, e torna. Contarla in ore rispondeva alla domanda sbagliata — di quante ore ci metta il terzista non importa a nessuno, importa **quando ripresenta il pezzo**.
+
+**Nel ciclo di lavorazione**
+- La colonna delle ore diventa **Tempo**, e cambia unità con la natura della fase: **ore (h)** su una lavorazione interna, **giorni (gg)** su una in conto lavoro. Si passa dall'una all'altra scegliendo o togliendo il fornitore, e la riga si ridisegna: cambia proprio cosa quel campo misura, e lasciarlo com'era avrebbe fatto scrivere il numero nel posto sbagliato.
+- Le ore di una fase esterna **a costo orario** non spariscono: si spostano accanto alla tariffa, nella cella del costo. Lì sono **le ore che il terzista fattura**, cioè un pezzo del prezzo, non il nostro tempo — ed è l'unico punto in cui ha senso vederle.
+- Le due grandezze restano **due colonne** nell'export del ciclo, con i rispettivi totali: una colonna che cambia unità riga per riga non si può né sommare né filtrare in un foglio di calcolo.
+
+**Nel fabbisogno, ed è il motivo per cui esistono**
+- I giorni di attraversamento diventano il **tempo di consegna** della fase: se il pezzo serve pronto il 30 settembre e il terzista ci mette cinque giorni, **l'ordine di lavoro deve uscire entro il 25**. È la stessa aritmetica dei giorni di consegna a listino per il materiale, e la stessa risposta quando il dato manca — nessun anticipo, non un anticipo inventato.
+- La sezione **Da far lavorare fuori** ha una colonna **Ordinare entro** accanto a *Serve per*, con i giorni sottratti in chiaro e il badge di urgenza che finalmente significa qualcosa: prima era sempre calcolato sulla data in cui serve, come se un conto lavoro si potesse mandare l'ultimo giorno.
+- Giorni e data d'ordine entrano nel foglio **Conto lavoro** dell'export Excel e nel blocco del PDF.
+
+**Note**
+- **12 casi nuovi** fra `test/cycle-op.test.js` e `test/mrp-cl.test.js`: la fase esterna che nasce con i giorni, l'aggiornamento che non azzera le ore fatturate a costo orario, i giorni che restano zero su una fase interna, la sopravvivenza al ricaricamento a due giri, e l'anticipo — compreso quello che **attraversa il cambio di mese**, il valore negativo che non anticipa al contrario, e la data mancante che non ne fa inventare una. Più il caso che tiene ferma la separazione: **i giorni non toccano il costo**. La suite passa da 1524 a **1536** casi.
+- Una fase creata prima di questa revisione prende `days: 0`: nessun anticipo, che è il comportamento che aveva. Chi vuole la data d'ordine giusta scrive i giorni sulle fasi che gli interessano, quando gli interessa.
+- **Scelta da conoscere**: i giorni sostituiscono le ore come *tempo* di una fase esterna, ma non le sostituiscono come *costo* — a modo orario servono ancora, e restano. L'alternativa sarebbe stata vietare il costo orario sul conto lavoro, che avrebbe fatto perdere le tariffe già registrate sui centri.
+
+### 0.69.0 — 2026-09-07
+
+**Ordini d'acquisto e ordini di lavoro sono due documenti diversi, e adesso lo sono anche nell'app.** Dalla 0.66.0 le lavorazioni in conto lavoro finivano come righe dentro un ordine d'acquisto: funzionava, ma metteva nello stesso documento due cose che nella realtà non lo sono — uno **compra della merce**, l'altro **manda dei pezzi a lavorare**. Al telefono con un terzista, «l'ordine 47» non bastava più a dire di cosa si stesse parlando.
+
+**Ordini di lavoro (ODL)**, voce nuova nel gruppo Documenti
+- Numerazione **sua**: `ODL-<anno>-NNN`, indipendente dagli `ODA-<anno>-NNN`. Elenco suo, filtri suoi, stampa sua — PDF ed Excel bilingui, intestati *Committente / Terzista* invece di *Richiedente / Fornitore*.
+- Colonne pensate per una lavorazione e non per della merce: **Parte**, **Lavorazione**, **Pezzi**, **Tariffa (€/pz)**, data richiesta e confermata, **Rientrati / Ancora fuori**.
+- Niente «+ Da catalogo»: un articolo non è una lavorazione, e la voce non c'è perché non avrebbe senso premerla.
+- Stati, blocchi per stato, salvataggio differito, sblocco per modifica, guardie di ruolo: **tutto riusato** dal registro dei documenti, dove ODA e RDO vivono già. Dove il comportamento coincide davvero, due copie divergono.
+- I due comandi del conto lavoro — *spedisci materiale* e *registra rientro* — stanno sotto ogni riga dell'ODL, dove terzista e ordine sono già decisi.
+
+**Dal fabbisogno: tre pulsanti, tre documenti**
+- «Genera ordini» prende **solo la merce**, «Genera ordini di lavoro» **solo le lavorazioni**. Un ordine d'acquisto non può più contenere una fase, e un ordine di lavoro non può contenere un articolo: lo decide un filtro per tipo di documento, in un punto solo.
+- Un ODL per **terzista**: tutte le fasi affidate allo stesso, anche di parti diverse, in un documento — è la forma con cui si spedisce e con cui il terzista lo legge.
+- «Genera richieste» invece li tiene **insieme**, e non è un'incoerenza: chiedere a un fornitore quanto costa il materiale **e** quanto costa lavorarlo è una domanda sola, ed è la richiesta d'offerta a farla.
+
+**La richiesta si divide, e non perde niente**
+Convertendo una richiesta che contiene sia merce sia lavorazioni nascono **due documenti** — un ODA e un ODL, entrambi che citano la richiesta e ne portano le condizioni — e la richiesta si chiude una volta sola. Una richiesta di sola merce si comporta come sempre; una di sole lavorazioni genera il solo ODL. Una richiesta **vuota** continua a produrre un ordine d'acquisto vuoto, com'è sempre stato: l'ODA resta il ripiego.
+
+**Dove la separazione si vede**
+- **Magazzino**: nessuna differenza, ed è il punto. Le righe di un ODL non hanno un articolo — la migrazione lo impone a ogni caricamento, non lo lascia alla disciplina di chi scrive — quindi non caricano niente da sé. Il rientro dei pezzi resta un movimento, e il prospetto *presso terzi* riconosce l'ODL come documento di riferimento.
+- **Commesse**: la scheda ha un elenco **Ordini di lavoro** accanto a quello degli ordini, e l'impegnato somma i due — la domanda «quanto costa questa commessa» è una sola, e leggerla in due cifre da mettere insieme a mano non aiuta nessuno. Una commessa che regge un ODL non si elimina.
+- **Riepilogo**: gli ordini confermati in ritardo comprendono gli ODL, in un avviso solo. Il tipo si legge dal numero e il click porta ciascuno nel suo elenco.
+- **Ricerca globale**: sigla `ODL` accanto a `ODA` e `RDO`.
+
+**Note**
+- **21 casi nuovi** in `test/odl.test.js`, e non provano che l'ODL funzioni — quello lo prova la macchina che riusa — ma che le due cose restino **separate**: la numerazione che non continua la serie degli ODA, quali righe possono finire in quale documento, la richiesta mista che si divide senza perdere righe, il giro verso la forma normalizzata e ritorno, e il vincolo `itemId` nullo imposto dalla migrazione. Con gli aggiornamenti a `test/mrp-cl.test.js` la suite passa da 1497 a **1520** casi.
+- Le righe di conto lavoro finite in un ordine d'acquisto **prima** di questa revisione restano dove sono, si riconoscono ancora come tali e conservano i due comandi per muovere il materiale. Non c'è una migrazione che le sposti: spostarle vorrebbe dire spezzare documenti già numerati, e ne varrebbe la pena solo se ce ne fossero — questa separazione arriva tre revisioni dopo che il conto lavoro è nato.
+- `docs/cloud-schema.md` descrive le due tabelle nuove e **perché sono due e non una con un flag**, con la nota che la forma va tenuta allineata e che in cloud conviene una vista che le unisca per le domande che riguardano entrambe.
+
+### 0.68.0 — 2026-09-07
+
+**Il carico dei centri di lavoro.** Ultima parte del lavoro sulle lavorazioni: dopo l'approvvigionamento del conto lavoro (0.66.0) e il materiale presso i terzisti (0.67.0), restava la domanda che riguarda quello che si fa in casa — *le ore che ho promesso, il reparto le regge?* Fino a ieri `cycle[].workCenterId` e `cycle[].hours` non li leggeva nessuno fuori dalla costificazione: le ore c'erano scritte e non servivano a niente.
+
+**Carico centri**, voce nuova nel gruppo *Cicli di lavorazione*
+- Tavola **centro × settimana**: le ore che i piani chiedono a ciascun centro, contro una **capacità** dichiarata sul centro in ore/settimana. Saturazione in percentuale, neutra fino all'85%, arancio fino al 100%, **rossa sopra**, più il riepilogo in testa delle settimane sfondate **con i centri nominati**.
+- Da ogni cella si apre il **dettaglio di chi ha portato quelle ore** — parte, fase, piano, ore. Non è un vezzo: vale la regola già scritta per il materiale impegnato, un numero che non dice da dove viene non si può contestare, e quindi neanche credere.
+- Somma tutti i **piani aperti**, perché il centro è condiviso e «la tornitura regge?» non ha risposta guardando un piano per volta — stessa regola con cui si calcola il materiale impegnato. Si può restringere a un piano solo, e la stessa tavola sta in fondo alla scheda di ogni piano.
+- Le ore si raccolgono da due posti: le **fasi interne** del ciclo di una parte prodotta in casa, e le **lavorazioni degli assiemi**. Le fasi in **conto lavoro** non caricano nessun centro interno: quelle si comprano, e stanno nel fabbisogno sotto «Da far lavorare fuori». Una parte acquistata non carica niente: quelle ore le fa il fornitore.
+- Export Excel e PDF **in forma lunga**, una riga per coppia centro/settimana: un foglio con trenta colonne di settimane è illeggibile, in forma lunga si pivota in Excel in dieci secondi e si filtra per data — che è la promessa già scritta sugli export degli elenchi.
+
+**Capacità sul centro di lavoro**
+- Campo nuovo in *Gestione → Centri di lavoro*, in ore a settimana, con la sua colonna nell'export/import Excel delle impostazioni.
+- **Zero significa «non dichiarata», non «nessuna capacità»**: un centro senza capacità mostra le ore e non il sovraccarico. Senza questa distinzione ogni centro esistente sarebbe risultato sfondato al primo caricamento, e il prospetto sarebbe nato già da ignorare. La vista lo dice, contando quanti centri sono in quello stato.
+
+**Due promesse, e perché sono credibili**
+Il motore del fabbisogno dichiara da sempre, in un commento, che **il time-phasing non si fa**: un fabbisogno *materiale* spezzato per periodi prometterebbe un MRP che non c'è. Quel commento è stato **riscritto**, non lasciato a contraddire il codice, con i tre motivi per cui il carico è l'eccezione.
+
+1. **Non tocca il netting.** Le funzioni del fabbisogno netto restano identiche: il carico è un prospetto derivato in sola lettura, da cui non nasce nessun documento e nessuna quantità. Se domani lo si cancellasse, il resto dell'app non se ne accorgerebbe — e c'è un caso di prova apposta, che confronta i numeri del netto prima e dopo averlo letto.
+2. **La domanda è diversa.** Sul materiale il periodo servirebbe a decidere *quando ordinare*, e a quello risponde già la data d'ordine senza secchielli. Sulla capacità il periodo **è** la domanda: la capacità è una portata, non uno stock.
+3. **Non si promette nulla che non si dia.** Capacità infinita, dichiarata in pagina: il sovraccarico si vede, non si sposta. Nessuna schedulazione, nessun calendario, nessuna data di avvio di una fase. E le ore stanno nella settimana in cui **il pezzo serve pronto**, non in quella in cui si lavora — anche questo scritto in pagina, perché una data che sembra un piano di lavoro senza esserlo è peggio di nessuna data.
+
+**Note**
+- **25 casi nuovi** in `test/carico.test.js`, e i primi sei sono sull'aritmetica delle settimane ISO — che una implementazione ingenua sbaglia una volta l'anno e in silenzio: il 1° gennaio di un anno che comincia di venerdì sta nella settimana 53 dell'anno prima, il 31 dicembre può stare nella prima dell'anno dopo, e il lunedì si calcola **in UTC** o a est di Greenwich scivola al giorno prima — cioè in un'altra colonna del prospetto. È la lezione già pagata una volta sulle date d'ordine, e le nuove funzioni nascono con la stessa disciplina. Poi la raccolta delle ore, gli scarti che entrano nel moltiplicatore, i secchielli (comprese le righe **senza data**, che finiscono in una colonna dichiarata invece di sparire), capacità e sovraccarico, l'export, e i due casi che fanno valere il patto del punto 1. La suite passa da 1471 a **1497** casi.
+- Due casi di `test/nav.test.js` usavano i Cicli come esempio di gruppo a voce singola, che ora non lo è più. Il comportamento provato non cambia: cambia l'esempio, e se n'è aggiunto uno sul caso opposto.
+- **Difetto trovato e non corretto**, scritto in `docs/cloud-schema.md` per non riscoprirlo: `workCenters[].suppliers` — i fornitori conto lavoro aggiunti nella 0.64.0 — non è dichiarato nel registro dello schema né in quello dei riferimenti. Finisce in una colonna-array invece che in una tabella normalizzata, e la rimappatura degli id non lo attraversa. Stessa famiglia di `plans.jobId`. Non fa parte di questo lavoro ed è una decisione a sé.
+
+### 0.67.0 — 2026-09-07
+
+**Il materiale che sta dai terzisti.** La revisione scorsa ha portato le lavorazioni esterne dentro gli ordini; restava fuori la merce che si manda al terzista perché possa farle. Finché non era tracciata, spariva due volte: non era più a scaffale e non era in nessun conto, quindi il magazzino diceva zero e nessuno sapeva che venti chili di tondo stavano da Beta.
+
+**Due movimenti nuovi**
+- **Uscita a conto lavoro** e **Rientro da conto lavoro**, con il terzista (obbligatorio) e l'ordine che li giustifica (facoltativo). Si registrano dal **Magazzino**, come le rettifiche, oppure — ed è il posto naturale — **dalla riga d'ordine di conto lavoro**, dove terzista e ordine sono già decisi e resta da dire solo cosa esce e quanto.
+- **L'uscita è negativa**: il materiale che parte esce dal magazzino, perché allo scaffale non c'è più. È lo stesso gesto del consumo di produzione, e non contraddice la regola per cui *la giacenza non è una colonna*: un movimento negativo è un addendo di quella somma, non un saldo scritto da qualche parte.
+- I due movimenti portano l'articolo **che si muove davvero**: quello che esce e quello che rientra. Quando coincidono — grezzo fuori, lavorato dentro — il conto va a zero da sé; quando differiscono — materiale fuori, pezzi finiti dentro — il consumo del materiale è implicito nella coppia. Nessuna logica speciale in nessuno dei due casi, ed è il motivo per cui questo modello è stato preferito a uno che chiudesse il conto con un rientro fittizio compensato da uno scarico: due scritture per la stessa cosa, che nessuno terrebbe allineate.
+
+**Il prospetto «presso terzi»**
+- Non una vista nuova: il Magazzino elenca già gli stessi articoli. C'è un **filtro di stato** *Presso terzi*, un pulsante in toolbar che compare **solo se c'è qualcosa fuori**, e una scheda di dettaglio **per fornitore e per ordine** — che il filtro non può dare, perché la riga del magazzino è per articolo.
+- Il saldo è per **coppia (fornitore, articolo)**, non per articolo soltanto: con codici diversi in uscita e in entrata, un saldo unico non significherebbe niente.
+- **Calcolato dai soli movimenti**, come la giacenza. Nessun campo `presso terzi` da tenere allineato, e quindi niente che possa divergere: è la stessa regola per cui non esiste `onHand`, applicata a un secondo numero.
+- Export Excel e PDF in forma piatta, una riga per coppia: terzista, codice, articolo, uscito, rientrato, ancora fuori, ordini, ultimo movimento.
+- Lo storico dei movimenti di un articolo mostra ora il **terzista e l'ordine** accanto alla nota.
+
+**Nessun doppio conteggio, e perché**
+La garanzia è **strutturale, non aritmetica**: le righe d'ordine con un articolo caricano il magazzino via *ricevuto*, quelle senza caricano via movimento, e **una riga non può essere di entrambi i tipi**. Per questo la riga di conto lavoro deve avere `itemId` nullo — se qualcuno ce ne mettesse uno *e* registrasse il rientro, i pezzi risulterebbero il doppio. Il giro completo (tondo ordinato, ricevuto, spedito a Beta, perni rientrati) è verificato passo per passo, e c'è anche il caso per assurdo che dimostra cosa succederebbe violando il vincolo.
+
+**Note**
+- **14 casi nuovi** in `test/contolavoro.test.js`: i due tipi, i campi del movimento con e senza contorno, il movimento vecchio che prende i campi nulli e resta stabile a due giri, l'uscita che fa calare la giacenza, il prospetto per fornitore, il conto che si chiude, il filtro di magazzino, l'eliminazione che rimette dentro il materiale, l'export, il **giro completo in sei passi** e la prova per assurdo del vincolo. La suite passa da 1457 a **1471** casi.
+- Nel registro dello schema, il commento su `stock_movements` diceva che i carichi da ordine non stanno lì. Resta vero, ed è stato spiegato perché i due movimenti nuovi possono portare un `orderId` senza violarlo: la riga d'ordine che li giustifica non ha un articolo, quindi non carica niente da sé. Senza la nota, il prossimo lettore avrebbe pensato che la regola fosse saltata.
+- `REFS` sa ora seguire `movements.supplierId`. `orderId` e `lineId` restano fuori, perché `REFS` non ha una destinazione per gli ordini e gli ordini non sono mai stati rimappati: scritto in un commento invece di lasciare il buco muto.
+
+### 0.66.0 — 2026-09-07
+
+**Le lavorazioni in conto lavoro entrano nell'approvvigionamento.** Fino a ieri il fabbisogno rispondeva bene a una domanda sola — cosa comprare — e per le parti prodotte in casa si fermava a metà: scendeva nel ciclo a prendere il materiale e **scartava le fasi**, con un commento che diceva il vero a metà («le lavorazioni non si comprano a magazzino»: quelle esterne si comprano eccome, solo non finiscono a scaffale). Il risultato era che una zincatura da mille euro affidata a un terzista non compariva in nessun documento, e la si ordinava a memoria.
+
+**Da far lavorare fuori**
+- Una fase del ciclo con un **fornitore** è una lavorazione in conto lavoro, e ora entra nel fabbisogno accanto al materiale, in una **sezione propria** della scheda del piano: fase, centro, parte, terzista, data in cui serve, pezzi, ore totali, prezzo per pezzo e importo. Le fasi **senza** fornitore sono interne e restano fuori: non si comprano, si fanno.
+- La quantità sono i **pezzi della parte**, con i moltiplicatori di distinta già applicati. Il prezzo è **per pezzo**: la tariffa scritta nel ciclo se la fase è a costo fisso, *ore per pezzo × tariffa* se è a costo orario.
+- La tariffa è quella **congelata sulla riga** quando la fase è stata scritta, non quella che il centro ha oggi: ripescarla adesso cambierebbe da sé il prezzo di una fase che qualcuno aveva già deciso.
+- Nuovo riquadro **Conto lavoro** fra i totali del piano, foglio **Conto lavoro** nell'export Excel e blocco nel PDF.
+
+**Dal fabbisogno al documento**
+- Le fasi entrano nella scheda «Genera richieste / Genera ordini» **nel gruppo del loro terzista**, accanto al materiale dello stesso fornitore: un documento solo, perché il fornitore è uno e la consegna è una. Si riconoscono a colpo d'occhio dal numero di fase e dalla chiave inglese.
+- La riga di documento porta il **codice della parte** — è il pezzo che il terzista riceve, lavora e rispedisce, ed è il codice che cercherà sulla sua bolla — la descrizione della lavorazione, i pezzi come quantità e, a costo orario, *ore/pezzo × tariffa* nella nota, che la stampa mostra sotto la descrizione.
+- Nel documento la riga è marcata **conto lavoro**, non più «manuale»: chiamare manuale ciò che l'app ha generato faceva sembrare improvvisato il contrario di quello che è. Il *ricevuto* su quella riga significa **pezzi rientrati dal terzista**: porta l'ordine a parziale o evaso, e **non carica il magazzino** — lo dice il suggerimento della cella.
+- **Il fabbisogno netto non si applica alle lavorazioni**, ed è scritto in pagina invece che lasciato scoprire. Nettarle richiederebbe di sapere quanti pezzi sono già stati lavorati, cioè un avanzamento di produzione che Bomtrack non ha: fingere di saperlo produrrebbe quantità che nessuno può spiegare.
+
+**Come si riconosce una fase già ordinata**
+Il problema vero di questa revisione, e vale la pena dire come è stato risolto e come può sbagliare.
+
+- La riga di documento di una fase ha **`itemId` nullo**, e deve averlo: è la garanzia *strutturale* contro il doppio conteggio di magazzino. L'esistente si calcola come *ricevuto sulle righe con articolo + movimenti*; il rientro dei pezzi sarà un movimento. Con un `itemId` le due strade si sommerebbero e i pezzi risulterebbero il doppio.
+- Non potendo cercarla per articolo, la riga porta una **chiave di fase** congelata alla generazione — come già lo sono il codice e la descrizione, che pure sono copie. L'indice dentro la chiave conta **fra le sole lavorazioni**, non nell'array del ciclo: aggiungere una materia prima alla distinta parte è la modifica più frequente, e con l'indice assoluto avrebbe spostato la chiave di ogni fase successiva.
+- **Come può sbagliare**: chi riordina le fasi dopo aver generato il documento vede la fase **riproposta**. È un falso negativo, e si vede — il documento è lì nell'elenco di quelli generati dal piano. L'alternativa avrebbe bloccato la fase *sbagliata*, e quello non si sarebbe visto. Fra i due modi di sbagliare si è scelto quello visibile, ed è scritto accanto alla funzione.
+- **Non si è dato un id proprio alle righe di ciclo**, che sarebbe la strada apparentemente pulita: costringerebbe a cambiare il registro dello schema, la traduzione verso il database condiviso, la firma dei record e la politica di merge di quelle righe — che è *sostituzione dell'insieme* proprio perché un'identità di riga lì non esiste. Costo alto per un beneficio che la chiave dà senza toccare nulla.
+
+**Note**
+- **28 casi nuovi** in `test/mrp-cl.test.js`: l'esplosione (quantità lungo i livelli, fase interna esclusa, parte acquistata che non genera fasi, diamante che somma sulla stessa chiave, data più vicina, due fasi sullo stesso centro che restano due, anello troncato), la chiave e i suoi due comportamenti — quello che regge e quello dichiarato —, la riga di fabbisogno con i suoi campi *assenti*, la generazione dei documenti e la prova che una riga di conto lavoro ricevuta **non tocca il magazzino**. La suite passa da 1429 a **1457** casi.
+- `planDocumentedItems` si chiama ora `planDocumentedKeys` e indicizza per articolo **o** per fase. La copertura di commessa continua a cercare per articolo: le voci di fase restano nella mappa e non le trova nessuno, innocue. Estendere il semaforo della commessa alle lavorazioni è una decisione a sé, non un effetto collaterale di questa.
+- Scritti in `store.js`, accanto a `REFS`, i **due riferimenti che la rimappatura degli id non copre**: `plans.jobId` (innocuo, le commesse sono nate dopo) e la chiave di fase, che contiene un id articolo *dentro una stringa* e che nessuna sostituzione di campo saprebbe seguire. Meglio scritti che riscoperti.
+
+### 0.65.0 — 2026-09-07
+
+Primo passo verso l'approvvigionamento e la programmazione delle lavorazioni: prima di poterle ordinare o schedulare, le ore di una fase devono **esistere**. Fino a ieri non sopravvivevano a un riavvio.
+
+**Corretto**
+- **Le fasi a costo orario perdevano le ore a ogni caricamento, e valevano zero.** Una normalizzazione di `migrateDB()` — scritta prima che il modo di costo esistesse, e mai aggiornata quando è arrivato — cancellava `hours` da ogni riga di lavorazione priva di `cost`, cioè da **tutte** quelle a costo orario, che il costo non ce l'hanno per definizione. Si inseriva una fase da 2 h × 60 €/h, si riapriva l'app, e quella fase costava **zero**. Il difetto era silenzioso due volte: la riga restava a video con la sua tariffa, e il costo della parte scendeva senza che niente lo dicesse. Il valore scritto al suo posto usava per giunta la tariffa del **centro** invece di quella del **fornitore**, quindi sbagliava anche per chi se ne fosse accorto.
+- **Le righe già danneggiate si recuperano**, dividendo il costo per la stessa tariffa con cui era stato moltiplicato — quella del centro, non quella del fornitore, perché è quella che il difetto usava: dividere per l'altra sbaglierebbe proprio dove il terzista ha una tariffa propria. **Il recupero cambia i costi mostrati** a chi era danneggiato, da zero al valore vero. È l'effetto voluto, ma i numeri si muovono.
+- Dove il centro **manca o ha tariffa zero** le ore non sono ricostruibili, e non si inventano: restano a zero e finiscono fra gli avvisi del **Riepilogo** — «fasi a costo orario senza ore», con il codice della parte, il numero della fase e il centro, e il click che porta al ciclo. Un costo sparito non si scopre guardando il totale, che resta un numero plausibile.
+
+**Le ore si separano dal costo**
+
+Su una riga di lavorazione le ore e il costo rispondono a due domande diverse, e da questa revisione sono due campi indipendenti.
+
+- **Le ore ci sono sempre**, anche su una fase a costo fisso, e hanno una **colonna propria** nella tabella del ciclo. Erano dentro la cella del costo, e comparivano solo in modo orario.
+- **A costo fisso le ore non entrano nel costo**, ed è deliberato: un prezzo concordato con un terzista è quello, e farlo diventare *ore × tariffa* lo cambierebbe da sé. Ma quella fase il centro lo occupa lo stesso, e senza le ore il **carico dei centri di lavoro** non si potrebbe calcolare su metà delle fasi. È il pezzo che mancava, ed è il motivo di questa revisione.
+- Cambiare il modo di costo non tocca più le ore: il tempo di una fase non cambia perché è cambiato il modo in cui la si paga.
+- Le ore entrano nell'**export del ciclo**, con il loro totale.
+
+**Note**
+- **26 casi nuovi** in `test/cycle-op.test.js`: la regressione del difetto (una fase oraria che sopravvive al ricaricamento), il recupero e i suoi due limiti dichiarati, l'idempotenza a due giri, le righe precedenti al modo di costo, la separazione fra ore e costo, la fase nuova che nasce con le ore, e gli avvisi del riepilogo — con la fase numerata **fra le sole lavorazioni** e non nell'array intero, che è il numero che si legge a video. La suite passa da 1412 a **1429** casi.
+- Un caso di `test/migrate.test.js` **codificava il difetto**: pretendeva che le ore sparissero. Ora pretende il contrario, con il perché scritto accanto.
+- `docs/cloud-schema.md` descriveva `item_cycle_rows` com'era prima del modo di costo: niente `cost_mode`, niente `hours`, niente `rate`. Riscritta, con la distinzione fra riga articolo e riga lavorazione e il vincolo che tiene separate le due domande.
+
+### 0.64.3 — 2026-09-07
+
+Nessuna modifica all'app: si aggiunge il documento che mancava accanto al contratto cloud.
+
+**Documentazione**
+- **`docs/sostenibilita-free-tier.md`** — `cloud-schema.md` dice *come* i dati diventano tabelle, e non diceva *quanto occupano*. Ora il conto c'è, tabella per tabella, su tre scenari, con il modello di calcolo in fondo perché sia contestabile invece che creduto.
+- Il verdetto è che il piano gratuito regge con margine ampio — **25% dello spazio a tre anni** nello scenario realistico — ma i tre numeri che contano non sono quelli che ci si aspetta:
+  - **il budget non è 500 MB ma ~430**: un progetto Supabase vuoto ne occupa già 50–70 di cataloghi ed estensioni, e oltre il limite il progetto passa in sola lettura, cioè l'app smette di salvare;
+  - **a stringere per primo è l'egress, non il disco**: un pull completo è ~5 MB compressi, e il polling ogni 20–30 s previsto dal percorso è sostenibile **solo incrementale** — a lettura piena sarebbero decine di GB al giorno contro un tetto di 5 GB al mese;
+  - **crescono col tempo, non col catalogo**: `stock_movements` e gli snapshot delle revisioni sono da soli i due terzi dell'occupazione, e nessuno dei due dipende da quanti articoli ci sono.
+- Detto anche cosa **non** serve, perché è l'ottimizzazione che viene in mente per prima: togliere le colonne di audit dalle tre tabelle a sostituzione d'insieme e sostituire l'id sintetico con una chiave `(item_id, pos)` risparmia il 4,6%. Va fatto per igiene — quell'id non è un'identità e non merita un indice unico — ma la capienza la decide la **retention dei movimenti**, non lo schema.
+
+**Note**
+- Restano segnati due rischi del piano gratuito che non riguardano lo spazio e che oggi non hanno risposta: la **sospensione dopo 7 giorni di inattività** (un'officina chiude due settimane ad agosto) e l'**assenza di backup automatici**. Costano entrambi poco da prevenire e molto da scoprire tardi.
+- Il modello di calcolo nel documento è eseguibile con `node` senza dipendenze, e i numeri delle tabelle sono i suoi. Il giorno in cui il database esisterà, la query per confrontare previsione e realtà è nell'ultima riga del file.
+
+### 0.64.2 — 2026-09-06
+
+**Corretto**
+- **La data «Serve per» nelle righe del piano di fabbisogno era l'unico campo data disegnato dal browser invece che dall'app**: fondo bianco, spigoli vivi, fuori tema — e proprio accanto alla quantità della cella di fianco, che invece era a posto. Era l'unico `<input type="date">` senza una classe, dentro una cella nuda, e nessuna regola del foglio di stile lo raggiungeva. Ora usa `rfq-date-input`, la stessa classe che le righe di richieste e ordini adoperano per lo stesso campo.
+
+**Note**
+- Controllati **tutti e dodici i campi data dell'app**, uno per uno e nei loro cinque contesti — testata documento, righe di richiesta e ordine, listino fornitori, filtro per periodo, righe di piano — a schermo e nei due temi. Gli altri undici erano a posto: stanno dentro `.modal-field`, che veste i suoi campi, oppure portano già una classe che il foglio di stile conosce.
+- **Un controllo nuovo impedisce che ricapiti** (`test/theme.test.js`): ogni campo data deve avere una classe che il foglio di stile disegna davvero — l'elenco si ricava da `style.css`, non è scritto a mano — oppure stare in un contenitore che li veste. Verificato che il controllo riconosca il difetto rimettendolo per un attimo: un campo aggiunto domani in una cella si dimentica la classe, non il colore, ed è lì che va fermato.
+- Verificato anche che l'icona del calendario segua il tema in tutti e tre gli stati (scuro, chiaro, «come il sistema»): su fondo scuro quella di serie è nera e sparirebbe.
+
+### 0.64.1 — 2026-09-06
+
+**Corretto**
+- **Gli spazi digitati per sbaglio nei campi di commesse, richieste, ordini e piani finivano nel dato.** I form passano da `val()`, che li toglie da sempre; i campi di questi quattro documenti scrivevano invece il valore grezzo dentro il proprio setter. Su una descrizione è cosmesi; sul **Cliente di una commessa** no, perché quel testo **è la chiave** verso l'anagrafica: « Rossi Srl » con gli spazi coincide con il cliente registrato solo perché ogni confronto, altrove, si ricorda di ripulirlo — e basta che uno se ne dimentichi. La pulizia avviene all'uscita dal campo, non mentre si scrive, quindi il cursore non ne risente.
+
+**Note**
+- **25 casi nuovi in `test/customers.test.js`** sul giro completo del campo Cliente: l'elenco che si propone in ordine alfabetico, il cliente sospeso che sparisce dai suggerimenti, il nome fuori anagrafica che si scrive lo stesso (suggerire non è vincolare), la rinomina che allinea le commesse anche quando erano state scritte con altre maiuscole, il cliente citato che non si elimina, la ricerca e l'export dell'elenco.
+- Verificato anche **in un browser vero**, che è l'unica cosa che la suite non può fare: il `datalist` viene davvero associato al campo, il browser offre le quattro voci attive delle cinque registrate, e il nome di un cliente scritto come un tag resta un **valore di testo** — zero elementi `script` finiti nella pagina. La suite passa da 1381 a 1399.
+
+### 0.64.0 — 2026-09-06
+
+Coda del controllo generale: le cose rimaste aperte, chiuse. Niente di quello che c'è qui si vede usando l'app — è tutta manutenzione, e serve a far durare quello che c'è.
+
+**Unificate le griglie di Anagrafica e Magazzino**
+Le due viste disegnavano lo stesso oggetto — gruppi con un titolo che conta, le prime 200 righe, un piede che offre di vederne altre — in due copie parallele. Ogni correzione andava fatta due volte, e la seconda prima o poi si dimentica: il `.table-wrap` mancante della revisione scorsa mancava **a tutte e due**, ed è la prova. Ora la griglia è una sola (`itemGrid`), e quello che le due viste hanno davvero di diverso resta fuori e si passa: le colonne, il disegno della riga, il limite corrente, i comandi del piede e cosa dire quando non c'è niente da mostrare — perché anche lì il Magazzino distingue «non c'è nulla a magazzino» da «i tuoi filtri non pescano niente», e sono due situazioni diverse.
+
+Prima di toccare le due viste più usate è stata scritta la rete: **18 casi in `test/grid.test.js`** che descrivono il comportamento condiviso — la paginazione, il titolo che nomina il totale anche quando taglia, il taglio che riempie i gruppi in ordine invece di prendere un po' da ognuno — verificati sul codice di prima e ancora verdi su quello di dopo. Restano, perché è quel comportamento a dover valere in entrambe.
+
+**Corretto**
+- **Le chiavi dell'archivio locale seguono una convenzione sola.** Due preferenze usavano il punto (`bomtrack.columns`, `bomtrack.inspector`) e quattro l'underscore, senza che niente distinguesse i due gruppi: nessuna pulizia o diagnostica poteva raccoglierle per prefisso. Le due vecchie si **travasano** alla prima lettura invece di essere buttate: le colonne nascoste a mano in Anagrafica sono una scelta di qualcuno, e ricomparire tutte senza spiegazione sarebbe stato peggio del disordine.
+- **`jobId` non era normalizzato** su richieste e ordini mentre `planId` sì: sui documenti creati prima delle commesse il campo mancava del tutto, e la traduzione per il cloud avrebbe prodotto righe con e senza quella colonna — l'incoerenza che tutte le altre normalizzazioni esistono per evitare.
+- `THEME_KEY` è ripetuto, cablato, nello script in testa a `index.html`, e rinominarlo da una parte sola non produce **nessun errore**: il tema smette solo di applicarsi in anticipo e torna il lampo scuro. Ora i due punti se lo dicono.
+
+**Copertura di test**
+Quindici funzioni avevano zero test, ed erano quelle che toccano più dati in una volta: **`test/backup.test.js`**, nuovo, ne copre il blocco intero con 47 casi.
+
+- **`validateSnapshot`** — la guardia scritta apposta per il file troncato, e la sola che nessuno provava. Ora ha i suoi otto casi: il file di un altro programma, la collezione che non è un elenco (e dice quale), la versione di schema illeggibile, il backup che viene da una revisione più recente.
+- **Backup da file, come lo vive chi lo usa**: il file illeggibile, il JSON valido ma non nostro e il backup buono sono tre problemi diversi e vanno detti diversi; la conferma che mostra in numeri cosa entra e cosa si perde; l'annullamento che non tocca niente.
+- **Azzeramenti**: `Store.reset`, `Store.clearAll`, `wipeAllConfirm` che pretende la parola esatta, i seed una-tantum che non devono ripopolare un database appena svuotato, chi azzera che resta dentro come amministratore.
+- **`reconcileSession`**, cioè cosa succede alla sessione quando il database cambia sotto i piedi: il proprio utente che c'è ancora, il database senza utenti che riaccoglie chi sta lavorando, quello con altri utenti che chiede di rientrare.
+- **Cestino e diagnostica**: ripristino, eliminazione definitiva, svuotamento, l'annullamento della conferma, i codici duplicati che vengono elencati e **non** corretti d'ufficio, lo spazio occupato che avvisa prima di sbatterci contro.
+- **I fogli delle impostazioni**, uno per uno invece che di rimbalzo: la riga senza nome, la colonna assente contro la cella vuota (che sono due istruzioni diverse), la provincia in minuscolo, il booleano che deve poter dire «no», la tariffa con la virgola italiana.
+- **I template**: che le colonne del template distinte siano davvero quelle che l'import rilegge — un template che l'import non sa rileggere è un contratto rotto — e che nell'export delle impostazioni non finisca nessuna password.
+
+**L'attrezzatura**
+- Il DOM finto dell'harness ha ora **l'elemento radice** (dove `theme.js` scrive il tema) e **le API dei file**: `FileReader`, `Blob`, `URL.createObjectURL`. Erano l'ultimo pezzo di piattaforma che mancava, e senza restavano fuori dalla suite tutte le porte d'ingresso dell'app — l'import distinte, quello delle impostazioni, il ripristino di un backup — cioè proprio le funzioni che toccano più dati in una volta. La lettura è sincrona, a differenza del browser: un test che debba aspettare un evento è un test che a volte passa.
+- Tolte le `const` dichiarate dentro `eval` in `test/families.test.js`: in un contesto `vm` restano nel global lessicale, e funzionavano solo perché ogni caso crea un'app nuova.
+
+**Note**
+- La suite passa da 1287 a **1381 casi**. Il file dei test del backup è più lungo del codice che prova, ed è giusto così: sono i gesti che nessuno rifà a mano per verificarli, perché azzerare il database per vedere se funziona significa azzerarlo davvero.
+- Resta una cosa che **non è un difetto ma una decisione**: all'import, un articolo che non aveva nessuna quotazione e ne riceve una sola se la vede attivare d'ufficio. È un ripiego voluto e commentato; l'effetto collaterale è che «prezzo deliberatamente non applicato» non sopravvive a un giro export→import su un database vuoto. Va deciso, non corretto di nascosto.
+
+### 0.63.0 — 2026-09-06
+
+Ultima parte del controllo generale: coerenza, duplicazioni, codice morto, prestazioni, documentazione allineata al codice.
+
+**Aggiunto**
+- **Sospendere una voce di anagrafica** (⏸), per fornitori, clienti e centri di lavoro. Il campo `active` era migrato, documentato nello schema cloud, esportato in Excel e **letto** in mezza app — i fornitori attivi nel menu dell'import, i clienti attivi nei suggerimenti della commessa, i centri attivi nella scelta della lavorazione — ma nessun comando lo poteva mettere a «no»: solo gli utenti avevano il pulsante. Era una promessa che l'app non manteneva. Sospendere non è eliminare, ed è la ragione per cui serve: un fornitore citato da ordini di tre anni fa non si può cancellare, ma non deve nemmeno continuare a comparire in ogni menu.
+
+**Corretto**
+- **Le date negli export degli elenchi erano testo.** In Excel non si ordinavano né si filtravano per periodo — proprio negli elenchi dove la domanda è «cosa è passato a settembre». Ora una colonna può dichiararsi di tipo data: le righe portano la data ISO e ciascun traduttore la scrive a modo suo, l'Excel come cella di data in formato `gg/mm/aaaa`, il PDF come testo all'italiana.
+- **Un .csv in UTF-8 senza BOM entrava storpiato**: «Perché» diventava «PerchÃ©», e l'articolo finiva a catalogo così. Le altre due codifiche — la CP1252 di Excel italiano e l'UTF-8 con BOM — erano già gestite dalla libreria; questa no, e adesso si riconosce dai byte. Verificato passando dalla libreria vera, non per ipotesi.
+- **«Oggi» si calcolava in quattro modi diversi**, e tre erano in orario di Greenwich: fra mezzanotte e le due davano **ieri**. Su un nome di file è una seccatura; sulla data di una quotazione no, perché quella data **è l'identità della riga** — una quotazione datata ieri è una riga nuova al posto di un aggiornamento. Ora passano tutti da `oggiISO()`, che guarda il calendario di chi lavora.
+- **Sei schede di modifica in Gestione si aprivano senza chiedere il ruolo**: il dato era comunque protetto, ma chi è in sola lettura compilava tutto e scopriva il rifiuto solo su Salva — mentre le altre due glielo dicevano subito.
+- **Quattro schede diverse condividevano gli stessi id di campo**: `eu-` era insieme «utente» e «unità di misura», `ec-` insieme «cliente» e «concetto». Non collidevano solo perché tutte e quattro usano la chiave pannello di serie e se ne apre una per volta: il giorno in cui a una si desse una chiave propria, il salvataggio dell'utente avrebbe letto il campo dell'unità di misura.
+- **Le colonne di Acquisti e Progetto erano lo stesso array**, non una copia: la separazione che il commento descriveva valeva per le colonne nascoste, non per la definizione — aggiungerne una a Progetto l'avrebbe aggiunta anche ad Acquisti, senza un errore da nessuna parte.
+- Tolte le **emoji rimaste** dove l'icona esisteva già, compresa quella che stava nella stessa lista che l'icona la usa, due righe più su. `icons.js` spiega da tempo perché: non ereditano il colore, cambiano forma da un sistema all'altro, si siedono sulla linea di base in modo diverso.
+- La classe `muted` non esiste nel foglio di stile: il messaggio d'errore dell'app si stampava a colore pieno invece che attenuato.
+
+**Prestazioni**
+- **La generazione dei codici articolo era quadratica.** Per ogni codice si compilava una espressione regolare e la si provava su **ogni** articolo in archivio; durante un import è una volta per riga. Misurato su 4000 articoli e 2000 codici: **3339 ms → 5 ms**. È lo stesso costo che l'indice dei codici toglie alla *ricerca* e che era rimasto intatto sulla *generazione*.
+- **Famiglie, concetti e autori hanno ora un indice**, come già articoli, fornitori e centri di lavoro: `getFamily` la chiamano l'elenco del catalogo per ogni riga e la codifica per ogni codice generato. Con la stessa guardia di freschezza degli altri, perché gli import creano famiglie dentro il ciclo e chiedono il codice subito dopo.
+- `genItemCode()` **non parla più all'interfaccia**: durante un import sparava un toast per riga esaurita. Dice perché non ce l'ha fatta, e chi ha davanti una persona lo mostra, chi legge un file lo scrive nel report.
+
+**Pulizia**
+- Unificate le funzioni gemelle: le due letture di un file Excel (differivano di tre righe e ripetevano identiche le due gestioni d'errore), i due contatori dei report, i quattro modi di dire «oggi».
+- `addressOneLine()` non era chiamata da nessuna parte, test compresi: eliminata. `toAltUom()` e `tablesForChanges()` invece **restano**, e ora lo dicono: non sono dimenticanze, sono metà di un contratto e il seam del futuro adapter, con i loro test.
+- Tolta la variabile CSS `--wl-w`, manopola di un ridimensionamento mai implementato: il valore vero era da sempre il suo ripiego.
+- `flattenDB()` si appropria dei nomi `pos` e `childSets` per tradurre: ora se ne accorge invece di rompere in silenzio il giro completo che `test/cloudmap.test.js` verifica.
+- L'unico `confirm()` nativo rimasto — dentro `openModal` — resta, e ora è scritto perché: `openModal` è sincrona e ottanta chiamanti ci scrivono dentro subito dopo, mentre `askConfirm` risponde con una richiamata. Sostituirlo vorrebbe dire rendere asincrona l'apertura di ogni scheda dell'app.
+
+**Documentazione**
+- `docs/cloud-schema.md` allineato al codice: il conteggio delle collezioni (fermo a «nove» da quattro collezioni fa, e ora non più scritto), il nuovo registro `REFS`, il contratto `takeChanges()`/`markSynced(mark)`, il `touch()` del ripristino dal cestino, `orders.requested_delivery` che il client cancella a ogni caricamento, e il fatto che `settings` non è in `SCHEMA` — quindi nessuna tabella la genera, e l'adapter deve trattarla a parte.
+
+**Note**
+- 25 casi nuovi fra `test/codes.test.js` e `test/vendor-xlsx.test.js`, compreso il confronto dell'indice dei progressivi con l'implementazione precedente, presa verbatim da git, su sette casi limite. La suite passa da 1270 a 1287.
+- **Non fatto, e vale la pena saperlo**: la griglia dell'Anagrafica e quella del Magazzino restano due implementazioni parallele della stessa cosa — stessa struttura, stessa paginazione, già divergenti sulla firma di una funzione. Unificarle è un lavoro a sé, e farlo di sfuggita dentro un controllo generale avrebbe toccato le due viste più usate senza una rete di test all'altezza.
+
+### 0.62.0 — 2026-09-06
+
+Terza parte del controllo generale: quello che l'app diceva a chi non guarda lo schermo, e a chi lo guarda stretto.
+
+**Corretto**
+- **Tutta la validazione era muta.** Ogni messaggio dell'app passa dal toast — «Nome richiesto», «Codice già in uso», «La quantità non può essere negativa», e le decine di altri — ma il toast non era una *live region*: per un lettore di schermo quei messaggi non esistevano, e il salvataggio semplicemente «non faceva niente» senza che si potesse sapere perché. Ora l'elemento si annuncia, e distingue le due urgenze: un errore interrompe (`assertive`), una conferma aspetta il proprio turno (`polite`).
+- **La schermata di accesso non aveva etichette.** I tre campi vivevano sul solo `placeholder`, e `a11yFields()` — che ripara le etichette delle schede — non ci passa mai, perché cerca `.modal-field` e l'accesso usa un'altra classe. È l'unica schermata che ogni utente attraversa per forza. Le etichette sono ora vere e riservate ai lettori di schermo (`.sr-only`): il disegno della scheda non cambia di un pixel. Anche l'errore di credenziali viene annunciato.
+- **99 intestazioni di tabella non dichiaravano di essere colonne.** Su griglie da 12-16 colonne, senza `scope` un lettore di schermo non associa la cella alla sua intestazione: la navigazione per celle diventa una sequenza di numeri senza etichetta.
+- **Anagrafica e Magazzino sfondavano il viewport.** Erano le due sole griglie a emettere una tabella nuda, senza il `.table-wrap` che documenti, fabbisogno, listino e scheda articolo usano da sempre: su schermo stretto trascinavano in scorrimento orizzontale **l'intera pagina**, intestazione e navigazione comprese. Ora scorre la tabella, dentro sé stessa.
+- **I pulsanti di navigazione perdevano il nome sotto i 1330px.** Lì la media query nasconde l'etichetta, e `display:none` toglie quel testo anche all'albero di accessibilità: restava solo il `title` come ripiego. Ora ogni gruppo porta il proprio nome esplicito, e la seconda riga dichiara quale vista è quella aperta (`aria-current`).
+- **Il pannello laterale non si ridimensionava col dito.** Gli ascoltatori erano `mouse*`: su tablet la maniglia era inerte e il pannello restava largo quanto nasce, rubando spazio all'elenco per sempre. Ora sono `pointer*` — sostituzione uno a uno — con `touch-action:none` sulla maniglia, altrimenti il dito farebbe scorrere la pagina invece di trascinare.
+
+**Note**
+- **Il DOM finto della suite ora ricorda gli attributi.** `setAttribute` era un no-op e `getAttribute` non esisteva: tutto ciò che l'app scrive in un attributo — i ruoli dei pannelli, le etichette che `a11yFields` ripara, l'urgenza del toast — si poteva provare solo per il fatto che non lanciava, non per quello che diceva. È una lacuna dell'attrezzatura, non di una funzione, e apre alla verifica un'intera classe di comportamenti.
+- 14 casi nuovi in `test/a11y.test.js`, fra cui uno che rifiuta qualsiasi `<th>` senza `scope` in tutte le viste: la regola non si può più dimenticare aggiungendo una colonna. La suite passa da 1256 a 1270.
+
+### 0.61.0 — 2026-09-06
+
+Seconda parte del controllo generale: una regressione appena introdotta, e i punti in cui l'app accettava di salvare qualcosa che poi non sapeva più leggere.
+
+**Corretto**
+- **Nel tema scuro erano sparite le ombre** di schede, toast e pannello laterale. La riga che definiva i due token diceva `--shadow:var(--shadow)`: una variabile che cita sé stessa è invalida, e ogni regola che la usa viene scartata senza che il browser protesti. Introdotta con i temi della 0.58.0 e invisibile rileggendo il foglio, perché sembra una riga come le altre — ora un test rifiuta qualsiasi token che si autodefinisca, e verifica che le variabili usate senza valore di scorta esistano davvero.
+- **«Salva» poteva svuotare un nome che «Aggiungi» pretendeva.** `saveSupplier` e `saveWc` accettavano il campo vuoto — un fornitore senza nome è una riga bianca in Gestione, e ogni richiesta e ordine intestati a lui stampano «senza fornitore» in PDF senza che niente lo segnali. `saveFamily` e `saveSubFamily` facevano di peggio: tenevano il nome di prima e annunciavano lo stesso «Aggiornata», così chi aveva svuotato il campo credeva di aver rinominato. I quattro passano ora da `requireVal()`, che è lo stesso controllo del ramo «aggiungi».
+- **La modifica di un componente di distinta poteva salvarlo senza articolo.** Il controllo c'era su «aggiungi» e non su «modifica»: con il selettore lasciato vuoto la riga restava in distinta puntando al nulla, e il report la stampava vuota.
+- **Sottogruppi e parti si contendevano gli stessi codici.** Dentro `MAC-GRP-###` i sottogruppi scendono da 999 e le parti salgono da 1, ma il calcolo del prossimo numero guardava solo i pari tipo: quando i due blocchi si incontravano l'app proponeva un codice **già in uso**, e poi lo rifiutava da sé con «codice già in uso» — sempre lo stesso, a ogni tentativo. Un vicolo cieco da cui si usciva solo scrivendo il codice a mano. Ora la numerazione salta i numeri dell'altro blocco, e quando lo spazio è davvero finito lo dice invece di proporre un doppione.
+- **`kg` e `KG` convivevano come due unità di misura distinte**, contate separate e rinominate una per volta, lasciando le altre righe appese al codice vecchio.
+- **La sessione scadeva dal primo accesso, non dall'ultimo.** Chi usa l'app tutti i giorni veniva comunque rimandato alla password al trentesimo giorno — mentre la ragione per cui la scadenza esiste è la postazione condivisa lasciata aperta, cioè quella dove nessuno entra da settimane. Ora rientrare rinnova.
+- **Un avviso d'import poteva eseguire codice.** Il messaggio «sigla già in uso» interpolava il nome preso da una cella Excel senza passarlo da `esc()`, e i due report d'import lo stampano in `innerHTML`: bastava una macrofamiglia chiamata come un tag. Tutti gli altri avvisi del progetto escapavano già; questo era l'unico che se n'era dimenticato, ed è ora l'unica convenzione, scritta accanto a dove si stampa.
+- **`esc()` non copriva l'apice singolo.** Nessun exploit vivo — gli attributi `onclick="fn('…')"` ricevono solo identificatori generati — ma il primo che ci passasse il nome di un articolo si sarebbe rotto su «L'albero», e su qualcosa di peggio avrebbe fatto altro.
+- **Una vista senza il suo pannello lasciava l'app completamente vuota**: le viste erano già state spente, e l'eccezione fermava il resto. Ora non si cambia vista e l'errore viene registrato.
+- **Lo stato delle schede non si spegneva alla chiusura.** Chiuso il listino, la variabile che ricorda su quale articolo si stava lavorando continuava a puntare lì, e un ridisegno arrivato da altrove scriveva sull'articolo sbagliato. Ogni scheda dichiara ora come si ripulisce (`onPanelClose`), accanto a dove quello stato viene creato.
+- **`newId()` poteva lanciare proprio dove serviva il ripiego**: il fallback usava `crypto` fuori dalla guardia che stava verificandone l'esistenza — cioè nei contesti datati su `file://` per cui il fallback è stato scritto.
+- **`resetViewState()` azzerava i filtri dei documenti con la forma precedente**, senza i due estremi del filtro per periodo: rimasti fuori il giorno stesso in cui sono nati. Ora si azzerano dalla funzione che li definisce.
+- Ripulita `toggleItemFields()`, che dereferenziava dodici nodi senza guardia e due con: il giorno in cui un campo esce dal template, la scheda articolo smetteva di aprirsi del tutto.
+
+**Note**
+- `saveOwnPassword` passa ora da `Store.update` come tutto il resto: era rimasta l'unica scrittura sugli utenti che scavalcava la porta dello Store, cioè quella che l'adapter cloud intercetterà.
+- 18 casi nuovi fra `test/theme.test.js`, `test/validate.test.js`, `test/codes.test.js` e `test/families.test.js`. La suite passa da 1238 a 1256.
+
+### 0.60.0 — 2026-09-06
+
+Controllo generale del codice. Questa revisione non aggiunge niente che si veda: chiude i punti in cui l'app **perdeva o falsava dati senza dirlo**. Sono difetti vecchi, trovati leggendo, e ognuno ha ora un test che impedisce che tornino.
+
+**Corretto — dati**
+- **La migrazione dai dati v1 rimappava quattro riferimenti su tredici.** Convertendo gli id vecchi in UUID seguiva fornitore, famiglia, sottofamiglia dell'articolo, componenti e lavorazioni; **lasciava indietro** le quotazioni a listino, macchina e gruppo di una parte, il fornitore di richieste e ordini, l'articolo delle loro righe, le righe dei piani, i movimenti di magazzino e le revisioni. Chi apriva l'app con un archivio v1 trovava ordini senza fornitore, righe senza articolo e movimenti orfani — con la migrazione già salvata. I riferimenti stanno adesso in un registro unico (`REFS`, accanto a `SCHEMA`), e le mappe di conversione sono **una per tipo**: gli id vecchi degli articoli erano numeri nudi, e una mappa sola poteva scambiare l'articolo 3 per il fornitore 3.
+- **Ogni installazione nuova nasceva con tre quotazioni intestate a un fornitore inesistente.** Il seed del listino gira prima delle migrazioni e scriveva l'id vecchio del fornitore nella riga di listino, che nessuno rimappava più: in Gestione comparivano come «senza fornitore». Era una delle nove classi dimenticate, e si è chiusa con loro.
+- **Un archivio locale illeggibile veniva sostituito dai dati di esempio e salvato sopra.** Un JSON interrotto — scrittura a metà, spazio finito, chiavetta sfilata — è quasi tutto ancora lì, e un recupero a mano ne salva la maggior parte: cancellarlo era l'unica cosa da non fare. Ora il blob resta dov'è, **una copia va da parte** (`bomtrack_v1_illeggibile`), non si salva niente sopra finché l'utente non lo decide, e una scheda spiega cos'è successo e che i dati non sono persi. Prima c'era solo una riga in console.
+- **Un import distinte poteva svuotare una distinta e non rimetterla.** Il padre veniva azzerato alla prima riga valida e il controllo dei cicli arrivava dopo: un file la cui unica riga per quel padre creava un ciclo lasciava la distinta vuota, con un messaggio d'errore al posto dei componenti. Ora, se per un padre non entra nemmeno una riga, **la sua distinta torna quella di prima** e il report lo dichiara.
+- **«1.234,56» entrava come 1,23.** `numOr` sostituiva la prima virgola e lasciava i punti — un prezzo plausibile, e falso — nelle quantità di distinta, nei parametri delle impostazioni e nelle tariffe orarie. Il parser giusto era già scritto per lo stesso difetto (`catNumOf`), e ora lo usano entrambi.
+- **Le date a due cifre sbagliavano di 120 anni.** «31/01/26» non passava la regola italiana, cadeva nel ramo del seriale Excel dove `parseFloat` si ferma alla barra e legge 31, e diventava **30 gennaio 1900**; «2026-1-5» diventava 1905. E siccome la data è l'**identità** di una quotazione, nasceva un doppione datato 1900 che il confronto prezzi considerava vecchissimo. Ora si leggono anno a due cifre e mesi non impaginati, e il ramo del seriale si prende solo le celle che sono davvero un numero.
+
+**Corretto — sincronizzazione** (nessun effetto oggi, che l'app è locale; sono le fondamenta su cui poggerà il database condiviso)
+- **Il conto delle modifiche era cieco alle righe figlie.** Confrontava il solo timbro del record radice: rinominare una sottofamiglia tocca la sottofamiglia, non la famiglia, e quella rinomina risultava **«niente da mandare»**. Ora la firma di un record comprende i figli con identità propria — sottofamiglie, quotazioni, righe di documento — e non dipende più dalla disciplina di quaranta punti di chiamata.
+- **Il conto e la fotografia che lo azzera si prendono ora insieme** (`Store.takeChanges()`). Fotografare al ritorno dalla rete marcava come già inviato tutto ciò che era stato scritto **durante** l'invio: modifiche perse in silenzio.
+- **Ripristinare un backup, azzerare o svuotare il database non lascia più credere che sia tutto allineato**: la fotografia si dichiara non valida, e il riallineamento tocca a chi può confrontare le due parti.
+- **Un ripristino dal cestino ridata il record.** Rientrando col timbro che aveva prima di essere eliminato sarebbe stato più vecchio della lapide, e il primo scarico dal server l'avrebbe ricancellato — che è esattamente ciò che `docs/cloud-schema.md` chiedeva di evitare.
+
+**Corretto — quello che il file Excel si portava via**
+- **Preferito e Obsoleto non si potevano più spegnere da file**: l'export scriveva la cella vuota per «no», e l'import legge la cella vuota come «non toccare». Ora il no è scritto.
+- **La nota di una quotazione in linea non finiva in nessuna cella** (colonna «Note prezzo»): un articolo con una sola quotazione la perdeva al primo giro su una postazione nuova.
+- **«Attivo» dei centri di lavoro non veniva esportato né riletto**, e il nome non si aggiornava mai: un centro sospeso rinasceva attivo, e le sue ore tornavano a costare.
+- **Ricaricare lo stesso file senza la colonna «Fornitore» creava un doppione di quotazione** a ogni giro, contro la regola dichiarata nei template — «una colonna cancellata lascia il campo com'era».
+- **Un refuso nel «Fattore» cancellava la doppia unità in silenzio**, e il costo d'acquisto cambiava senza traccia. Ora è un errore di riga, come già era venti righe più giù.
+
+**Corretto — interfaccia**
+- **Il toast verde «Salvato» non compare più quando il salvataggio non è avvenuto.** Con l'archivio pieno o in navigazione privata si vedeva la conferma verde e, sopra, la scheda rossa che diceva il contrario: due messaggi opposti sullo stesso gesto. Quaranta conferme passano ora da `savedToast()`, che tace se i byte non sono arrivati.
+
+**Note**
+- Le righe d'ordine restano **sempre nell'unità di gestione**, col prezzo convertito: una barra gestita a metri e quotata a chilo si ordina in metri a *(kg per metro) × (prezzo al chilo)*. Era già il comportamento dell'app da due revisioni, ma **un test era rimasto sulla regola opposta** e la suite era rossa da allora — cioè la verifica automatica non guardava più nessuno. È tornata verde, e `docUomFor()`, rimasta in giro con il commento della regola vecchia, è stata tolta: un lettore che avesse trovato quella prima avrebbe capito il sistema al rovescio.
+- 34 casi nuovi fra `test/migrate.test.js`, `test/import.test.js` e `test/sync.test.js`. La suite passa da 1204 a 1238.
+- Nota di metodo emersa dai test: i timbri hanno **risoluzione al millisecondo**, quindi due scritture nello stesso millesimo sono indistinguibili per il conto delle modifiche. Oggi non ha effetto — l'app è locale e salva tutto — ma è il limite del protocollo, e va saputo prima di appoggiarci il backend.
+
+### 0.59.0 — 2026-09-06
+
+**Aggiunto**
+- **Anagrafica clienti** (*Gestione → 📇 Clienti*), accanto a quella dei fornitori e con gli stessi campi: nome, referente, email, telefono, P.IVA / C.F., indirizzo completo e note. Fino a ieri il cliente esisteva solo come **testo dentro la commessa**, riscritto a mano ogni volta: lo stesso cliente diventava «Rossi Srl», «Rossi S.r.l.» e «rossi», e nessun elenco lo rimetteva insieme.
+- **I nomi dell'anagrafica si propongono nel campo Cliente della commessa.** È un suggerimento, non un vincolo: la commessa di un cliente che in anagrafica non c'è ancora si scrive lo stesso, e il cliente si registra dopo. I clienti sospesi non si propongono.
+- **Il foglio Clienti entra nell'export e nell'import delle impostazioni di Gestione**, con le stesse regole degli altri: chiave il nome, additivo, non cancella niente.
+
+**Note**
+- **Il campo Cliente della commessa resta testo, e non è una scorciatoia.** Trasformarlo in un riferimento all'anagrafica vorrebbe dire riscrivere elenco, ricerca ed export delle commesse — e soprattutto **lasciare senza cliente le commesse già scritte**, che un cliente in anagrafica non ce l'hanno per definizione. Il legame resta quindi il nome, e da lì discendono le tre regole che lo tengono in piedi: il nome è **unico** (due omonimi renderebbero ambigua la citazione), **rinominare un cliente allinea le commesse** che portavano il vecchio nome — altrimenti resterebbero appese a un nome che in anagrafica non esiste più — e **un cliente citato da una commessa non si elimina**, come per i fornitori usati da un articolo. Il giorno in cui la commessa prendesse un riferimento vero, la migrazione sarà un abbinamento per nome: è la ragione per cui il nome si tiene unico da adesso.
+- Il rename allinea confrontando i nomi **ignorando spazi e maiuscole**: una commessa scritta « bianchi » non deve restare indietro proprio perché qualcuno aveva battuto uno spazio di troppo.
+- I clienti sono una collezione come le altre — cestino con ripristino, timbri di modifica, tabella `customers` nella mappa cloud: non un elenco a parte da ricordarsi di trattare a mano.
+- 18 casi in `test/customers.test.js`.
+
+### 0.58.1 — 2026-09-06
+
+**Corretto**
+- **Sette contrasti sotto la soglia di leggibilità, sei dei quali c'erano da sempre nel tema scuro.** I peggiori: il pulsante **Salva** quando ci sono modifiche non salvate (bianco su ambra, **2.2:1**) e il toast di conferma (bianco su verde, **2.8:1**). Più il blu d'accento sia come testo (4.24:1) sia come fondo dei pulsanti pieni (4.06:1), il rosso del badge «non salvato» (3.5:1) e il rosso Acrobat del pulsante PDF (4.0:1). La soglia è 4.5:1 — quella del testo normale, che vale anche per le scritte dei pulsanti: sono in grassetto ma a 12-13px, molto sotto i 18.66px da cui il testo conta come «grande».
+
+**Note**
+- **Un colore ha due mestieri, e non può farli con lo stesso valore.** Uno lo si **legge** — testo, bordi, icone — e deve staccare dal fondo della scheda; sull'altro ci si **scrive sopra** — i pulsanti pieni — e deve staccare dall'inchiostro. Sul tema scuro i due vincoli tirano in direzioni opposte: perché il blu si legga sulla scheda serve luminanza ≥ 0.225, perché regga il bianco serve ≤ 0.183. **La finestra è vuota: nessun blu può fare entrambe le cose**, e quello di prima stava esattamente nel mezzo, mancandole tutte e due di poco. Da qui `--accent` per il primo mestiere e `--accent-solid` per il secondo, e lo stesso per rosso e verde. Sul tema chiaro il fondo bianco allarga la finestra e i due valori coincidono, ma i nomi restano: il foglio di stile non deve sapere quale tema è in corso.
+- **L'ambra fa eccezione e cambia inchiostro invece che tinta.** Scurirla fino a reggere il bianco la spegnerebbe proprio dove serve gridare — è il pulsante che dice «hai modifiche non salvate». Resta accesa e la scritta diventa scura: 8.1:1 invece di 2.2:1. Sul tema chiaro l'ambra è già scura e l'inchiostro torna bianco, e questo lo decide un token (`--on-orange`), non una regola in più.
+- Gli spostamenti sono piccoli e la faccia dell'app non cambia: il blu d'accento va da `#3A7BE8` a `#4583E9`, il fondo dei pulsanti a `#2A70E6`. Il rosso Acrobat scende a `#E41C1C`, che resta il rosso di quel formato.
+- **7 casi nuovi in `test/theme.test.js` che non provano codice, provano numeri** — ed è il motivo per cui servono. Un colore si sposta di due punti perché «si vedeva meglio» e la leggibilità se ne va senza che niente si rompa: nessuna schermata sbaglia, nessun test fallisce, semplicemente qualcuno in officina fatica a leggere. Ora la soglia è scritta, la palette si rilegge dal foglio di stile vero — non da una copia nel test, che si direbbe d'accordo con sé stessa — e un contrasto che scende fa fallire la suite nominando il colore.
+
+### 0.58.0 — 2026-09-06
+
+**Aggiunto**
+- **Tema chiaro, oltre a quello scuro.** Il pulsante è nell'intestazione, accanto a stampa e ricerca, e gira su **tre** stati: *come il sistema*, *chiaro*, *scuro*. Il primo è quello di partenza ed è anche il più utile — il PC sa già se fuori è giorno, e in officina lo schermo si guarda alle sette del mattino e alle sette di sera. Chi sceglie esplicitamente vince sul sistema, e la scelta resta al riavvio.
+
+**Note**
+- **Il colore stava già tutto in dodici variabili**, usate ~340 volte: il tema non ha richiesto di riscrivere il foglio di stile, ma di scrivere una seconda palette e di sistemare **45 righe** che avevano ancora un colore fisso. La prova che l'impianto reggeva c'era da sempre in fondo al file — il blocco di stampa ridefinisce gli stessi token in chiaro, e non ha mai avuto bisogno di una regola in più.
+- **Il chiaro non è lo scuro invertito.** Le tinte d'accento leggibili su fondo scuro su bianco non lo sono: l'arancio `#E8A33A` su bianco dà 1.9:1, illeggibile, e va portato all'ambra. Blu, rosso e verde sono anche testo, non solo bordi, e sono stati scuriti per la stessa ragione. Sulla carta bianca del tema chiaro ogni colore sta ora fra 5.3:1 e 17:1.
+- **Le tinte tenui sono derivate, non riscritte**: i fondi degli avvisi, le pastiglie di tipo, le righe selezionate nascono da `color-mix` sui colori di base, quindi esistono una volta sola e seguono il tema da sé. Un `rgba()` fisso è invece un colore pensato per un fondo solo — ed era il motivo per cui quelle 45 righe non potevano cambiare tema.
+- **Il tema si applica prima che la pagina si disegni**, con quattro righe in testa a `index.html`: `theme.js` sta in fondo al body, e aspettarlo significherebbe un lampo scuro in faccia a chi ha scelto il chiaro.
+- **«Come il sistema» si esprime togliendo l'attributo**, non scrivendo `data-theme="auto"`: è l'assenza a restituire la decisione alla media query. È il punto su cui è facile sbagliare senza accorgersene — il tema resterebbe bloccato a metà — ed è quello che i test coprono per primo.
+- **La preferenza vive nel browser di chi lavora, non nel database.** È una comodità personale, come la larghezza dell'ispettore: sincronizzarla imporrebbe il proprio tema ai colleghi. Per la stessa ragione il comando sta nell'intestazione e non in Gestione, che scrive solo l'amministratore: il tema lo sceglie chi guarda lo schermo, qualunque ruolo abbia.
+- **Stampare col tema scuro attivo non annerisce la pagina.** Il blocco di stampa ora ripete il selettore con l'attributo: senza, `:root[data-theme=dark]` vinceva per specificità e usciva un foglio nero. La carta resta bianca in tutti e tre gli stati.
+- Rosso Acrobat e verde Excel restano fissi: sono i colori dei due formati, non del tema, e cambiarli col fondo li renderebbe irriconoscibili proprio dove distinguono due pulsanti gemelli.
+- 13 casi in `test/theme.test.js`. Il colore non si prova senza un motore di rendering; si prova il **contratto** fra i due pezzi — quale attributo `theme.js` scrive e quando lo toglie — che è esattamente ciò che non si vede rileggendo il CSS.
+
+### 0.57.0 — 2026-09-06
+
+**Aggiunto**
+- **La sigla di una macrofamiglia non si può più ripetere nel suo ambito, e quella di una sottofamiglia dentro la sua macrofamiglia.** La sigla non è un'etichetta: compone il codice articolo — `CMM-MEC-CUS-007` — e ripetuta lo rende ambiguo, perché da quel codice non si risale più a quale delle due famiglie `MEC` venga il pezzo. Un codice costruito a segmenti che non identifica più la sua famiglia ha perso la ragione per cui è fatto così. Il controllo scatta in Gestione su tutti e quattro i punti in cui una sigla si scrive: nuova macrofamiglia, modifica, nuova sottofamiglia, modifica.
+- **Le sigle già ripetute si vedono**, in un riquadro in testa alla scheda famiglie del loro ambito e in rosso accanto alla riga che le porta. L'elenco dice che il problema esiste, il rosso dice quale riga aprire.
+
+**Note**
+- **Il campo di gara è quello che il codice non ha già fissato da sé.** Per una macrofamiglia è il suo ambito, perché il prefisso `CMM`/`MAT`/`PRT` separa già i tre: `CMM-MEC` e `MAT-MEC` non si confondono, e vietare anche quello esaurirebbe presto le sigle di tre lettere per nulla. Per una sottofamiglia è la macrofamiglia che la contiene, perché il segmento precedente l'ha già scelta: `CMM-IDR-GUA` e `CMM-MEC-GUA` sono due codici distinti. La regola vieta esattamente ciò che crea ambiguità, e niente di più.
+- **Le sigle duplicate già in archivio restano**, e non bloccano il lavoro: si impedisce di introdurne di nuove, non si punisce chi c'era già. Riscriverle d'ufficio cambierebbe di nascosto il prefisso dei codici futuri di una famiglia, e a decidere quale delle due cambiare è una persona. È la stessa scelta, e lo stesso riquadro, dei codici articolo duplicati in Gestione › Backup. I codici già assegnati non cambiano in nessun caso.
+- **Chi lascia il campo sigla vuoto è soggetto alla stessa regola**, ma il messaggio lo dice: la sigla dedotta dal nome («Meccanismi» → `MEC`) altrimenti sembrerebbe arrivare dal nulla. Le sigle automatiche sono le prime tre lettere del nome, quindi le collisioni non sono un caso di scuola: «Meccanico» e «Meccanica» danno entrambe `MEC`.
+- **Negli import la sigla si scosta da sola** — le famiglie lì si creano senza nessuno davanti, e un file di 500 articoli non deve fallire per tre lettere in comune. Si cerca la prima libera allungando prima sul nome, che resta leggibile (`MEC` → `MECC` → `MECCA`), e solo dopo numerando (`MEC2`); il tetto è 6 caratteri, quanto il campo accetta. Ogni scostamento finisce scritto nel report: l'import impostazioni ha ora una sezione avvisi in arancio, distinta dagli errori in rosso, perché quelle righe sono entrate — solo non esattamente come erano scritte.
+- 29 casi nuovi in `test/families.test.js`, dove i due test che contano di più sono quelli che dicono *ammesso*: stessa sigla in un altro ambito, stessa sigla in un'altra macrofamiglia. Sono loro a distinguere questa regola da un'unicità globale, ed è su uno di loro che la prima stesura sbagliava.
+
+### 0.56.0 — 2026-09-06
+
+**Aggiunto**
+- **Filtro per periodo in tutti e quattro gli elenchi**: richieste, ordini, commesse e piani di fabbisogno. Un intervallo *dal … al …*, che si può lasciare aperto da un lato solo (*dal 1 settembre* in poi, oppure *fino al 30 giugno*). Vale sulla data del documento — per le commesse è la **data di apertura**, quella che risponde a «cosa abbiamo preso in carico a settembre», non la consegna. Entra nel conteggio, nel pulsante **Azzera filtri** dove c'è, e nell'intestazione dell'export, che dichiara il periodo a parole — «dal 1/9/2026 al 30/9/2026» — perché un elenco stampato senza dire su cosa è filtrato è un elenco che qualcuno leggerà come completo.
+
+**Cambiato**
+- **Le testate dei documenti sono più compatte, e ora si somigliano davvero.** Gli otto campi di un ordine (titolo, fornitore, data, stato, resa, pagamento, conferma d'ordine, note) occupavano quasi uno schermo pieno per via di spazi vuoti che si sommavano fra loro, e le righe cominciavano sotto la piega. Ora la scheda entra in un colpo d'occhio. Lo stesso ritmo verticale vale per **richieste, ordini, commesse e piani di fabbisogno**: sono quattro volte lo stesso gesto — i dati di intestazione di un documento — e ora hanno la stessa forma, campi dentro una scheda riquadrata sotto la barra dei comandi. Prima commesse e piani li tenevano nudi sullo sfondo, e le quattro pagine si somigliavano solo a metà.
+
+**Note**
+- Il filtro è **uno solo per quattro elenchi** (`dateRangeFilter`, `inDateRange`, `dateRangeText` in `worklist.js`, dove sta già il telaio comune): quattro copie della stessa coppia di caselle divergerebbero al primo ritocco, e il filtro dello schermo e quello dell'export devono restare lo stesso codice — altrimenti il file e la schermata raccontano due storie diverse dello stesso periodo.
+- Le date si confrontano come stringhe `AAAA-MM-GG`, che è già l'ordine del calendario: nessuna conversione, nessun fuso orario di mezzo. I documenti più vecchi che portavano l'istante completo invece del solo giorno vengono tagliati prima del confronto, e un documento senza data resta fuori quando un intervallo è impostato — non avendo data, non si può dire che ci cada dentro.
+- Lo spazio recuperato non viene da campi più piccoli ma da margini contati due volte: `manage-wrap` distanzia già i blocchi col suo `gap`, e il gap dei flex **non** si fonde coi margini — ogni blocco che ne portava uno apriva una fascia in più. Stessa cosa dentro la scheda, dove `modal-field` (nato per le finestre modali, dove è lui a distanziare) si sommava al `gap` della griglia: 24px fra una riga e l'altra invece di 12. Le regole stanno in `style.css` sotto `manage-wrap`, `rfq-head` e `modal-grid`, e valgono per le quattro pagine insieme.
+- Il riquadro su commessa e piano si ottiene dallo stile, non riscrivendo il markup: la regola guarda le griglie di campi **in pagina** (`.manage-wrap > .modal-grid`) e non tocca quelle dentro le finestre modali, dove la scheda è già la finestra e un riquadro dentro il riquadro non direbbe niente.
+
+### 0.55.0 — 2026-09-05
+
+**Aggiunto**
+- **Mettere una commessa «In produzione» adesso controlla se il materiale c'è.** Prima non controllava niente: si scriveva lo stato e basta, e che mancassero dieci articoli lo si scopriva in officina — quando il lead time era già perso e la data al cliente era già stata data. Ora compare una domanda che nomina i codici mancanti e la data di consegna, con due vie: *Metti in produzione lo stesso* oppure *Non ancora*. **Non blocca**: l'app avvisa e lascia decidere, perché chi ha un'urgenza vera deve poter andare avanti senza barare sui dati — dati falsi, poi, restano.
+- **Sezione «Copertura materiale» nella scheda della commessa**, sempre leggibile, più un KPI in cima. I codici sono le stesse pastiglie del riepilogo, e ognuna porta al piano che genera quella riga: è lì che si emette la richiesta o l'ordine.
+- **In Riepilogo → «Richiede attenzione»**: le commesse **già in produzione** a cui manca materiale da ordinare, gravità alta come una consegna sforata. La conferma la vede una persona sola, una volta; se dopo l'avvio un ordine slitta o un piano cresce, il riepilogo è l'unico posto che rilegge il presente.
+- Il magazzino sa ora anche **quando** arriva la merce ordinata, non solo che arriva: `incomingEntro(itemId, data)` divide ciò che arriva in tempo da ciò che arriva dopo. La data è quella confermata dal fornitore se l'ha data, altrimenti quella che gli abbiamo chiesto — la stessa coppia che legge `orderWorstDelay`.
+- `test/job-coverage.test.js` (25 casi), più i casi su `incomingEntro` e `commitsOn` in `test/stock.test.js` e il nuovo segnale in `test/home.test.js`.
+
+**Note**
+- **Quattro livelli, perché sono quattro telefonate diverse.** *Da ordinare*: non è ordinato, si compra — l'unico che costa un lead time. *In un documento non ancora inviato*: la richiesta o l'ordine esistono già in bozza; dire «ordina» a chi il documento l'ha scritto è falso, gli manca di premere Invia (e una bozza, giustamente, non conta come merce in arrivo). *In arrivo dopo la data in cui serve*: non c'è niente da comprare, c'è un fornitore da sollecitare — confonderlo con «da ordinare» farebbe ricomprare merce già pagata. *Coperto*. Un semaforo rosso solo li appiattirebbe, e un avviso che dice «manca» anche a chi ha già ordinato si impara a chiudere senza leggerlo.
+- **Una commessa senza piani di fabbisogno aperti non è «tutto ok»: è «non lo so»**, e la commessa lo dice così, sia nella scheda sia nella domanda. Una spunta verde lì sarebbe una bugia comoda, detta proprio a chi sta per avviare il lavoro.
+- **La commessa è una domanda sola, non N piani.** Le righe di tutti i suoi piani aperti si sommano prima di guardare il magazzino: due piani della stessa commessa che chiedono 100 pz con 100 a scaffale non devono vedersi scoperti a vicenda. Da qui `commitsOn()` che accetta anche un insieme di piani da escludere — la concorrenza sono gli **altri**, non noi. I piani di altre commesse restano concorrenza, come prima.
+- Nessun calcolo nuovo: si riusano `mrpExplode`, `mrpBuyRow` (con il netto forzato, come fa il riepilogo — il conteggio non deve dipendere dall'interruttore della vista Fabbisogno), `netRequirement` e `planDocumentedItems`. Nessun campo salvato, nessuna prenotazione: la copertura è calcolata, e cambia da sola quando arriva la merce.
+- **Nessun flag «avviso già visto»**: la domanda si fa solo entrando in produzione, e solo se non ci si è già. Un ritocco a una nota non la fa ricomparire, e uscire dalla produzione non chiede niente. Un flag salvato congelerebbe una risposta data ieri e contraddirebbe la sezione Copertura.
+- I piani **chiusi** restano fuori, come già per gli impegni: chiuderli è il modo di dire «questo lavoro non c'è più». Se le distinte contengono un anello, l'esplosione è troncata e la copertura non si dichiara mai «coperta»: sarebbe una promessa che non si può mantenere.
+
+### 0.54.0 — 2026-09-05
+
+**Cambiato**
+- **Le righe di richieste e ordini stanno su due piani.** Una riga d'ordine aveva dodici colonne, e dodici colonne su uno schermo normale vogliono dire testo minuscolo o scorrimento orizzontale — e con lo scorrimento il codice, che è l'identità della riga, esce dallo schermo. Le colonne però non erano dodici cose diverse: erano **sei coppie**, e adesso stanno una sopra l'altra dentro la stessa cella.
+
+  | | sopra | sotto |
+  |---|---|---|
+  | 1 | codice | descrizione |
+  | 2 | quantità | unità di misura |
+  | 3 | prezzo unitario | importo di riga |
+  | 4 | data richiesta | data confermata |
+  | 5 | ricevuto | residuo |
+  | 6 | modifica riga / nota | togli la riga |
+
+  Sopra sta il dato che si compila, sotto quello che lo spiega o ne consegue. Le richieste di offerta hanno le stesse coppie meno quelle che una richiesta non ha: niente ricevuto e niente data confermata.
+- Il vantaggio non è solo lo spazio: **le due metà si leggono insieme**. «10 pz» e «120,00 €» stanno una sotto l'altra invece che a mezzo schermo di distanza, e il residuo sta sotto il ricevuto che lo produce.
+
+**Aggiunto**
+- La richiesta di offerta mostra ora l'**importo di riga** (quantità × prezzo offerto), che prima si vedeva solo nel confronto offerte.
+- `test/doc-rows.test.js`: le colonne dichiarate in testata, le celle di ogni riga e i `colspan` del totale e della riga vuota devono raccontare la stessa tabella — sbagliarne uno solo storce l'intestazione rispetto ai dati. E ogni coppia deve stare nella sua cella, con il campo giusto sopra e il suo esito sotto.
+
+**Note**
+- Una riga di documento resta **un solo `<tr>`**: i due piani sono due righe dentro ogni cella, non due righe di tabella. Così l'ordinamento, il blocco dei campi e la selezione continuano a valere su una riga sola, e nessuno può separarne le metà.
+- Il blocco dei documenti inviati vale come prima su entrambi i piani: quantità e prezzo restano contratto, ricevuto e data confermata restano ricevimento.
+- La riga manuale continua a dichiararsi, e la nota di riga, il codice del fornitore e gli avvisi (lotto, non a listino) restano sotto la descrizione, dove stavano.
+
+### 0.53.0 — 2026-09-05
+
+**Aggiunto**
+- **«Richiede attenzione» dice adesso chi lo ha fatto scattare.** Sotto ogni riga compaiono i codici e i numeri che la riguardano: le commesse in ritardo per numero, gli articoli sotto scorta o senza prezzo per codice, le richieste in attesa e gli ordini confermati tardi per numero di documento. Prima si leggeva «7 articoli sotto la scorta minima» e per sapere **quali** bisognava aprire il magazzino e rifare a mano il filtro — cioè rifare il lavoro che l'avviso aveva già fatto.
+- **Ogni voce porta dove si risolve**, non alla vista in generale: la commessa alla sua commessa, la riga di fabbisogno al piano che la genera (è lì che si emette la richiesta o l'ordine), l'articolo alla sua scheda. La riga di intestazione continua a portare alla vista.
+- Il **suggerimento di ogni voce dice perché è lì**: il cliente e la data della commessa, l'esistente contro la scorta minima, i giorni di ritardo confermati dal fornitore, il piano e la quantità da ordinare.
+- Le voci sono **in ordine di urgenza**: la commessa più vecchia per prima, l'ordine con il ritardo peggiore per primo, le righe di fabbisogno per data entro cui ordinare.
+- Oltre **otto voci** si scrive quante ne restano («+4 altri in Acquisti»): il conteggio in testa resta il totale vero, e l'elenco resta un dettaglio invece di diventare la vista.
+- `test/home.test.js`: ogni avviso deve nominare chi lo ha fatto scattare, ogni voce deve portare dove si risolve, e il conteggio deve restare quello vero anche quando le voci scritte sono meno.
+
+**Note**
+- I **codici duplicati** si nominano ma non si aprono: aprire uno dei due non direbbe quale dei due è quello sbagliato, e si sbrogliano in Gestione. La pastiglia resta testo, con il bordo tratteggiato, e il suggerimento elenca gli articoli che se lo contendono.
+- Le voci stanno **fuori** dal bersaglio della riga: un pulsante dentro un pulsante non si sa più cosa apre, né col mouse né da tastiera.
+- Nessun conteggio è cambiato: gli avvisi sono gli stessi di prima, con la stessa provenienza. Cambia solo che adesso si spiegano.
+
+### 0.52.1 — 2026-09-05
+
+**Corretto**
+- **La pagina si ricentra quando il pannello laterale si chiude.** Lo spazio del pannello veniva preso con un `margin-right` su `#app-main`, che però spegneva l'`auto` responsabile del centraggio: con il sinistro `auto` e il destro fisso, tutto lo spazio libero finiva a sinistra e il contenuto si schiacciava contro il pannello — su uno schermo largo, spostato di centinaia di pixel fuori asse. Restava storto anche a pannello chiuso, per via della striscia da 38px.
+- Ora la scatola si allarga di quanto è largo il pannello e si imbottisce a destra di altrettanto: i margini restano `auto` e il contenuto si centra da sé **in ciò che si vede**, sia a pannello aperto sia a pannello chiuso. La larghezza utile del contenuto non cambia di un pixel rispetto a prima.
+
+### 0.52.0 — 2026-09-05
+
+**Cambiato**
+- **Commesse, Fabbisogno, Richieste di offerta e Ordini hanno la stessa forma**: l'elenco vive in una colonna a destra e non se ne va mai, il documento scelto sta al centro. Prima erano quattro pagine-elenco a tutta larghezza, e aprire un documento faceva sparire l'elenco: per passare al successivo si tornava indietro, si ritrovava la riga, si riapriva. Confrontare due ordini o passare in rassegna dieci richieste voleva dire fare quel giro dieci volte.
+- I **filtri stanno con l'elenco**, impilati nella sua colonna: sono il modo per restringerlo, non un'intestazione della pagina. Gli stessi di prima — testo, stato, fornitore per i documenti; testo per commesse e piani — con il conteggio sotto.
+- La **riga aperta resta marcata** nell'elenco, e i documenti chiusi, annullati o non più attivi si vedono spenti invece di sparire.
+- Il pulsante **← Elenco** è diventato **Chiudi**: l'elenco non è più un altrove in cui tornare.
+
+**Aggiunto**
+- I comandi che stavano nelle righe sono ora nella **testata del documento aperto**, scritti per esteso: *Crea ordine* ed *Elimina* sulla richiesta, *Elimina* sull'ordine, *Duplica* ed *Elimina* sul piano (che già aveva chiudi/riapri). In una colonna da 360px non ci stanno sei icone per riga, e un comando che agisce su un documento ha senso dove quel documento si vede.
+- Con nessun documento scelto, al centro compare **cosa fa quella vista** e il pulsante per creare il primo documento, invece di una pagina bianca.
+- `test/worklist.test.js`: le quattro viste devono disegnare lo stesso telaio, l'elenco deve restare visibile a documento aperto, la riga aperta deve essere una sola e i comandi spostati devono esistere ancora.
+
+**Corretto**
+- **Saltare da un documento all'altro non perde più le modifiche in sospeso.** Il salvataggio differito di richieste e ordini lo faceva l'uscita verso l'elenco; con l'elenco sempre presente quel passaggio non c'era più, e un click sulla riga accanto avrebbe buttato via quel che si era appena scritto. Ora ogni apertura chiude il documento precedente come faceva l'uscita: salva, e lascia decadere l'eventuale sblocco — che vale per un documento solo. Vale anche per i salti da un'altra vista (dalla commessa alla sua richiesta, dal piano ai documenti che ne sono nati).
+- La ricerca di **Commesse** e **Fabbisogno** ridisegna solo l'elenco: prima rifaceva la vista intera e il campo perdeva il focus a ogni lettera.
+
+**Note**
+- Il telaio sta in `worklist.js`, ed è **solo un disegno**: prende dati e restituisce HTML, non tiene stato. Le viste che non lo chiamano non se ne accorgono.
+- Nessuna funzione è stata tolta: stesse guardie di ruolo, stesso blocco dei documenti inviati (i filtri dell'elenco non hanno classi `lock-*` e restano manovrabili anche a documento protetto), stessi export.
+- In stampa esce il documento, non lo strumento per sceglierlo: la colonna dell'elenco non finisce su carta. Sotto i 1100px le due colonne si impilano, con l'elenco sopra.
+
+### 0.51.1 — 2026-09-05
+
+**Corretto**
+- **All’avvio l’app segnalava un errore** («Script error.»). `columns.js` e `inspector.js` erano stati messi **dopo** `import-export.js`, che in fondo contiene `init()`: quando l’avvio disegnava la prima vista quei due file non erano ancora stati letti, e la chiamata a `inspectorClear()` dentro `setView()` trovava il vuoto. La vista si disegnava lo stesso — l’eccezione arriva in coda — ma il pannello non si popolava e partiva l’avviso. I due script ora stanno prima, e `import-export.js` è tornato l’ultimo, com’è scritto nella sua stessa intestazione.
+- Il messaggio era muto («Script error.», senza riga né stack) perché aprendo `index.html` con un doppio click gli script arrivano da `file://`, che per il browser è un’origine opaca: dei propri script non racconta niente. Vale la pena saperlo per la prossima volta: un «Script error.» secco, in locale, è quasi sempre un’eccezione vera in uno degli script dell’app.
+
+**Aggiunto**
+- Tre controlli in `test/scripts.test.js` che rendono impossibile ripeterlo: `import-export.js` deve restare l’ultimo script, la sequenza caricata dalla suite deve essere **identica** a quella di `index.html`, e ogni script dichiarato deve esistere. La suite non se n’era accorta perché nel suo contesto il `document` finto si installa **dopo** il caricamento: `init()` non parte, e l’ordine sbagliato non si vedeva.
+
+### 0.51.0 — 2026-09-05
+
+**Aggiunto**
+- **Selezione multipla e azioni di massa** negli elenchi con il pannello. `Ctrl+click` aggiunge una riga, `Maiusc+click` prende tutto quello che sta in mezzo, `Maiusc+freccia` fa lo stesso da tastiera. Con più righe scelte il pannello cambia mestiere: mostra quanti sono e di che tipo, e offre le azioni che hanno senso su un mucchio di articoli qualsiasi.
+- Le azioni: **segna come non più utilizzabili** (o il contrario), **preferiti**, **esporta la selezione** in Excel e PDF, **elimina**. Marcare obsoleti quaranta codici uno per uno è il lavoro che si rimanda per sempre, e l’anagrafica resta sporca.
+- Il pannello **elenca le righe scelte**: agire su venti articoli senza vederne l’elenco è firmare senza leggere.
+
+**Note**
+- Le regole non cambiano perché il gesto è uno solo: stesse guardie di ruolo, stesso `touch()` sull’autore, stesso cestino. Chi è in sola lettura vede solo gli export.
+- Chi è **usato in una distinta non si elimina**, come da sempre: la conferma dice prima quanti resteranno fuori, invece di lasciarlo scoprire a gesto fatto. E il conto di quanti sono cambiati **davvero** viene detto sempre: chi ne sceglie quaranta e ne vede cambiare trentotto deve sapere che due non si potevano toccare.
+- Il ripristino è uno solo per tutto il gesto: chi si pente si pente dell’intero blocco, non di una riga.
+- L’export della selezione riusa la specifica della vista con la scelta come filtro in più, e lo scrive nell’intestazione del file («Selezione: 12 righe scelte a mano»): fra un mese, chi apre quel foglio deve sapere perché contiene quelle righe e non altre.
+- Un filtro più stretto non butta via la scelta: cadono le righe che spariscono, restano le altre.
+
+### 0.50.0 — 2026-09-05
+
+**Aggiunto**
+- **Colonne a scelta** negli elenchi di Acquisti, Progetto e Magazzino. Il pannello laterale aveva tolto dalle righe i comandi; qui si tolgono le colonne che a una certa persona, in un certo lavoro, non servono — chi compra non guarda il lotto, chi controlla il magazzino non guarda la famiglia. Nascondere non è perdere: l’articolo scelto ha tutto nel pannello, che di spazio ne ha.
+- Il pulsante **Colonne** dice quante ne mancano («Colonne (2 nascoste)»): un elenco a cui manca una colonna, senza che nulla lo dica, sembra un elenco rotto. Dentro la scheda le caselle si spuntano e l’effetto è immediato, senza chiuderla.
+- Codice e nome **non si nascondono**: sono l’identità della riga, e senza di loro l’elenco non è più pulito, è illeggibile. Restano visibili nella scheda, spenti e spiegati, invece di sparire senza motivo.
+- Ogni elenco tiene la **sua** scelta: Acquisti e Progetto disegnano le righe con la stessa funzione, ma sono due elenchi che si guardano per motivi diversi.
+
+**Note**
+- Il meccanismo è deliberatamente stupido: ogni cella porta la classe della sua colonna e nascondere è una regola CSS. Nessun ridisegno, nessun conteggio di `<td>` da tenere allineato con i `<th>` — la stessa classe sta su entrambi.
+- Una preferenza salvata mesi fa non sopravvive a una colonna tolta dal codice o diventata fissa: al caricamento si scarta ciò che non esiste più.
+- **L’export Excel e PDF resta completo**: esporta l’elenco, non la vista. Chi nasconde una colonna per lavorare più comodo non deve ritrovarsi un file monco.
+- I due interruttori del fabbisogno («Fabbisogno netto», «Raggruppa per fornitore») usavano già la classe `active` senza che nessuna regola la disegnasse: ora, come il pulsante Colonne, da accesi si vedono azzurri.
+
+### 0.49.0 — 2026-09-05
+
+**Aggiunto**
+- **Pannello laterale** (Ctrl+I): una colonna a destra, ridimensionabile trascinandone il bordo, che mostra i comandi eseguibili sulla riga scelta e le schede da consultare. Gli elenchi erano arrivati a nove colonne più una di pulsanti — sei icone mute per riga, che rubavano larghezza ai dati e si spiegavano solo passandoci sopra. Ora quei comandi hanno un posto fisso, con l’etichetta scritta per esteso, e l’elenco torna a essere dati.
+- In cima al pannello un **riepilogo** — tipo, costo unitario, giacenza, quanti impieghi diretti — che risponde alle domande veloci senza aprire niente.
+- **Selezione da tastiera**: ↑ e ↓ scorrono le righe, Invio apre la scheda completa, Esc deseleziona. Valgono solo mentre si guarda l’elenco: dentro un campo la freccia resta al cursore.
+- Larghezza (fra 260 e 720px), apertura e scheda attiva **restano fra una sessione e l’altra**, nel browser di chi lavora.
+
+**Cambiato**
+- Con il pannello aperto **la colonna dei pulsanti sparisce** da Acquisti, Progetto e Magazzino: i suoi comandi sono nel pannello. Chiudendo il pannello torna dov’era — nessuna funzione è stata tolta, è cambiato dove si trova.
+
+**Note**
+- Il pannello non aggiunge comandi: sono le stesse chiamate che stavano nelle righe, alle stesse condizioni (il listino solo per ciò che si compra, il ciclo solo per le parti). In sola lettura i comandi che modificano non vengono nemmeno disegnati, come già accade nella vista.
+- Le schede riusano i corpi che esistono già (`itemInfoBody`, `priceListBody`, `usageBody`): due copie della stessa scheda divergerebbero al primo ritocco.
+- Le viste non ancora coperte non hanno pannello e non se ne accorgono. Restano da fare, in ordine: selezione multipla con azioni di massa, scelta delle colonne per vista, selezione nell’indirizzo.
+
+### 0.48.3 — 2026-09-05
+
+**Cambiato**
+- Nelle barre di sezione **Esporta Excel** ed **Esporta PDF** vanno a destra, staccati dal titolo e dai comandi che agiscono sui dati: sono l’uscita, non un’azione di lavoro, e da appaiati al titolo sembravano il gesto principale della pagina. Vale per Acquisti, Progetto, Magazzino, Cicli, Costificazione e la testata di un piano di fabbisogno — tutte le barre `.bom-toolbar`. La barra del documento nelle richieste e negli ordini resta com’era: lì i due pulsanti seguono la loro etichetta.
+
+### 0.48.2 — 2026-09-05
+
+**Cambiato**
+- Le icone arrivano **in tutta l’app**: Documenti, Fabbisogno, Magazzino, Commesse, Revisioni, Riepilogo, scheda articolo, Gestione, import ed export, e i titoli di sezione di `index.html`. Il set è salito a 50 disegni (aggiunti fabbisogno, ordine, bilancia, azienda, cartella, pagamento, pausa). Anche il logo del login viene ora dallo sprite: nel repo non resta più un solo tracciato scritto a mano fuori da `icons.js`.
+
+**Aggiunto**
+- **Ogni icona dice il proprio nome al passaggio del mouse.** Un disegno è muto: chi non lo riconosce non ha modo di scoprire cosa fa se non provandolo, ed è esattamente quello che le emoji non hanno mai offerto. I nomi dicono l’azione e non il disegno — «Elimina», non «cestino» — e dentro un pulsante prendono il testo del pulsante, che è sempre più preciso: «Distinta parte e ciclo di lavorazione» invece di «Lavorazione». Accanto a una parola che già la spiega il suggerimento tace: ripetere lo stesso nome due volte è rumore, non aiuto.
+- I pulsanti a sola icona che non avevano un `title` ora ce l’hanno: senza, `a11yFields` non aveva da dove prendere l’etichetta accessibile.
+
+**Note**
+- Restano emoji una trentina di simboli che **non possono** diventare icone: i messaggi del toast e i titoli delle conferme (passano da `esc()`), i `title` assegnati via JavaScript, il marchio di obsoleto dentro i `<option>`, le etichette che finiscono in PDF ed Excel, e le caselle ☑/☐ dei due interruttori del fabbisogno — da spente un’icona sparirebbe e la riga ballerebbe a ogni click.
+
+### 0.48.1 — 2026-09-05
+
+**Cambiato**
+- Le icone nuove arrivano dove si usano di più: **albero della distinta** (espansione del nodo, dove è usato, ciclo, modifica, elimina, il ⚠ del riferimento ciclico e dell’articolo mancante), **righe delle anagrafiche** (listino, ciclo, dove è usato, modifica, duplica, elimina, i marchi obsoleto e parte acquistata) e **vista Cicli di lavorazione**. Nelle righe la tinta è nuda, senza pastiglia: un pulsante ha già il suo bordo, e la pastiglia dentro sarebbe una scatola in una scatola.
+- I titoli delle schede (aggiungi componente, lavorazione, nuova macchina, listino fornitori, dove è usato, nuovo articolo…) portano l’icona in pastiglia: lì lo spazio c’è e serve a riconoscere la scheda prima di leggerne il titolo.
+- Le frasi che rimandano a una voce di menu («si gestiscono nella vista Cicli di lavorazione») mostrano ora la stessa icona che si vede nella barra, invece di un’emoji che non le somigliava più.
+
+Restano emoji: le viste Documenti, Fabbisogno, Magazzino, Gestione, Riepilogo e la scheda articolo — il giro successivo. Una resta emoji per forza: il marchio di articolo obsoleto dentro i menu a tendina, perché in un `<option>` non entra né HTML né un’icona.
+
+### 0.48.0 — 2026-09-05
+
+**Aggiunto**
+- Un set di icone nostro (`icons.js`): 43 disegni su griglia 24×24, uno sprite SVG unico e `ico(nome)` come solo punto in cui un nome diventa un disegno. Le emoji le disegnava il font di sistema — forma diversa su ogni computer, colore proprio impossibile da cambiare, allineamento a caso; questi sono tracciati, prendono il colore del testo che li circonda e la misura in `em`.
+- Ogni icona ha una **tinta di categoria** presa dalle variabili già esistenti: rosso ciò che cancella, verde ciò che produce o conferma, arancio merce e avvisi, viola lavorazioni e tempo, azzurro navigazione. Il colore è mostrato in **pastiglia**, cioè sul fondo dello stesso colore al 15%: un tratto da 1.8 su sedici pixel è poco da distinguere di sfuggita, il fondo dà alla tinta la superficie per farsi leggere.
+- `icons-preview.html`, la galleria per giudicare il set: ogni icona accanto all’emoji che sostituisce, le misure da 13 a 32px, le tre varianti di colore e la barra di navigazione in posa. Non fa parte dell’app.
+
+**Cambiato**
+- Barra di navigazione, i tre pulsanti dell’header (cerca, stampa, password) e la lente delle dodici caselle di ricerca passano alle icone nuove. Logo e pulsante Esci, che erano già SVG scritti a mano dentro `index.html`, ora vengono dallo sprite come tutti gli altri.
+- La lente non sta più dentro il `placeholder`: un placeholder è testo, e quell’emoji finiva nella traduzione e in ciò che leggono gli screen reader. Ora è un disegno di sfondo, che è quello che è sempre stata.
+- Lo stato batte la categoria: dentro un pulsante che ha già un colore suo — la voce di menu attiva, un `.mini-btn.danger` — l’icona eredita quello. Lì il colore dice *cosa sta succedendo*, e vince su *di che si tratta*.
+
+Le icone dentro le viste (albero distinta, schede, titoli) sono ancora emoji: `ico()` e le emoji convivono, la sostituzione prosegue a scaglioni.
+
+### 0.47.12 — 2026-09-05
+
+**Cambiato**
+- Nei riquadri di costo l'unità di misura appesa al numero (`/pz`) va ora in piccolo, in uno `span` a parte: liberata quella larghezza, la cifra torna grande — anzi un filo più grande di prima (fino a 26px, `clamp(16px, 13cqi, 26px)`).
+
+### 0.47.11 — 2026-09-05
+
+**Corretto**
+- I riquadri di costo (Distinta base e Costificazione) sforavano il loro contenitore: il valore era fisso a 24px e con l'unità appesa (`€8951.50/pz`) su sette riquadri in fila non ci stava. Ora il riquadro è un contenitore di query e il valore scala con la sua larghezza (`clamp(14px, 11cqi, 24px)`), restando su una riga sola; padding orizzontale ridotto a 12px e etichetta troncata con i puntini invece di allargare la card.
+
+### 0.47.10 — 2026-08-24
+
+**Corretto**
+- Codice e descrizione fornitore erano andati a capo (0.47.9) invece di stare sulla stessa riga come prima. Ora colonna e menu fornitore sono un po' più larghi (330px) e codice/descrizione un po' più stretti (130/170px): ci stanno affiancati su una riga sola, senza sforare né lasciare vuoti.
+
+### 0.47.9 — 2026-08-24
+
+**Corretto**
+- Il vuoto fra il menu fornitore e la colonna Prezzo: la colonna Fornitore aveva solo un `min-width`, e con `table-layout` automatico si prendeva parte dello spazio in eccesso della tabella, allargandosi ben oltre il menu al suo interno. Ora ha un `width` fisso (240px) che il browser rispetta; codice e descrizione, insieme più larghi della colonna, vanno a capo su una riga propria invece di sforare.
+
+### 0.47.8 — 2026-08-24
+
+**Corretto**
+- Il tentativo precedente (0.47.7) aveva reso la classe `.pl-sub` — condivisa tra la riga codice/descrizione fornitore e la riga unità/costo convertito della cella Prezzo — bersaglio delle stesse regole di larghezza, nascondendo UM e costo calcolato. Codice e descrizione fornitore hanno ora una classe propria (`pl-code`, `pl-desc`), separata da quella riga: si allargano senza più toccare nulla nella cella Prezzo.
+
+### 0.47.7 — 2026-08-24
+
+**Corretto**
+- Il menu fornitore, più stretto della riga codice+descrizione sotto di lui, lasciava vuoto a destra fino al bordo della colonna (che si allarga sul contenuto più largo). Ora codice e descrizione vanno a capo invece di stare in fila, così non sforano oltre la larghezza del menu, e il vuoto a destra sparisce.
+
+### 0.47.6 — 2026-08-24
+
+**Corretto**
+- Il `min-width` della colonna (0.47.5) non bastava: la tabella si dimensiona sul contenuto più largo, e i campi codice/descrizione sotto sono comunque più larghi di 240px — trascinavano con sé anche il menu fornitore, che eredita `width:100%` dalla cella. Ora il menu ha un tetto proprio (220px), indipendente da quanto si allarga la colonna sotto di lui.
+
+### 0.47.5 — 2026-08-24
+
+**Corretto**
+- Allargare i campi «codice»/«descrizione» fornitore (0.47.4) aveva allargato di riflesso anche il menu del fornitore sopra di loro, condividendo lo stesso `min-width` di colonna. Il menu fornitore torna alla larghezza di prima; i due campi sotto restano larghi.
+
+### 0.47.4 — 2026-08-24
+
+**Corretto**
+- La correzione precedente (0.47.3) non si vedeva: avevo alzato solo il `max-width` dei campi «codice fornitore»/«descrizione fornitore», ma senza una `width` esplicita restavano fermi alla larghezza predefinita del browser — più stretta sia del limite vecchio che di quello nuovo, quindi il tetto più alto non veniva mai raggiunto. Ora hanno una `width` propria (190px e 260px) e si vedono davvero più larghi.
+
+### 0.47.2 — 2026-08-24
+
+**Corretto**
+- Nel listino fornitori, la seconda riga di ogni quotazione (codice fornitore, descrizione, unità di quotazione) era in un carattere più piccolo (11px) di quella sopra (12px). Uniformato: stessa dimensione su entrambe le righe.
+
+### 0.47.1 — 2026-08-24
+
+**Corretto**
+- Nel listino fornitori, il selettore dell'unità di quotazione (accanto al prezzo, quando l'articolo ha una doppia unità) era **invisibile**: si vedeva solo la freccina, senza il testo «m»/«kg». Il `<select>` ereditava `width:100%` dentro la riga flessibile che lo contiene insieme al totale convertito, e si schiacciava fino a non lasciare spazio al testo. Ora ha una larghezza propria, come gli altri campi della stessa riga.
+
+### 0.47.0 — 2026-08-24
+
+**Corretto**
+- Le righe di **Richiesta d'offerta** e **Ordine**, quando nascono da catalogo (a mano o generate da un piano di fabbisogno), ora sono sempre nell'**unità dell'articolo** — quella con cui si ordina e si riceve davvero (mt, m², pz…) — e mai in quella con cui un fornitore valorizza il listino (es. a chilo). Il prezzo di riga è già il costo **convertito** in quell'unità, non il prezzo grezzo del listino: una barra gestita in metri ma quotata a chilo genera una riga in metri, al prezzo al metro. Prima la riga nasceva nell'unità del fornitore col prezzo grezzo, in contraddizione con quanto l'app stessa dichiarava ("U.M. seguono l'anagrafica articolo"). I documenti già emessi non cambiano.
+
+### 0.46.0 — 2026-08-24
+
+**Aggiunto**
+- Il **lotto di riordino** ora sa se è un **multiplo esatto** (una barra da 6 m si compra a 6, 12, 18… — comportamento di sempre, resta il predefinito) oppure una **quantità minima** (es. minimo 50 pezzi, poi liberamente 51, 52…). Si sceglie nella scheda articolo, accanto al lotto. Gli articoli già configurati non cambiano comportamento: senza scelta esplicita restano a multiplo esatto.
+- Le righe di **Richiesta d'offerta** e **Ordine** — anche scritte a mano — segnalano ora quando la quantità non rispetta il lotto dell'articolo (badge «↑ lotto» o «↑ minimo», nella tabella e nella modale di modifica riga). È solo un avviso: non blocca né arrotonda da sola la quantità inserita.
+
+### 0.45.3 — 2026-08-23
+
+**Rimosso**
+- Il campo **«Consegna richiesta»** nei dati generali dell'ordine a fornitore. Era una data scritta a mano, senza nessun legame con la logica dell'app: gli avvisi di ritardo, il confronto con la conferma del fornitore e il segnale nel Riepilogo si basano tutti sulla data di consegna **di riga**, articolo per articolo — non su questa. Tenerla accanto generava equivoci: sembrava la data che comandava, e non lo era mai stata. Restano invariate la data di riga e tutto ciò che ne dipende.
+
+### 0.45.2 — 2026-08-23
+
+**Corretto**
+- L'icona del calendario nei campi data era **nera su sfondo nero**: invisibile, perché il tema dell'app è sempre scuro e l'icona nativa del browser non lo sapeva. Ora è invertita in chiaro nei campi a schermo (torna nera in stampa, dove lo sfondo è bianco).
+
+### 0.45.1 — 2026-08-23
+
+**Cambiato**
+- Il pulsante che apre il congelamento della distinta (o del ciclo, per le parti) ora si chiama **📌 Nuova revisione** invece di «Rilascia revisione». Il comportamento non cambia — resta il congelamento della revisione in lavorazione, col costo del giorno, e l'apertura della successiva — ma il nome vecchio suggeriva un'azione verso l'esterno (una pubblicazione, un invio), mentre qui si sta solo aprendo un nuovo capitolo di lavoro sullo stesso articolo.
 
 ### 0.45.0 — 2026-08-06
 

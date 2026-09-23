@@ -138,14 +138,28 @@ function cycleRowComputed(row, visited, out) {
   return c.total * (Number(row.qty) || 0);
 }
 // Costo effettivo della riga.
-// Lavorazione: costo fisso, non orario (le lavorazioni orarie restano solo negli assiemi).
+// Lavorazione: fisso di default (`cost`), oppure orario (`hours × rate`) se la
+// riga lo dichiara — vedi wcRateFor per come si propone la tariffa.
 // Articolo: override se valorizzato, altrimenti q.tà × costo unitario.
 function cycleRowCost(row, visited, out) {
   if (!row) return 0;
-  if (row.kind === 'op') return Number(row.cost) || 0;
+  if (row.kind === 'op') {
+    return row.costMode === 'orario'
+      ? (Number(row.hours) || 0) * (Number(row.rate) || 0)
+      : (Number(row.cost) || 0);
+  }
   // Con un override il costo non dipende più dal sottoalbero: niente da segnalare.
   if (row.costOverride != null && row.costOverride !== '') return Number(row.costOverride) || 0;
   return cycleRowComputed(row, visited, out);
+}
+// Tariffa proposta per una riga a costo orario: quella del fornitore, se
+// registrata sul centro di lavoro, altrimenti quella del centro di lavoro
+// stesso. Solo una proposta iniziale — il campo resta modificabile a mano,
+// come già l'override sulle righe articolo del ciclo.
+function wcRateFor(wc, supplierId) {
+  if (!wc) return 0;
+  const s = supplierId && (wc.suppliers || []).find(x => x.supplierId === supplierId);
+  return s ? (Number(s.rate) || 0) : (Number(wc.hourlyRate) || 0);
 }
 
 function sellingPrice(itemId) {

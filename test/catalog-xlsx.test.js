@@ -117,7 +117,7 @@ describe('Export articoli — due file, un foglio per tipo', () => {
     assert.ok(!sheetByName(p, 'design', 'Parti').aoa[0].includes('Preferito'), 'le parti non si mettono tra i preferiti');
   });
   it('gli obbligatori sono marcati con * e restano riconoscibili alla lettura', () => {
-    assert.ok(sheetByName(a, 'buy', 'Commerciali').aoa[0].includes('Nome *'));
+    assert.ok(sheetByName(a, 'buy', 'Commerciali').aoa[0].includes('Descrizione *'));
     assert.equal(a.eval('pick({"Nome *":"X"}, "Nome")'), 'X');
     assert.equal(a.eval('cell({"UM *":"kg"}, "UM")'), 'kg');
   });
@@ -142,7 +142,7 @@ describe('Export articoli — due file, un foglio per tipo', () => {
     const r = rowsOf(p, 'design', 'Parti')[0];
     assert.equal(r['Concetto *'], 'ALBERO');
     assert.equal(r['Descrizione *'], 'motore 20x100');
-    assert.equal(r['Nome composto (calcolato)'], 'ALBERO motore 20x100');
+    assert.equal(r['Descrizione composta (calcolato)'], 'ALBERO motore 20x100');
     assert.equal(r['Approvvigionamento'], 'Produzione interna');
   });
   it('un campo non impostato resta vuoto, non diventa zero', () => {
@@ -523,7 +523,7 @@ describe('Colonne assenti e colonne vuote non sono la stessa cosa', () => {
     const a = app(dbAcquisti());
     const rep = importa(a, { 'Commerciali': [{ Codice: 'CMM-MEC-CUS-001', Nome: '' }] }, 'buy');
     assert.equal(a.snapshot().items.find(i => i.id === 'c1').name, 'Cuscinetto SKF 6204');
-    assert.match(rep.errors[0], /non può restare vuoto/);
+    assert.match(rep.errors[0], /non può restare vuot[oa]/);
   });
 });
 
