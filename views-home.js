@@ -86,6 +86,286 @@ function homeRisparmio() {
   return { tot, quanti };
 }
 
+// ─── Calendario ───
+// I segnali sopra dicono *quanto*; il calendario dice *quando*. Le date c'erano
+// già tutte — consegna della commessa, data entro cui ordinare, consegna
+// confermata dal fornitore — ma ognuna nella sua vista: nessuno le vedeva in
+// fila, e due scadenze sullo stesso martedì si scoprivano il martedì.
+//
+// Anche qui non si calcola niente di nuovo: le righe di fabbisogno sono le
+// stesse di homeSegnali() (al netto, da commitIndex()), i ritardi d'ordine sono
+// quelli di ordLineDelay(). L'unico dato nuovo sono i promemoria, per le
+// scadenze che non stanno in nessun documento.
+
+const CAL_GRAV_ORD = { alta: 0, media: 1, info: 2 };
+// Scaduto → alta, entro la finestra d'avviso del fabbisogno → media. Una sola
+// soglia per tutta l'app: «tra pochi giorni» non deve voler dire sette giorni
+// nel fabbisogno e dieci nel calendario.
+function calGravitaData(data, oggi) {
+  if (data < oggi) return 'alta';
+  return data <= addDays(oggi, URGENCY_WARN_DAYS) ? 'media' : 'info';
+}
+function calPeggiore(a, b) { return CAL_GRAV_ORD[a] <= CAL_GRAV_ORD[b] ? a : b; }
+
+// Tutte le scadenze aperte: [{ data, icona, testo, dettaglio, gravita, azione, etichetta, tipo }].
+// Più righe della stessa fonte nello stesso giorno diventano **una** voce: un
+// piano da quaranta articoli riempirebbe la cella e coprirebbe il resto.
+function homeEventi() {
+  const oggi = oggiISO();
+  const out = [];
+  const gruppi = new Map();
+  const raggruppa = (chiave, base, gravita) => {
+    let g = gruppi.get(chiave);
+    if (!g) { g = Object.assign({ n: 0, gravita }, base); gruppi.set(chiave, g); out.push(g); }
+    g.n++;
+    g.gravita = calPeggiore(g.gravita, gravita);
+    return g;
+  };
+
+  // Commesse: la data a monte di tutto
+  (db.jobs || []).forEach(j => {
+    if (!j.dueDate || j.status === 'chiusa' || j.status === 'annullata' || j.active === false) return;
+    out.push({ tipo: 'commessa', data: j.dueDate, icona: '🏁',
+      testo: `Consegna commessa ${j.number || ''}`.trim(),
+      dettaglio: [j.customer, j.title].filter(Boolean).join(' — '),
+      gravita: jobLate(j) ? 'alta' : calGravitaData(j.dueDate, oggi),
+      azione: `setView('jobs');openJobEdit('${j.id}')` });
+  });
+
+  // Fabbisogno: entro quando ordinare, piano per piano
+  const piani = new Map((db.plans || []).map(p => [p.id, p]));
+  commitIndex().forEach((commits, itemId) => {
+    const it = getItem(itemId); if (!it) return;
+    commits.forEach(c => {
+      const r = mrpBuyRow({ item: it, qty: c.qty, due: c.due }, true, c.planId);
+      if (r.qtyOrder <= 0 || !r.orderBy) return;
+      const grav = r.urgenza === 'ritardo' ? 'alta' : (r.urgenza === 'urgente' ? 'media' : 'info');
+      const g = raggruppa('mrp|' + c.planId + '|' + r.orderBy, { tipo: 'fabbisogno', data: r.orderBy, icona: '🛒',
+        numero: c.number || '', azione: `setView('mrp');openPlanEdit('${c.planId}')` }, grav);
+      g.testo = g.n === 1 ? `Ordinare ${it.code || it.name || 'un articolo'}` : `Ordinare ${g.n} articoli`;
+      g.dettaglio = [g.numero, (piani.get(c.planId) || {}).title].filter(Boolean).join(' — ');
+    });
+  });
+
+  // Piani: quando deve essere pronto
+  (db.plans || []).forEach(p => {
+    if (p.active === false || !p.dueDate) return;
+    out.push({ tipo: 'piano', data: p.dueDate, icona: '🏭',
+      testo: `Piano ${p.number || ''} da completare`.replace(/\s+/g, ' '),
+      dettaglio: p.title || '', gravita: p.dueDate < oggi ? 'media' : 'info',
+      azione: `setView('mrp');openPlanEdit('${p.id}')` });
+  });
+
+  // Ordini: le consegne ancora da ricevere, alla data confermata se c'è
+  (db.orders || []).forEach(o => {
+    if (o.active === false || o.status === 'bozza' || o.status === 'annullato' || o.status === 'evaso') return;
+    const forn = (db.suppliers || []).find(s => s.id === o.supplierId);
+    (o.lines || []).forEach(l => {
+      const data = l.confirmedDate || l.deliveryDate;
+      if (!data || (Number(l.received) || 0) >= (Number(l.qty) || 0)) return;
+      let grav = data < oggi ? 'alta' : calGravitaData(data, oggi);
+      if (grav === 'info' && (ordLineDelay(l) || 0) > 0) grav = 'media';
+      const g = raggruppa('ord|' + o.id + '|' + data, { tipo: 'ordine', data, icona: '🚚',
+        azione: `setView('orders');openOrderEdit('${o.id}')`,
+        dettaglio: [forn && forn.name, o.title].filter(Boolean).join(' — ') }, grav);
+      g.testo = `Consegna ordine ${o.number || ''}`.trim() + (g.n > 1 ? ` (${g.n} righe)` : '');
+      if ((ordLineDelay(l) || 0) > 0) g.ritardo = true;
+    });
+  });
+
+  // Richieste inviate: la consegna chiesta, per sapere quando sollecitare
+  (db.rfqs || []).forEach(q => {
+    if (q.active === false || q.status !== 'inviata') return;
+    (q.lines || []).forEach(l => {
+      if (!l.deliveryDate) return;
+      const g = raggruppa('rfq|' + q.id + '|' + l.deliveryDate, { tipo: 'richiesta', data: l.deliveryDate, icona: '📨',
+        azione: `setView('rfq');openRfqEdit('${q.id}')`, dettaglio: q.title || '' }, 'info');
+      g.testo = `Consegna chiesta in ${q.number || 'richiesta'}, senza risposta`;
+    });
+  });
+
+  // Promemoria scritti a mano
+  (db.reminders || []).forEach(r => {
+    if (r.active === false || r.done || !r.date) return;
+    const job = r.jobId ? (db.jobs || []).find(j => j.id === r.jobId) : null;
+    out.push({ tipo: 'promemoria', data: r.date, icona: '📌', id: r.id,
+      testo: r.title || 'Promemoria',
+      dettaglio: [job && job.number, r.notes].filter(Boolean).join(' — '),
+      gravita: r.date < oggi ? 'alta' : (CAL_GRAV_ORD[r.gravita] != null ? r.gravita : 'info'),
+      azione: `reminderModal('${r.id}')` });
+  });
+
+  out.forEach(e => { delete e.numero; delete e.n; });
+  return out.sort((a, b) => a.data.localeCompare(b.data) || CAL_GRAV_ORD[a.gravita] - CAL_GRAV_ORD[b.gravita]);
+}
+
+// Stato della vista: mese mostrato e giorno scelto. Comodità di navigazione,
+// come jobView o mrpView — non finisce nel database.
+let homeCalMese = '';     // 'YYYY-MM'
+let homeCalGiorno = '';   // 'YYYY-MM-DD'
+function calMeseDi(iso) { return String(iso || '').slice(0, 7); }
+function calSpostaMese(mese, delta) {
+  const [y, m] = mese.split('-').map(Number);
+  const d = new Date(Date.UTC(y, m - 1 + delta, 1));
+  return d.toISOString().slice(0, 7);
+}
+function calNomeMese(mese) {
+  return new Date(mese + '-01T00:00:00Z').toLocaleDateString('it-IT', { month: 'long', year: 'numeric', timeZone: 'UTC' });
+}
+// «Mercoledì 23 settembre»: maiuscola solo in testa, i mesi in italiano no.
+function calNomeGiorno(iso) {
+  const t = new Date(iso + 'T00:00:00Z').toLocaleDateString('it-IT', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' });
+  return t.charAt(0).toUpperCase() + t.slice(1);
+}
+// Le celle della griglia: da lunedì della prima settimana a domenica
+// dell'ultima. Date in UTC per la stessa ragione di addDays(): sono giorni, non
+// istanti, e il fuso non deve spostarli.
+function calGiorniGriglia(mese) {
+  const primo = mese + '-01';
+  const lun = (new Date(primo + 'T00:00:00Z').getUTCDay() + 6) % 7;
+  const giorni = new Date(Date.UTC(+mese.slice(0, 4), +mese.slice(5, 7), 0)).getUTCDate();
+  const celle = Math.ceil((lun + giorni) / 7) * 7;
+  const inizio = addDays(primo, -lun);
+  return Array.from({ length: celle }, (_, i) => addDays(inizio, i));
+}
+function homeCalMove(delta) { homeCalMese = calSpostaMese(homeCalMese || calMeseDi(oggiISO()), delta); renderHome(); }
+function homeCalToday() { homeCalGiorno = oggiISO(); homeCalMese = calMeseDi(homeCalGiorno); renderHome(); }
+function homeCalPick(iso) { homeCalGiorno = iso; homeCalMese = calMeseDi(iso); renderHome(); }
+
+const CAL_GRAV_COL = { alta: 'var(--red)', media: 'var(--orange)', info: 'var(--accent)' };
+function calRiga(e, conData) {
+  return `<div class="mgmt-item cal-ev" ${clickAttrs(e.azione, `${e.testo}${conData ? ' — ' + fmtDateIt(e.data) : ''}`)}>
+      <span class="cal-dot" style="background:${CAL_GRAV_COL[e.gravita]}"></span>
+      ${conData ? `<span class="mgmt-item-meta" style="width:78px">${esc(fmtDateIt(e.data))}</span>` : ''}
+      <span aria-hidden="true">${e.icona}</span>
+      <span style="flex:1;min-width:140px"><strong>${esc(e.testo)}</strong>${e.ritardo ? ' <span class="mrp-warn">confermata in ritardo</span>' : ''}
+        ${e.dettaglio ? `<span class="empty-text" style="padding:0;display:block;text-align:left">${esc(e.dettaglio)}</span>` : ''}</span>
+    </div>`;
+}
+function calElenco(eventi, conData, vuoto) {
+  return eventi.length ? `<div style="display:flex;flex-direction:column;gap:6px">${eventi.map(e => calRiga(e, conData)).join('')}</div>`
+    : `<div class="empty-text" style="text-align:left">${esc(vuoto)}</div>`;
+}
+
+function renderHomeCalendar(eventi) {
+  const oggi = oggiISO();
+  if (!homeCalMese) homeCalMese = calMeseDi(oggi);
+  if (!homeCalGiorno) homeCalGiorno = oggi;
+  const perGiorno = new Map();
+  eventi.forEach(e => { if (!perGiorno.has(e.data)) perGiorno.set(e.data, []); perGiorno.get(e.data).push(e); });
+
+  const intest = ['lun', 'mar', 'mer', 'gio', 'ven', 'sab', 'dom'].map(g => `<div class="cal-head">${g}</div>`).join('');
+  const celle = calGiorniGriglia(homeCalMese).map(d => {
+    const ev = perGiorno.get(d) || [];
+    const cls = ['cal-cell', calMeseDi(d) !== homeCalMese ? 'cal-out' : '', d === oggi ? 'cal-today' : '', d === homeCalGiorno ? 'cal-sel' : ''].filter(Boolean).join(' ');
+    const punti = ev.slice(0, 3).map(e => `<span class="cal-dot" style="background:${CAL_GRAV_COL[e.gravita]}"></span>`).join('');
+    const etichetta = `${calNomeGiorno(d)}${ev.length ? ', ' + ev.length + (ev.length === 1 ? ' scadenza' : ' scadenze') : ''}`;
+    return `<button type="button" class="${cls}" onclick="homeCalPick('${d}')" aria-label="${esc(etichetta)}"${d === homeCalGiorno ? ' aria-pressed="true"' : ''}>
+        <span class="cal-num">${+d.slice(8)}</span>
+        <span class="cal-dots">${punti}${ev.length > 3 ? `<span class="cal-more">+${ev.length - 3}</span>` : ''}</span></button>`;
+  }).join('');
+
+  // Lo scaduto sta fuori dalla griglia e non dipende dal mese: sfogliando
+  // avanti non deve sparire proprio quello che è già in ritardo.
+  const scaduti = eventi.filter(e => e.data < oggi);
+  const MAX_SCADUTI = 10;
+  const delGiorno = perGiorno.get(homeCalGiorno) || [];
+  const prossimi = eventi.filter(e => e.data >= oggi && e.data <= addDays(oggi, 14));
+  const puoi = canWrite('agenda');
+
+  return `<div class="mrp-section">
+      <div class="cycle-section-head" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <h3 style="flex:1">📅 Calendario scadenze</h3>
+        ${puoi ? `<button class="btn-outline" onclick="reminderModal(null, '${homeCalGiorno}')">+ Promemoria</button>` : ''}
+      </div>
+      ${scaduti.length ? `<div class="cal-block cal-late">
+        <h4>⚠ Scadute e non risolte (${scaduti.length})</h4>
+        ${calElenco(scaduti.slice(0, MAX_SCADUTI), true, '')}
+        ${scaduti.length > MAX_SCADUTI ? `<div class="empty-text" style="text-align:left">…e altre ${scaduti.length - MAX_SCADUTI}: le trovi nelle viste qui sopra.</div>` : ''}
+      </div>` : ''}
+      <div class="cal-wide">
+        <div class="cal-toolbar">
+          <button class="btn-outline" onclick="homeCalMove(-1)" title="Mese precedente" aria-label="Mese precedente">‹</button>
+          <strong class="cal-title">${esc(calNomeMese(homeCalMese))}</strong>
+          <button class="btn-outline" onclick="homeCalMove(1)" title="Mese successivo" aria-label="Mese successivo">›</button>
+          <button class="btn-outline" onclick="homeCalToday()">Oggi</button>
+          <span class="cal-legend"><span class="cal-dot" style="background:var(--red)"></span>scaduto
+            <span class="cal-dot" style="background:var(--orange)"></span>entro ${URGENCY_WARN_DAYS} giorni
+            <span class="cal-dot" style="background:var(--accent)"></span>in programma</span>
+        </div>
+        <div class="cal-grid">${intest}${celle}</div>
+        <div class="cal-block">
+          <h4>${esc(calNomeGiorno(homeCalGiorno))}</h4>
+          ${calElenco(delGiorno, false, 'Nessuna scadenza in questo giorno.')}
+        </div>
+      </div>
+      <div class="cal-narrow cal-block">
+        <h4>Prossimi 14 giorni</h4>
+        ${calElenco(prossimi, true, 'Nessuna scadenza nelle prossime due settimane.')}
+      </div>
+    </div>`;
+}
+
+// ─── Promemoria ───
+function reminderModal(id, dataProposta) {
+  const r = id ? Store.getById('reminders', id) : null;
+  if (id && !r) return;
+  const puoi = canWrite('agenda');
+  if (!r && !roleGuard('agenda')) return;
+  const dis = puoi ? '' : ' disabled';
+  const commesse = (db.jobs || []).filter(j => j.active !== false && ((r && r.jobId === j.id) || (j.status !== 'chiusa' && j.status !== 'annullata')));
+  const grav = (r && r.gravita) || 'info';
+  openModal(`<h3>${r ? '📌 Promemoria' : '📌 Nuovo promemoria'}</h3>
+    <div class="modal-field"><label>Cosa</label><input id="rem-title" value="${esc(r ? r.title || '' : '')}" placeholder="es. Sollecitare conferma ordine"${dis}></div>
+    <div class="modal-grid">
+      <div class="modal-field"><label>Data</label><input type="date" id="rem-date" value="${esc(r ? r.date || '' : (dataProposta || oggiISO()))}"${dis}></div>
+      <div class="modal-field"><label>Importanza</label><select id="rem-grav"${dis}>
+        ${[['info', 'Normale'], ['media', 'Da tenere d\'occhio'], ['alta', 'Critica']].map(([v, t]) => `<option value="${v}"${grav === v ? ' selected' : ''}>${t}</option>`).join('')}</select></div>
+      <div class="modal-field" style="grid-column:1/-1"><label>Commessa (facoltativa)</label><select id="rem-job"${dis}>
+        <option value="">—</option>
+        ${commesse.map(j => `<option value="${j.id}"${r && r.jobId === j.id ? ' selected' : ''}>${esc([j.number, j.customer].filter(Boolean).join(' — '))}</option>`).join('')}</select></div>
+      <div class="modal-field" style="grid-column:1/-1"><label>Note</label><textarea id="rem-notes" rows="3"${dis}>${esc(r ? r.notes || '' : '')}</textarea></div>
+    </div>
+    ${r ? stampLine(r) : ''}
+    <div class="modal-actions">
+      ${r && puoi ? `<button class="btn-ghost btn-danger" onclick="reminderDelete('${r.id}')">🗑 Elimina</button>` : ''}
+      <button class="btn-ghost" onclick="closeModal()">${puoi ? 'Annulla' : 'Chiudi'}</button>
+      ${r && puoi ? `<button class="btn-outline" onclick="reminderDone('${r.id}')">✓ Fatto</button>` : ''}
+      ${puoi ? `<button class="add-btn-sm" onclick="reminderSave(${r ? `'${r.id}'` : 'null'})">Salva</button>` : ''}
+    </div>`);
+}
+function reminderSave(id) {
+  if (!roleGuard('agenda')) return;
+  const title = val('rem-title'), date = val('rem-date');
+  if (!title) { showToast('Scrivi di cosa si tratta', 'error'); return; }
+  if (!date) { showToast('Serve una data', 'error'); return; }
+  const gravita = CAL_GRAV_ORD[val('rem-grav')] != null ? val('rem-grav') : 'info';
+  const dati = { title, date, gravita, jobId: val('rem-job') || '', notes: val('rem-notes') };
+  if (id) Store.update('reminders', id, dati);
+  else Store.insert('reminders', Object.assign({ done: false, active: true }, dati));
+  closeModal();
+  homeCalGiorno = date; homeCalMese = calMeseDi(date);
+  renderHome();
+  showToast(id ? 'Promemoria aggiornato' : 'Promemoria aggiunto');
+}
+// «Fatto» non cancella: il promemoria esce dal calendario ma resta nel
+// database, e con lui chi l'ha chiuso e quando.
+function reminderDone(id) {
+  if (!roleGuard('agenda')) return;
+  if (!Store.update('reminders', id, { done: true, doneAt: new Date().toISOString() })) return;
+  closeModal();
+  renderHome();
+  showToast('Promemoria segnato come fatto');
+}
+function reminderDelete(id) {
+  if (!roleGuard('agenda')) return;
+  const r = Store.getById('reminders', id); if (!r) return;
+  askConfirm(`Eliminare il promemoria «${r.title || ''}»?`, () => {
+    closeModal();   // la scheda del promemoria, sotto la conferma
+    removeConUndo('reminders', id, 'Promemoria eliminato', () => renderHome());
+  }, { ok: 'Elimina' });
+}
+
 function renderHome() {
   const host = document.getElementById('view-home'); if (!host) return;
   invalidateCaches();
@@ -118,6 +398,8 @@ function renderHome() {
       ${righe ? `<div style="display:flex;flex-direction:column;gap:6px">${righe}</div>`
         : '<div class="empty-text">Niente in sospeso: nessuna data scaduta, nessun articolo senza prezzo, nessun codice duplicato.</div>'}
     </div>
+
+    ${renderHomeCalendar(homeEventi())}
 
     ${ris.tot > 0 ? `<div class="cloud-section" style="margin-top:16px">
       <div style="flex:1">

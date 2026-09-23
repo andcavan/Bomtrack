@@ -13,7 +13,7 @@
 // Revisione in esecuzione, mostrata accanto al logo. Va tenuta allineata alla
 // voce in cima a CHANGELOG.md (l'app si copia a mano tra PC: sapere
 // quale revisione sta girando su una postazione è l'unico modo per capirlo).
-const APP_VERSION = '0.45.0';
+const APP_VERSION = '0.46.0';
 
 let currentUser = null;      // utente della sessione (null = schermata di accesso)
 let currentBomId = null;     // articolo prodotto attualmente aperto nelle Distinte
@@ -269,12 +269,12 @@ const ROLES = {
   lettore: 'Lettore',
 };
 const ROLE_WRITE = {
-  admin: ['catalog', 'bom', 'docs', 'manage'],
-  acquisti: ['docs'],
-  progettazione: ['catalog', 'bom'],
+  admin: ['catalog', 'bom', 'docs', 'manage', 'agenda'],
+  acquisti: ['docs', 'agenda'],
+  progettazione: ['catalog', 'bom', 'agenda'],
   lettore: [],
 };
-const AREA_LABELS = { catalog: 'anagrafiche articoli', bom: 'distinte base', docs: 'richieste e ordini', manage: 'gestione' };
+const AREA_LABELS = { catalog: 'anagrafiche articoli', bom: 'distinte base', docs: 'richieste e ordini', manage: 'gestione', agenda: 'promemoria' };
 function roleLabel(r) { return ROLES[r] || r || '—'; }
 function canWrite(area) {
   if (!currentUser) return false;

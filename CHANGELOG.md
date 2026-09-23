@@ -2,6 +2,23 @@
 
 Le revisioni seguono il versionamento semantico `0.MINOR.PATCH`: **MINOR** per nuove funzionalità, **PATCH** per correzioni. La versione in cima è quella in `APP_VERSION` (`core.js`) e mostrata nell'header dell'app.
 
+### 0.46.0 — 2026-09-23
+
+**Il Riepilogo ha un calendario.** I segnali dicevano *quante* cose sono in ritardo, non *quando* scadono. Le date c'erano già tutte — consegna della commessa, data entro cui ordinare, consegna confermata dal fornitore — ma ognuna nella sua vista: due scadenze sullo stesso martedì si scoprivano il martedì.
+
+**Aggiunto**
+- 📅 **Calendario scadenze** nel Riepilogo: griglia del mese (da lunedì), pallini colorati per gravità — rosso scaduto, arancio entro 7 giorni (la stessa soglia del fabbisogno), blu in programma — e sotto l'agenda del giorno scelto. Ogni voce porta al documento dove si risolve.
+- Le date arrivano da dove sono già: **commesse** (consegna al cliente), **fabbisogno** (data entro cui ordinare, al netto, raggruppata per piano e giorno), **piani** (quando devono essere pronti), **ordini** (consegna confermata, o richiesta, delle righe non ancora ricevute; segnalate quelle confermate in ritardo), **richieste inviate** senza risposta.
+- **Scadute e non risolte** sempre in cima, qualunque mese si stia sfogliando: sfogliare avanti non deve nascondere proprio quello che è già in ritardo.
+- 📌 **Promemoria** scritti a mano, per le scadenze che non stanno in nessun documento: data, importanza, commessa facoltativa, note. «✓ Fatto» li toglie dal calendario senza cancellarli; eliminati vanno nel cestino. Nuova collezione `reminders` (creata vuota sui database esistenti, nessun cambio di versione dello schema).
+- Su telefono la griglia lascia il posto all'elenco dei **prossimi 14 giorni**.
+
+**Permessi**
+- I promemoria li scrivono amministratori, acquisti e progettazione (nuova area `agenda`); il lettore li vede e basta.
+
+**Verifica**
+- 18 nuovi controlli in `test/calendar.test.js` (suite da 989 a 1007): origine e gravità di ogni tipo di data, raggruppamento, griglia a cavallo di mese e d'anno, promemoria e ruoli.
+
 ### 0.45.0 — 2026-08-06
 
 **Gli elenchi si portano via.** Si esportava un *documento* per volta — una distinta, un piano, una richiesta, un ordine — e nessuna *lista*. Chi filtrava il magazzino su «sotto la scorta minima» vedeva la risposta a schermo e non aveva modo di portarsela in officina o di allegarla a una mail. L'unico export di articoli che esisteva è il template d'import, che è un'altra cosa: tutte le colonne, tutti gli articoli, tre fogli di contorno.

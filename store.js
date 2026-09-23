@@ -299,6 +299,10 @@ const SCHEMA = {
   // lì la citazione scende su richieste e ordini — è la catena che risponde a
   // «cosa abbiamo ordinato per la commessa 240?».
   jobs: { table: 'jobs' },
+  // Promemoria del calendario nel Riepilogo: le scadenze che non stanno in
+  // nessun documento («sollecitare SKF», «collaudo in officina»). Tutte le altre
+  // date il calendario le legge dove sono già, senza copiarle qui.
+  reminders: { table: 'reminders' },
   // Il cestino non è dominio: è la rete sotto le eliminazioni. In cloud è una
   // tabella come le altre, con il record conservato in jsonb.
   trash: { table: 'trash' },
@@ -348,6 +352,7 @@ function migrateDB() {
   if (!db.revisions) db.revisions = [];   // storico delle distinte rilasciate
   if (!db.movements) db.movements = [];   // rettifiche e consumi di magazzino
   if (!db.jobs) db.jobs = [];             // commesse cliente
+  if (!db.reminders) db.reminders = [];   // promemoria del calendario
   // Cestino: le eliminazioni recenti, recuperabili. Si svuota da solo passata
   // la finestra di ripristino, altrimenti crescerebbe finché lo spazio del
   // browser non finisce — e a quel punto il rimedio sarebbe peggio del male.

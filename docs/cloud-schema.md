@@ -56,6 +56,7 @@ immaginarle.
 | `revisions` | `item_revisions` | id uuid PK, item_id uuid FK, rev, date, motivo, **snapshot jsonb**, created_by, created_at |
 | `trash` | `trash` | id uuid PK, coll, deleted_at, deleted_by uuid FK, **record jsonb** — le eliminazioni recuperabili, ripulite dopo `TRASH_DAYS` |
 | `jobs` | `jobs` | id uuid PK, number unique per anno, customer, title, customer_ref, status ('aperta'\|'produzione'\|'chiusa'\|'annullata'), date, due_date, notes, active, created_at, updated_at |
+| `reminders` | `reminders` | id uuid PK, date, title, notes, gravita ('alta'\|'media'\|'info'), done bool, job_id FK nullable, active, created_by, created_at, updated_at |
 | `movements` | `stock_movements` | id uuid PK, item_id uuid FK, kind ('rettifica'\|'carico'\|'scarico'), qty numeric **con segno**, date, note, created_by, created_at |
 | `settings` | `settings` | una riga per team (o coppie chiave/valore) |
 
