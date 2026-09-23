@@ -184,11 +184,15 @@ describe('Righe aggiunte da catalogo a un ordine', () => {
     assert.equal(r.price, 10);
     assert.equal(r.uom, 'm');
   });
-  // Non la q2 da 12: la q3 è più recente, ed è al chilo.
-  it('a Bianchi la sua quotazione più recente, con la sua unità', () => {
+  // Non la q2 da 12: la q3 è più recente, ed è al chilo — e il chilo si
+  // converte. La riga vive sempre nell'unità di gestione: 14 €/kg su una barra
+  // da 8 kg/m fanno 112 €/m. Si ordina e si riceve in metri, che è come la
+  // barra si gestisce e si monta; quanto pesa lo dice il fattore di
+  // conversione, non chi scrive l'ordine.
+  it('a Bianchi la sua quotazione più recente, convertita in unità di gestione', () => {
     const r = riga('s2');
-    assert.equal(r.price, 14);
-    assert.equal(r.uom, 'kg', 'se quota a chilo, l\'ordine è in chili');
+    assert.equal(r.price, 112, '14 €/kg × 8 kg/m');
+    assert.equal(r.uom, 'm', 'anche se il fornitore quota a chilo, la riga è in metri');
   });
   it('a un fornitore senza listino non si applica niente', () => {
     const r = riga('s3');

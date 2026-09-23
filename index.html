@@ -4,9 +4,43 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Bomtrack — Distinte Base & Costificazione</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="style.css">
+<!-- Installabile come applicazione, e con un'icona sua nella barra delle
+     applicazioni. Il manifest non cambia niente per chi apre index.html con un
+     doppio click: lì il browser lo ignora, come ignora il service worker. -->
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icona.svg" type="image/svg+xml">
+<meta name="theme-color" content="#3A7BE8">
+<!-- I caratteri sono un **miglioramento**, non un requisito, e si caricano senza
+     bloccare il primo disegno della pagina. Erano un <link> normale: il browser
+     aspetta un foglio di stile prima di dipingere qualunque cosa, e su un PC di
+     officina senza rete quell'attesa diventa il timeout del DNS — la finestra
+     resta bianca per secondi, all'avvio, ogni volta.
+     È lo stesso motivo per cui nella 0.43.0 le librerie di export sono entrate
+     in vendor/: l'app dichiara di aprirsi con un doppio click e di funzionare
+     offline, e una dipendenza di rete sul percorso di avvio lo smentiva.
+     L'attributo media="print" fa scaricare il foglio senza applicarlo, e onload lo
+     promuove a foglio vero quando è arrivato. Se non arriva mai, non succede
+     niente: style.css dichiara già i ripieghi ('Segoe UI' e il monospace di
+     sistema), e la pagina è perfettamente leggibile senza. -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700;800&display=swap"
+      rel="stylesheet" media="print" onload="this.media='all'">
+<noscript><link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700;800&display=swap" rel="stylesheet"></noscript>
+<!-- Il tema si applica PRIMA che la pagina si disegni: theme.js sta in fondo al
+     body, e aspettarlo significherebbe un lampo scuro in faccia a chi ha scelto
+     il chiaro. Qui si scrive solo l'attributo — il colore lo fa il foglio di
+     stile — e la chiave è la stessa di theme.js, che poi si riallinea. -->
+<script>
+  try {
+    // Stessa chiave di THEME_KEY in theme.js, ripetuta qui perché questo script
+    // gira prima di ogni altro file. Cambiarne una sola non rompe niente in modo
+    // visibile: torna solo il lampo scuro. Vanno cambiate insieme.
+    var t = localStorage.getItem('bomtrack_theme');
+    if (t === 'light' || t === 'dark') document.documentElement.setAttribute('data-theme', t);
+  } catch (e) { /* in automatico: decide la media query */ }
+</script>
 <!-- Librerie di export, dentro il repo (vedi vendor/LEGGIMI.md). Erano su CDN con
      SRI: la firma proteggeva dal CDN compromesso, ma restavano due cose. La
      prima è che SheetJS non pubblica più su cdnjs dalla 0.18, e quella versione
@@ -23,31 +57,46 @@
 </head>
 <body>
 
-<div id="toast"></div>
+<!-- Ogni messaggio dell'app passa da qui, errori di validazione compresi:
+     senza una live region tutta quella validazione non esiste per chi usa un
+     lettore di schermo — il salvataggio "non fa niente" e non si sa perché.
+     `polite` di serie perché la maggior parte sono conferme; showToast alza
+     ad `assertive` quando il messaggio è un errore. -->
+<div id="toast" role="status" aria-live="polite" aria-atomic="true"></div>
 <div id="modal-root"></div>
 
 <!-- ACCESSO — al primo avvio (nessun utente) diventa la creazione dell'amministratore -->
 <div id="login-screen">
   <div class="login-card">
     <div class="login-logo">
-      <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7l9-4 9 4-9 4-9-4z"/><path d="M3 7v10l9 4 9-4V7"/><path d="M12 11v10"/></svg>
+      <svg class="ico ic-logo" aria-hidden="true"><use href="#ic-logo"></use></svg>
     </div>
     <h1 class="login-title">Bomtrack<sup class="app-version" id="app-version-login" title="Revisione in esecuzione"></sup></h1>
     <p class="login-sub" id="login-sub">Distinte base &amp; Costificazione</p>
     <form id="login-form" onsubmit="return false">
+      <!-- Etichette vere, non solo placeholder: a11yFields() ripara i campi
+           delle schede cercando .modal-field, e qui la classe è un'altra —
+           quindi da qui non ci passa mai. È la prima schermata dell'app e
+           l'unica che ogni utente attraversa per forza. Le etichette restano
+           visibili solo ai lettori di schermo (.sr-only): il disegno della
+           scheda d'accesso vive sui placeholder e non cambia. -->
       <div class="login-field" id="login-setup-fields" style="display:none">
+        <label class="sr-only" for="login-name">Nome e cognome</label>
         <input type="text" id="login-name" placeholder="Nome e cognome" autocomplete="name" onkeydown="if(event.key==='Enter')submitLogin()">
       </div>
       <div class="login-field">
+        <label class="sr-only" for="login-email">Email</label>
         <input type="email" id="login-email" placeholder="Email" autocomplete="username" onkeydown="if(event.key==='Enter')submitLogin()">
       </div>
       <div class="login-field">
+        <label class="sr-only" for="login-password">Password</label>
         <input type="password" id="login-password" placeholder="Password" autocomplete="current-password" onkeydown="if(event.key==='Enter')submitLogin()">
       </div>
       <div class="login-remember" id="login-remember-row">
         <label><input type="checkbox" id="login-remember"> Ricordami su questo PC</label>
       </div>
-      <div id="login-error" class="login-error" style="display:none"></div>
+      <!-- L'errore di credenziali va annunciato: è la risposta a un gesto. -->
+      <div id="login-error" class="login-error" role="alert" style="display:none"></div>
       <button class="add-btn-sm" id="login-submit" style="width:100%;justify-content:center" onclick="submitLogin()">Accedi</button>
     </form>
     <p class="login-note">I dati risiedono in questo browser: l'accesso separa i ruoli tra colleghi, non protegge i dati.</p>
@@ -57,7 +106,7 @@
 <header id="app-header" style="display:none">
   <div style="display:flex;align-items:center;gap:10px">
     <span class="logo">
-      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7l9-4 9 4-9 4-9-4z"/><path d="M3 7v10l9 4 9-4V7"/><path d="M12 11v10"/></svg>
+      <svg class="ico ic-logo" aria-hidden="true"><use href="#ic-logo"></use></svg>
       Bomtrack
     </span>
     <span class="app-version" id="app-version" title="Revisione in esecuzione"></span>
@@ -67,11 +116,15 @@
     <span class="unsaved-badge" id="unsaved-badge" style="display:none"></span>
     <span class="header-clock" id="header-clock"></span>
     <span class="user-pill" id="user-pill"></span>
-    <button class="btn-outline btn-icon btn-emoji" onclick="globalSearchModal()" title="Cerca ovunque (Ctrl+K)" aria-label="Cerca ovunque">🔎</button>
-    <button class="btn-outline btn-icon btn-emoji" onclick="printView()" title="Stampa questa vista (Ctrl+P)" aria-label="Stampa">🖨</button>
-    <button class="btn-outline btn-icon btn-emoji" onclick="changePassword()" title="Cambia password" aria-label="Cambia password">🔑</button>
+    <button class="btn-outline btn-icon" onclick="globalSearchModal()" title="Cerca ovunque (Ctrl+K)" aria-label="Cerca ovunque"><svg class="ico tinted ic-search" aria-hidden="true"><use href="#ic-search"></use></svg></button>
+    <button class="btn-outline btn-icon" onclick="printView()" title="Stampa questa vista (Ctrl+P)" aria-label="Stampa"><svg class="ico tinted ic-printer" aria-hidden="true"><use href="#ic-printer"></use></svg></button>
+    <!-- Il manuale sta accanto a index.html e si apre in una scheda sua: si consulta mentre si lavora, senza perdere il documento aperto -->
+    <button class="btn-outline btn-icon" onclick="openManual()" title="Manuale d'uso" aria-label="Manuale d'uso"><svg class="ico tinted ic-book" aria-hidden="true"><use href="#ic-book"></use></svg></button>
+    <!-- Icona e testo li mette themeButtonFill(): dipendono dal tema in corso -->
+    <button class="btn-outline btn-icon" id="theme-btn" onclick="themeToggle()" title="Cambia tema" aria-label="Cambia tema"></button>
+    <button class="btn-outline btn-icon" onclick="changePassword()" title="Cambia password" aria-label="Cambia password"><svg class="ico tinted ic-key" aria-hidden="true"><use href="#ic-key"></use></svg></button>
     <button class="btn-outline btn-icon" onclick="logout()" title="Esci" aria-label="Esci">
-      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+      <svg class="ico tinted ic-logout" aria-hidden="true"><use href="#ic-logout"></use></svg>
     </button>
   </div>
 </header>
@@ -90,23 +143,29 @@
   <!-- DISTINTE BASE -->
   <div id="view-bom" class="view-panel active">
     <div class="bom-toolbar">
-      <h2 class="section-title">🌳 Distinta Base &amp; Costificazione</h2>
-      <button class="add-btn-sm" onclick="newMachineModal()">+ Nuova macchina</button>
-      <button class="btn-outline" id="bom-edit-btn" onclick="editCurrentItemModal()">✏ Modifica testata</button>
-      <button class="btn-outline" id="bom-del-btn" onclick="deleteCurrentMachine()">🗑 Elimina</button>
+      <h2 class="section-title"><svg class="ico ic-tree tinted pill" aria-hidden="true"><use href="#ic-tree"></use></svg> Distinta Base &amp; Costificazione</h2>
+      <button class="btn-outline" id="bom-edit-btn" onclick="editCurrentItemModal()"><svg class="ico ic-edit tinted" aria-hidden="true"><use href="#ic-edit"></use></svg> Modifica testata</button>
+      <button class="btn-outline" id="bom-del-btn" onclick="deleteCurrentMachine()"><svg class="ico ic-trash tinted" aria-hidden="true"><use href="#ic-trash"></use></svg> Elimina</button>
     </div>
 
     <div class="catalog-filters">
-      <input type="text" class="search" id="bom-search" placeholder="🔍 Cerca codice o nome distinta..." oninput="bomSearchInput()">
-      <select id="bom-type" onchange="onBomFilterChange()">
-        <option value="">Tutti i livelli</option>
-        <option value="macchina">Macchine</option>
-        <option value="gruppo">Gruppi</option>
-        <option value="sottogruppo">Sottogruppi</option>
-      </select>
-      <select id="bom-machine" onchange="onBomFilterChange()">
-        <option value="">Tutte le macchine</option>
-      </select>
+      <button class="btn-outline" id="filt-toggle-bom" onclick="filtToggle()">Filtri</button>
+      <div class="filt-summary" id="filt-summary-bom">
+        <span class="filt-chips" id="filt-chips-bom"></span>
+        <button class="btn-outline filt-clear" id="filt-clear-bom" onclick="filtClearAll('bom')">Rimuovi filtri</button>
+      </div>
+      <div class="filt-fields" id="filt-fields-bom">
+        <input type="text" class="search" id="bom-search" placeholder="Cerca codice o nome distinta..." oninput="bomSearchInput()">
+        <select id="bom-type" onchange="onBomFilterChange()">
+          <option value="">Tutti i livelli</option>
+          <option value="macchina">Macchine</option>
+          <option value="gruppo">Gruppi</option>
+          <option value="sottogruppo">Sottogruppi</option>
+        </select>
+        <select id="bom-machine" onchange="filtScopeChange('bom','machine');onBomFilterChange()">
+          <option value="">Tutte le macchine</option>
+        </select>
+      </div>
       <select id="bom-select" class="cyc-part-select" onchange="onBomSelect()"></select>
       <span class="doc-filter-count" id="bom-count"></span>
     </div>
@@ -117,36 +176,48 @@
     <div id="bom-cost-summary" class="cost-summary"></div>
 
     <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
-      <button class="add-btn-sm" id="bom-add-comp" onclick="addComponentModal()">+ Aggiungi componente</button>
+      <button class="add-btn-sm" id="bom-add-comp" onclick="toggleBomPanel()">+ Aggiungi componenti</button>
       <button class="btn-outline" id="bom-add-op" onclick="addOperationModal()">+ Aggiungi lavorazione</button>
       <button class="btn-outline" onclick="expandAllBom(true)">⊞ Espandi tutto</button>
       <button class="btn-outline" onclick="expandAllBom(false)">⊟ Comprimi tutto</button>
     </div>
 
     <div class="bom-tree" id="bom-tree"></div>
+    <div class="bpn-resizer" title="Trascina per cambiare la larghezza del pannello" aria-hidden="true"></div>
+    <aside id="bom-panel" class="bom-panel" aria-label="Aggiungi componenti"></aside>
   </div>
 
   <!-- ARTICOLI D'ACQUISTO (commerciali e materie prime) -->
   <div id="view-buy" class="view-panel">
     <div class="bom-toolbar">
-      <h2 class="section-title">📦 Commerciali &amp; Materie prime</h2>
-      <button class="export-btn-xls" onclick="exportListXlsx(catalogExportSpec('buy'))">📗 Esporta Excel</button>
-      <button class="export-btn-pdf" onclick="exportListPdf(catalogExportSpec('buy'))">📄 Esporta PDF</button>
+      <h2 class="section-title"><svg class="ico ic-cart tinted pill" aria-hidden="true"><use href="#ic-cart"></use></svg> Commerciali &amp; Materie prime</h2>
+      <div class="export-pair">
+        <button class="export-btn-xls" onclick="exportListXlsx(catalogExportSpec('buy'))"><svg class="ico ic-sheet tinted" aria-hidden="true"><use href="#ic-sheet"></use></svg> Esporta Excel</button>
+        <button class="export-btn-pdf" onclick="exportListPdf(catalogExportSpec('buy'))"><svg class="ico ic-file tinted" aria-hidden="true"><use href="#ic-file"></use></svg> Esporta PDF</button>
+      </div>
     </div>
     <div class="catalog-filters">
-      <input type="text" class="search" id="buy-search" placeholder="🔍 Cerca codice o nome..." oninput="catalogSearchInput('buy')">
-      <select id="buy-type" onchange="onCatTypeChange('buy')">
-        <option value="">Tutti i tipi</option>
-        <option value="acquistato">Componente commerciale</option>
-        <option value="materiale">Materia prima</option>
-      </select>
-      <select id="buy-family" onchange="onCatFamilyChange('buy')">
-        <option value="">Tutte le famiglie</option>
-      </select>
-      <select id="buy-subfamily" onchange="catalogFilterChange('buy')">
-        <option value="">Tutte le sottofamiglie</option>
-      </select>
-      <button class="btn-outline fav-filter" id="buy-fav" title="Mostra solo i preferiti" onclick="toggleFavFilter()">★ Solo preferiti</button>
+      <button class="btn-outline" id="filt-toggle-buy" onclick="filtToggle()">Filtri</button>
+      <div class="filt-summary" id="filt-summary-buy">
+        <span class="filt-chips" id="filt-chips-buy"></span>
+        <button class="btn-outline filt-clear" id="filt-clear-buy" onclick="filtClearAll('buy')">Rimuovi filtri</button>
+      </div>
+      <div class="filt-fields" id="filt-fields-buy">
+        <input type="text" class="search" id="buy-search" placeholder="Cerca codice o nome..." oninput="catalogSearchInput('buy')">
+        <select id="buy-type" onchange="onCatTypeChange('buy')">
+          <option value="">Tutti i tipi</option>
+          <option value="acquistato">Componente commerciale</option>
+          <option value="materiale">Materia prima</option>
+        </select>
+        <select id="buy-family" onchange="filtScopeChange('buy','family');onCatFamilyChange('buy')">
+          <option value="">Tutte le famiglie</option>
+        </select>
+        <select id="buy-subfamily" onchange="filtScopeChange('buy','subfamily');catalogFilterChange('buy')">
+          <option value="">Tutte le sottofamiglie</option>
+        </select>
+        <button class="btn-outline fav-filter" id="buy-fav" title="Mostra solo i preferiti" onclick="toggleFavFilter()">★ Solo preferiti</button>
+      </div>
+      <span id="cols-btn-buy"></span>
       <button class="add-btn-sm" onclick="newItemModal('buy')">+ Nuovo articolo</button>
     </div>
     <div class="table-wrap" id="buy-table"></div>
@@ -155,25 +226,41 @@
   <!-- ARTICOLI DI PROGETTO (macchine, gruppi, sottogruppi, parti) -->
   <div id="view-design" class="view-panel">
     <div class="bom-toolbar">
-      <h2 class="section-title">🏗 Macchine, Gruppi &amp; Parti</h2>
-      <button class="export-btn-xls" onclick="exportListXlsx(catalogExportSpec('design'))">📗 Esporta Excel</button>
-      <button class="export-btn-pdf" onclick="exportListPdf(catalogExportSpec('design'))">📄 Esporta PDF</button>
+      <h2 class="section-title"><svg class="ico ic-tree tinted pill" aria-hidden="true"><use href="#ic-tree"></use></svg> Macchine, Gruppi &amp; Parti</h2>
+      <div class="export-pair">
+        <button class="export-btn-xls" onclick="exportListXlsx(catalogExportSpec('design'))"><svg class="ico ic-sheet tinted" aria-hidden="true"><use href="#ic-sheet"></use></svg> Esporta Excel</button>
+        <button class="export-btn-pdf" onclick="exportListPdf(catalogExportSpec('design'))"><svg class="ico ic-file tinted" aria-hidden="true"><use href="#ic-file"></use></svg> Esporta PDF</button>
+      </div>
     </div>
     <div class="catalog-filters">
-      <input type="text" class="search" id="des-search" placeholder="🔍 Cerca codice o nome..." oninput="catalogSearchInput('design')">
-      <select id="des-type" onchange="onCatTypeChange('design')">
-        <option value="">Tutti i tipi</option>
-        <option value="macchina">Macchina</option>
-        <option value="gruppo">Gruppo</option>
-        <option value="sottogruppo">Sottogruppo</option>
-        <option value="parte">Parte (lavorato)</option>
-      </select>
-      <select id="des-family" onchange="onCatFamilyChange('design')">
-        <option value="">Tutte le famiglie</option>
-      </select>
-      <select id="des-subfamily" onchange="catalogFilterChange('design')">
-        <option value="">Tutte le sottofamiglie</option>
-      </select>
+      <button class="btn-outline" id="filt-toggle-design" onclick="filtToggle()">Filtri</button>
+      <div class="filt-summary" id="filt-summary-design">
+        <span class="filt-chips" id="filt-chips-design"></span>
+        <button class="btn-outline filt-clear" id="filt-clear-design" onclick="filtClearAll('design')">Rimuovi filtri</button>
+      </div>
+      <div class="filt-fields" id="filt-fields-design">
+        <input type="text" class="search" id="des-search" placeholder="Cerca codice o nome..." oninput="catalogSearchInput('design')">
+        <select id="des-type" onchange="onCatTypeChange('design')">
+          <option value="">Tutti i tipi</option>
+          <option value="macchina">Macchina</option>
+          <option value="gruppo">Gruppo</option>
+          <option value="sottogruppo">Sottogruppo</option>
+          <option value="parte">Parte (lavorato)</option>
+        </select>
+        <select id="des-family" onchange="filtScopeChange('design','family');onCatFamilyChange('design')">
+          <option value="">Tutte le famiglie</option>
+        </select>
+        <select id="des-subfamily" onchange="filtScopeChange('design','subfamily');catalogFilterChange('design')">
+          <option value="">Tutte le sottofamiglie</option>
+        </select>
+        <select id="des-machine" onchange="filtScopeChange('design','machine');catalogFilterChange('design')">
+          <option value="">Tutte le macchine</option>
+        </select>
+        <select id="des-group" onchange="filtScopeChange('design','group');catalogFilterChange('design')">
+          <option value="">Tutti i gruppi</option>
+        </select>
+      </div>
+      <span id="cols-btn-design"></span>
       <button class="add-btn-sm" onclick="newItemModal('design')">+ Nuovo articolo</button>
     </div>
     <div class="table-wrap" id="des-table"></div>
@@ -182,31 +269,49 @@
   <!-- MAGAZZINO — commerciali, materie prime e parti nella stessa lista -->
   <div id="view-stock" class="view-panel">
     <div class="bom-toolbar">
-      <h2 class="section-title">📦 Magazzino</h2>
-      <button class="export-btn-xls" onclick="exportListXlsx(stockExportSpec())">📗 Esporta Excel</button>
-      <button class="export-btn-pdf" onclick="exportListPdf(stockExportSpec())">📄 Esporta PDF</button>
+      <h2 class="section-title"><svg class="ico ic-package tinted pill" aria-hidden="true"><use href="#ic-package"></use></svg> Magazzino</h2>
+      <span id="stk-cl-btn"></span>
+      <div class="export-pair">
+        <button class="export-btn-xls" onclick="exportListXlsx(stockExportSpec())"><svg class="ico ic-sheet tinted" aria-hidden="true"><use href="#ic-sheet"></use></svg> Esporta Excel</button>
+        <button class="export-btn-pdf" onclick="exportListPdf(stockExportSpec())"><svg class="ico ic-file tinted" aria-hidden="true"><use href="#ic-file"></use></svg> Esporta PDF</button>
+      </div>
     </div>
     <div class="catalog-filters">
-      <input type="text" class="search" id="stk-search" placeholder="🔍 Cerca codice o nome..." oninput="stockSearchInput()">
-      <select id="stk-type" onchange="onStockTypeChange()">
-        <option value="">Tutti i tipi</option>
-        <option value="acquistato">Componente commerciale</option>
-        <option value="materiale">Materia prima</option>
-        <option value="parte">Parte (lavorato)</option>
-      </select>
-      <select id="stk-family" onchange="onStockFamilyChange()">
-        <option value="">Tutte le famiglie</option>
-      </select>
-      <select id="stk-subfamily" onchange="stockFilterChange()">
-        <option value="">Tutte le sottofamiglie</option>
-      </select>
-      <select id="stk-state" onchange="stockFilterChange()">
-        <option value="">Tutti gli stati</option>
-        <option value="sotto">Sotto la scorta minima</option>
-        <option value="zero">Giacenza a zero</option>
-        <option value="con">Con giacenza</option>
-        <option value="negativo">Libero negativo</option>
-      </select>
+      <button class="btn-outline" id="filt-toggle-stock" onclick="filtToggle()">Filtri</button>
+      <div class="filt-summary" id="filt-summary-stock">
+        <span class="filt-chips" id="filt-chips-stock"></span>
+        <button class="btn-outline filt-clear" id="filt-clear-stock" onclick="filtClearAll('stock')">Rimuovi filtri</button>
+      </div>
+      <div class="filt-fields" id="filt-fields-stock">
+        <input type="text" class="search" id="stk-search" placeholder="Cerca codice o nome..." oninput="stockSearchInput()">
+        <select id="stk-type" onchange="onStockTypeChange()">
+          <option value="">Tutti i tipi</option>
+          <option value="acquistato">Componente commerciale</option>
+          <option value="materiale">Materia prima</option>
+          <option value="parte">Parte (lavorato)</option>
+        </select>
+        <select id="stk-family" onchange="filtScopeChange('stock','family');onStockFamilyChange()">
+          <option value="">Tutte le famiglie</option>
+        </select>
+        <select id="stk-subfamily" onchange="filtScopeChange('stock','subfamily');stockFilterChange()">
+          <option value="">Tutte le sottofamiglie</option>
+        </select>
+        <select id="stk-machine" onchange="filtScopeChange('stock','machine');stockFilterChange()">
+          <option value="">Tutte le macchine</option>
+        </select>
+        <select id="stk-group" onchange="filtScopeChange('stock','group');stockFilterChange()">
+          <option value="">Tutti i gruppi</option>
+        </select>
+        <select id="stk-state" onchange="stockFilterChange()">
+          <option value="">Tutti gli stati</option>
+          <option value="sotto">Sotto la scorta minima</option>
+          <option value="zero">Giacenza a zero</option>
+          <option value="con">Con giacenza</option>
+          <option value="negativo">Libero negativo</option>
+          <option value="terzi">Presso terzi o in lavorazione</option>
+        </select>
+      </div>
+      <span id="cols-btn-stock"></span>
     </div>
     <div id="stk-kpi" class="cost-summary"></div>
     <div class="table-wrap" id="stk-table"></div>
@@ -215,18 +320,27 @@
   <!-- CICLI DI LAVORAZIONE (distinta parte + fasi di una Parte) -->
   <div id="view-cycles" class="view-panel">
     <div class="bom-toolbar">
-      <h2 class="section-title">🔧 Cicli di lavorazione</h2>
-      <button class="export-btn-xls" onclick="exportListXlsx(cycleExportSpec())">📗 Esporta Excel</button>
-      <button class="export-btn-pdf" onclick="exportListPdf(cycleExportSpec())">📄 Esporta PDF</button>
+      <h2 class="section-title"><svg class="ico ic-wrench tinted pill" aria-hidden="true"><use href="#ic-wrench"></use></svg> Cicli di lavorazione</h2>
+      <div class="export-pair">
+        <button class="export-btn-xls" onclick="exportListXlsx(cycleExportSpec())"><svg class="ico ic-sheet tinted" aria-hidden="true"><use href="#ic-sheet"></use></svg> Esporta Excel</button>
+        <button class="export-btn-pdf" onclick="exportListPdf(cycleExportSpec())"><svg class="ico ic-file tinted" aria-hidden="true"><use href="#ic-file"></use></svg> Esporta PDF</button>
+      </div>
     </div>
     <div class="catalog-filters">
-      <input type="text" class="search" id="cyc-search" placeholder="🔍 Cerca codice o nome..." oninput="cycleSearchInput()">
-      <select id="cyc-family" onchange="onCycleFilterChange()">
-        <option value="">Tutte le famiglie</option>
-      </select>
-      <select id="cyc-subfamily" onchange="onCycleFilterChange()">
-        <option value="">Tutte le sottofamiglie</option>
-      </select>
+      <button class="btn-outline" id="filt-toggle-cycles" onclick="filtToggle()">Filtri</button>
+      <div class="filt-summary" id="filt-summary-cycles">
+        <span class="filt-chips" id="filt-chips-cycles"></span>
+        <button class="btn-outline filt-clear" id="filt-clear-cycles" onclick="filtClearAll('cycles')">Rimuovi filtri</button>
+      </div>
+      <div class="filt-fields" id="filt-fields-cycles">
+        <input type="text" class="search" id="cyc-search" placeholder="Cerca codice o nome..." oninput="cycleSearchInput()">
+        <select id="cyc-family" onchange="filtScopeChange('cycles','family');onCycleFilterChange()">
+          <option value="">Tutte le famiglie</option>
+        </select>
+        <select id="cyc-subfamily" onchange="filtScopeChange('cycles','subfamily');onCycleFilterChange()">
+          <option value="">Tutte le sottofamiglie</option>
+        </select>
+      </div>
       <select id="cyc-part" class="cyc-part-select" onchange="onCyclePartSelect()"></select>
     </div>
     <!-- Revisione del ciclo: riempita da renderCyclesRevBar() -->
@@ -237,14 +351,16 @@
 
   <!-- COSTIFICAZIONE & REPORT -->
   <div id="view-report" class="view-panel">
-    <h2 class="section-title">💶 Costificazione &amp; Report</h2>
+    <h2 class="section-title"><svg class="ico ic-euro tinted pill" aria-hidden="true"><use href="#ic-euro"></use></svg> Costificazione &amp; Report</h2>
     <div class="bom-toolbar">
       <div class="field-group" style="position:relative">
         <label>Macchina / Prodotto</label>
         <select id="report-select" onchange="renderReport()"></select>
       </div>
-      <button class="export-btn-xls" onclick="exportBomExcel()">📗 Esporta Excel</button>
-      <button class="export-btn-pdf" onclick="exportBomPDF()">📄 Esporta PDF</button>
+      <div class="export-pair">
+        <button class="export-btn-xls" onclick="exportBomExcel()"><svg class="ico ic-sheet tinted" aria-hidden="true"><use href="#ic-sheet"></use></svg> Esporta Excel</button>
+        <button class="export-btn-pdf" onclick="exportBomPDF()"><svg class="ico ic-file tinted" aria-hidden="true"><use href="#ic-file"></use></svg> Esporta PDF</button>
+      </div>
     </div>
     <div id="report-content"></div>
   </div>
@@ -252,8 +368,17 @@
   <!-- COMMESSE — riempita da renderJobs() -->
   <div id="view-jobs" class="view-panel"></div>
 
+  <!-- ORDINI DI LAVORO (conto lavoro: lavorazioni affidate a un terzista) -->
+  <div id="view-odl" class="view-panel"></div>
+
+  <!-- CARICO DEI CENTRI DI LAVORO (prospetto derivato, sola lettura) -->
+  <div id="view-load" class="view-panel"></div>
+
   <!-- FABBISOGNO MATERIALI (piani di produzione) -->
   <div id="view-mrp" class="view-panel"></div>
+
+  <!-- Ordini di produzione (ODP) -->
+  <div id="view-odp" class="view-panel"></div>
 
   <!-- RICHIESTE DI OFFERTA -->
   <div id="view-rfq" class="view-panel"></div>
@@ -264,7 +389,7 @@
   <!-- GESTIONE -->
   <div id="view-manage" class="view-panel">
     <div class="manage-wrap">
-      <h2 class="section-title">⚙ Gestione</h2>
+      <h2 class="section-title"><svg class="ico ic-settings tinted pill" aria-hidden="true"><use href="#ic-settings"></use></svg> Gestione</h2>
       <div class="mgmt-tabs" id="mgmt-tabs"></div>
       <div id="mgmt-content"></div>
     </div>
@@ -272,9 +397,19 @@
 
 </div>
 
+<!-- Il pannello laterale: comandi e schede dell'elemento scelto nell'elenco.
+     Sta fuori da #app-main perché non appartiene a una vista sola — lo riempie
+     inspector.js secondo la vista aperta, e resta chiuso dove non serve. -->
+<div class="insp-resizer" title="Trascina per cambiare la larghezza del pannello" aria-hidden="true"></div>
+<aside id="inspector" aria-label="Pannello dei comandi"></aside>
+
 <!-- Classic script in sequenza, scope globale condiviso: nessun modulo e nessun
      build, così la pagina si apre anche con un doppio click (file://).
      L'ordine conta solo per l'avvio, che sta in fondo all'ultimo file. -->
+<!-- Le icone: sprite e tinte. Va per primo, ico() serve gia al primo disegno. -->
+<script src="icons.js"></script>
+<!-- Dopo icons.js: al caricamento riempie il pulsante del tema con sole o luna. -->
+<script src="theme.js"></script>
 <script src="store.js"></script>
 <!-- Traduzione annidato ↔ normalizzato: legge SCHEMA da store.js, non dipende
      da altro. Nessun codice di rete: l'app resta locale. -->
@@ -283,6 +418,10 @@
 <script src="auth.js"></script>
 <script src="costing.js"></script>
 <script src="shell.js"></script>
+<!-- Il telaio comune delle viste a documento (commesse, fabbisogno, richieste,
+     ordini): elenco a destra, documento al centro. Va prima di loro perche' e'
+     quello che disegnano. -->
+<script src="worklist.js"></script>
 <script src="views-bom.js"></script>
 <script src="views-rev.js"></script>
 <script src="views-stock.js"></script>
@@ -290,14 +429,33 @@
 <script src="views-report.js"></script>
 <script src="views-jobs.js"></script>
 <script src="views-home.js"></script>
+<!-- Avanzamento di produzione: quanti pezzi di una parte sono stati fatti.
+     Va prima di views-mrp.js, che ne disegna le colonne. -->
+<script src="produzione.js"></script>
 <script src="views-mrp.js"></script>
+<!-- Allegati: i dati stanno in db come ogni collezione, i byte dei vecchi file
+     in IndexedDB. Va prima di views-item.js, che ne disegna la sezione. -->
+<script src="allegati.js"></script>
+<!-- La cartella d'archivio dei PDF: impostazione locale, un PC alla volta.
+     Va dopo allegati.js, di cui usa l'apertura del database IndexedDB. -->
+<script src="archivio.js"></script>
 <script src="views-item.js"></script>
 <script src="views-docs.js"></script>
+<script src="views-prod.js"></script>
 <script src="views-manage.js"></script>
 <!-- PDF ed Excel degli elenchi: legge le specifiche che le viste descrivono,
      quindi va dopo di loro. -->
 <script src="export-lists.js"></script>
 <script src="import-catalog.js"></script>
+<!-- Scelta delle colonne degli elenchi: la chiamano le viste che le disegnano. -->
+<script src="columns.js"></script>
+<!-- Barra Filtri a scomparsa: la chiamano le stesse viste, subito dopo. -->
+<script src="filters.js"></script>
+<!-- Il pannello laterale legge lo stato delle viste: va dopo di loro. -->
+<script src="inspector.js"></script>
+<!-- ULTIMO, sempre: in fondo a questo file c'è init(), che avvia l'app. Uno
+     script messo dopo non esiste ancora quando l'avvio disegna la prima vista,
+     e la prima chiamata lo scopre con un errore. -->
 <script src="import-export.js"></script>
 </body>
 </html>

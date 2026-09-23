@@ -15,6 +15,33 @@
 const SESSION_KEY = 'bomtrack_session';
 const SAVED_EMAIL_KEY = 'bomtrack_saved_email';
 
+// L'email ricordata su questo PC. Difesa da try/catch come ogni altro accesso
+// all'archivio locale dell'app (theme.js, columns.js, filters.js, inspector.js,
+// localPref in core.js): erano rimasti scoperti proprio i tre della schermata
+// d'accesso — cioè l'unica che ogni utente attraversa per forza.
+//
+// In navigazione privata, con i dati dei siti bloccati, o su file:// con lo
+// storage negato, la lettura lancia: renderLogin() moriva sulla prima riga e
+// la schermata d'accesso non si disegnava affatto. L'app diventava inutilizzabile
+// esattamente nello scenario che showPersistErrorModal() esiste per raccontare.
+function emailRicordata() {
+  try { return localStorage.getItem(SAVED_EMAIL_KEY); } catch (e) { return null; }
+}
+function ricordaEmail(email) {
+  try {
+    if (email) localStorage.setItem(SAVED_EMAIL_KEY, email);
+    else localStorage.removeItem(SAVED_EMAIL_KEY);
+  } catch (e) { /* niente archivio: si riparte dal campo vuoto al prossimo avvio */ }
+}
+// La sessione salvata. Stessa ragione: `restoreSession` gira dentro `init()`,
+// e una `removeItem` che lancia lì impedisce all'app di avviarsi del tutto.
+function sessioneSalvata() {
+  try { return JSON.parse(localStorage.getItem(SESSION_KEY) || 'null'); } catch (e) { return null; }
+}
+function dimenticaSessione() {
+  try { localStorage.removeItem(SESSION_KEY); } catch (e) { /* non c'era niente da dimenticare */ }
+}
+
 function userList() { return db.users || []; }
 function getUser(id) { return userList().find(u => u.id === id); }
 function findUserByEmail(email) {
@@ -45,7 +72,7 @@ function renderLogin() {
     ? 'Primo avvio — crea l\'amministratore' : 'Distinte base & Costificazione';
   document.getElementById('login-submit').textContent = setup ? 'Crea amministratore' : 'Accedi';
   const err = document.getElementById('login-error'); if (err) err.style.display = 'none';
-  const saved = !setup && localStorage.getItem(SAVED_EMAIL_KEY);
+  const saved = !setup && emailRicordata();
   if (saved) {
     setVal('login-email', saved);
     const cb = document.getElementById('login-remember'); if (cb) cb.checked = true;
@@ -72,8 +99,7 @@ function submitLogin() {
     return;
   }
   if (u.active === false) return _loginError('Account sospeso. Contatta un amministratore.');
-  if (document.getElementById('login-remember').checked) localStorage.setItem(SAVED_EMAIL_KEY, u.email || '');
-  else localStorage.removeItem(SAVED_EMAIL_KEY);
+  ricordaEmail(document.getElementById('login-remember').checked ? (u.email || '') : '');
   setVal('login-password', '');
   doLogin(u, true);
 }
@@ -123,20 +149,27 @@ function sessionExpired(s) {
 // Sessione salvata: si riapre l'app senza credenziali, purché l'utente esista
 // ancora, non sia stato sospeso nel frattempo e la sessione non sia scaduta.
 function restoreSession() {
-  let s = null;
-  try { s = JSON.parse(localStorage.getItem(SESSION_KEY) || 'null'); } catch (e) { s = null; }
+  const s = sessioneSalvata();
   const u = s && s.userId ? getUser(s.userId) : null;
-  if (!u || u.active === false || sessionExpired(s)) { localStorage.removeItem(SESSION_KEY); return false; }
-  doLogin(u, false);
+  if (!u || u.active === false || sessionExpired(s)) { dimenticaSessione(); return false; }
+  // Si rientra e si **rinnova**: la scadenza è per inattività, non per età
+  // assoluta. Senza il rinnovo, chi usa l'app tutti i giorni veniva comunque
+  // buttato fuori al trentesimo giorno dal primo accesso — e la ragione per cui
+  // la scadenza esiste è la postazione condivisa lasciata aperta, che è
+  // esattamente la postazione dove nessuno entra da settimane.
+  doLogin(u, true);
   return true;
 }
 function logout() {
-  localStorage.removeItem(SESSION_KEY);
+  dimenticaSessione();
   currentUser = null;
   Store.setActor(null);
   stopClock();
   document.getElementById('app-header').style.display = 'none';
   document.getElementById('app-main').style.display = 'none';
+  // Il pannello sta fuori da #app-main: se non lo si spegne qui resta appeso
+  // sopra la schermata di accesso.
+  document.body.classList.remove('insp-on', 'insp-rail');
   document.getElementById('sub-nav').innerHTML = '';   // la seconda riga se ne va con l'intestazione
   document.getElementById('login-screen').style.display = 'flex';
   setVal('login-password', '');
@@ -178,7 +211,7 @@ function safeColor(c) { return /^#[0-9A-Fa-f]{6}$/.test(String(c || '')) ? c : '
 // Cambio password del proprio account
 function changePassword() {
   if (!currentUser) return;
-  openModal(`<h3>🔑 Cambia password</h3>
+  openModal(`<h3>${ico('key', 'tinted pill', '')} Cambia password</h3>
     <div class="modal-field"><label>Password attuale</label><input type="password" id="cp-old"></div>
     <div class="modal-field"><label>Nuova password</label><input type="password" id="cp-new"></div>
     <div class="modal-field"><label>Ripeti nuova password</label><input type="password" id="cp-new2"></div>
@@ -192,5 +225,9 @@ function saveOwnPassword() {
   if (n1.length < 4) { showToast('La nuova password deve avere almeno 4 caratteri', 'error'); return; }
   if (n1 !== n2) { showToast('Le due password non coincidono', 'error'); return; }
   setUserPassword(u, n1);
-  touch(u); saveDB(); closeModal(); showToast('Password aggiornata');
+  // Store.update fa touch e commit in un colpo, ed è la porta che l'adapter
+  // cloud intercetterà: createFirstAdmin usa già Store.insert, e due strade
+  // per la stessa collezione nello stesso file sono una di troppo.
+  Store.update('users', u.id, { passwordHash: u.passwordHash, passwordSalt: u.passwordSalt });
+  closeModal(); savedToast('Password aggiornata');
 }

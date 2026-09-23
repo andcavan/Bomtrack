@@ -55,6 +55,7 @@ function renderReport() {
   reportBomId = val('report-select') || reportBomId;
   const it = getItem(reportBomId);
   const wrap = document.getElementById('report-content');
+  if (!wrap) return;   // la vista non è montata: come fanno tutte le altre
   if (!it) { wrap.innerHTML = '<div class="empty-text">Seleziona un prodotto.</div>'; return; }
 
   const c = costOf(it.id);
@@ -99,9 +100,9 @@ function renderReport() {
       ${kpi('Prezzo vendita', fmtPer(price, u), 'green')}
     </div>
     <div class="breakdown-section" style="margin-bottom:20px"><h3 class="sub-title">Incidenza voci di costo
-      <button class="btn-outline" style="margin-left:10px" onclick="costWhyModal('${it.id}')">🔍 Da dove viene questo costo</button></h3>${bars}</div>
+      <button class="btn-outline" style="margin-left:10px" onclick="costWhyModal('${it.id}')">${ico('search', 'tinted', '')} Da dove viene questo costo</button></h3>${bars}</div>
     <div class="breakdown-section"><h3 class="sub-title">Distinta base esplosa</h3>
-      <div class="table-wrap"><table><thead><tr><th>Pos.</th><th>Codice</th><th>Articolo</th><th>Tipo</th><th>Q.tà</th><th>Costo un.</th><th>Costo riga</th></tr></thead>
+      <div class="table-wrap"><table><thead><tr><th scope="col">Pos.</th><th scope="col">Codice</th><th scope="col">Articolo</th><th scope="col">Tipo</th><th scope="col">Q.tà</th><th scope="col">Costo un.</th><th scope="col">Costo riga</th></tr></thead>
       <tbody>${tableRows}</tbody></table></div></div>`;
 }
 
@@ -153,7 +154,7 @@ function costWhyModal(itemId) {
       <div class="breakdown-bar"><div class="breakdown-fill" style="width:${totale > 0 ? Math.min(100, x.line / (top[0].line || 1) * 100) : 0}%;background:var(--accent)"></div></div>
       <div class="breakdown-stats"><span>${fmtN(x.line)}</span><span style="color:var(--text-dim)">${quota(x).toFixed(1)}%</span></div>
     </div>`).join('');
-  openModal(`<h3>🔍 Da dove viene il costo di ${esc(it.code)}</h3>
+  openModal(`<h3>${ico('search', 'tinted pill', '')} Da dove viene il costo di ${esc(it.code)}</h3>
     <p>${esc(it.name)} — costo totale <strong>${fmtPer(totale, itemUom(it))}</strong>.</p>
     ${tutti.length ? `<p class="empty-text" style="text-align:left;padding:0 0 10px">I ${top.length} articoli che pesano di più, sommati su tutta la distinta: ${totale > 0 ? (coperto / totale * 100).toFixed(0) : 0}% del costo${tutti.length > top.length ? `, su ${tutti.length} voci in tutto` : ''}. Le lavorazioni e le spese generali non compaiono qui: stanno nelle barre di incidenza.</p>
       ${righe}`
@@ -184,7 +185,7 @@ function exportBomExcel() {
   const ws = XLSX.utils.aoa_to_sheet(data);
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Distinta');
-  XLSX.writeFile(wb, `Distinta_${it.code || it.name}.xlsx`);
+  XLSX.writeFile(wb, 'Distinta_' + nomeFileSicuro(it.code || it.name, 'articolo') + '.xlsx');
   showToast('Excel esportato');
 }
 function exportBomPDF() {
@@ -209,6 +210,6 @@ function exportBomPDF() {
   ];
   doc.autoTable({ startY: y, body: sum, theme: 'plain', styles: { fontSize: 10 },
     columnStyles: { 0: { fontStyle: 'bold' }, 1: { halign: 'right', fontStyle: 'bold' } }, tableWidth: 90 });
-  doc.save(`Distinta_${it.code || it.name}.pdf`);
+  doc.save('Distinta_' + nomeFileSicuro(it.code || it.name, 'articolo') + '.pdf');
   showToast('PDF esportato');
 }

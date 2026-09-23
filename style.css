@@ -1,11 +1,96 @@
-:root{--bg:#0F1117;--card:#181B24;--card-hover:#1E2230;--border:#2A2E3B;--text:#E8E9ED;--text-dim:#8B8FA3;--accent:#3A7BE8;--accent-h:#4A8BF8;--red:#E85D3A;--green:#2EAE6D;--orange:#E8A33A;--purple:#9B6DFF;--font:'DM Sans','Segoe UI',system-ui,sans-serif;--mono:'JetBrains Mono','SF Mono',monospace}
+/* ─── Temi ───
+   Il tema si sceglie in tre stati: chiaro, scuro, oppure «come il sistema» —
+   che è il valore di partenza, perché a quest'ora del pomeriggio il PC in
+   ufficio lo sa già. Chi sceglie esplicitamente vince sul sistema: l'attributo
+   `data-theme` sull'elemento radice batte la media query.
+
+   Il colore vive tutto qui dentro. Il resto del foglio nomina i token e non
+   conosce nessun tema: era già così prima che i temi esistessero — la prova è
+   il blocco di stampa in fondo, che ridefinisce gli stessi token in chiaro da
+   sempre e non ha mai richiesto una regola in più.
+
+   Le tinte tenui (i fondi degli avvisi, le pastiglie di tipo, le righe
+   selezionate) sono derivate con `color-mix` dai colori di base invece che
+   scritte a mano: così esistono una volta sola e seguono il tema da sé. Un
+   `rgba()` fisso, invece, è un colore pensato per un fondo solo. */
+:root{
+  color-scheme:dark;
+  --bg:#0F1117;--card:#181B24;--card-hover:#1E2230;--border:#2A2E3B;
+  --text:#E8E9ED;--text-dim:#8B8FA3;
+  --accent:#4583E9;--accent-solid:#2A70E6;--accent-h:#1960D8;
+  --red:#E85D3A;--red-solid:#D43E19;--red-h:#FF7755;
+  /* --green-solid non compare in nessuna regola: lo usa showToast() da core.js */
+  --green:#2EAE6D;--green-solid:#238452;
+  --orange:#E8A33A;--orange-solid:#E8A33A;--orange-h:#E5961F;--on-orange:#171A21;
+  --purple:#9B6DFF;
+  /* Auto-referenziarsi qui rendeva la proprietà invalida, e nel tema scuro —
+     che è questo, il :root di partenza — ogni box-shadow che la usa veniva
+     scartato: pannelli, toast e ispettore restavano senza ombra. */
+  --shadow:rgba(0,0,0,.45);--shadow-soft:rgba(0,0,0,.4);
+  --font:'DM Sans','Segoe UI',system-ui,sans-serif;
+  --mono:'JetBrains Mono','SF Mono',monospace;
+}
+/* Il chiaro non è lo scuro invertito: i colori d'accento che su fondo scuro
+   sono leggibili, su bianco no. L'arancio è il caso limite — #E8A33A su bianco
+   ha un contrasto di 1.9:1, illeggibile — e va scurito fino all'ambra. Stessa
+   ragione per blu, rosso e verde: qui sono anche testo, non solo bordi. */
+@media(prefers-color-scheme:light){
+  :root:not([data-theme=dark]){
+    color-scheme:light;
+    --bg:#F5F6F8;--card:#FFFFFF;--card-hover:#EDEFF3;--border:#DCE0E8;
+    --text:#171A21;--text-dim:#5D6472;
+    --accent:#2563C7;--accent-solid:#2563C7;--accent-h:#1B4CA0;
+    --red:#C4381A;--red-solid:#C4381A;--red-h:#A32C12;
+    --green:#17784A;--green-solid:#17784A;
+    --orange:#95610D;--orange-solid:#95610D;--orange-h:#7A4E08;--on-orange:#FFFFFF;
+    --purple:#6B3FD4;
+    --shadow:rgba(23,26,33,.16);--shadow-soft:rgba(23,26,33,.12);
+  }
+}
+:root[data-theme=light]{
+  color-scheme:light;
+  --bg:#F5F6F8;--card:#FFFFFF;--card-hover:#EDEFF3;--border:#DCE0E8;
+  --text:#171A21;--text-dim:#5D6472;
+  --accent:#2563C7;--accent-solid:#2563C7;--accent-h:#1B4CA0;
+  --red:#C4381A;--red-solid:#C4381A;--red-h:#A32C12;
+  --green:#17784A;--green-solid:#17784A;
+  --orange:#95610D;--orange-solid:#95610D;--orange-h:#7A4E08;--on-orange:#FFFFFF;
+  --purple:#6B3FD4;
+  --shadow:rgba(23,26,33,.16);--shadow-soft:rgba(23,26,33,.12);
+}
+/* Perché ogni colore vive in due versioni.
+   Un colore ha due mestieri e non può farli con lo stesso valore: uno lo si
+   **legge** (testo, bordi, icone) e deve staccare dal fondo della scheda;
+   sull'altro ci si **scrive sopra** (i pulsanti pieni) e deve staccare
+   dall'inchiostro. Sul tema scuro i due vincoli tirano in direzioni opposte, e
+   non esiste un blu che li soddisfi entrambi: quello di prima stava nel mezzo e
+   li mancava tutti e due — 4.24:1 da leggere, 4.06:1 sotto il bianco.
+   Da qui `--x` per il primo mestiere e `--x-solid` per il secondo. Sul tema
+   chiaro il fondo bianco allarga la finestra e i due coincidono, ma i nomi
+   restano: è il foglio a non dover sapere quale tema è in corso.
+   L'ambra fa storia a sé — scurirla fino a reggere il bianco la spegnerebbe
+   proprio dove serve gridare, quindi resta accesa e cambia l'inchiostro
+   (`--on-orange`), che è nero sullo scuro e bianco sul chiaro. */
+/* Derivate: una definizione sola per due temi. `color-mix` legge i token qui
+   sopra, che al cambio di tema sono già cambiati. */
+:root{
+  --accent-soft:color-mix(in srgb,var(--accent) 10%,transparent);
+  --accent-soft-hi:color-mix(in srgb,var(--accent) 15%,transparent);
+  --accent-line:color-mix(in srgb,var(--accent) 32%,transparent);
+  --red-soft:color-mix(in srgb,var(--red) 15%,transparent);
+  --green-soft:color-mix(in srgb,var(--green) 14%,transparent);
+  --orange-soft:color-mix(in srgb,var(--orange) 13%,transparent);
+  --purple-soft:color-mix(in srgb,var(--purple) 14%,transparent);
+  --purple-veil:color-mix(in srgb,var(--purple) 5%,transparent);
+  --hairline:color-mix(in srgb,var(--border) 55%,transparent);
+}
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 body{font-family:var(--font);background:var(--bg);color:var(--text);font-size:14px;min-height:100vh}
 input,select,button,textarea{font-family:var(--font)}
 ::-webkit-scrollbar{width:6px;height:6px}::-webkit-scrollbar-track{background:var(--bg)}::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
 
 /* Toast */
-#toast{position:fixed;top:16px;right:16px;padding:10px 20px;border-radius:8px;color:#fff;font-weight:600;z-index:999;font-size:13px;box-shadow:0 4px 20px rgba(0,0,0,.4);transform:translateY(-20px);opacity:0;transition:all .25s ease;pointer-events:none}
+#toast{position:fixed;top:16px;right:16px;padding:10px 20px;border-radius:8px;color:#fff;font-weight:600;z-index:999;font-size:13px;box-shadow:0 4px 20px var(--shadow-soft);transform:translateY(-20px);opacity:0;transition:all .25s ease;pointer-events:none}
 #toast.show{transform:translateY(0);opacity:1}
 /* Col pulsante l'avviso deve essere cliccabile: pointer-events resta none
    finché non c'è niente da cliccare, così un toast non intercetta i click. */
@@ -18,7 +103,7 @@ input,select,button,textarea{font-family:var(--font)}
 /* Le schede sono finestre mobili, non modali: niente velo scuro sopra la
    pagina, che resta usabile mentre una scheda è aperta. Si trascinano per il
    titolo e si ridimensionano dall'angolo in basso a destra. */
-.panel{position:fixed;background:var(--card);border:1px solid var(--border);border-radius:14px;padding:28px;width:min(520px,calc(100vw - 24px));max-height:88vh;overflow:auto;resize:both;min-width:300px;min-height:120px;box-shadow:0 18px 48px rgba(0,0,0,.45);animation:fadeIn .15s}
+.panel{position:fixed;background:var(--card);border:1px solid var(--border);border-radius:14px;padding:28px;width:min(520px,calc(100vw - 24px));max-height:88vh;overflow:auto;resize:both;min-width:300px;min-height:120px;box-shadow:0 18px 48px var(--shadow);animation:fadeIn .15s}
 .panel-wide{width:min(860px,calc(100vw - 24px))}
 /* Solo il titolo del pannello trascina: un h3 dentro al corpo no. */
 .panel > h3{font-size:17px;font-weight:700;margin-bottom:18px;display:flex;align-items:center;gap:8px;padding-right:24px;cursor:move;user-select:none}
@@ -30,6 +115,17 @@ input,select,button,textarea{font-family:var(--font)}
   .panel,.panel-wide{left:8px!important;top:8px!important;width:calc(100vw - 16px);max-height:calc(100vh - 16px);resize:none;padding:20px}
   .panel > h3{cursor:default}
 }
+/* L'icona nativa del calendario è nera: sul fondo scuro dei campi sparisce e va
+   schiarita, sul chiaro è già giusta — invertirla la farebbe sparire lì. Non è
+   un colore, è un filtro: non può passare da un token, serve la regola doppia.
+   `color-scheme` sui :root fa già il resto (barre di scorrimento, campi nativi). */
+input[type=date]::-webkit-calendar-picker-indicator,input[type=datetime-local]::-webkit-calendar-picker-indicator{filter:invert(.8)}
+@media(prefers-color-scheme:light){
+  :root:not([data-theme=dark]) input[type=date]::-webkit-calendar-picker-indicator,
+  :root:not([data-theme=dark]) input[type=datetime-local]::-webkit-calendar-picker-indicator{filter:none}
+}
+:root[data-theme=light] input[type=date]::-webkit-calendar-picker-indicator,
+:root[data-theme=light] input[type=datetime-local]::-webkit-calendar-picker-indicator{filter:none}
 .modal-actions{display:flex;gap:8px;margin-top:20px;justify-content:flex-end;flex-wrap:wrap}
 .modal-field{display:flex;flex-direction:column;gap:4px;margin-bottom:12px}
 .modal-field label{font-size:11px;font-weight:600;color:var(--text-dim);text-transform:uppercase;letter-spacing:.06em}
@@ -68,10 +164,23 @@ input,select,button,textarea{font-family:var(--font)}
 .picker-row{padding:8px 12px;font-size:13px;cursor:pointer;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;transition:background .12s}
 .picker-row:last-child{border-bottom:none}
 .picker-row:hover{background:var(--card-hover)}
-.picker-row.is-sel{background:rgba(58,123,232,.12)}
+.picker-row.is-sel{background:var(--accent-soft-hi)}
 .picker-row b{font-family:var(--mono);font-weight:600}
-.picker-type{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:var(--text-dim);background:var(--card);border:1px solid var(--border);border-radius:4px;padding:2px 6px;white-space:nowrap}
+.picker-type{display:inline-block;font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:var(--text-dim);background:var(--card);border:1px solid var(--border);border-radius:4px;padding:2px 6px;white-space:nowrap}
 .picker-empty{padding:10px 12px;font-size:12px;color:var(--text-dim);text-align:center}
+/* Righe del pannello "Aggiungi componenti": codice e descrizione impilati a
+   sinistra, i comandi di quantità (±1, campo, U.M.) allineati a destra. */
+.bpn-row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 10px;border-bottom:1px solid var(--border)}
+.bpn-row:last-child{border-bottom:none}
+.bpn-info{min-width:0;flex:1;display:flex;flex-direction:column;gap:1px}
+.bpn-code{font-family:var(--mono);font-weight:600;font-size:12px}
+.bpn-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text-dim);font-size:12px}
+.bpn-stepper{display:flex;align-items:center;gap:4px;flex-shrink:0}
+.bpn-step{width:22px;height:22px;border-radius:6px;border:1px solid var(--border);background:var(--bg);
+  color:var(--text);cursor:pointer;font-size:14px;line-height:1;display:flex;align-items:center;justify-content:center;padding:0}
+.bpn-step:hover{border-color:var(--accent);color:var(--accent)}
+.bpn-qty{width:42px;text-align:center;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:3px 2px;color:var(--text);font-size:13px}
+.bpn-uom{font-size:11px;color:var(--text-dim);min-width:18px}
 
 /* Header */
 /* Una riga sola: logo e comandi non si comprimono, il nav sì (scorre se non ci sta) */
@@ -83,30 +192,57 @@ input,select,button,textarea{font-family:var(--font)}
 .nav::-webkit-scrollbar{display:none}
 .nav-btn{background:transparent;border:none;color:var(--text-dim);padding:7px 10px;white-space:nowrap;border-radius:8px;cursor:pointer;font-size:13px;font-weight:500;display:flex;align-items:center;gap:6px;transition:all .15s}
 .nav-btn:hover{color:var(--text)}
-.nav-btn.active{background:rgba(58,123,232,.09);color:var(--accent)}
+.nav-btn.active{background:var(--accent-soft);color:var(--accent)}
 .header-right{display:flex;align-items:center;gap:8px;flex:0 0 auto}
 /* Header compatto: pulsanti a sola icona e orologio con data per esteso */
 .btn-icon{padding:6px 8px;line-height:0;display:inline-flex;align-items:center}
-.btn-emoji{font-size:14px;line-height:1}
+.btn-icon .ico{width:15px;height:15px}
+.logo .ico{width:22px;height:22px}
+.login-logo .ico{width:40px;height:40px}
+
+/* Icone
+   Disegni nostri, non emoji di sistema: `icons.js` monta lo sprite e genera le
+   tinte, qui c’è solo la forma. La misura è in `em` e il colore è
+   `currentColor`, così l’icona segue il testo che la circonda invece di
+   pretendere una regola per ogni posto in cui compare. */
+.ico{width:1em;height:1em;flex:none;fill:none;stroke:currentColor;stroke-width:1.8;
+  stroke-linecap:round;stroke-linejoin:round;vertical-align:-.125em}
+/* Il guscio che porta il suggerimento al passaggio del mouse: non ha testo
+   proprio, quindi non cambia né il calcolo dell’etichetta accessibile né la
+   spaziatura di chi lo contiene. */
+.ico-w{display:inline-flex;align-items:center;flex:none}
+/* La pastiglia: l'icona sul suo stesso colore al 15%. Un tratto da 1.8 su
+   sedici pixel è poca cosa da distinguere di sfuggita — il fondo colorato dà
+   alla tinta la superficie che le serve per farsi leggere. */
+.ico.pill{box-sizing:content-box;padding:.34em;border-radius:.42em;
+  background:color-mix(in srgb,currentColor 15%,transparent)}
+/* Lo stato batte la categoria: dentro un pulsante che ha già un colore suo —
+   la voce di menu attiva, un `.mini-btn.danger` — l'icona eredita quello.
+   Lì il colore dice *cosa sta succedendo*, e vince su *di che si tratta*. */
+.nav-btn.active .ico,.mini-btn.danger .ico,.btn-danger .ico{color:inherit}
+/* Su carta il colore non c’è: le pastiglie diventerebbero rettangoli grigi. */
+@media print{.ico{color:inherit!important}.ico.pill{background:none;padding:0}}
 /* Divergenza tra dati in memoria e dati salvati: deve restare visibile finché dura */
-.unsaved-badge{padding:4px 10px;border-radius:20px;background:var(--red);color:#fff;font-size:12px;font-weight:600;white-space:nowrap;cursor:help}
+.unsaved-badge{padding:4px 10px;border-radius:20px;background:var(--red-solid);color:#fff;font-size:12px;font-weight:600;white-space:nowrap;cursor:help}
 .header-clock{display:flex;flex-direction:column;align-items:center;line-height:1.2;white-space:nowrap}
 .clock-date{font-size:11px;color:var(--text-dim)}
 .clock-time{font-family:var(--mono);font-size:14px;font-weight:700}
-.nav-ico{font-size:13px;line-height:1}
+/* L’icona di gruppo è il segnale più a portata di colpo d’occhio della barra,
+   e sotto i 1330px — dove l’etichetta sparisce — resta l’unico. */
+.nav-ico{display:inline-flex;align-items:center;font-size:15px;line-height:1}
 /* Seconda riga: le voci del gruppo aperto. Vuota (gruppo a voce singola, o
    nessuna sessione) sparisce da sé senza lasciare una striscia vuota. */
 .subnav{display:flex;gap:2px;justify-content:center;flex-wrap:wrap;padding:6px 16px;background:var(--card);border-bottom:1px solid var(--border)}
 .subnav:empty{display:none}
 .subnav-btn{background:transparent;border:none;color:var(--text-dim);padding:5px 12px;border-radius:6px;cursor:pointer;font-size:12.5px;font-weight:500;white-space:nowrap;transition:all .15s}
 .subnav-btn:hover{color:var(--text);background:var(--card-hover)}
-.subnav-btn.active{color:var(--accent);background:rgba(58,123,232,.12);font-weight:600}
+.subnav-btn.active{color:var(--accent);background:var(--accent-soft-hi);font-weight:600}
 /* Degradazione progressiva: la barra resta su una riga sola cedendo, in ordine,
    il ruolo nella pill, le etichette del nav e solo per ultima la data. */
 @media(max-width:1420px){.user-role{display:none}}
 /* Senza etichetta la vista attiva va marcata di più: la sola tinta non basta */
-@media(max-width:1330px){.nav-label{display:none}.nav-btn{padding:7px 9px}.nav-ico{font-size:15px}
-  .nav-btn.active{background:rgba(58,123,232,.16);box-shadow:inset 0 -2px 0 var(--accent)}}
+@media(max-width:1330px){.nav-label{display:none}.nav-btn{padding:7px 9px}.nav-ico{font-size:16px}
+  .nav-btn.active{background:var(--accent-soft-hi);box-shadow:inset 0 -2px 0 var(--accent)}}
 @media(max-width:780px){.clock-date{display:none}}
 @media(max-width:620px){.header-clock{display:none}}
 
@@ -122,11 +258,11 @@ input,select,button,textarea{font-family:var(--font)}
 .field-group select{cursor:pointer}
 
 /* Buttons */
-.add-btn{background:var(--accent);border:none;color:#fff;padding:12px 28px;border-radius:10px;cursor:pointer;font-size:14px;font-weight:600;display:inline-flex;align-items:center;gap:8px;transition:background .15s}
+.add-btn{background:var(--accent-solid);border:none;color:#fff;padding:12px 28px;border-radius:10px;cursor:pointer;font-size:14px;font-weight:600;display:inline-flex;align-items:center;gap:8px;transition:background .15s}
 .add-btn:hover{background:var(--accent-h)}
-.add-btn-sm{background:var(--accent);border:none;color:#fff;padding:10px 18px;border-radius:8px;cursor:pointer;font-size:13px;font-weight:600;display:inline-flex;align-items:center;gap:4px;white-space:nowrap}
+.add-btn-sm{background:var(--accent-solid);border:none;color:#fff;padding:10px 18px;border-radius:8px;cursor:pointer;font-size:13px;font-weight:600;display:inline-flex;align-items:center;gap:4px;white-space:nowrap}
 .add-btn-sm:hover{background:var(--accent-h)}
-.btn-primary{background:var(--accent);border:none;color:#fff;padding:10px 20px;border-radius:8px;cursor:pointer;font-size:14px;font-weight:600;transition:background .15s}
+.btn-primary{background:var(--accent-solid);border:none;color:#fff;padding:10px 20px;border-radius:8px;cursor:pointer;font-size:14px;font-weight:600;transition:background .15s}
 .btn-primary:hover{background:var(--accent-h)}
 .btn-ghost{background:transparent;border:1px solid var(--border);color:var(--text-dim);padding:8px 16px;border-radius:8px;cursor:pointer;font-size:13px;transition:all .15s}
 .btn-ghost:hover{color:var(--text);border-color:var(--text-dim)}
@@ -134,13 +270,18 @@ input,select,button,textarea{font-family:var(--font)}
 .btn-outline:hover{color:var(--text);border-color:var(--text-dim)}
 .mini-btn{background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:3px 7px;cursor:pointer;color:var(--text-dim);display:inline-flex;align-items:center;font-size:12px}
 .mini-btn:hover{color:var(--text);border-color:var(--text-dim)}
-.mini-btn.danger{color:var(--red)}.mini-btn.danger:hover{color:#ff7755}
+/* Nelle righe fitte l’icona prende il posto di un carattere: un filo più
+   grande del testo, o si perde fra i numeri della riga. */
+.mini-btn .ico{width:13px;height:13px}
+.bom-toggle .ico{width:9px;height:9px}
+.mini-btn.danger{color:var(--red)}.mini-btn.danger:hover{color:var(--red-h)}
 
 /* KPI */
 .kpi-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}
-.kpi-card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:20px 18px;text-align:center}
-.kpi-value{font-size:24px;font-weight:800;font-family:var(--mono);letter-spacing:-.02em}
-.kpi-label{font-size:12px;color:var(--text-dim);margin-top:6px;font-weight:500}
+.kpi-card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:20px 12px;text-align:center;min-width:0;overflow:hidden;container-type:inline-size}
+.kpi-value{font-size:clamp(16px,13cqi,26px);font-weight:800;font-family:var(--mono);letter-spacing:-.02em;white-space:nowrap}
+.kpi-uom{font-size:.62em;font-weight:600;opacity:.75;letter-spacing:0}
+.kpi-label{font-size:12px;color:var(--text-dim);margin-top:6px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .kpi-card.accent .kpi-value{color:var(--accent)}
 .kpi-card.green .kpi-value{color:var(--green)}
 .kpi-card.orange .kpi-value{color:var(--orange)}
@@ -160,12 +301,27 @@ input,select,button,textarea{font-family:var(--font)}
 /* Distinta toolbar */
 .bom-toolbar{display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap;background:var(--card);border:1px solid var(--border);border-radius:14px;padding:18px 24px;margin-bottom:20px}
 .bom-toolbar .field-group{min-width:220px}
+/* Dentro la barra il titolo è un'etichetta, non l'apertura di una sezione: il
+   margine inferiore di `.section-title` alzava la barra di 20px a vuoto.
+   Alcune pagine lo azzeravano con uno style inline: ora vale per tutte. */
+.bom-toolbar .section-title{margin:0}
+/* Due metà dentro la barra: a sinistra identità e comandi sul documento
+   (Chiudi, nome, stato, Duplica, Elimina...), a destra le azioni che
+   producono qualcosa (Genera..., Esporta...). Ciascuna metà va a capo per
+   conto proprio, invece di mescolare le due famiglie in un'unica fila. */
+.bom-toolbar-left,.bom-toolbar-right{display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap}
+.bom-toolbar-right{margin-left:auto}
+/* La posizione a destra la dà già il contenitore: un margine automatico
+   anche sul singolo pulsante export (necessario altrove, dove l'export è
+   solo nella fila) qui raddoppierebbe la spinta e aprirebbe un vuoto a
+   metà gruppo. */
+.bom-toolbar-right .export-btn-xls,.bom-toolbar-right .export-btn-pdf{margin-left:0}
 
 /* Distinta tree */
 .bom-tree{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:8px 0;overflow-x:auto}
 .bom-head,.bom-node{display:grid;grid-template-columns:minmax(280px,2fr) 70px 70px 90px 110px 110px 96px;align-items:center;gap:8px;padding:9px 18px;font-size:13px}
 .bom-head{font-size:11px;font-weight:600;color:var(--text-dim);text-transform:uppercase;letter-spacing:.05em;border-bottom:1px solid var(--border);position:sticky;top:0}
-.bom-node{border-bottom:1px solid rgba(42,46,59,.35)}
+.bom-node{border-bottom:1px solid var(--hairline)}
 .bom-node:hover{background:var(--card-hover)}
 .bom-node-root{background:var(--card-hover);border-bottom:2px solid var(--border)}
 .bom-node-root .nm,.bom-node-root .bom-code{font-weight:700}
@@ -175,27 +331,32 @@ input,select,button,textarea{font-family:var(--font)}
 .bom-name .nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .bom-toggle{width:18px;flex-shrink:0;cursor:pointer;color:var(--text-dim);font-size:11px;text-align:center;user-select:none}
 .bom-toggle.leaf{cursor:default;visibility:hidden}
-.bom-code{font-family:var(--mono);font-size:11px;color:var(--text-dim);flex-shrink:0}
+.bom-code{flex-shrink:0}
 /* Posizione gerarchica (1, 1.1, 1.1.1…): min-width per allineare i numeri corti a quelli lunghi */
 .bom-pos{font-family:var(--mono);font-size:11px;color:var(--text-dim);flex-shrink:0;min-width:34px}
 .bom-type-tag{font-size:9px;padding:2px 6px;border-radius:8px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;flex-shrink:0}
-.tt-materiale{background:rgba(232,163,58,.15);color:var(--orange)}
-.tt-acquistato{background:rgba(58,123,232,.15);color:var(--accent)}
-.tt-parte{background:rgba(155,109,255,.15);color:var(--purple)}
-.tt-sottogruppo{background:rgba(46,174,109,.13);color:var(--green)}
-.tt-gruppo{background:rgba(46,174,109,.2);color:var(--green)}
-.tt-macchina{background:rgba(232,93,58,.15);color:var(--red)}
-.tt-lav{background:rgba(46,174,109,.15);color:var(--green)}
-.bom-node-cycle{background:rgba(155,109,255,.04)}
+.tt-materiale{background:var(--orange-soft);color:var(--orange)}
+.tt-acquistato{background:var(--accent-soft-hi);color:var(--accent)}
+.tt-parte{background:var(--purple-soft);color:var(--purple)}
+.tt-sottogruppo{background:var(--green-soft);color:var(--green)}
+.tt-gruppo{background:color-mix(in srgb,var(--green) 22%,transparent);color:var(--green)}
+.tt-macchina{background:var(--red-soft);color:var(--red)}
+.tt-lav{background:var(--green-soft);color:var(--green)}
+.bom-node-cycle{background:var(--purple-veil)}
 .bom-row-actions{display:flex;gap:4px;justify-content:flex-end}
-.bom-ops{padding:6px 18px;border-bottom:1px solid rgba(42,46,59,.35);font-size:12px;color:var(--text-dim)}
+.bom-ops{padding:6px 18px;border-bottom:1px solid var(--hairline);font-size:12px;color:var(--text-dim)}
 .bom-op-tag{display:inline-flex;align-items:center;gap:4px;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:3px 8px;margin:2px 4px 2px 0;font-size:11px}
 
 /* Ciclo di lavorazione (parte) */
 .cycle-box{background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:10px 12px;overflow-x:auto}
-.cycle-row{display:grid;grid-template-columns:minmax(150px,2fr) minmax(110px,1fr) 56px 74px 92px 88px 32px;align-items:center;gap:8px;padding:6px 0;font-size:13px;border-bottom:1px solid rgba(42,46,59,.35)}
-/* Le lavorazioni hanno la fase in testa e le frecce di riordino in coda */
-.cycle-op-row{grid-template-columns:52px minmax(150px,2fr) minmax(110px,1fr) 92px 88px 62px 32px}
+.cycle-row{display:grid;grid-template-columns:minmax(150px,2fr) minmax(110px,1fr) 56px 74px 92px 88px 32px;align-items:center;gap:8px;padding:6px 0;font-size:13px;border-bottom:1px solid var(--hairline)}
+/* Le lavorazioni hanno la fase in testa, il modo (fisso/orario) prima del
+   costo — la cui cella si impila in due campi (ore, tariffa) quando è orario
+   — e le frecce di riordino in coda. */
+.cycle-op-row{grid-template-columns:52px minmax(126px,2fr) minmax(92px,1fr) 68px 76px 92px 80px 56px 32px}
+.cycle-op-time{display:flex;align-items:center;gap:4px}
+.cycle-op-time em{font-style:normal;font-size:11px;color:var(--text-dim)}
+.cycle-op-cost{display:flex;flex-direction:column;gap:3px}
 .cycle-row:last-child{border-bottom:none}
 .cycle-head{font-size:10px;font-weight:600;color:var(--text-dim);text-transform:uppercase;letter-spacing:.05em}
 .cycle-row .num{font-family:var(--mono);text-align:right}
@@ -228,6 +389,9 @@ input,select,button,textarea{font-family:var(--font)}
 .cycle-phase{font-family:var(--mono);font-size:12px;font-weight:700;color:var(--text-dim)}
 .cycle-move{display:flex;gap:4px}
 .cycle-move .mini-btn{padding:3px 5px}
+/* Quanti allegati ha un articolo, sul pulsante che li apre: si vede dall'elenco
+   che il disegno c'è, senza doverlo aprire per scoprirlo. */
+.mini-count{margin-left:3px;font-size:10px;font-weight:700;color:var(--accent)}
 .cycle-move .mini-btn[disabled]{opacity:.3;cursor:default}
 .cycle-move .mini-btn[disabled]:hover{color:var(--text-dim);border-color:var(--border)}
 /* Sola lettura: niente riordino e nessun campo modificabile nelle righe */
@@ -245,6 +409,35 @@ input,select,button,textarea{font-family:var(--font)}
 .mrp-total td{border-top:2px solid var(--border);font-weight:700}
 .mrp-warn{color:var(--orange);font-size:11px;white-space:nowrap}
 .mrp-section .btn-outline.active{color:var(--text);border-color:var(--accent)}
+
+/* Calendario scadenze (Riepilogo) */
+.cal-toolbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px}
+.cal-title{min-width:150px;text-align:center;text-transform:capitalize}
+.cal-legend{margin-left:auto;display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text-dim);flex-wrap:wrap}
+.cal-legend .cal-dot{margin-left:6px}
+.cal-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:4px}
+.cal-head{font-size:11px;font-weight:600;color:var(--text-dim);text-transform:uppercase;letter-spacing:.06em;text-align:center;padding:4px 0}
+.cal-cell{display:flex;flex-direction:column;align-items:flex-start;gap:6px;min-height:58px;padding:6px 8px;background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--text);font:inherit;cursor:pointer;text-align:left}
+.cal-cell:hover{background:var(--card-hover)}
+.cal-cell:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.cal-out{opacity:.45}
+.cal-today{border-color:var(--accent)}
+.cal-today .cal-num{color:var(--accent);font-weight:700}
+.cal-sel{background:var(--card-hover);box-shadow:inset 0 0 0 1px var(--accent)}
+.cal-num{font-family:var(--mono);font-size:12px}
+.cal-dots{display:flex;align-items:center;gap:3px;flex-wrap:wrap}
+.cal-dot{display:inline-block;width:8px;height:8px;border-radius:50%;flex:none}
+.cal-more{font-size:10px;color:var(--text-dim);font-family:var(--mono)}
+.cal-block{margin-top:14px}
+.cal-block h4{font-size:13px;margin:0 0 8px}
+.cal-late h4{color:var(--red)}
+.cal-wide{margin-top:14px}
+.cal-ev{cursor:pointer}
+.cal-narrow{display:none}
+@media(max-width:640px){
+  .cal-wide{display:none}
+  .cal-narrow{display:block}
+}
 /* Modale "Genera documenti": fornitori a gruppi, righe a spunta */
 .plandoc-group{border:1px solid var(--border);border-radius:8px;margin-bottom:10px;overflow:hidden}
 .plandoc-head{display:flex;align-items:center;gap:8px;padding:9px 12px;background:var(--bg);font-size:13px;cursor:pointer}
@@ -257,8 +450,21 @@ input,select,button,textarea{font-family:var(--font)}
 .plandoc-qty{margin-left:auto;font-family:var(--mono);font-size:12px;color:var(--text-dim);white-space:nowrap}
 .plandoc-head .plandoc-qty{margin-left:auto}
 .plandoc-links{display:flex;flex-wrap:wrap;gap:8px}
-.plandoc-link{border:1px solid var(--border);border-radius:6px;padding:6px 10px;font-size:12px;cursor:pointer}
+/* Tutte le classi che disegnano un riquadro dentro il testo (bordo + padding
+   verticale) dichiarano `display:inline-block`, e test/theme.test.js verifica
+   che nessuna se ne dimentichi. Sotto, il perche'. */
+/* inline-block e' obbligatorio, non estetica: un inline con padding verticale
+   non allarga la riga di testo, e il riquadro deborda sopra e sotto finendo
+   addosso alle righe vicine. Dentro .plandoc-links sono flex item e la
+   dichiarazione non cambia niente; fuori, e' cio' che li tiene nel loro spazio. */
+.plandoc-link{display:inline-block;border:1px solid var(--border);border-radius:6px;padding:6px 10px;font-size:12px;cursor:pointer}
 .plandoc-link:hover{border-color:var(--accent);color:var(--text)}
+/* Variante compatta per le azioni dentro una riga di documento, dove lo spazio
+   verticale e' quello di una cella di tabella. */
+.plandoc-link-sm{padding:2px 7px;font-size:11px;border-radius:5px}
+/* I comandi di conto lavoro sotto una riga: riga propria, non testo. In .line-note
+   erano inline dentro un blocco pensato per una nota, e si accavallavano. */
+.line-cl-actions{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:6px;font-size:11px;color:var(--text-dim)}
 
 /* Summary card */
 .cost-summary{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:20px}
@@ -268,14 +474,39 @@ input,select,button,textarea{font-family:var(--font)}
 table{width:100%;border-collapse:collapse}
 th{text-align:left;padding:10px 12px;font-size:11px;font-weight:600;color:var(--text-dim);text-transform:uppercase;letter-spacing:.06em;border-bottom:1px solid var(--border)}
 td{padding:10px 12px;font-size:13px}
-tr{border-bottom:1px solid rgba(42,46,59,.4)}
+tr{border-bottom:1px solid var(--hairline)}
 
 /* Manage */
-.manage-wrap{display:flex;flex-direction:column;gap:20px}
+.manage-wrap{display:flex;flex-direction:column;gap:14px}
+/* `manage-wrap` è già una colonna con gap, e il gap flex non si fonde con i
+   margini: ogni blocco che ne porta uno apriva una fascia vuota in più fra
+   barra, timbro, avvisi e riquadro dei campi. Qui il ritmo lo detta il gap. */
+.manage-wrap > .bom-toolbar{margin-bottom:0}
+.manage-wrap > .rfq-head,.manage-wrap > .rfq-warn,.manage-wrap > .ord-ref,
+.manage-wrap > .doc-lock-banner{margin:0}
+.manage-wrap > .stamp-line{margin-top:0}
+/* Il titolo di sezione sta con la sua tabella, non a metà strada: sopra prende
+   un po' d'aria in più, sotto resta attaccato a ciò che introduce. */
+.manage-wrap > .rfq-subhead{margin:8px 0 0}
+.manage-wrap > .table-wrap{margin-top:0}
+.manage-wrap > .rfq-export-bar{margin-top:0}
+.manage-wrap > .cost-summary{margin-bottom:0}
+.manage-wrap > .mrp-section{margin:0}
+.manage-wrap > .empty-text{padding:4px 0}
+/* Commessa e piano di fabbisogno: la stessa scheda di richieste e ordini.
+   È lo stesso gesto — i dati di intestazione di un documento — e finché i
+   campi stavano nudi sullo sfondo le quattro pagine si somigliavano a metà.
+   Solo in pagina: dentro una finestra modale la griglia resta com'è, lì la
+   scheda è già la finestra e un riquadro dentro il riquadro non dice niente. */
+.manage-wrap > .modal-grid{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px 16px;gap:10px 12px}
+.manage-wrap > .modal-grid > .modal-field{margin-bottom:0}
+.manage-wrap > .modal-grid > .modal-field input,
+.manage-wrap > .modal-grid > .modal-field select,
+.manage-wrap > .modal-grid > .modal-field textarea{padding:8px 11px}
 .mgmt-tabs{display:flex;gap:6px;flex-wrap:wrap}
 .mgmt-tab{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:10px 18px;cursor:pointer;color:var(--text-dim);font-size:13px;font-weight:500;display:flex;align-items:center;gap:6px;transition:all .15s}
 .mgmt-tab:hover{color:var(--text)}
-.mgmt-tab.active{background:rgba(58,123,232,.09);border-color:rgba(58,123,232,.27);color:var(--accent)}
+.mgmt-tab.active{background:var(--accent-soft);border-color:var(--accent-line);color:var(--accent)}
 .mgmt-panel{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:24px}
 .settings-group-title{font-size:14px;font-weight:700;margin:0 0 12px;padding-top:16px;border-top:1px solid var(--border);display:flex;align-items:center;gap:6px}
 .settings-group-title:first-child{margin-top:0;padding-top:0;border-top:none}
@@ -292,10 +523,21 @@ tr{border-bottom:1px solid rgba(42,46,59,.4)}
 .catalog-filters{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:16px}
 .catalog-filters input,.catalog-filters select{background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:9px 12px;color:var(--text);font-size:13px;outline:none}
 .catalog-filters .search{flex:1;min-width:200px}
+
+/* Barra Filtri a scomparsa (filters.js): stessa riga di sempre, solo più alta
+   quando aperta — niente posizionamento fisso, niente da far coesistere col
+   pannello laterale o con "Aggiungi componenti". */
+.filt-fields{display:none;gap:10px;flex-wrap:wrap;align-items:center}
+body.filt-open .filt-fields{display:flex}
+.filt-summary{display:flex;gap:8px;align-items:center;flex:1;min-width:0}
+body.filt-open .filt-summary{display:none}
+.filt-chips{display:flex;gap:6px;flex-wrap:wrap}
+.filt-chip{background:var(--bg);border:1px solid var(--border);border-radius:20px;padding:4px 10px;font-size:12px;color:var(--text-dim);white-space:nowrap}
+.filt-clear{margin-left:auto}
 .cat-group-title{font-size:12px;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.05em;margin:18px 0 6px}
 .cat-group-title:first-child{margin-top:0}
 /* Listino fornitori: la quotazione in uso e quella più bassa vanno riconosciute a colpo d'occhio */
-.price-active{background:rgba(58,123,232,.10)}
+.price-active{background:var(--accent-soft)}
 .price-best{color:var(--green);font-weight:700;margin-left:4px}
 /* La riga era troppo lunga: i numeri stanno in colonne strette (i giorni di
    consegna in quattro cifre) e codice fornitore e origine scendono sotto al
@@ -306,12 +548,27 @@ tr{border-bottom:1px solid rgba(42,46,59,.4)}
 .price-table input:focus,.price-table select:focus{border-color:var(--accent)}
 .price-table .num{font-family:var(--mono);text-align:right}
 .price-table .pl-flag{width:1%;white-space:nowrap;padding-top:14px}
-.pl-sup{min-width:240px}
+/* width fisso, non solo min-width: con table-layout auto un td senza width
+   proprio si prende parte dello spazio in eccesso della tabella, allargandosi
+   ben oltre il suo contenuto — è quel vuoto fra il menu fornitore e la
+   colonna Prezzo. Un width dichiarato è un vincolo più forte, che il browser
+   rispetta invece di redistribuire lì la larghezza avanzata. */
+.pl-sup{width:330px}
+.pl-sup > select{width:330px}
 .pl-sub{display:flex;align-items:center;gap:8px;margin-top:4px}
-.pl-sub input{font-family:var(--mono);font-size:11px;padding:4px 6px;max-width:150px}
-/* La descrizione presso il fornitore è testo corrente, non un codice */
-.pl-sub input.pl-desc{font-family:inherit;max-width:210px}
-.pl-sub span{color:var(--text-dim);font-size:11px;white-space:nowrap}
+/* Codice e descrizione fornitore hanno una classe propria — non "input dentro
+   .pl-sub" generico — perché .pl-sub è la stessa classe della riga
+   unità/costo convertito nella cella Prezzo (select + span, niente input):
+   una regola larga per "tutti gli input dentro .pl-sub" non la tocca, ma una
+   regola stretta l'aveva già toccata per sbaglio una volta, nascondendo UM e
+   costo calcolato spingendoli fuori dalla colonna. */
+.price-table .pl-code{font-family:var(--mono);font-size:12px;padding:4px 6px;width:130px}
+.price-table .pl-desc{font-family:inherit;font-size:12px;padding:4px 6px;width:170px}
+/* Senza questa regola il select eredita width:100% da .price-table select:
+   dentro il flex di .pl-sub si schiaccia fino a mostrare solo la freccina,
+   col testo dell'unità (es. «kg») invisibile perché non c'è più spazio. */
+.pl-sub select{width:auto;flex:0 0 auto;font-family:var(--mono);font-size:12px;padding:4px 6px}
+.pl-sub span{color:var(--text-dim);font-size:12px;white-space:nowrap}
 .price-table .pl-price{width:88px}
 .price-table .pl-small{width:62px}
 .price-table .pl-date{width:132px}
@@ -331,6 +588,18 @@ tr{border-bottom:1px solid rgba(42,46,59,.4)}
 .flag-check{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:400;color:var(--text);text-transform:none;letter-spacing:normal;cursor:pointer;padding:9px 0}
 .flag-check input{width:16px;height:16px;cursor:pointer}
 .fav-filter.active{color:var(--orange);border-color:var(--orange)}
+/* Scelta delle colonne: l’elenco delle caselle sta su due colonne, perché il
+   Magazzino ne ha dodici e una lista lunga costringe a scorrere per capire
+   quante ne sono rimaste accese. */
+#col-picker{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:0 16px;margin-bottom:6px}
+#col-picker .flag-check{padding:6px 0}
+/* Le due colonne che non si spengono restano visibili ma spente: dicono che
+   esistono e che non sono in discussione, invece di sparire senza spiegazione. */
+.col-pick-fissa{opacity:.55;cursor:default}
+.col-pick-fissa input{cursor:default}
+/* Il pulsante conta le colonne nascoste: un elenco a cui ne manca una, senza
+   che nulla lo dica, sembra un elenco rotto. */
+.btn-outline.active{color:var(--accent);border-color:var(--accent)}
 /* Note interne dei documenti: non finiscono su PDF/Excel, si distinguono a colpo d'occhio */
 textarea.notes-internal{border-style:dashed}
 /* Conteggio dei documenti mostrati dai filtri di richieste e ordini */
@@ -349,7 +618,17 @@ textarea.notes-internal{border-style:dashed}
    il tema scuro in stampa è una tanica d'inchiostro. */
 #print-head{display:none}
 @media print{
-  :root{--bg:#fff;--card:#fff;--card-hover:#fff;--border:#bbb;--text:#000;--text-dim:#555}
+  /* La carta è bianca comunque, anche stampando col tema scuro attivo: senza
+     ripetere il selettore con l'attributo, `:root[data-theme=dark]` vincerebbe
+     per specificità e uscirebbe una pagina nera. `color-scheme` va riportato a
+     chiaro per la stessa ragione. */
+  :root,:root[data-theme]{color-scheme:light;--bg:#fff;--card:#fff;--card-hover:#fff;--border:#bbb;--text:#000;--text-dim:#555;
+    --accent:#2563C7;--accent-solid:#2563C7;--accent-h:#1B4CA0;
+    --red:#C4381A;--red-solid:#C4381A;--red-h:#A32C12;
+    --green:#17784A;--green-solid:#17784A;
+    --orange:#95610D;--orange-solid:#95610D;--orange-h:#7A4E08;--on-orange:#FFFFFF;
+    --purple:#6B3FD4;--shadow:transparent;--shadow-soft:transparent}
+  input[type=date]::-webkit-calendar-picker-indicator,input[type=datetime-local]::-webkit-calendar-picker-indicator{filter:none}
   body{background:#fff;color:#000;font-size:11px}
   #app-header,#sub-nav,#toast,#modal-root,#login-screen,#unsaved-badge{display:none!important}
   .catalog-filters,.mgmt-tabs,.doc-lock-banner,.ro-banner,.mgmt-item-actions,.line-actions,
@@ -373,36 +652,73 @@ textarea.notes-internal{border-style:dashed}
 .kpi-card,.breakdown-section,.mgmt-panel,.bom-tree,.bom-toolbar{animation:fadeUp .3s ease}
 
 /* Export buttons */
-.export-btn-pdf{background:#E84040;border:none;color:#fff;padding:10px 20px;border-radius:8px;cursor:pointer;font-size:13px;font-weight:600;display:inline-flex;align-items:center;gap:6px;transition:opacity .15s}
+/* Rosso Acrobat e verde Excel: sono i colori dei due formati, non del tema.
+   Cambiarli col fondo li renderebbe irriconoscibili proprio dove servono a
+   distinguere due pulsanti gemelli. Il bianco sopra regge su entrambi. */
+.export-btn-pdf{background:#E41C1C;border:none;color:#fff;padding:6px 12px;border-radius:7px;cursor:pointer;font-size:12px;font-weight:600;display:inline-flex;align-items:center;gap:5px;transition:opacity .15s}
 .export-btn-pdf:hover{opacity:.85}
-.export-btn-xls{background:#217346;border:none;color:#fff;padding:10px 20px;border-radius:8px;cursor:pointer;font-size:13px;font-weight:600;display:inline-flex;align-items:center;gap:6px;transition:opacity .15s}
+.export-btn-xls{background:#217346;border:none;color:#fff;padding:6px 12px;border-radius:7px;cursor:pointer;font-size:12px;font-weight:600;display:inline-flex;align-items:center;gap:5px;transition:opacity .15s}
 .export-btn-xls:hover{opacity:.85}
+/* La coppia Excel/PDF sta impilata, non affiancata: meno larga, e si
+   allinea da sola a destra del box che la contiene invece di dipendere
+   dall'ordine degli altri pulsanti intorno — anche quando quel box va a
+   capo, la coppia resta un blocco solo. */
+.export-pair{display:flex;flex-direction:column;gap:6px;margin-left:auto}
+.export-pair .export-btn-xls,.export-pair .export-btn-pdf{margin-left:0}
 
 /* Richieste di offerta (RFQ) */
-.rfq-head{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:16px 18px;margin:12px 0 18px;display:flex;flex-direction:column;gap:12px}
-.rfq-head-row{display:flex;gap:16px;flex-wrap:wrap}
+.rfq-head{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px 16px;margin:0;display:flex;flex-direction:column;gap:10px}
+.rfq-head-row{display:flex;gap:12px;flex-wrap:wrap}
 .rfq-head-row .modal-field{flex:1;min-width:140px}
+/* `modal-field` nasce per le schede modali, dove è lui a distanziare i campi.
+   Qui a distanziarli è il gap della colonna: sommati facevano 24px fra una
+   riga e l'altra, e la testata occupava mezzo schermo per otto campi. */
+.rfq-head .modal-field{margin-bottom:0}
+.rfq-head .modal-field input,.rfq-head .modal-field select,.rfq-head .modal-field textarea{padding:8px 11px}
+.rfq-head .modal-field textarea{line-height:1.45}
 .rfq-subhead{font-size:14px;font-weight:600;color:var(--text);margin:18px 0 10px;display:flex;align-items:center;justify-content:space-between;gap:12px}
 .rfq-head-actions{display:flex;gap:8px}
 .rfq-sup-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:8px;margin-bottom:6px}
 .rfq-sup-chk{display:flex;align-items:center;gap:8px;background:var(--card);border:1px solid var(--border);border-radius:8px;padding:9px 12px;font-size:13px;cursor:pointer}
 .rfq-sup-chk:hover{border-color:var(--text-dim)}
 .rfq-sup-email{color:var(--text-dim);font-size:11px;font-family:var(--mono)}
-.rfq-manual-tag{font-size:10px;font-weight:600;text-transform:uppercase;color:var(--orange);border:1px solid var(--orange);border-radius:4px;padding:1px 5px;margin-left:4px}
+.rfq-manual-tag{display:inline-block;font-size:10px;font-weight:600;text-transform:uppercase;color:var(--orange);border:1px solid var(--orange);border-radius:4px;padding:1px 5px;margin-left:4px}
+.rfq-clavoro-tag{display:inline-block;font-size:10px;font-weight:600;text-transform:uppercase;color:var(--green);border:1px solid var(--green);border-radius:4px;padding:1px 5px;margin-left:4px}
 /* Badge di stato documento (RFQ / ODA) */
-.doc-badge{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;border-radius:5px;padding:3px 8px;white-space:nowrap;border:1px solid currentColor}
+.doc-badge{display:inline-block;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;border-radius:5px;padding:3px 8px;white-space:nowrap;border:1px solid currentColor}
 .doc-badge.st-bozza{color:var(--text-dim)}
 .doc-badge.st-inviata,.doc-badge.st-inviato{color:var(--accent)}
 .doc-badge.st-ricevuta,.doc-badge.st-confermato{color:var(--purple)}
 .doc-badge.st-parziale{color:var(--orange)}
 .doc-badge.st-chiusa,.doc-badge.st-evaso{color:var(--green)}
 .doc-badge.st-annullato{color:var(--red)}
+.doc-badge.st-aperta{color:var(--accent)}
+.doc-badge.st-produzione{color:var(--orange)}
+.doc-badge.st-annullata{color:var(--red)}
 .doc-badge.st-attivo{color:var(--green)}
 .doc-badge.st-sospeso{color:var(--red)}
+/* Ordini di produzione: gli stati della testata e quelli delle fasi.
+   Le fasi usano lo stesso riquadro degli stati di documento — è la stessa
+   domanda, «a che punto è» — con i colori che dicono se si può agire:
+   spento in attesa, acceso quando è il turno, verde quando è chiuso. */
+.doc-badge.st-lanciato{color:var(--accent)}
+.doc-badge.st-corso{color:var(--orange)}
+.doc-badge.st-completato,.doc-badge.st-chiuso{color:var(--green)}
+.doc-badge.st-attesa{color:var(--text-dim)}
+.doc-badge.st-avviabile{color:var(--accent)}
+.doc-badge.st-chiusa{color:var(--green)}
+/* La riga di una fase in attesa si legge come «non è il suo turno»: il
+   contenuto resta leggibile, non è nascosto, ma non chiama l'occhio. */
+tr.odp-fase-attesa{opacity:.62}
+tr.odp-fase-corso td{background:color-mix(in srgb,var(--orange) 7%,transparent)}
+/* Una forzatura non si nasconde in fondo allo storico: la riga la porta
+   addosso, perché rileggendo l'ordine fra un mese quella è la cosa da sapere. */
+tr.odp-forzata td{background:color-mix(in srgb,var(--red) 8%,transparent)}
+.odp-part{font-family:var(--mono);padding:8px 0}
 
 /* Banner di blocco modifiche */
 .doc-lock-banner{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;
-  background:rgba(58,123,232,.08);border:1px solid var(--accent);color:var(--text);border-radius:8px;padding:9px 14px;font-size:13px;margin:12px 0}
+  background:var(--accent-soft);border:1px solid var(--accent);color:var(--text);border-radius:8px;padding:9px 14px;font-size:13px;margin:12px 0}
 input:disabled,select:disabled,textarea:disabled{opacity:.5;cursor:not-allowed}
 button:disabled{opacity:.4;cursor:not-allowed}
 
@@ -415,20 +731,48 @@ button:disabled{opacity:.4;cursor:not-allowed}
 .rfq-qty-input:focus,.rfq-price-input:focus,.rfq-date-input:focus,.rfq-meta-input:focus{border-color:var(--accent)}
 .rfq-date-input{width:140px}
 .rfq-meta-input{width:80px;margin-right:4px}
-.rfq-warn{background:rgba(232,163,58,.1);border:1px solid var(--orange);color:var(--orange);border-radius:8px;padding:9px 14px;font-size:13px;margin:12px 0}
-.rfq-save-btn.dirty{background:var(--orange)}
-.rfq-save-btn.dirty:hover{background:#f0b452}
+.rfq-warn{background:var(--orange-soft);border:1px solid var(--orange);color:var(--orange);border-radius:8px;padding:9px 14px;font-size:13px;margin:12px 0}
+/* Ambra accesa con inchiostro scuro: il bianco sopra darebbe 2.2:1, e questo
+   è il pulsante che dice «hai modifiche non salvate». */
+.rfq-save-btn.dirty{background:var(--orange-solid);color:var(--on-orange)}
+.rfq-save-btn.dirty:hover{background:var(--orange-h)}
 .rfq-export-btn:disabled{opacity:.4;cursor:not-allowed}
 .rfq-dirty-hint{font-size:12px;color:var(--orange)}
 .terms-default{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:var(--green);border:1px solid var(--green);border-radius:4px;padding:1px 5px;margin-left:6px}
 /* Ordini */
 .ord-ref{font-size:13px;color:var(--text-dim);margin:10px 0}
-.ord-amount{font-family:var(--mono);text-align:right;white-space:nowrap}
-.ord-residual{font-family:var(--mono);text-align:right;color:var(--text-dim)}
-.ord-residual.pos{color:var(--orange);font-weight:600}
+/* ─── Righe di documento a due piani ───
+   Sopra il dato che si compila, sotto quello che lo spiega o ne consegue:
+   codice/descrizione, q.tà/U.M., prezzo/importo, richiesta/confermata,
+   ricevuto/residuo, modifica/elimina. Dodici colonne diventano sei coppie, e le
+   due metà si leggono insieme invece che a mezzo schermo di distanza.
+   Il piano di sopra ha l'altezza di un campo anche dove porta solo testo: è
+   quello che tiene allineate fra loro le righe di tutta la tabella. */
+.rfq-table-2 td{vertical-align:top}
+.rfq-table-2 .ln-a{min-height:30px;display:flex;align-items:center;flex-wrap:wrap;gap:4px}
+.rfq-table-2 .ln-b{min-height:22px;display:flex;align-items:center;flex-wrap:wrap;gap:4px;
+  font-size:12px;color:var(--text-dim);margin-top:3px}
+.rfq-table-2 th .ln-a{min-height:0}
+.rfq-table-2 th .ln-b{min-height:0;margin-top:2px;text-transform:none;letter-spacing:0;opacity:.75}
+.rfq-table-2 th{vertical-align:top;white-space:normal}
+.rfq-table-2 .ln-idx{width:34px;color:var(--text-dim);font-family:var(--mono);font-size:12px}
+.ln-code{font-family:var(--mono)}
+.ln-amount{font-family:var(--mono);white-space:nowrap;color:var(--text)}
+.ln-residual{font-family:var(--mono);white-space:nowrap}
+.ln-residual.pos{color:var(--orange);font-weight:600}
+/* La nota e i riferimenti del fornitore stanno sotto la descrizione, cioè nel
+   piano di sotto: non devono allargare la colonna oltre il leggibile. */
+.rfq-table-2 .ln-b .line-note,.rfq-table-2 .ln-b .rfq-cmp-sub{margin-top:0;flex-basis:100%}
+.rfq-table-2 .ln-b .line-cl-actions{flex-basis:100%}
+/* I due pulsanti stanno uno sopra l'altro come le altre coppie. */
+.rfq-table-2 .line-actions .ln-a,.rfq-table-2 .line-actions .ln-b{justify-content:flex-end}
 .rfq-table tfoot .rfq-cmp-total td{border-top:2px solid var(--border);font-weight:700;font-family:var(--mono);color:var(--text)}
 .rfq-export-bar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:18px;padding-top:16px;border-top:1px solid var(--border)}
 .rfq-export-bar label{font-size:12px;color:var(--text-dim);font-weight:600}
+/* I due generatori di documento (PDF/Excel) sono il gesto che chiude una
+   richiesta, un ordine o un ordine di lavoro: più grandi degli altri pulsanti
+   della barra, per essere il primo bersaglio dell'occhio. */
+.rfq-export-bar .export-btn-pdf,.rfq-export-bar .export-btn-xls{padding:14px 26px;font-size:15px;gap:8px;border-radius:10px}
 .rfq-export-bar select{background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:9px 12px;color:var(--text);font-size:13px;outline:none}
 .rfq-pick-filters{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
 .rfq-pick-filters .search{flex:1 1 160px;min-width:140px}
@@ -437,14 +781,14 @@ button:disabled{opacity:.4;cursor:not-allowed}
 .rfq-pick-list{max-height:340px;overflow-y:auto;border:1px solid var(--border);border-radius:8px;background:var(--bg);margin-top:8px}
 .rfq-pick-row{display:flex;align-items:center;gap:8px;padding:8px 12px;font-size:13px;cursor:pointer;border-bottom:1px solid var(--border)}
 .rfq-pick-row:hover{background:var(--card-hover)}
-.rfq-pick-type{margin-left:auto;font-size:10px;font-weight:600;text-transform:uppercase;color:var(--text-dim);background:var(--card);border:1px solid var(--border);border-radius:4px;padding:2px 6px;white-space:nowrap}
+.rfq-pick-type{display:inline-block;margin-left:auto;font-size:10px;font-weight:600;text-transform:uppercase;color:var(--text-dim);background:var(--card);border:1px solid var(--border);border-radius:4px;padding:2px 6px;white-space:nowrap}
 /* Tabella confronto offerte */
 .rfq-cmp-table td{text-align:center}
 .rfq-cmp-table td:first-child,.rfq-cmp-table th:first-child{text-align:left}
 .rfq-cmp-sub{font-size:11px;color:var(--text-dim);font-family:var(--mono);margin-top:2px}
 .rfq-cmp-cell{position:relative}
 .rfq-cmp-cell .rfq-line-tot{display:block;font-size:11px;color:var(--text-dim);margin-top:3px;font-family:var(--mono)}
-.rfq-cmp-cell.rfq-min{background:rgba(46,174,109,.12)}
+.rfq-cmp-cell.rfq-min{background:var(--green-soft)}
 .rfq-cmp-cell.rfq-min .rfq-line-tot{color:var(--green);font-weight:600}
 .rfq-cmp-cell.rfq-award{box-shadow:inset 0 0 0 2px var(--accent)}
 .rfq-award-sel{background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:6px 8px;color:var(--text);font-size:12px;outline:none}
@@ -468,6 +812,10 @@ button:disabled{opacity:.4;cursor:not-allowed}
 .login-remember{display:flex;align-items:center;gap:6px;margin:2px 0 12px;font-size:13px;color:var(--text-dim)}
 .login-remember input{accent-color:var(--accent);width:14px;height:14px;cursor:pointer}
 .login-remember label{cursor:pointer}
+/* Testo che esiste solo per i lettori di schermo. Serve dove il disegno vive
+   sul placeholder — la scheda d'accesso — ma il campo ha comunque bisogno di
+   un'etichetta vera. Non display:none, che la toglierebbe anche a loro. */
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
 .login-error{color:var(--red);font-size:13px;margin-bottom:10px}
 .login-note{color:var(--text-dim);font-size:11px;line-height:1.5;margin-top:20px}
 .user-pill{display:flex;align-items:center;gap:5px;padding:3px 10px 3px 7px;border-radius:20px;border:1.5px solid var(--border);font-size:13px;font-weight:500;white-space:nowrap}
@@ -475,4 +823,251 @@ button:disabled{opacity:.4;cursor:not-allowed}
 .user-role{color:var(--text-dim);font-size:11px}
 /* Sola lettura per ruolo: la UI nasconde creazione ed eliminazione, le guardie bloccano comunque */
 .view-readonly .add-btn-sm,.view-readonly .add-btn,.view-readonly .mini-btn.danger{display:none}
-.ro-banner{background:rgba(232,163,58,.1);border:1px solid var(--orange);color:var(--orange);border-radius:10px;padding:10px 14px;font-size:13px;margin-bottom:14px}
+.ro-banner{background:var(--orange-soft);border:1px solid var(--orange);color:var(--orange);border-radius:10px;padding:10px 14px;font-size:13px;margin-bottom:14px}
+
+/* La lente delle caselle di ricerca. Stava dentro il placeholder come emoji —
+   ma un placeholder è testo: quella lente finiva nella traduzione, nella
+   ricerca del browser e nel valore letto dagli screen reader. Qui è un disegno,
+   che è quello che è sempre stata. La regola sta in fondo al foglio perché le
+   barre filtri ridichiarano `background` per intero: se venisse prima,
+   quella scorciatoia le spegnerebbe l’immagine. */
+input.search,.modal-field .search,.cycle-picker-box .search{
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%238B8FA3' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='10.6' cy='10.6' r='6.6'/%3E%3Cpath d='m15.4 15.4 5.1 5.1'/%3E%3C/svg%3E");
+  background-repeat:no-repeat;background-position:11px 50%;background-size:14px 14px;
+  padding-left:32px}
+
+/* ─── Pannello laterale ───
+   Una colonna fissa a destra, larga quanto si vuole, che tiene i comandi e le
+   schede dell'elemento scelto nell'elenco. Non è dentro #app-main: sta sopra la
+   pagina in posizione fissa, così scorrere l'elenco non se lo porta via e il
+   contenuto principale si limita a farsi da parte con un margine. */
+#inspector{position:fixed;top:56px;right:0;bottom:0;width:var(--insp-w,340px);z-index:40;
+  background:var(--card);border-left:1px solid var(--border);overflow-y:auto;overflow-x:hidden;
+  padding:14px 16px 28px;display:none}
+body.insp-on #inspector{display:block}
+/* Lo spazio del pannello si toglie **allargando la scatola e imbottendola a
+   destra**, non con un margine destro. Il margine avrebbe spento
+   l'`auto` che centra la pagina: con `margin-left:auto` e un destro fisso,
+   tutto lo spazio libero finisce a sinistra e il contenuto si schiaccia contro
+   il pannello, fuori asse rispetto a ciò che si vede. Allargando invece il
+   massimo di altrettanto e imbottendo a destra, i margini restano `auto` e il
+   contenuto si ricentra da solo nella parte visibile — sia con il pannello
+   aperto sia quando è chiuso e resta la sola striscia.
+   Vale solo quando la classe c'è: le viste senza pannello non se ne accorgono. */
+body.insp-on #app-main{max-width:calc(1200px + var(--insp-w,340px));
+  padding-right:calc(16px + var(--insp-w,340px))}
+/* Chiuso, resta una striscia con il pulsante per riaprire: un comando che
+   sparisce del tutto è un comando che nessuno ritrova. */
+body.insp-rail #inspector{display:block;width:38px;padding:10px 5px;overflow:hidden}
+body.insp-rail #app-main{max-width:1238px;padding-right:54px}
+/* La seconda riga della barra è larga quanto la finestra e passerebbe sotto al
+   pannello: le si dice di finire prima. */
+body.insp-on .subnav{padding-right:calc(var(--insp-w,340px) + 16px)}
+body.insp-rail .subnav{padding-right:54px}
+.insp-rail-btn{background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--text-dim);
+  width:28px;height:28px;display:flex;align-items:center;justify-content:center;cursor:pointer}
+.insp-rail-btn:hover{color:var(--accent);border-color:var(--accent)}
+/* Il bordo da trascinare. Sei pixel sono pochi da centrare col mouse: l'area
+   sensibile è larga il doppio, spostata a cavallo del bordo. */
+/* touch-action:none perché il trascinamento passa dai pointer event: senza,
+   il dito sulla maniglia farebbe scorrere la pagina invece di ridimensionare. */
+.insp-resizer{touch-action:none;display:none;position:fixed;top:56px;bottom:0;right:var(--insp-w,340px);
+  width:12px;margin-right:-6px;z-index:41;cursor:col-resize}
+body.insp-on .insp-resizer{display:block}
+.insp-resizer:hover{background:linear-gradient(90deg,transparent,var(--accent-line),transparent)}
+/* Mentre si trascina, il testo non si deve selezionare e il cursore non deve
+   cambiare passando sopra le righe. */
+body.insp-resizing{user-select:none;cursor:col-resize}
+body.insp-resizing #inspector{pointer-events:none}
+
+/* ─── Pannello "Aggiungi componenti" (Gestione DB) ───
+   Stesso principio di dock fisso a destra dell'Ispettore, ma indipendente da
+   esso (vedi commento in views-bom.js) e ridimensionabile allo stesso modo
+   (variabile CSS --bpn-w, maniglia .bpn-resizer). Colonna flex: solo
+   l'elenco risultati scorre, intestazione/pulsante Inserisci/filtri restano
+   fissi in alto. */
+#bom-panel{position:fixed;top:56px;right:0;bottom:0;width:var(--bpn-w,360px);z-index:39;
+  background:var(--card);border-left:1px solid var(--border);
+  display:none;flex-direction:column;padding:14px 16px}
+#bom-panel.open{display:flex}
+#bom-panel .bpn-results{flex:1;min-height:0;overflow-y:auto;margin-top:10px}
+body.bom-panel-on #app-main{max-width:calc(1200px + var(--bpn-w,360px));padding-right:calc(16px + var(--bpn-w,360px))}
+body.bom-panel-on .subnav{padding-right:calc(var(--bpn-w,360px) + 16px)}
+/* Stessa maniglia dell'Ispettore: dodici pixel sensibili a cavallo del bordo,
+   pointer event così funziona anche col dito. */
+.bpn-resizer{touch-action:none;display:none;position:fixed;top:56px;bottom:0;right:var(--bpn-w,360px);
+  width:12px;margin-right:-6px;z-index:41;cursor:col-resize}
+body.bom-panel-on .bpn-resizer{display:block}
+.bpn-resizer:hover{background:linear-gradient(90deg,transparent,var(--accent-line),transparent)}
+body.bpn-resizing{user-select:none;cursor:col-resize}
+body.bpn-resizing #bom-panel{pointer-events:none}
+@media(max-width:900px){
+  #bom-panel{width:min(var(--bpn-w,360px),92vw)}
+  body.bom-panel-on #app-main{max-width:1200px;padding-right:16px}
+  body.bom-panel-on .subnav{padding-right:16px}
+  body.bom-panel-on .bpn-resizer{display:none}
+}
+
+.insp-head{display:flex;align-items:center;gap:8px;margin-bottom:12px}
+.insp-title{font-size:15px;font-weight:800;font-family:var(--mono);letter-spacing:-.02em;flex:1;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.insp-empty{color:var(--text-dim);font-size:13px;line-height:1.6}
+.insp-empty p{margin-bottom:10px}
+.insp-hint{font-size:12px;opacity:.85}
+
+/* Riepilogo: le domande veloci — cos'è, quanto costa, quanto ce n'è, chi lo usa
+   — con la risposta accanto, senza aprire niente. */
+.insp-sum{background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin-bottom:12px}
+.insp-sum-row{display:flex;gap:10px;align-items:baseline;padding:3px 0;font-size:12px}
+.insp-sum-k{color:var(--text-dim);flex:0 0 96px}
+.insp-sum-v{flex:1;min-width:0;overflow-wrap:anywhere}
+
+/* I comandi, uno per riga e con l'etichetta scritta: è lo spazio che la riga
+   della tabella non aveva, ed è il motivo per cui il pannello esiste. */
+.insp-cmds{display:flex;flex-direction:column;gap:6px;margin-bottom:16px}
+.insp-cmd{display:flex;align-items:center;gap:8px;width:100%;text-align:left;
+  background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:8px 12px;
+  color:var(--text);font-size:13px;font-weight:500;cursor:pointer;transition:all .12s}
+.insp-cmd:hover{border-color:var(--text-dim);background:var(--card-hover)}
+.insp-cmd.danger{color:var(--red)}
+.insp-cmd.danger:hover{border-color:var(--red)}
+/* In sola lettura i comandi che modificano non vengono nemmeno disegnati; la
+   regola resta come rete, per un comando aggiunto domani senza pensarci. */
+.insp-readonly .insp-cmd.danger{display:none}
+
+.insp-tabs{display:flex;gap:4px;border-bottom:1px solid var(--border);margin-bottom:12px;flex-wrap:wrap}
+.insp-tab{background:transparent;border:none;color:var(--text-dim);padding:7px 10px;font-size:12px;
+  font-weight:600;cursor:pointer;border-radius:8px 8px 0 0;border-bottom:2px solid transparent}
+.insp-tab:hover{color:var(--text)}
+.insp-tab.active{color:var(--accent);border-bottom-color:var(--accent)}
+.insp-body{font-size:13px}
+/* Con più righe scelte il pannello elenca quali sono: agire su venti articoli
+   senza vederne l’elenco è firmare senza leggere. */
+.insp-multi-list{max-height:220px;overflow:auto;border:1px solid var(--border);border-radius:8px;
+  background:var(--bg);padding:6px 8px;margin-bottom:12px;font-size:12px}
+.insp-multi-row{display:flex;gap:8px;padding:3px 0;align-items:baseline}
+.insp-multi-row span{color:var(--text-dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* Le schede riusano i corpi delle finestre, pensati per 860px: qui la colonna è
+   stretta e le griglie etichetta/valore vanno mandate a capo. */
+.insp-body .info-grid{grid-template-columns:1fr}
+.insp-body .info-row{flex-wrap:wrap}
+.insp-body table{font-size:12px}
+.insp-body .table-wrap{overflow-x:auto}
+
+/* La riga scelta. La barretta a sinistra regge anche dove il fondo tenue si
+   perde, cioè sulle righe alternate e su quelle degli articoli obsoleti. */
+tr.row-selected>td{background:var(--accent-soft)}
+tr.row-selected>td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
+tbody tr[data-sel]{cursor:pointer}
+/* Con il pannello aperto la colonna dei pulsanti sparisce: i suoi comandi sono
+   nel pannello, per esteso. Chiudendolo torna dov'era. */
+body.insp-on .row-actions{display:none}
+
+/* Sotto i 1100px non ci sono due colonne: il pannello si sovrappone come un
+   cassetto e l'elenco resta largo quanto la finestra. */
+@media(max-width:1100px){
+  body.insp-on #app-main{max-width:1200px;padding-right:16px}
+  #inspector{box-shadow:-14px 0 40px var(--shadow);width:min(var(--insp-w,340px),92vw)}
+  .insp-resizer{display:none!important}
+}
+/* Su carta non esiste niente da cliccare: il pannello sparisce e la pagina si
+   riprende tutta la larghezza. */
+@media print{
+  #inspector,.insp-resizer{display:none!important}
+  body.insp-on #app-main,body.insp-rail #app-main{max-width:none!important;padding:0!important}
+  tr.row-selected>td{background:none}
+  body.insp-on .row-actions{display:none!important}
+}
+
+/* ─── Riepilogo: chi ha fatto scattare l'avviso ───
+   Sotto ogni riga di «Richiede attenzione» stanno i codici e i numeri che la
+   riguardano. Sono pastiglie separate, ognuna con il suo bersaglio: la riga
+   sopra porta alla vista, queste al singolo documento o alla scheda. */
+.home-sig{display:flex;flex-direction:column;gap:0}
+.home-voci{display:flex;flex-wrap:wrap;gap:5px;padding:6px 0 10px 74px}
+.home-chip{display:inline-block;background:var(--bg);border:1px solid var(--border);border-radius:6px;
+  padding:2px 8px;font-family:var(--mono);font-size:11px;font-weight:600;color:var(--text);cursor:pointer}
+.home-chip:hover{border-color:var(--accent);color:var(--accent)}
+.home-chip:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+/* Un codice duplicato non si apre: si sbroglia in Gestione. Niente cursore a
+   mano su qualcosa che non porta da nessuna parte. */
+.home-chip.muta{cursor:default;color:var(--text-dim);border-style:dashed}
+.home-chip.muta:hover{border-color:var(--border);color:var(--text-dim)}
+.home-voci-resto{font-size:11px;color:var(--text-dim);align-self:center}
+@media(max-width:640px){.home-voci{padding-left:0}}
+
+/* ─── Elenco a destra, documento al centro ───
+   Il telaio comune di commesse, fabbisogno, richieste e ordini (worklist.js).
+   L'elenco è una colonna appiccicata in alto che non scorre via con il
+   documento: si cambia riga senza perdere il posto. Sotto i 1100px le due
+   colonne si impilano, con l'elenco sopra — su uno schermo stretto la scelta
+   viene prima del contenuto. */
+/* La colonna dell-elenco non si ridimensiona (a differenza del pannello
+   laterale, che ha --insp-w scritta da inspector.js): la larghezza è questa,
+   scritta, invece di un var() con un ripiego che era il valore vero. */
+.wl{display:grid;grid-template-columns:minmax(0,1fr) 360px;gap:20px;align-items:start}
+.wl-main{min-width:0}
+.wl-side{position:sticky;top:14px;max-height:calc(100vh - 92px);display:flex;flex-direction:column;gap:12px;
+  background:var(--card);border:1px solid var(--border);border-radius:14px;padding:16px}
+.wl-side-head{display:flex;align-items:center;gap:8px}
+.wl-side-title{font-size:15px;font-weight:700;margin:0;display:flex;align-items:center;gap:8px;letter-spacing:-.01em}
+.wl-cmds{display:flex;flex-wrap:wrap;gap:8px}
+.wl-cmds button{font-size:12px}
+/* I filtri stanno in colonna: in 360px tre menu affiancati diventerebbero tre
+   fessure illeggibili. Il conteggio chiude il gruppo, come una didascalia. */
+.wl-filters{display:flex;flex-direction:column;gap:8px}
+.wl-filters input,.wl-filters select{width:100%;background:var(--bg);border:1px solid var(--border);border-radius:8px;
+  padding:9px 12px;color:var(--text);font-size:13px;outline:none}
+.wl-filters input:focus,.wl-filters select:focus{border-color:var(--accent)}
+/* L'intervallo di date è un filtro solo: le due caselle stanno sulla stessa
+   riga, con la freccia in mezzo a dire il verso. L'etichetta serve perché una
+   casella data vuota non dice cosa filtra. */
+.wl-filter-dates{display:flex;align-items:center;gap:6px}
+.wl-filters .wl-filter-dates input{flex:1;min-width:0;padding:7px 8px;font-size:12px}
+.wl-filter-lbl{font-size:11px;font-weight:600;color:var(--text-dim);text-transform:uppercase;letter-spacing:.06em}
+.wl-filter-sep{color:var(--text-dim);font-size:12px}
+.wl-filters .doc-filter-count{align-self:flex-start}
+.wl-filters button{align-self:flex-start;font-size:12px}
+.wl-list{flex:1;min-height:0;overflow-y:auto;display:flex;flex-direction:column;gap:6px;margin:0 -4px;padding:0 4px}
+.wl-row{background:var(--bg);border:1px solid var(--border);border-left:3px solid transparent;border-radius:8px;
+  padding:8px 11px;cursor:pointer;display:flex;flex-direction:column;gap:3px}
+.wl-row:hover{background:var(--card-hover);border-color:var(--border);border-left-color:var(--text-dim)}
+.wl-row:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.wl-row.sel{background:var(--card-hover);border-left-color:var(--accent)}
+.wl-row.spenta{opacity:.55}
+.wl-row-top{display:flex;align-items:center;gap:8px}
+.wl-num{font-family:var(--mono);font-weight:700;font-size:12px;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.wl-row-title{font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.wl-row-meta{font-size:11px;color:var(--text-dim);font-family:var(--mono);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.wl-note{font-size:11px;color:var(--text-dim);line-height:1.5;margin:0}
+/* L'invito al centro: c'è un elenco a destra, ma non è stato scelto niente. */
+.wl-empty{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:44px 32px;text-align:center;color:var(--text-dim)}
+.wl-empty h2{font-size:17px;font-weight:700;color:var(--text);margin:10px 0 8px}
+.wl-empty p{font-size:13px;line-height:1.65;max-width:52ch;margin:0 auto}
+.wl-empty-cmds{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin-top:18px}
+@media(max-width:1100px){
+  .wl{grid-template-columns:1fr}
+  .wl-side{position:static;max-height:none;order:-1}
+  .wl-list{max-height:320px}
+  .wl-filters{flex-direction:row;flex-wrap:wrap}
+  .wl-filters input,.wl-filters select{width:auto;flex:1;min-width:180px}
+  .wl-filter-dates{flex:1.4;min-width:280px}
+  .wl-filters .wl-filter-dates input{min-width:0}
+}
+/* In stampa esce il documento, non lo strumento per sceglierlo. */
+@media print{.wl{display:block}.wl-side{display:none!important}}
+
+/* ─── Carico centri: il grafico della saturazione ───
+   Un blocco per centro, che scorre in orizzontale se le settimane sono tante:
+   la pagina non deve scorrere per colpa di un grafico, e le barre non vanno
+   schiacciate fino a non distinguersi. L'SVG e' scritto a mano — vedi
+   loadChartOne — e prende i colori dal tema come tutto il resto. */
+.load-charts{display:flex;flex-wrap:wrap;gap:14px;margin:10px 0 4px}
+.load-chart{flex:1 1 320px;min-width:0;margin:0;padding:10px 12px;background:var(--card);
+  border:1px solid var(--border);border-radius:10px}
+.load-chart figcaption{font-size:12px;font-weight:600;color:var(--text);margin:0 0 6px;
+  display:flex;align-items:baseline;gap:8px}
+.load-chart svg{display:block;width:100%;height:130px;overflow:visible}
+.load-chart-lbl{font-size:9px;fill:var(--text-dim);font-family:var(--mono)}
+/* In stampa il grafico resta: e' la lettura che si porta in riunione. */
+@media print{.load-chart{break-inside:avoid}}

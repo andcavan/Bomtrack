@@ -366,3 +366,133 @@ describe('Il giro completo attraverso il server finto', () => {
       'se un giro a vuoto lasciasse modifiche pendenti, i client si rimanderebbero dati all\'infinito');
   });
 });
+
+// ═══════════════════════════════════════════════════════════
+//  Cosa il conto delle modifiche non deve lasciarsi sfuggire
+// ═══════════════════════════════════════════════════════════
+// pendingChanges() confrontava il solo `updatedAt` del record radice. Le righe
+// figlie con identità propria — sottofamiglie, quotazioni, righe di documento —
+// hanno il loro, e chi le modifica non sempre tocca il padre: quelle modifiche
+// erano invisibili, e con l'adapter cloud attivo non sarebbero mai partite.
+function conFamiglia() {
+  const a = loadApp({ silent: true });
+  a.asRole('admin');
+  a.ref('Store').load();
+  // I record appena seminati portano l'istante di adesso: un touch nello stesso
+  // millisecondo produce la stessa stringa, e il confronto non vedrebbe niente.
+  // Invecchiarli prima della fotografia rende il test deterministico — e dice
+  // en passant che la risoluzione al millisecondo è il limite del protocollo.
+  a.eval('COLLECTIONS.forEach(c => (db[c] || []).forEach(r => { r.updatedAt = "2020-01-01T00:00:00.000Z"; (r.subs || []).forEach(s => { s.updatedAt = "2020-01-01T00:00:00.000Z"; }); (r.priceList || []).forEach(s => { s.updatedAt = "2020-01-01T00:00:00.000Z"; }); }));');
+  a.ref('Store').markSynced();
+  return a;
+}
+
+describe('Il conto delle modifiche vede anche i figli', () => {
+  it('rinominare una sottofamiglia risulta da mandare', () => {
+    const a = conFamiglia();
+    const fid = a.eval('db.families[0].id');
+    const sid = a.eval('db.families[0].subs[0].id');
+    a.el('esf-name').value = 'Rinominata';
+    a.el('esf-sigla').value = '';
+    a.eval('saveSubFamily(' + JSON.stringify(fid) + ', ' + JSON.stringify(sid) + ')');
+    const ch = a.eval('JSON.stringify(Store.pendingChanges())');
+    assert.ok(JSON.parse(ch).families, 'la famiglia che la contiene risulta cambiata');
+    assert.deepEqual(JSON.parse(ch).families.upsert, [fid]);
+  });
+
+  it('eliminare una sottofamiglia pure', () => {
+    const a = conFamiglia();
+    // Una sottofamiglia che nessun articolo usa: delSubFamily rifiuta le altre,
+    // e il test finirebbe per verificare il rifiuto invece dell-eliminazione.
+    const fid = a.eval('db.families.find(f => (f.subs || []).some(s => !db.items.some(i => i.subFamilyId === s.id))).id');
+    const sid = a.eval('(() => { const f = db.families.find(x => x.id === ' + JSON.stringify(fid) + '); return f.subs.find(s => !db.items.some(i => i.subFamilyId === s.id)).id; })()');
+    a.eval('delSubFamily(' + JSON.stringify(fid) + ', ' + JSON.stringify(sid) + ')');
+    a.eval('confirmYes()');   // l-eliminazione passa da askConfirm, che è una scheda
+
+    assert.equal(a.eval('(db.families.find(f => f.id === ' + JSON.stringify(fid) + ').subs || []).some(s => s.id === ' + JSON.stringify(sid) + ')'), false, 'eliminata davvero');
+    const ch = JSON.parse(a.eval('JSON.stringify(Store.pendingChanges())'));
+    assert.deepEqual(ch.families.upsert, [fid], 'anche senza che nessuno tocchi la famiglia');
+  });
+
+  it('aggiungere una quotazione a un articolo risulta da mandare', () => {
+    const a = conFamiglia();
+    const it = a.eval('db.items.find(i => (i.priceList || []).length)');
+    const id = a.eval('db.items.find(i => (i.priceList || []).length).id');
+    void it;
+    a.eval('const _i = db.items.find(x => x.id === ' + JSON.stringify(id) + '); _i.priceList.push(stampNew({ id: gid(), supplierId: null, price: 1, date: "2026-01-01" })); saveDB();');
+    const ch = JSON.parse(a.eval('JSON.stringify(Store.pendingChanges())'));
+    assert.ok((ch.items || { upsert: [] }).upsert.includes(id));
+  });
+
+  it('senza toccare niente non c-è niente da mandare', () => {
+    const a = conFamiglia();
+    assert.deepEqual(JSON.parse(a.eval('JSON.stringify(Store.pendingChanges())')), {});
+  });
+});
+
+// ═══════════════════════════════════════════════════════════
+//  La fotografia si prende prima di partire, non al ritorno
+// ═══════════════════════════════════════════════════════════
+// markSynced() fotografava lo stato al momento della chiamata. Fra la richiesta
+// e la risposta c-è la rete, e chi lavora continua a scrivere: quelle modifiche
+// finivano nella nuova fotografia e venivano marcate come già inviate. Perse.
+describe('takeChanges — quello che mando è quello che smetto di dover mandare', () => {
+  it('una modifica fatta durante l-invio resta da mandare', () => {
+    const a = conFamiglia();
+    const id = a.eval('db.suppliers[0].id');
+    a.eval('Store.update("suppliers", ' + JSON.stringify(id) + ', { referente: "Prima" })');
+
+    const preso = a.eval('(() => { const t = takeChanges(); globalThis._mark = t.mark; return JSON.stringify(t.changes); })()');
+    assert.deepEqual(JSON.parse(preso).suppliers.upsert, [id], 'il primo cambio parte');
+
+    // ...mentre il finto invio è in volo, qualcuno cambia un altro fornitore
+    const id2 = a.eval('db.suppliers[1].id');
+    a.eval('Store.update("suppliers", ' + JSON.stringify(id2) + ', { referente: "Durante" })');
+
+    a.eval('Store.markSynced(globalThis._mark)');
+    const dopo = JSON.parse(a.eval('JSON.stringify(Store.pendingChanges())'));
+    assert.ok(dopo.suppliers, 'il secondo cambio non è stato inghiottito');
+    assert.deepEqual(dopo.suppliers.upsert, [id2]);
+  });
+
+  it('senza argomento resta il comportamento di prima: fotografa l-adesso', () => {
+    const a = conFamiglia();
+    a.eval('Store.update("suppliers", db.suppliers[0].id, { referente: "X" })');
+    a.eval('Store.markSynced()');
+    assert.deepEqual(JSON.parse(a.eval('JSON.stringify(Store.pendingChanges())')), {});
+  });
+});
+
+// Dopo un ripristino di backup il database in memoria non discende da quello che
+// il backend ha visto: un confronto per `updatedAt` direbbe «niente da mandare»
+// proprio mentre è cambiato tutto. Si dichiara di non sapere.
+describe('Ripristini e azzeramenti invalidano la fotografia', () => {
+  const casi = [
+    ['un backup ripristinato', 'Store.importSnapshot(Store.exportSnapshot())'],
+    ['il database azzerato', 'Store.reset()'],
+    ['il database svuotato', 'Store.clearAll(null)'],
+  ];
+  casi.forEach(([nome, gesto]) => {
+    it(nome + ' non lascia credere che sia tutto allineato', () => {
+      const a = conFamiglia();
+      a.eval(gesto);
+      assert.equal(a.eval('Store.pendingChanges()'), null, 'null = serve un riallineamento completo');
+    });
+  });
+});
+
+// In cloud l-eliminazione lascia un tombstone. Un record che rientra con
+// l-updatedAt che aveva prima di essere eliminato è più vecchio del tombstone,
+// e il pull successivo lo ricancellerebbe.
+describe('Il ripristino dal cestino batte il tombstone', () => {
+  it('il record torna con una data più recente di quando è stato eliminato', () => {
+    const a = conFamiglia();
+    const id = a.eval('db.items[0].id');
+    a.eval('db.items[0].updatedAt = "2020-01-01T00:00:00.000Z"');
+    a.eval('Store.remove("items", ' + JSON.stringify(id) + ')');
+    const eliminatoIl = a.eval('db.trash[db.trash.length - 1].deletedAt');
+    a.eval('Store.restore(Store.lastRemoved())');
+    const tornato = a.eval('Store.getById("items", ' + JSON.stringify(id) + ').updatedAt');
+    assert.ok(String(tornato) >= String(eliminatoIl), 'altrimenti il pull lo ricancella');
+  });
+});

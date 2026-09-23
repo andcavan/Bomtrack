@@ -22,7 +22,7 @@ function modeAllows(mode, kind) {
 }
 // Lo sblocco vale per il documento aperto e dura quanto la sessione di editing:
 // uscendo verso l'elenco il documento si richiude da solo.
-let rfqUnlockedId = null, orderUnlockedId = null;
+let rfqUnlockedId = null, orderUnlockedId = null, odlUnlockedId = null;
 function docLockBanner(mode, kind, docKind, id) {
   if (mode === 'full') return '';
   const what = mode === 'offer' ? 'Prezzo unitario e data consegna restano compilabili'
@@ -30,10 +30,13 @@ function docLockBanner(mode, kind, docKind, id) {
       : 'Il documento è in sola lettura';
   // Il gestore si compone qui da un tipo noto, non arriva come JavaScript grezzo
   // dal chiamante: nessun template deve poter iniettare codice in un onclick.
-  const fn = docKind === 'order' ? 'ordUnlock' : 'rfqUnlock';
+  // Una mappa e non una catena di ternari: l'ODL ricadeva su `rfqUnlock`, che
+  // su un id di ordine di lavoro non trova niente e torna in silenzio — il
+  // pulsante c'era e non sbloccava nulla.
+  const fn = { order: 'ordUnlock', odl: 'odlUnlock', odp: 'odpUnlock' }[docKind] || 'rfqUnlock';
   return `<div class="doc-lock-banner">
-    <span>🔒 ${esc(kind)} — i dati sono protetti dalle modifiche accidentali. ${what}; note e stato restano sempre modificabili.</span>
-    <button class="btn-outline" onclick="${fn}('${esc(id)}')">🔓 Sblocca per modifica</button></div>`;
+    <span>${ico('lock', 'tinted', '')} ${esc(kind)} — i dati sono protetti dalle modifiche accidentali. ${what}; note e stato restano sempre modificabili.</span>
+    <button class="btn-outline" onclick="${fn}('${esc(id)}')">${ico('unlock', 'tinted', '')} Sblocca per modifica</button></div>`;
 }
 // Disabilita in un passaggio gli input marcati, invece di condizionare ogni template.
 function applyDocLock(mode, host) {
@@ -42,7 +45,7 @@ function applyDocLock(mode, host) {
     const off = !modeAllows(mode, kind);
     host.querySelectorAll('.lock-' + kind).forEach(el => {
       el.disabled = off;
-      if (off) el.title = 'Documento bloccato: usa 🔓 Sblocca per modifica';
+      if (off) el.title = 'Documento bloccato: usa «Sblocca per modifica»';
     });
   });
 }
@@ -57,7 +60,7 @@ function askMarkSent(doc, question, sentStatus, rerender) {
     doc.status = sentStatus;
     touch(doc); saveDB(); rerender();
     showToast('Stato: ' + sentStatus.charAt(0).toUpperCase() + sentStatus.slice(1));
-  }, { title: '📤 Documento generato', ok: 'Sì, segna come inviato', cancel: 'No, resta in bozza', safe: true });
+  }, { title: 'Documento generato', ok: 'Sì, segna come inviato', cancel: 'No, resta in bozza', safe: true });
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -156,7 +159,64 @@ const DOC_KINDS = {
       if (l.received > ordinata) { l.received = ordinata; showToast('Non si può ricevere più di quanto ordinato', 'error'); }
     },
   },
+  // ─── Ordine di lavoro (ODL) ───
+  // Le lavorazioni affidate a un terzista. Stessa forma di un ordine
+  // d'acquisto — si manda a un fornitore, si conferma, rientra a pezzi — e un
+  // documento diverso: uno chiede della merce, l'altro manda dei pezzi a
+  // lavorare. Stati e blocchi sono gli stessi, e riusarli è deliberato: dove il
+  // comportamento coincide davvero, due copie divergono.
+  //
+  // Le sue righe **non hanno mai un articolo**: portano la fase del ciclo da cui
+  // vengono. È la garanzia contro il doppio conteggio di magazzino, e vale qui
+  // per costruzione invece che per disciplina — dall'ODL non si aggiungono righe
+  // da catalogo, perché non c'è niente da catalogo da aggiungere.
+  odl: {
+    coll: 'workOrders', pfx: 'wl',
+    nome: 'Ordine di lavoro', articolo: "L'ordine di lavoro", pronome: 'lo', suffisso: 'o',
+    STATUS: ORDER_STATUS, LOCK: ORDER_LOCK,
+    hasLinePrice: true,
+    get: id => getOdl(id),
+    all: () => db.workOrders,
+    render: () => renderOdl(),
+    autoStatus: o => ordAutoStatus(o),
+    unlocked: () => odlUnlockedId,
+    setUnlocked: v => { odlUnlockedId = v; },
+    dirty: v => { if (v === undefined) return odlDirty; odlDirty = v; return v; },
+    saveBtnId: 'odl-save-btn', exportBtnClass: 'odl-export-btn',
+    dirtyHint: "Salva l'ordine di lavoro prima di generare il documento",
+    opsFields: ['status', 'notes', 'notesInternal', 'supplierConfirmation'],
+    lineLock: field => (field === 'received' || field === 'confirmedDate') ? 'reception' : 'contract',
+    numLineFields: ['qty', 'price', 'received'],
+    newLineExtra: () => ({ received: 0, phaseKey: null, phaseKeys: null, odpId: null, odpPhaseId: null }),
+    // Non si aggiungono righe da catalogo a un ordine di lavoro: un articolo non
+    // è una lavorazione. La voce non compare nell'interfaccia; se qualcuno ci
+    // arrivasse lo stesso, qui non succede niente invece di nascere una riga che
+    // caricherebbe il magazzino da un documento che non deve caricarlo.
+    catalogLine: riga => Object.assign(riga, { received: 0, itemId: null, phaseKey: null, phaseKeys: null, odpId: null, odpPhaseId: null }),
+    catalogToast: n => n + ' righe aggiunte',
+    afterSetField: (o, field, value) => {
+      if (field === 'supplierConfirmation' && value && o.status === 'inviato') o.status = 'confermato';
+    },
+    afterSetLine: (o, l, field) => {
+      if (field !== 'received') return;
+      const ordinata = Number(l.qty) || 0;
+      if (l.received > ordinata) { l.received = ordinata; showToast('Non si può ricevere più di quanto ordinato', 'error'); }
+    },
+  },
 };
+// Su una riga che viene da un ordine di produzione i **pezzi rientrati** li
+// dichiara quello: è lo stesso fatto scritto in due posti, e tenerli d'accordo
+// a mano è il modo di vederli divergere. Il campo resta quello di sempre, con
+// gli stessi lettori — cambia solo chi lo scrive.
+function odlRigaDaOdp(l) { return !!(l && l.odpId); }
+// Da quale ordine di produzione viene questo ordine di lavoro. Serve a
+// ritrovare, mesi dopo, *perché* si è commissionata una lavorazione — e a
+// sapere dove si registrano i suoi movimenti.
+function odlOdpRef(o) {
+  if (!o.odpId || typeof getOdp !== 'function') return '';
+  const p = getOdp(o.odpId); if (!p) return '';
+  return `<div class="empty-text" style="text-align:left">${ico('factory', 'tinted', '')} Generato dall'ordine di produzione <strong>${esc(p.number)}</strong> — ${esc((p.code || '') + ' ' + (p.name || ''))}. Il materiale e i pezzi si registrano <strong>lì</strong>.</div>`;
+}
 function docKind(k) { return DOC_KINDS[k] || DOC_KINDS.rfq; }
 function docStatusLabel(K, doc) { return (K.STATUS[doc.status] || doc.status || '').toLowerCase(); }
 
@@ -172,7 +232,7 @@ function docGuard(k, id, lockKind) {
   if (!roleGuard('docs')) return false;
   const doc = K.get(id); if (!doc) return false;
   if (modeAllows(docMode(k, doc), lockKind)) return true;
-  showToast(`${K.nome} ${docStatusLabel(K, doc)}: usa 🔓 Sblocca per modificarl${K.suffisso}`, 'error');
+  showToast(`${K.nome} ${docStatusLabel(K, doc)}: usa «Sblocca per modifica»`, 'error');
   return false;
 }
 function docUnlock(k, id) {
@@ -180,7 +240,7 @@ function docUnlock(k, id) {
   const doc = K.get(id); if (!doc) return;
   askConfirm(`${K.articolo} ${doc.number} risulta ${docStatusLabel(K, doc)}.\nSbloccarl${K.suffisso} per modificarl${K.suffisso}?`, () => {
     K.setUnlocked(id); K.render(); showToast(`${K.nome} sbloccat${K.suffisso}`);
-  }, { title: '🔓 Sblocca per modifica', ok: 'Sblocca', safe: true });
+  }, { title: 'Sblocca per modifica', ok: 'Sblocca', safe: true });
 }
 // Salvataggio differito: le modifiche restano in memoria e si persistono solo
 // con "Salva". Finché ci sono modifiche non salvate i pulsanti che generano il
@@ -204,7 +264,7 @@ function docSetField(k, id, field, value) {
   if (!docGuard(k, id, lockKind)) { K.render(); return; }
   const doc = K.get(id); if (!doc) return;
   const before = doc.status;
-  doc[field] = value || (field === 'supplierId' ? null : '');
+  doc[field] = campoTesto(value) || (field === 'supplierId' ? null : '');
   if (K.afterSetField) K.afterSetField(doc, field, value);
   touch(doc); docMarkDirty(k);
   // Il cambio di stato cambia anche il livello di blocco: la vista va rifatta.
@@ -243,6 +303,32 @@ function docSetLine(k, id, lineId, field, value) {
   if (doc.status !== before) { K.render(); showToast('Stato: ' + (K.STATUS[doc.status] || doc.status)); }
   else if (K.numLineFields.includes(field)) K.render();
 }
+// ─── La riga rispetta il lotto d'acquisto dell'articolo? ───
+// Solo informativo, mai bloccante: chi scrive la riga può avere ragioni che
+// l'app non vede (un resto di magazzino, un accordo particolare). Vale solo
+// per righe da catalogo — una riga manuale non ha un articolo da cui prendere
+// il lotto.
+function lineLotWarn(l) {
+  if (!l.itemId) return '';
+  const it = getItem(l.itemId);
+  const lot = it && lotSizeOf(it);
+  if (!(lot > 0)) return '';
+  const uom = l.uom || itemUom(it);
+  // La quantità di riga può essere nell'unità alternativa (es. kg su un
+  // articolo gestito a metri): il lotto è definito nell'unità di gestione,
+  // quindi il confronto va fatto lì.
+  const qty = uom === altUomOf(it) ? fromAltUom(it, l.qty, uom) : (Number(l.qty) || 0);
+  if (!(qty > 0)) return '';
+  const gUom = it.uom || uom;
+  if (lotModeOf(it) === 'min') {
+    if (qty >= lot - 1e-9) return '';
+    return `<span class="mrp-warn" title="Sotto il minimo ordinabile di ${esc(fmtUom(lot, gUom))} per questo articolo">↑ minimo ${esc(fmtUom(lot, gUom))}</span>`;
+  }
+  const resto = qty % lot;
+  if (resto < 1e-9 || lot - resto < 1e-9) return '';
+  const multiplo = Math.ceil(qty / lot - 1e-9) * lot;
+  return `<span class="mrp-warn" title="Questo articolo si compra solo a multipli di ${esc(fmtUom(lot, gUom))}: il più vicino per eccesso è ${esc(fmtUom(multiplo, gUom))}">↑ lotto ${esc(fmtUom(lot, gUom))}</span>`;
+}
 function docDelLine(k, id, lineId) {
   const K = docKind(k);
   if (!docGuard(k, id, 'contract')) return;
@@ -274,11 +360,13 @@ function docEditLineModal(k, id, lineId) {
   const doc = K.get(id); if (!doc) return;
   const l = (doc.lines || []).find(x => x.id === lineId); if (!l) return;
   const ro = !modeAllows(docMode(k, doc), 'contract');
+  const lotWarn = lineLotWarn(l);
   const qty = `<div class="modal-field"><label id="${p}-qty-label">${docQtyLabel(l.uom || '')}</label>
-    <input id="${p}-qty" type="number" value="${l.qty}" min="0" step="any" ${ro ? 'disabled' : ''}></div>`;
+    <input id="${p}-qty" type="number" value="${l.qty}" min="0" step="any" ${ro ? 'disabled' : ''}>
+    ${lotWarn ? `<span class="empty-text" style="padding:0">${lotWarn}</span>` : ''}</div>`;
   const prezzo = K.hasLinePrice ? `<div class="modal-field"><label id="${p}-price-label">${docPriceLabel(l.uom || '')}</label>
     <input id="${p}-price" type="number" min="0" step="any" value="${l.price === '' || l.price == null ? '' : l.price}" ${ro ? 'disabled' : ''}></div>` : '';
-  openModal(`<h3>✏ Modifica riga</h3>
+  openModal(`<h3>${ico('edit', 'tinted pill', '')} Modifica riga</h3>
     ${lineIdentityFields(p, l, ro)}
     ${prezzo ? `<div class="modal-grid">${qty}${prezzo}</div>` : qty}
     <div class="modal-field"><label>Nota (stampata sul documento)</label><textarea id="${p}-note" rows="2">${esc(l.note || '')}</textarea></div>
@@ -325,6 +413,45 @@ function docPartyLines(e, bilingue) {
   return [e.name, ...addressLines(e), e.vat ? iva + e.vat : '', e.referente, e.email, e.phone]
     .map(s => s || '').filter(Boolean);
 }
+// ─── La coda di un documento stampato: trasporto, pagamento, note ───
+// Le condizioni che chiudono richieste, ordini e ordini di lavoro. Erano tre
+// blocchi identici, e tutti e tre scrivevano con doc.text() a y crescente senza
+// mai guardare dove finisse la pagina.
+//
+// Due modi di sparire,**entrambi silenziosi** — il PDF si generava senza un
+// errore, e mancava solo quando qualcuno andava a cercarlo:
+//   - una nota lunga usciva dal margine destro e veniva tagliata, perché
+//     doc.text() non manda a capo da solo;
+//   - su un ordine con molte righe finalY è già in fondo al foglio, e le
+//     condizioni venivano disegnate **oltre il bordo**, dove non esiste carta.
+//
+// Sono le condizioni contrattuali di un ordine che parte verso un fornitore:
+// il posto meno adatto a un troncamento che non si annuncia.
+const PDF_MARGINE = 14;          // lo stesso margine sinistro del resto del foglio
+const PDF_INTERLINEA = 5;
+function docCoda(doc, voci, y) {
+  const pagina = doc.internal.pageSize;
+  const largh = (pagina.getWidth ? pagina.getWidth() : pagina.width) - PDF_MARGINE * 2;
+  const fondo = (pagina.getHeight ? pagina.getHeight() : pagina.height) - PDF_MARGINE;
+  voci.filter(v => v && v.testo).forEach(v => {
+    // Una voce può occupare più righe: si spezza sulla larghezza utile, e poi si
+    // scrive **a gruppi di righe che ci stanno**. Non basta cambiare foglio
+    // quando il blocco non entra: una nota di quattromila caratteri è più alta
+    // di una pagina intera, e spostarla su un foglio nuovo la farebbe traboccare
+    // da quello — stesso troncamento silenzioso, un foglio più in là.
+    const righe = doc.splitTextToSize(v.etichetta + ': ' + v.testo, largh);
+    let i = 0;
+    while (i < righe.length) {
+      if (y + PDF_INTERLINEA > fondo) { doc.addPage(); y = PDF_MARGINE + 6; }
+      const quante = Math.max(1, Math.floor((fondo - y) / PDF_INTERLINEA));
+      const blocco = righe.slice(i, i + quante);
+      doc.text(blocco, PDF_MARGINE, y);
+      y += blocco.length * PDF_INTERLINEA;
+      i += blocco.length;
+    }
+  });
+  return y;
+}
 // Eliminazione. Su un documento che non è più una bozza l'avviso dice **cosa**
 // si sta cancellando: «risulta inviato» ferma la mano più di «sei sicuro?».
 // `extraWarn` aggiunge ciò che solo quel tipo sa (i ricevimenti di un ordine).
@@ -339,11 +466,19 @@ function docDel(k, id, before, extraWarn) {
     removeConUndo(K.coll, id, `${K.nome} ${doc.number} eliminat${K.suffisso}`, () => K.render());
   });
 }
-function docBackToList(k) {
+// Lasciare il documento aperto: quel che era in sospeso si salva, e lo sblocco
+// decade. Vale sia chiudendolo sia passando direttamente a un altro documento
+// dall'elenco a destra, che e' la stessa uscita senza il giro dall'elenco.
+function docLeave(k) {
   const K = docKind(k);
   if (K.dirty()) { saveDB(); K.dirty(false); }
   K.setUnlocked(null);
+}
+function docBackToList(k) {
+  const K = docKind(k);
+  docLeave(k);
   if (k === 'order') { orderView = 'list'; currentOrderId = null; }
+  else if (k === 'odl') { odlView = 'list'; currentOdlId = null; }
   else { rfqView = 'list'; currentRfqId = null; }
   K.render();
 }
@@ -362,7 +497,6 @@ function rfqAutoStatus(r) {
   r.status = priced ? 'ricevuta' : 'inviata';
 }
 function getRfq(id) { return db.rfqs.find(r => r.id === id); }
-function fmtDateIt(d) { return d ? new Date(d).toLocaleDateString('it-IT') : ''; }
 // ─── Codice e descrizione «presso il fornitore», sulla riga di un documento ───
 // Escono **solo se il fornitore coincide**: sono il modo in cui quel fornitore
 // chiama l'articolo, e stamparli su un documento intestato a un altro non è
@@ -399,22 +533,102 @@ function docLineFromItem(it, supplierId) {
   const quotato = row && row.price !== '' && row.price != null;
   return {
     id: gid(), itemId: it.id, code: it.code || '', description: it.name || '',
-    // L'unità è quella in cui quel fornitore quota: se vende a chilo, l'ordine è
-    // in chili. Il prezzo è il suo, grezzo — è già espresso in quell'unità, e
-    // convertirlo lo porterebbe in una lingua che lui non parla.
-    uom: (row ? priceUomOf(it, row) : itemUom(it)) || defaultUom(),
-    qty: 1, price: quotato ? Number(row.price) : '', deliveryDate: '', note: '',
+    // La riga è sempre nell'unità di gestione dell'articolo — è quella con
+    // cui si ordina, si riceve e si monta — anche quando il fornitore
+    // valorizza il listino in un'altra unità. Il prezzo passa dalla stessa
+    // "porta unica" di applyPriceRow: arriva già convertito, mai il numero
+    // grezzo del listino nell'unità sua.
+    //
+    // Una barra d'acciaio da 6 m, gestita a metri, che pesa 20 kg/m:
+    //   il fornitore quota a kg  →  riga in m, prezzo = 20 × (prezzo al kg)
+    //   il fornitore quota a m   →  riga in m, prezzo tale e quale
+    // La seconda riga non è un caso a parte: priceUomOf() ricade sull'unità
+    // di gestione e uomFactor() vale 1, quindi la conversione c'è sempre e
+    // qualche volta non fa niente. Un ramo in meno da sbagliare.
+    uom: itemUom(it) || defaultUom(),
+    qty: 1, price: quotato ? (rowUnitCost(it, row) || 0) : '', deliveryDate: '', note: '',
   };
 }
 // Nei documenti la nota di riga si stampa sotto la descrizione, nella stessa cella.
+// L'etichetta di una riga senza articolo a catalogo. Non sono tutte uguali: una
+// riga **manuale** l'ha scritta qualcuno a mano, una riga di **conto lavoro**
+// viene dal fabbisogno ed è una fase del ciclo di una parte. Chiamarle entrambe
+// «manuale» faceva sembrare improvvisato ciò che l'app ha generato da sé.
+//
+// `itemId` su una riga di conto lavoro è nullo per forza, non per caso: è la
+// garanzia contro il doppio conteggio di magazzino (vedi planPhaseDocLine).
+// I due gesti del conto lavoro, sotto la riga che li giustifica: il terzista e
+// l'ordine sono già decisi, resta da dire cosa esce e quanto. Compaiono solo
+// sulle righe di conto lavoro, e solo con un fornitore intestato — senza, il
+// movimento non saprebbe da chi sta la merce.
+// Dalla 0.69.0 le lavorazioni vivono negli **ordini di lavoro**, e i due gesti
+// stanno lì. Questa resta per le righe di conto lavoro finite in un ordine
+// d'acquisto **prima** della separazione: sono poche o nessuna, ma toglierle il
+// comando le lascerebbe senza modo di muovere il materiale.
+function ordClLineActions(o, l) { return l.phaseKey ? docClActions(o, l) : ''; }
+// ─── I due comandi del conto lavoro, dove hanno senso e per quel che fanno ───
+// Un documento ha una riga per **tratta** — le fasi consecutive dello stesso
+// terzista stanno insieme — e il materiale non esce a ogni fase: esce una volta
+// all'inizio del ciclo, e i pezzi rientrano una volta alla fine. Due fasi dallo
+// stesso terzista per quattro pezzi sono quattro pezzi fuori e quattro dentro,
+// non otto e otto.
+//
+// I comandi cambiano **nome e effetto** secondo dove sta la tratta nel ciclo:
+// ai due estremi muovono il magazzino, in mezzo sono un passaggio che sposta il
+// pezzo e basta. Chiamarli allo stesso modo avrebbe fatto credere che caricassero
+// quattro volte lo stesso codice.
+function docClActions(o, l) {
+  if (!l.phaseKey || !o.supplierId) return '';
+  // La riga viene da un **ordine di produzione**: là il magazzino ha un padrone
+  // solo, e gli estremi sono quelli del ciclo intero invece che quelli di questo
+  // documento. Offrire i comandi anche qui vorrebbe dire poter registrare due
+  // volte lo stesso gesto, da due schede che non si sanno l'una dell'altra.
+  if (l.odpId && typeof opRimandoHtml === 'function') return opRimandoHtml(l);
+  const ruolo = clLineRole(o, l);
+  const cmd = [];
+  if (ruolo.out) {
+    const passo = ruolo.outKind === 'clStep';
+    cmd.push(`<span class="plandoc-link plandoc-link-sm" ${clickAttrs(`clFromOdlModal('${o.id}','${l.id}','out')`,
+      passo ? 'Manda al terzista i pezzi tornati dalla fase precedente: non tocca il magazzino'
+        : 'Spedisci il materiale del ciclo al terzista: esce dal magazzino')}>${passo ? 'manda al terzista' : 'spedisci materiale'}</span>`);
+  }
+  if (ruolo.in) {
+    const passo = ruolo.inKind === 'clStep';
+    cmd.push(`<span class="plandoc-link plandoc-link-sm" ${clickAttrs(`clFromOdlModal('${o.id}','${l.id}','in')`,
+      passo ? 'Ritira i pezzi: restano in lavorazione e non caricano il magazzino'
+        : 'Registra il rientro dei pezzi lavorati: entrano a magazzino')}>${passo ? 'ritira dal terzista' : 'registra rientro'}</span>`);
+  }
+  // Una riga in mezzo a una tratta non muove niente, e la sua assenza di comandi
+  // somiglierebbe a un difetto: dice dove sono finiti.
+  if (!cmd.length) {
+    const fase = x => 'fase ' + cyclePhaseNumber(clPhaseIndex(x));
+    return `<div class="line-cl-actions"><span title="Il pezzo esce una volta all'inizio della tratta e torna una volta alla fine: questa fase sta in mezzo e non muove niente.">${ico('factory', 'tinted', '')} in uscita alla ${esc(fase(ruolo.prima))}, rientro alla ${esc(fase(ruolo.ultima))}</span></div>`;
+  }
+  // Dove il gesto è un passaggio si dice **perché** non muove il magazzino: un
+  // comando che sembra un carico e non carica è il modo più rapido di far
+  // perdere fiducia in una giacenza.
+  const note = [];
+  if (ruolo.out && !ruolo.in) note.push('i pezzi rientrano alla ' + 'fase ' + cyclePhaseNumber(clPhaseIndex(ruolo.ultima)));
+  if (ruolo.in && !ruolo.out) note.push('sono usciti alla ' + 'fase ' + cyclePhaseNumber(clPhaseIndex(ruolo.prima)));
+  if (ruolo.outKind === 'clStep' && ruolo.inKind === 'clStep') note.push('passaggio di lavorazione: il magazzino non si muove');
+  else if (ruolo.inKind === 'clStep' && ruolo.in) note.push('il codice si carica al rientro dell&rsquo;ultima fase');
+  else if (ruolo.outKind === 'clStep' && ruolo.out) note.push('il materiale era gi&agrave; uscito alla prima fase');
+  const nota = note.length ? ` <span class="empty-text" style="padding:0">· ${note.join(' · ')}</span>` : '';
+  return `<div class="line-cl-actions">${ico('factory', 'tinted', '')}${cmd.join('')}${nota}</div>`;
+}
+function lineOriginTag(l) {
+  if (l.itemId) return '';
+  if (l.phaseKey) return ` <span class="rfq-clavoro-tag" title="Lavorazione in conto lavoro, generata dal fabbisogno. Non è un articolo a magazzino: i pezzi che rientrano si registrano come movimento, non da qui.">conto lavoro</span>`;
+  return ' <span class="rfq-manual-tag">manuale</span>';
+}
 function lineDescDoc(l) { return l.note ? (l.description || '') + '\n' + l.note : (l.description || ''); }
 // Da dove arriva un documento: da una richiesta di offerta o da un piano di
 // fabbisogno. Serve a ritrovare il perché di un ordine mesi dopo averlo fatto.
 function docOriginRef(d) {
   const parti = [];
-  if (d.rfqId && getRfq(d.rfqId)) parti.push(`📨 Generato dalla richiesta <strong>${esc(getRfq(d.rfqId).number)}</strong>`);
+  if (d.rfqId && getRfq(d.rfqId)) parti.push(`${ico('mail', 'tinted', '')} Generato dalla richiesta <strong>${esc(getRfq(d.rfqId).number)}</strong>`);
   const p = d.planId && (db.plans || []).find(x => x.id === d.planId);
-  if (p) parti.push(`📋 Dal fabbisogno <strong>${esc(p.number)}</strong>`);
+  if (p) parti.push(`${ico('list', 'tinted', '')} Dal fabbisogno <strong>${esc(p.number)}</strong>`);
   return parti.length ? `<div class="ord-ref">${parti.join(' · ')}</div>` : '';
 }
 
@@ -423,14 +637,18 @@ function docOriginRef(d) {
 // fuori, così sopravvivono al re-render, e la digitazione aggiorna solo la
 // lista (toccare la barra filtri farebbe perdere il focus al campo di ricerca).
 const docFilters = {
-  rfq: { q: '', status: '', supplierId: '' },
-  order: { q: '', status: '', supplierId: '' },
+  rfq: { q: '', status: '', supplierId: '', from: '', to: '' },
+  order: { q: '', status: '', supplierId: '', from: '', to: '' },
+  odl: { q: '', status: '', supplierId: '', from: '', to: '' },
 };
+function docFiltersVuoti() { return { q: '', status: '', supplierId: '', from: '', to: '' }; }
+// I campi di filtro dell'elenco, senza contenitore: li incolonna `wl-filters`
+// del telaio (worklist.js). In una colonna da 360px tre menu affiancati
+// sarebbero tre fessure — qui vanno uno sotto l'altro, larghi quanto la colonna.
 function docFilterBar(kind, statusMap, shown, total) {
   const f = docFilters[kind];
   const sups = db.suppliers.slice().sort((a, b) => (a.name || '').localeCompare(b.name || ''));
-  return `<div class="catalog-filters">
-    <input type="text" class="search" id="${kind}f-q" value="${esc(f.q)}" placeholder="🔍 Cerca numero, oggetto, fornitore o riga..." oninput="docFilterInput('${kind}')">
+  return `<input type="text" class="search" id="${kind}f-q" value="${esc(f.q)}" placeholder="Cerca numero, oggetto, fornitore o riga..." oninput="docFilterInput('${kind}')">
     <select id="${kind}f-status" onchange="docFilterChange('${kind}')">
       <option value="">Tutti gli stati</option>
       ${Object.entries(statusMap).map(([k, v]) => `<option value="${k}" ${f.status === k ? 'selected' : ''}>${v}</option>`).join('')}
@@ -440,12 +658,12 @@ function docFilterBar(kind, statusMap, shown, total) {
       <option value="none" ${f.supplierId === 'none' ? 'selected' : ''}>— senza fornitore —</option>
       ${sups.map(s => `<option value="${s.id}" ${f.supplierId === s.id ? 'selected' : ''}>${esc(s.name)}</option>`).join('')}
     </select>
+    ${dateRangeFilter(kind + 'f', f.from, f.to, `docFilterChange('${kind}')`, 'documento')}
     <span class="doc-filter-count" id="${kind}f-count">${docFilterCountText(shown, total)}</span>
-    ${docFilterActive(kind) ? `<button class="btn-outline" onclick="docFilterReset('${kind}')">✕ Azzera filtri</button>` : ''}
-  </div>`;
+    ${docFilterActive(kind) ? `<button class="btn-outline" onclick="docFilterReset('${kind}')">✕ Azzera filtri</button>` : ''}`;
 }
-function docFilterCountText(shown, total) { return shown === total ? `${total} documenti` : `${shown} di ${total}`; }
-function docFilterActive(kind) { const f = docFilters[kind]; return !!(f.q || f.status || f.supplierId); }
+function docFilterCountText(shown, total) { return worklistCount(shown, total, 'documento', 'documenti'); }
+function docFilterActive(kind) { const f = docFilters[kind]; return !!(f.q || f.status || f.supplierId || f.from || f.to); }
 // Digitazione nel campo di ricerca: si aspetta la pausa. I menu a tendina
 // restano immediati — un click è già un'intenzione conclusa.
 function docFilterInput(kind) { debounced('doc-' + kind, () => docFilterChange(kind)); }
@@ -454,15 +672,17 @@ function docFilterChange(kind) {
   f.q = (val(kind + 'f-q') || '').toLowerCase();
   f.status = val(kind + 'f-status');
   f.supplierId = val(kind + 'f-sup');
+  f.from = val(kind + 'f-from');
+  f.to = val(kind + 'f-to');
   // Solo la lista: la barra filtri resta com'è, altrimenti il campo perde il focus
   const count = document.getElementById(kind + 'f-count');
-  const all = kind === 'rfq' ? db.rfqs : db.orders;
-  renderInto(kind + '-list', () => kind === 'rfq' ? rfqListRows() : orderListRows());
+  const all = docKind(kind).all();
+  renderInto(kind + '-list', () => kind === 'rfq' ? rfqListRows() : kind === 'odl' ? odlListRows() : orderListRows());
   if (count) count.textContent = docFilterCountText(docFilterApply(kind, all).length, all.length);
 }
 function docFilterReset(kind) {
-  docFilters[kind] = { q: '', status: '', supplierId: '' };
-  if (kind === 'rfq') renderRfq(); else renderOrders();
+  docFilters[kind] = docFiltersVuoti();
+  docKind(kind).render();
 }
 // Testo cercabile di un documento, righe comprese. Costruirlo significa
 // scorrere tutte le righe: senza memoria si rifarebbe per ogni documento a
@@ -484,6 +704,7 @@ function docFilterApply(kind, docs) {
   return docs.filter(d => {
     if (f.status && d.status !== f.status) return false;
     if (f.supplierId === 'none' ? !!d.supplierId : (f.supplierId && d.supplierId !== f.supplierId)) return false;
+    if (!inDateRange(d.date, f.from, f.to)) return false;
     if (!f.q) return true;
     return docSearchText(d).includes(f.q);
   });
@@ -496,35 +717,41 @@ function docFilterApply(kind, docs) {
 // Attenzione a cosa **non** è: l'export del documento aperto, che esiste già
 // (`exportRfqPDF`, `exportOrderExcel`…) ed è quello che parte verso il fornitore.
 function docListExportSpec(kind) {
-  const ordini = kind === 'order';
   const K = docKind(kind);
+  // Le colonne di importo e ricevimento valgono per i due tipi di ordine, non
+  // per la richiesta: è la richiesta a essere il caso diverso, non l'ODL.
+  const ordini = kind === 'order' || kind === 'odl';
   const f = docFilters[kind];
   const mappaStati = ordini ? ORDER_STATUS : RFQ_STATUS;
-  const docs = docFilterApply(kind, (ordini ? db.orders : db.rfqs).slice()
+  const docs = docFilterApply(kind, K.all().slice()
     .sort((a, b) => (b.number || '').localeCompare(a.number || '')));
+  const odl = kind === 'odl';
   const colonne = [
     { h: 'Numero', w: 18 }, { h: 'Oggetto', w: 34 }, { h: 'Stato', w: 14 },
-    { h: 'Fornitore', w: 28 }, { h: 'Data', w: 12 }, { h: 'Righe', w: 8, num: true },
+    { h: odl ? 'Terzista' : 'Fornitore', w: 28 }, { h: 'Data', w: 12, data: true },
+    { h: odl ? 'Lavorazioni' : 'Righe', w: 12, num: true },
   ];
   if (ordini) colonne.push({ h: `Totale (${cur()})`, w: 16, num: true },
-    { h: 'Ordinato', w: 12, num: true }, { h: 'Ricevuto', w: 12, num: true });
+    { h: odl ? 'Pezzi' : 'Ordinato', w: 12, num: true },
+    { h: odl ? 'Rientrati' : 'Ricevuto', w: 12, num: true });
   return {
-    titolo: ordini ? 'Ordini a fornitore' : 'Richieste di offerta',
-    slug: ordini ? 'ordini' : 'richieste',
+    titolo: { rfq: 'Richieste di offerta', order: 'Ordini a fornitore', odl: 'Ordini di lavoro' }[kind],
+    slug: { rfq: 'richieste', order: 'ordini', odl: 'ordini_di_lavoro' }[kind],
     filtri: [
       ['Ricerca', f.q],
       ['Stato', mappaStati[f.status] || ''],
       ['Fornitore', f.supplierId === 'none' ? 'senza fornitore' : (supplierName(f.supplierId) || '')],
+      ['Data', dateRangeText(f.from, f.to)],
     ],
     sezioni: [{
       nome: K.nome,
       colonne,
       righe: docs.map(d => {
         const base = [d.number || '', d.title || '', mappaStati[d.status] || d.status || '',
-          supplierName(d.supplierId) || '', fmtDateIt(d.date), (d.lines || []).length];
+          supplierName(d.supplierId) || '', d.date || '', (d.lines || []).length];
         if (!ordini) return base;
         const rec = orderReception(d);
-        return base.concat([+orderTotal(d).toFixed(2), rec.ordered, rec.received]);
+        return base.concat([+(odl ? odlTotal(d) : orderTotal(d)).toFixed(2), rec.ordered, rec.received]);
       }),
     }],
   };
@@ -534,12 +761,25 @@ function orderListExportSpec() { return docListExportSpec('order'); }
 
 function renderRfq() {
   const host = document.getElementById('view-rfq');
-  if (rfqView === 'edit' && getRfq(currentRfqId)) {
-    host.innerHTML = renderRfqEdit(currentRfqId);
-    applyDocLock(rfqMode(getRfq(currentRfqId)), host);
-  }
-  else if (rfqView === 'compare') host.innerHTML = renderRfqCompare();
-  else { rfqView = 'list'; host.innerHTML = renderRfqList(); }
+  if (rfqView === 'edit' && !getRfq(currentRfqId)) { rfqView = 'list'; currentRfqId = null; }
+  const r = rfqView === 'edit' ? getRfq(currentRfqId) : null;
+  const nuove = `<button class="add-btn-sm" onclick="newRfq()">+ Nuova richiesta</button>
+      <button class="btn-outline" onclick="openRfqCompare()">${ico('chart', 'tinted', '')} Confronta offerte</button>`;
+  host.innerHTML = worklistHtml({
+    titolo: 'Richieste di offerta', icona: 'mail', listaId: 'rfq-list',
+    comandi: nuove + listExportButtons('rfqListExportSpec'),
+    filtri: docFilterBar('rfq', RFQ_STATUS, docFilterApply('rfq', db.rfqs).length, db.rfqs.length),
+    righe: rfqListRows(),
+    doc: r ? renderRfqEdit(currentRfqId) : (rfqView === 'compare' ? renderRfqCompare() : ''),
+    vuoto: {
+      titolo: 'Nessuna richiesta aperta qui',
+      testo: 'Scegli una richiesta dall\'elenco a destra: al centro compaiono il fornitore, le righe da quotare e i prezzi tornati con l\'offerta, pronti da registrare a listino.',
+      comandi: nuove,
+    },
+  });
+  // Il blocco vale per il documento al centro: i filtri dell'elenco non hanno
+  // classi `lock-*` e restano manovrabili anche a documento protetto.
+  if (r) applyDocLock(rfqMode(r), host);
   a11yFields(host);
 }
 
@@ -556,38 +796,29 @@ function rfqListRows() {
   return list.map(r => {
     const nl = (r.lines || []).length;
     const sup = r.supplierId ? supplierName(r.supplierId) : '— nessun fornitore —';
-    return `<div class="mgmt-item">
-      <span class="mgmt-item-name"><span style="font-family:var(--mono)">${esc(r.number)}</span> — ${esc(r.title || '(senza titolo)')}</span>
-      <span class="mgmt-item-meta">${esc(sup)} · ${nl} righe${r.date ? ' · ' + fmtDateIt(r.date) : ''}</span>
-      ${statusBadge(RFQ_STATUS, r.status)}
-      <div class="mgmt-item-actions">
-        <button class="mini-btn" onclick="openRfqEdit('${r.id}')" title="Modifica">✏</button>
-        <button class="mini-btn" onclick="orderFromRfq('${r.id}')" title="Crea ordine da questa richiesta">🧾</button>
-        <button class="mini-btn danger" onclick="delRfq('${r.id}')" title="Elimina">🗑</button>
-      </div></div>`;
+    return worklistRow({
+      numero: r.number,
+      badge: statusBadge(RFQ_STATUS, r.status),
+      titolo: r.title || '',
+      meta: `${esc(sup)} · ${nl} ${nl === 1 ? 'riga' : 'righe'}${r.date ? ' · ' + esc(fmtDateIt(r.date)) : ''}`,
+      sel: rfqView === 'edit' && currentRfqId === r.id,
+      azione: `openRfqEdit('${r.id}')`,
+      etichetta: `Apri la richiesta ${r.number}`,
+    });
   }).join('') || `<div class="empty-text">${db.rfqs.length ? 'Nessuna richiesta con questi filtri.' : 'Nessuna richiesta di offerta. Creane una per chiedere prezzi a un fornitore.'}</div>`;
 }
-function renderRfqList() {
-  return `<div class="manage-wrap">
-    <div class="bom-toolbar">
-      <h2 class="section-title">📨 Richieste di offerta</h2>
-      <button class="add-btn-sm" onclick="newRfq()">+ Nuova richiesta</button>
-      <button class="btn-outline" onclick="openRfqCompare()">📊 Confronta offerte</button>
-      ${listExportButtons('rfqListExportSpec')}
-    </div>
-    ${docFilterBar('rfq', RFQ_STATUS, docFilterApply('rfq', db.rfqs).length, db.rfqs.length)}
-    <div class="mgmt-list" id="rfq-list">${rfqListRows()}</div></div>`;
-}
-
 function newRfq() {
   if (!roleGuard('docs')) return;
   const r = Store.insert('rfqs', { id: gid(), number: nextRfqNumber(), title: '', date: nowISO().slice(0, 10),
     status: 'bozza', notes: '', notesInternal: '', supplierId: null, planId: null,
     transport: db.settings.transportDefault || '', payment: db.settings.paymentDefault || '',
     lines: [], active: true });
-  currentRfqId = r.id; rfqView = 'edit'; rfqDirty = false; renderRfq();
+  docLeave('rfq'); currentRfqId = r.id; rfqView = 'edit'; renderRfq();
 }
-function openRfqEdit(id) { currentRfqId = id; rfqView = 'edit'; rfqDirty = false; rfqUnlockedId = null; renderRfq(); }
+// Aprire un documento chiude quello di prima: `docLeave` salva cio' che era in
+// sospeso, come faceva l'uscita verso l'elenco. Senza, saltare da una riga
+// all'altra perderebbe le modifiche non salvate senza dire niente.
+function openRfqEdit(id) { docLeave('rfq'); currentRfqId = id; rfqView = 'edit'; renderRfq(); }
 function openRfqCompare() { rfqView = 'compare'; renderRfq(); }
 function rfqBackToList() { docBackToList('rfq'); }
 function rfqMarkDirty() { docMarkDirty('rfq'); }
@@ -636,7 +867,7 @@ function lineIdentityFields(pfx, l, locked) {
   if (locked) {
     return `<div class="modal-field"><label>Riga manuale</label>
       <input value="${esc((l.code || '') + (l.code ? ' — ' : '') + (l.description || '') + ' · ' + (l.qty || 0) + ' ' + (l.uom || ''))}" disabled></div>
-      <p class="empty-text" style="text-align:left;padding:0 0 8px">Documento bloccato dallo stato: modificabile la sola nota. Usa <strong>🔓 Sblocca per modifica</strong> per correggere il resto.</p>`;
+      <p class="empty-text" style="text-align:left;padding:0 0 8px">Documento bloccato dallo stato: modificabile la sola nota. Usa <strong>${ico('unlock', 'tinted', '')} Sblocca per modifica</strong> per correggere il resto.</p>`;
   }
   return `<div class="modal-field"><label>Descrizione</label><input id="${pfx}-desc" value="${esc(l.description || '')}"></div>
     <div class="modal-field"><label>Codice (opzionale)</label><input id="${pfx}-code" value="${esc(l.code || '')}"></div>
@@ -669,23 +900,31 @@ function readLineIdentity(pfx, l) {
 
 // ─── Picker catalogo con filtri, condiviso tra RFQ e Ordini ───
 let __pickOnAdd = null;
-function catalogPickerModal(onAddIds) {
+// `opts` è facoltativo: chi chiamava prima non lo passa e vede il catalogo
+// intero. Serve a chi ha bisogno di un sottoinsieme — le lavorazioni si
+// scelgono fra gli articoli che un ciclo ce l'hanno, e mostrare gli altri
+// significherebbe farli scegliere per poi dire di no.
+function catalogPickerModal(onAddIds, opts) {
   __pickOnAdd = onAddIds;
-  const opts = db.items.filter(i => i.active !== false).sort((a, b) => (a.code || '').localeCompare(b.code || ''))
-    .map(i => `<label class="rfq-pick-row" data-type="${i.type}" data-fam="${i.familyId || ''}" data-sub="${i.subFamilyId || ''}" data-sup="${i.supplierId || ''}"><input type="checkbox" value="${i.id}">
+  const cfg = opts || {};
+  const filtro = cfg.filtro || (() => true);
+  // Un articolo Obsoleto resta nelle righe già create, ma non si propone più
+  // come NUOVA riga di RFQ/ordine/ODL/piano.
+  const scelte = db.items.filter(i => i.active !== false && !i.obsolete && filtro(i)).sort((a, b) => (a.code || '').localeCompare(b.code || ''))
+    .map(i => `<label class="rfq-pick-row" data-type="${i.type}" data-fam="${i.familyId || ''}" data-sub="${i.subFamilyId || ''}" data-sup="${i.supplierId || ''}" data-cerca="${esc(((i.code || '') + ' ' + (i.name || '')).toLowerCase())}"><input type="checkbox" value="${i.id}">
       <span style="font-family:var(--mono)">${esc(i.code || '')}</span> ${esc(i.name)}${itemBadges(i)}
       <span class="rfq-pick-type">${TYPE_LABELS[i.type] || i.type}</span></label>`).join('');
   const typeOpts = ALL_TYPES.map(t => `<option value="${t}">${typeLabel(t)}</option>`).join('');
   const famOpts = (db.families || []).map(f => `<option value="${f.id}">${esc(f.name)}</option>`).join('');
-  openModal(`<h3>+ Aggiungi da catalogo</h3>
+  openModal(`<h3>${esc(cfg.titolo || '+ Aggiungi da catalogo')}</h3>
     <div class="rfq-pick-filters">
-      <input class="search" id="pick-search" placeholder="🔍 Codice o nome..." oninput="debounced('pick', pickFilter)">
+      <input class="search" id="pick-search" placeholder="Codice o nome..." oninput="debounced('pick', pickFilter)">
       <select id="pick-type" onchange="pickFilter()"><option value="">Tutti i tipi</option>${typeOpts}</select>
       <select id="pick-fam" onchange="pickFamilyChange()"><option value="">Tutte le famiglie</option>${famOpts}</select>
       <select id="pick-sub" onchange="pickFilter()"><option value="">Tutte le sottofamiglie</option></select>
       <select id="pick-sup" onchange="pickFilter()"><option value="">Tutti i fornitori</option>${db.suppliers.map(s => `<option value="${s.id}">${esc(s.name)}</option>`).join('')}</select>
     </div>
-    <div class="rfq-pick-list" id="pick-list">${opts || '<div class="empty-text">Catalogo vuoto.</div>'}</div>
+    <div class="rfq-pick-list" id="pick-list">${scelte || `<div class="empty-text">${cfg.vuoto || 'Catalogo vuoto.'}</div>`}</div>
     <div class="empty-text" id="pick-empty" style="display:none">Nessun articolo con questi filtri.</div>
     <div class="modal-actions"><button class="btn-ghost" onclick="closeModal()">Annulla</button>
       <button class="add-btn-sm" onclick="pickConfirm()">Aggiungi selezionati</button></div>`, true);
@@ -702,7 +941,12 @@ function pickFilter() {
   const ty = val('pick-type'), fam = val('pick-fam'), sub = val('pick-sub'), sup = val('pick-sup');
   let shown = 0;
   document.querySelectorAll('#pick-list .rfq-pick-row').forEach(el => {
-    const ok = el.textContent.toLowerCase().includes(q)
+    // Si cerca in codice e nome, non in `textContent`: quello si porta dentro
+    // anche l'etichetta del tipo e i contrassegni della riga, e bastava
+    // scrivere «parte» per non filtrare niente (tutte le parti contengono la
+    // parola) o «obsoleto» per pescare articoli che non c'entrano. Gli altri
+    // picker dell'app confrontano codice e nome: questo faceva eccezione.
+    const ok = (el.dataset.cerca || '').includes(q)
       && (!ty || el.dataset.type === ty)
       && (!fam || el.dataset.fam === fam)
       && (!sub || el.dataset.sub === sub)
@@ -722,35 +966,66 @@ function pickConfirm() {
 function rfqAddCatalogModal(id) { if (!rfqGuard(id, 'contract')) return; catalogPickerModal(ids => rfqAddCatalogLines(id, ids)); }
 function rfqAddCatalogLines(id, ids) { docAddCatalogLines('rfq', id, ids); }
 
+// ─── Righe di documento a due piani ───
+// Una riga d'ordine ha dodici colonne, e dodici colonne su uno schermo normale
+// vogliono dire o testo minuscolo o scorrimento orizzontale — e con lo
+// scorrimento il codice, che è l'identità della riga, esce dallo schermo.
+//
+// Le colonne però non erano dodici cose diverse: erano sei coppie. Il codice e
+// la sua descrizione, la quantità e la sua unità, il prezzo unitario e
+// l'importo che ne discende, la data chiesta e quella confermata, il ricevuto e
+// il residuo che ne resta, la modifica e l'eliminazione. Sopra sta il dato che
+// si compila, sotto quello che lo spiega o ne consegue.
+//
+// Il vantaggio non è solo lo spazio: le due metà si leggono insieme. «10 pz» e
+// «120,00 €» stanno una sotto l'altra invece che a mezzo schermo di distanza.
+function cell2(sopra, sotto, cls) {
+  return `<td${cls ? ` class="${cls}"` : ''}><div class="ln-a">${sopra}</div><div class="ln-b">${sotto == null ? '' : sotto}</div></td>`;
+}
+function th2(sopra, sotto, titolo) {
+  return `<th scope="col"${titolo ? ` title="${esc(titolo)}"` : ''}><div class="ln-a">${sopra}</div><div class="ln-b">${sotto || ''}</div></th>`;
+}
+
 function renderRfqEdit(id) {
-  const r = getRfq(id); if (!r) { rfqView = 'list'; return renderRfqList(); }
+  const r = getRfq(id); if (!r) { rfqView = 'list'; return ''; }
   const lines = (r.lines || []).map((l, i) => {
     const si = rfqLineSupInfo(r, l);
-    const siSub = si ? `<div class="rfq-cmp-sub">🏷 ${esc(si.code || '—')}${si.desc ? ' · ' + esc(si.desc) : ''}</div>` : '';
-    const noteSub = l.note ? `<div class="line-note">📝 ${esc(l.note)}</div>` : '';
+    const siSub = si ? `<div class="rfq-cmp-sub">${ico('tag', 'tinted', 'Codice presso il fornitore')} ${esc(si.code || '—')}${si.desc ? ' · ' + esc(si.desc) : ''}</div>` : '';
+    const noteSub = l.note ? `<div class="line-note">${ico('edit', 'tinted', 'Nota di riga')} ${esc(l.note)}</div>` : '';
+    const lotWarn = lineLotWarn(l);
+    const qty = Number(l.qty) || 0;
+    const price = (l.price === '' || l.price == null) ? null : Number(l.price);
     return `<tr>
-    <td>${i + 1}</td>
-    <td style="font-family:var(--mono)">${codeLink(l.itemId, l.code || '')}</td>
-    <td>${esc(l.description)}${l.itemId ? '' : ' <span class="rfq-manual-tag">manuale</span>'}${siSub}${noteSub}</td>
-    <td>${esc(l.uom || '')}</td>
-    <td><input type="number" class="rfq-qty-input lock-contract" value="${l.qty}" min="0" step="any" onchange="rfqSetLine('${id}','${l.id}','qty',this.value)"></td>
-    <td><input type="number" class="rfq-price-input lock-offer" value="${l.price === '' || l.price == null ? '' : l.price}" min="0" step="any" placeholder="—" onchange="rfqSetLine('${id}','${l.id}','price',this.value)"></td>
-    <td><input type="date" class="rfq-date-input lock-offer" value="${esc(l.deliveryDate || '')}" onchange="rfqSetLine('${id}','${l.id}','deliveryDate',this.value)"></td>
-    <td class="line-actions"><button class="mini-btn" onclick="rfqEditLineModal('${id}','${l.id}')" title="Modifica riga / nota">✏</button>
-      <button class="mini-btn danger lock-contract" onclick="rfqDelLine('${id}','${l.id}')">🗑</button></td></tr>`;
+      ${cell2(i + 1, '', 'ln-idx')}
+      ${cell2(`<span class="ln-code">${codeLink(l.itemId, l.code || '')}</span>`,
+    `${esc(l.description)}${lineOriginTag(l)}${lotWarn ? ' ' + lotWarn : ''}${siSub}${noteSub}`)}
+      ${cell2(`<input type="number" class="rfq-qty-input lock-contract" value="${l.qty}" min="0" step="any" title="Quantità" onchange="rfqSetLine('${id}','${l.id}','qty',this.value)">`,
+    esc(l.uom || ''))}
+      ${cell2(`<input type="number" class="rfq-price-input lock-offer" value="${price == null ? '' : price}" min="0" step="any" placeholder="—" title="Prezzo unitario" onchange="rfqSetLine('${id}','${l.id}','price',this.value)">`,
+    `<span class="ln-amount">${price != null ? fmtN(importoRiga(l)) : '—'}</span>`)}
+      ${cell2(`<input type="date" class="rfq-date-input lock-offer" value="${esc(l.deliveryDate || '')}" title="Data di consegna richiesta" onchange="rfqSetLine('${id}','${l.id}','deliveryDate',this.value)">`, '')}
+      ${cell2(`<button class="mini-btn" onclick="rfqEditLineModal('${id}','${l.id}')" title="Modifica riga / nota">${ico('edit', 'tinted', 'Modifica riga / nota')}</button>`,
+    `<button class="mini-btn danger lock-contract" onclick="rfqDelLine('${id}','${l.id}')" title="Togli la riga">${ico('trash', 'tinted', 'Togli la riga')}</button>`, 'line-actions')}
+    </tr>`;
   }).join('')
-    || `<tr><td colspan="8" class="empty-text">Nessuna riga. Aggiungi articoli dal catalogo o manualmente.</td></tr>`;
+    || `<tr><td colspan="6" class="empty-text">Nessuna riga. Aggiungi articoli dal catalogo o manualmente.</td></tr>`;
   const co = db.settings.company || {};
-  const coWarn = co.name ? '' : `<div class="rfq-warn">⚠ Dati azienda non impostati: compilali in <strong>Gestione › Dati azienda</strong> per stamparli sul documento.</div>`;
+  const coWarn = co.name ? '' : `<div class="rfq-warn">${ico('warning', 'tinted', '')} Dati azienda non impostati: compilali in <strong>Gestione › Dati azienda</strong> per stamparli sul documento.</div>`;
   const dis = rfqDirty ? 'disabled title="Salva la richiesta prima di generare il documento"' : '';
   const mode = rfqMode(r);
   const lockBanner = docLockBanner(mode, 'Richiesta ' + (RFQ_STATUS[r.status] || r.status).toLowerCase(), 'rfq', id);
   return `<div class="manage-wrap">
     <div class="bom-toolbar">
-      <button class="btn-outline" onclick="rfqBackToList()">← Elenco</button>
-      <h2 class="section-title" style="font-family:var(--mono)">${esc(r.number)}</h2>
-      ${statusBadge(RFQ_STATUS, r.status)}
-      <button class="add-btn-sm rfq-save-btn ${rfqDirty ? 'dirty' : ''}" id="rfq-save-btn" onclick="rfqSave('${id}')">💾 Salva</button>
+      <div class="bom-toolbar-left">
+        ${worklistCloseBtn('rfqBackToList()', 'la richiesta')}
+        <h2 class="section-title" style="font-family:var(--mono)">${esc(r.number)}</h2>
+        ${statusBadge(RFQ_STATUS, r.status)}
+        <button class="add-btn-sm rfq-save-btn ${rfqDirty ? 'dirty' : ''}" id="rfq-save-btn" onclick="rfqSave('${id}')">${ico('save', 'tinted', '')} Salva</button>
+        <button class="btn-outline" style="color:var(--red);border-color:var(--red)" onclick="delRfq('${id}')" title="Elimina la richiesta">${ico('trash', 'tinted', '')} Elimina</button>
+      </div>
+      <div class="bom-toolbar-right">
+        <button class="btn-outline" onclick="orderFromRfq('${id}')" title="Crea un ordine a fornitore da questa richiesta">${ico('receipt', 'tinted', '')} Crea ordine</button>
+      </div>
     </div>
     ${coWarn}${lockBanner}${docOriginRef(r)}${stampLine(r)}
     <div class="rfq-head">
@@ -771,7 +1046,7 @@ function renderRfqEdit(id) {
           <datalist id="rfq-payment-opts">${(db.settings.paymentOptions || []).map(o => `<option value="${esc(o)}"></option>`).join('')}</datalist></div>
       </div>
       <div class="modal-field"><label>Note per il fornitore</label><textarea rows="2" onchange="rfqSetField('${id}','notes',this.value)">${esc(r.notes || '')}</textarea></div>
-      <div class="modal-field"><label>🔒 Note interne (non stampate sui documenti)</label><textarea rows="2" class="notes-internal" onchange="rfqSetField('${id}','notesInternal',this.value)">${esc(r.notesInternal || '')}</textarea></div>
+      <div class="modal-field"><label>${ico('lock', 'tinted', '')} Note interne (non stampate sui documenti)</label><textarea rows="2" class="notes-internal" onchange="rfqSetField('${id}','notesInternal',this.value)">${esc(r.notesInternal || '')}</textarea></div>
     </div>
     <h3 class="rfq-subhead">Righe richiesta
       <span class="rfq-head-actions">
@@ -779,14 +1054,19 @@ function renderRfqEdit(id) {
         <button class="btn-outline lock-contract" onclick="rfqAddManualLineModal('${id}')">+ Riga manuale</button>
       </span></h3>
     <p class="empty-text" style="text-align:left;padding:0 0 8px">Prezzo unitario e data consegna si lasciano vuoti nel documento inviato e si compilano al ritorno dell'offerta.</p>
-    <div class="table-wrap"><table class="rfq-table">
-      <thead><tr><th>#</th><th>Codice</th><th>Descrizione</th><th>U.M.</th><th>Q.tà</th>
-        <th title="Prezzo di una unità, nella U.M. della riga">Prezzo unit. (${esc(cur())}/U.M.)</th><th>Data consegna</th><th></th></tr></thead>
+    <div class="table-wrap"><table class="rfq-table rfq-table-2">
+      <thead><tr>
+        <th scope="col" class="ln-idx">#</th>
+        ${th2('Codice', 'Descrizione')}
+        ${th2('Q.tà', 'U.M.')}
+        ${th2(`Prezzo unit. (${esc(cur())}/U.M.)`, `Importo (${esc(cur())})`, 'Prezzo di una unità, nella U.M. della riga; sotto, quanto fa per la quantità di riga')}
+        ${th2('Data consegna', '')}
+        <th scope="col"></th></tr></thead>
       <tbody>${lines}</tbody></table></div>
     <div class="rfq-export-bar">
       <label>Documento di richiesta:</label>
-      <button class="export-btn-pdf rfq-export-btn" onclick="exportRfqPDF('${id}')" ${dis}>📄 PDF</button>
-      <button class="export-btn-xls rfq-export-btn" onclick="exportRfqExcel('${id}')" ${dis}>📗 Excel</button>
+      <button class="export-btn-pdf rfq-export-btn" onclick="exportRfqPDF('${id}')" ${dis}>${ico('file', 'tinted', '')} Genera documento PDF</button>
+      <button class="export-btn-xls rfq-export-btn" onclick="exportRfqExcel('${id}')" ${dis}>${ico('sheet', 'tinted', '')} Genera documento Excel</button>
       ${rfqDirty ? '<span class="rfq-dirty-hint">Salva per abilitare la generazione del documento</span>' : ''}
     </div>
     ${rfqPriceBar(r)}
@@ -805,7 +1085,7 @@ function rfqPriceBar(r) {
   if (!nuove && !già) return '';
   return `<div class="rfq-export-bar">
     <label>Prezzi d'offerta:</label>
-    <button class="btn-outline" onclick="rfqRecordPrices('${r.id}')" ${nuove ? '' : 'disabled'}>💶 Registra a listino${nuove ? ' (' + nuove + ')' : ''}</button>
+    <button class="btn-outline" onclick="rfqRecordPrices('${r.id}')" ${nuove ? '' : 'disabled'}>${ico('euro', 'tinted', '')} Registra a listino${nuove ? ' (' + nuove + ')' : ''}</button>
     <span class="rfq-dirty-hint" style="color:var(--text-dim)">${già ? già + ' già registrati. ' : ''}Le quotazioni restano nel listino dell'articolo; il costo in uso si sceglie da lì.</span>
   </div>`;
 }
@@ -849,13 +1129,14 @@ function exportRfqPDF(id) {
       : [i + 1, l.code || '', lineDescDoc(l), ...tail];
   });
   doc.autoTable({ startY, head: [head], body, styles: { fontSize: 8 }, headStyles: { fillColor: [58, 123, 232] } });
-  let fy = doc.lastAutoTable.finalY + 8;
   doc.setTextColor(80); doc.setFontSize(9);
-  if (r.transport) { doc.text('Trasporto / Shipping: ' + r.transport, 14, fy); fy += 5; }
-  if (r.payment) { doc.text('Pagamento / Payment: ' + r.payment, 14, fy); fy += 5; }
   // Solo r.notes: le note interne (notesInternal) non escono mai sul documento.
-  if (r.notes) { doc.text('Note / Notes: ' + r.notes, 14, fy); }
-  doc.save(`${r.number}${sup ? '_' + (sup.name || '').replace(/\s+/g, '_') : ''}.pdf`);
+  docCoda(doc, [
+    { etichetta: 'Trasporto / Shipping', testo: r.transport },
+    { etichetta: 'Pagamento / Payment', testo: r.payment },
+    { etichetta: 'Note / Notes', testo: r.notes },
+  ], doc.lastAutoTable.finalY + 8);
+  doc.save(nomeFileSicuro(r.number + (sup ? '_' + (sup.name || '') : ''), 'richiesta') + '.pdf');
   showToast('PDF esportato');
   askMarkSent(r, `PDF generato.\nSegnare la richiesta ${r.number} come inviata?`, 'inviata', renderRfq);
 }
@@ -893,7 +1174,7 @@ function exportRfqExcel(id) {
   const ws = XLSX.utils.aoa_to_sheet(data);
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'RFQ');
-  XLSX.writeFile(wb, `${r.number}${sup ? '_' + (sup.name || '').replace(/\s+/g, '_') : ''}.xlsx`);
+  XLSX.writeFile(wb, nomeFileSicuro(r.number + (sup ? '_' + (sup.name || '') : ''), 'richiesta') + '.xlsx');
   showToast('Excel esportato');
   askMarkSent(r, `Excel generato.\nSegnare la richiesta ${r.number} come inviata?`, 'inviata', renderRfq);
 }
@@ -908,8 +1189,8 @@ function rfqToggleCompare(rid, on) {
 function renderRfqCompare() {
   rfqCompareSel = rfqCompareSel.filter(id => getRfq(id));
   const head = `<div class="bom-toolbar">
-      <button class="btn-outline" onclick="rfqBackToList()">← Elenco</button>
-      <h2 class="section-title">📊 Confronto offerte tra richieste</h2></div>`;
+      ${worklistCloseBtn('rfqBackToList()', 'il confronto')}
+      <h2 class="section-title">${ico('chart', 'tinted pill', '')} Confronto offerte tra richieste</h2></div>`;
   const picker = db.rfqs.slice().sort((a, b) => (b.number || '').localeCompare(a.number || '')).map(r => {
     const on = rfqCompareSel.includes(r.id);
     return `<label class="rfq-sup-chk"><input type="checkbox" ${on ? 'checked' : ''} onchange="rfqToggleCompare('${r.id}',this.checked)">
@@ -948,7 +1229,7 @@ function renderRfqCompare() {
     const posTotals = totals.filter(t => t > 0);
     const minTot = posTotals.length ? Math.min(...posTotals) : null;
     const totalRow = `<tr class="rfq-cmp-total"><td>Totale offerta</td>${totals.map(t => `<td class="${minTot != null && t === minTot ? 'rfq-min' : ''}">${fmtN(t)}</td>`).join('')}</tr>`;
-    const header = `<tr><th>Articolo</th>${sel.map(r => `<th>${esc(r.supplierId ? supplierName(r.supplierId) : r.number)}<div class="rfq-cmp-sub">${esc(r.number)}</div></th>`).join('')}</tr>`;
+    const header = `<tr><th scope="col">Articolo</th>${sel.map(r => `<th scope="col">${esc(r.supplierId ? supplierName(r.supplierId) : r.number)}<div class="rfq-cmp-sub">${esc(r.number)}</div></th>`).join('')}</tr>`;
     matrix = `<div class="table-wrap"><table class="rfq-table rfq-cmp-table">
       <thead>${header}</thead><tbody>${bodyRows}${totalRow}</tbody></table></div>
       <p class="empty-text" style="text-align:left">Prezzo minimo per riga e totale offerta più basso evidenziati in verde. I totali usano la quantità indicata in ciascuna richiesta.</p>`;
@@ -1009,7 +1290,7 @@ function orderWorstDelay(o) {
   });
   return peggiore;
 }
-function orderTotal(o) { return (o.lines || []).reduce((s, l) => s + (Number(l.qty) || 0) * (Number(l.price) || 0), 0); }
+function orderTotal(o) { return totaleRighe(o.lines); }
 function orderReception(o) {
   let ordered = 0, received = 0;
   (o.lines || []).forEach(l => { ordered += Number(l.qty) || 0; received += Number(l.received) || 0; });
@@ -1034,11 +1315,22 @@ function nextOrderNumber() {
 
 function renderOrders() {
   const host = document.getElementById('view-orders');
-  if (orderView === 'edit' && getOrder(currentOrderId)) {
-    host.innerHTML = renderOrderEdit(currentOrderId);
-    applyDocLock(ordMode(getOrder(currentOrderId)), host);
-  }
-  else { orderView = 'list'; host.innerHTML = renderOrderList(); }
+  if (orderView === 'edit' && !getOrder(currentOrderId)) { orderView = 'list'; currentOrderId = null; }
+  const o = orderView === 'edit' ? getOrder(currentOrderId) : null;
+  host.innerHTML = worklistHtml({
+    titolo: 'Ordini a fornitore', icona: 'receipt', listaId: 'order-list',
+    comandi: `<button class="add-btn-sm" onclick="newOrder()">+ Nuovo ordine</button>
+      ${listExportButtons('orderListExportSpec')}`,
+    filtri: docFilterBar('order', ORDER_STATUS, docFilterApply('order', db.orders).length, db.orders.length),
+    righe: orderListRows(),
+    doc: o ? renderOrderEdit(currentOrderId) : '',
+    vuoto: {
+      titolo: 'Nessun ordine aperto qui',
+      testo: 'Scegli un ordine dall\'elenco a destra: al centro compaiono le righe con il prezzo, la data confermata dal fornitore e la colonna dei ricevimenti, che e\' quella che alimenta il magazzino.',
+      comandi: '<button class="add-btn-sm" onclick="newOrder()">+ Nuovo ordine</button>',
+    },
+  });
+  if (o) applyDocLock(ordMode(o), host);
   a11yFields(host);
 }
 
@@ -1048,33 +1340,24 @@ function orderListRows() {
     const sup = o.supplierId ? supplierName(o.supplierId) : '— nessun fornitore —';
     const rec = orderReception(o);
     const recTxt = rec.ordered ? `ric. ${fmtQty(rec.received)}/${fmtQty(rec.ordered)}` : '';
-    return `<div class="mgmt-item">
-      <span class="mgmt-item-name"><span style="font-family:var(--mono)">${esc(o.number)}</span> — ${esc(o.title || '(senza titolo)')}</span>
-      <span class="mgmt-item-meta">${esc(sup)} · ${fmtN(orderTotal(o))}${recTxt ? ' · ' + recTxt : ''}${o.date ? ' · ' + fmtDateIt(o.date) : ''}</span>
-      ${statusBadge(ORDER_STATUS, o.status)}
-      <div class="mgmt-item-actions">
-        <button class="mini-btn" onclick="openOrderEdit('${o.id}')" title="Modifica">✏</button>
-        <button class="mini-btn danger" onclick="delOrder('${o.id}')" title="Elimina">🗑</button>
-      </div></div>`;
+    return worklistRow({
+      numero: o.number,
+      badge: statusBadge(ORDER_STATUS, o.status),
+      titolo: o.title || '',
+      meta: `${esc(sup)} · ${fmtN(orderTotal(o))}${recTxt ? ' · ' + recTxt : ''}${o.date ? ' · ' + esc(fmtDateIt(o.date)) : ''}`,
+      sel: orderView === 'edit' && currentOrderId === o.id,
+      spenta: o.status === 'annullato',
+      azione: `openOrderEdit('${o.id}')`,
+      etichetta: `Apri l'ordine ${o.number}`,
+    });
   }).join('') || `<div class="empty-text">${db.orders.length ? 'Nessun ordine con questi filtri.' : 'Nessun ordine. Creane uno o generane uno da una richiesta di offerta.'}</div>`;
 }
-function renderOrderList() {
-  return `<div class="manage-wrap">
-    <div class="bom-toolbar">
-      <h2 class="section-title">🧾 Ordini a fornitore</h2>
-      <button class="add-btn-sm" onclick="newOrder()">+ Nuovo ordine</button>
-      ${listExportButtons('orderListExportSpec')}
-    </div>
-    ${docFilterBar('order', ORDER_STATUS, docFilterApply('order', db.orders).length, db.orders.length)}
-    <div class="mgmt-list" id="order-list">${orderListRows()}</div></div>`;
-}
-
 function newOrder() {
   if (!roleGuard('docs')) return;
   const o = Store.insert('orders', { id: gid(), number: nextOrderNumber(), title: '', date: nowISO().slice(0, 10),
     status: 'bozza', supplierId: null, transport: db.settings.transportDefault || '', payment: db.settings.paymentDefault || '',
-    requestedDelivery: '', rfqId: null, planId: null, supplierConfirmation: '', notes: '', notesInternal: '', lines: [], active: true });
-  currentOrderId = o.id; orderView = 'edit'; orderDirty = false; renderOrders();
+    rfqId: null, planId: null, supplierConfirmation: '', notes: '', notesInternal: '', lines: [], active: true });
+  docLeave('order'); currentOrderId = o.id; orderView = 'edit'; renderOrders();
 }
 function orderFromRfq(rfqId) {
   if (!roleGuard('docs')) return;
@@ -1085,22 +1368,58 @@ function orderFromRfq(rfqId) {
     supplierId: r.supplierId || null,
     transport: r.transport || (sup && sup.defaultTransport) || db.settings.transportDefault || '',
     payment: r.payment || (sup && sup.defaultPayment) || db.settings.paymentDefault || '',
-    requestedDelivery: '', rfqId: r.id, planId: r.planId || null, supplierConfirmation: '', notes: r.notes || '', notesInternal: r.notesInternal || '',
-    lines: (r.lines || []).map(l => ({ id: gid(), itemId: l.itemId || null, code: l.code || '', description: l.description || '',
-      uom: l.uom || defaultUom(), qty: Number(l.qty) || 0, price: (l.price === '' || l.price == null) ? '' : Number(l.price),
-      deliveryDate: l.deliveryDate || '', received: 0, note: l.note || '' })),
-    active: true });
-  db.orders.push(o);
+    rfqId: r.id, planId: r.planId || null, supplierConfirmation: '', notes: r.notes || '', notesInternal: r.notesInternal || '',
+    lines: [], active: true });
+  // Una richiesta può contenere insieme merce e lavorazioni dello stesso
+  // fornitore — chiedere quanto costa il materiale e quanto costa lavorarlo è
+  // una domanda sola. Gli **ordini** invece sono due, e qui la richiesta si
+  // divide: le righe con una fase vanno in un ordine di lavoro, le altre in un
+  // ordine d'acquisto. Mescolarle sarebbe il contrario della separazione.
+  const copia = l => ({ id: gid(), itemId: l.itemId || null, code: l.code || '', description: l.description || '',
+    uom: l.uom || defaultUom(), qty: Number(l.qty) || 0, price: (l.price === '' || l.price == null) ? '' : Number(l.price),
+    deliveryDate: l.deliveryDate || '', received: 0, note: l.note || '',
+    phaseKey: l.phaseKey || null, phaseKeys: l.phaseKeys || l.phaseKey || null });
+  const merce = (r.lines || []).filter(l => !l.phaseKey);
+  const fasi = (r.lines || []).filter(l => !!l.phaseKey);
+  const creati = [];
+  // L'ordine d'acquisto è il caso normale e resta il ripiego: una richiesta
+  // senza righe, o con solo merce, produce un ODA — anche vuoto, com'è sempre
+  // stato. Solo una richiesta di **sole** lavorazioni non ne genera nessuno.
+  if (merce.length || !fasi.length) {
+    o.lines = merce.map(copia);
+    db.orders.push(o); creati.push({ kind: 'order', doc: o });
+  }
+  let w = null;
+  // Una richiesta d'offerta tiene insieme le due passate dello stesso terzista —
+  // chiedere non è commissionare, e a un preventivo si risponde una volta. Un
+  // **ordine** no: fra la prima e la seconda passata il pezzo torna da noi, e
+  // le due lavorazioni non si possono fare di seguito. Qui si separano.
+  const perPassata = new Map();
+  fasi.forEach(l => {
+    const k = clPassataDiRiga(l);
+    if (!perPassata.has(k)) perPassata.set(k, []);
+    perPassata.get(k).push(l);
+  });
+  Array.from(perPassata.keys()).sort((a, b) => a - b).forEach(k => {
+    const doc = stampNew(Object.assign({}, o, { id: gid(), number: nextOdlNumber(),
+      lines: perPassata.get(k).map(l => Object.assign(copia(l), { itemId: null })) }));
+    db.workOrders.push(doc); creati.push({ kind: 'odl', doc });
+    if (!w) w = doc;
+  });
   // La richiesta ha esaurito il suo scopo: si chiude da sé, ma solo se era
   // davvero uscita (da una bozza si può generare un ordine di prova).
   let closed = false;
   if (r.status === 'inviata' || r.status === 'ricevuta') { r.status = 'chiusa'; touch(r); closed = true; }
   saveDB();
-  currentOrderId = o.id; orderView = 'edit'; orderDirty = false; orderUnlockedId = null;
-  setView('orders');
-  showToast(`Ordine ${o.number} creato dalla richiesta${closed ? ' · ' + r.number + ' chiusa' : ''}`);
+  // Si apre il primo dei due: l'altro è nel suo elenco, e il messaggio lo dice.
+  const primo = creati[0];
+  docLeave(primo.kind);
+  if (primo.kind === 'order') { currentOrderId = primo.doc.id; orderView = 'edit'; setView('orders'); }
+  else { currentOdlId = primo.doc.id; odlView = 'edit'; setView('odl'); }
+  const nomi = creati.map(c => (c.kind === 'odl' ? 'ordine di lavoro ' : 'ordine ') + c.doc.number).join(' e ');
+  showToast(`Creat${creati.length > 1 ? 'i' : 'o'} ${nomi} dalla richiesta${closed ? ' · ' + r.number + ' chiusa' : ''}`);
 }
-function openOrderEdit(id) { currentOrderId = id; orderView = 'edit'; orderDirty = false; orderUnlockedId = null; renderOrders(); }
+function openOrderEdit(id) { docLeave('order'); currentOrderId = id; orderView = 'edit'; renderOrders(); }
 function orderBackToList() { docBackToList('order'); }
 function orderMarkDirty() { docMarkDirty('order'); }
 function ordSave(id) { docSave('order', id); }
@@ -1129,65 +1448,74 @@ function ordAddCatalogLines(id, ids) { docAddCatalogLines('order', id, ids); }
 // che porta la quotazione di Rossi su un ordine passato a Bianchi va detta,
 // altrimenti resta un numero sbagliato dall'aria giusta fino alla fattura.
 //
-// Si confronta con la quotazione più recente del fornitore attuale. Niente
-// avviso su una riga manuale (non viene da un listino), né su una riga senza
-// prezzo (l'assenza si vede già da sé).
+// Si confronta con la quotazione più recente del fornitore attuale, nel
+// **costo convertito** nell'unità di gestione — che è quella in cui la riga
+// vive sempre, indipendentemente da come quel fornitore valorizza il
+// listino. Niente avviso su una riga manuale (non viene da un listino), né
+// su una riga senza prezzo (l'assenza si vede già da sé).
 function ordLineListinoWarn(o, l) {
   if (!l.itemId || !o.supplierId) return '';
   const prezzo = (l.price === '' || l.price == null) ? null : Number(l.price);
   if (prezzo == null) return '';
-  const row = supplierPriceRow(getItem(l.itemId), o.supplierId);
+  const it = getItem(l.itemId);
+  const row = supplierPriceRow(it, o.supplierId);
   const sup = supplierName(o.supplierId) || 'questo fornitore';
   if (!row || row.price === '' || row.price == null) {
     return `<span class="mrp-warn" title="${esc(sup)} non ha questo articolo a listino: il prezzo in riga viene da un'altra parte. Verificalo prima di mandare l'ordine.">⚠ non a listino</span>`;
   }
-  const uom = priceUomOf(getItem(l.itemId), row);
-  if (Math.abs(Number(row.price) - prezzo) < 0.00005 && uom === (l.uom || '')) return '';
-  return `<span class="mrp-warn" title="A listino ${esc(sup)} quota ${fmtPer(row.price, uom)}. La riga dice altro: può essere un prezzo concordato, o il listino di un fornitore diverso rimasto da prima.">⚠ ${fmtPer(row.price, uom)} a listino</span>`;
+  const cost = rowUnitCost(it, row) || 0;
+  if (Math.abs(cost - prezzo) < 0.00005) return '';
+  const uom = priceUomOf(it, row);
+  const grezzo = uom !== (it.uom || '') ? ` (a listino ${fmtPer(row.price, uom)})` : '';
+  return `<span class="mrp-warn" title="A listino ${esc(sup)} quota ${fmtPer(cost, itemUom(it))}${grezzo}. La riga dice altro: può essere un prezzo concordato, o il listino di un fornitore diverso rimasto da prima.">⚠ ${fmtPer(cost, itemUom(it))} a listino</span>`;
 }
 
 function renderOrderEdit(id) {
-  const o = getOrder(id); if (!o) { orderView = 'list'; return renderOrderList(); }
+  const o = getOrder(id); if (!o) { orderView = 'list'; return ''; }
   const lines = (o.lines || []).map((l, i) => {
     const si = lineSupInfo(o.supplierId, l);
-    const siSub = si ? `<div class="rfq-cmp-sub">🏷 ${esc(si.code || '—')}${si.desc ? ' · ' + esc(si.desc) : ''}</div>` : '';
+    const siSub = si ? `<div class="rfq-cmp-sub">${ico('tag', 'tinted', 'Codice presso il fornitore')} ${esc(si.code || '—')}${si.desc ? ' · ' + esc(si.desc) : ''}</div>` : '';
     const warn = ordLineListinoWarn(o, l);
+    const lotWarn = lineLotWarn(l);
     const qty = Number(l.qty) || 0, price = (l.price === '' || l.price == null) ? null : Number(l.price);
-    const amount = price != null ? qty * price : null;
+    const amount = price != null ? importoRiga(l) : null;
     const rec = Number(l.received) || 0, residual = qty - rec;
     return `<tr>
-      <td>${i + 1}</td>
-      <td style="font-family:var(--mono)">${codeLink(l.itemId, l.code || '')}</td>
-      <td>${esc(l.description)}${l.itemId ? '' : ' <span class="rfq-manual-tag">manuale</span>'}${warn ? ' ' + warn : ''}${siSub}${l.note ? `<div class="line-note">📝 ${esc(l.note)}</div>` : ''}</td>
-      <td>${esc(l.uom || '')}</td>
-      <td><input type="number" class="rfq-qty-input lock-contract" value="${l.qty}" min="0" step="any" onchange="ordSetLine('${id}','${l.id}','qty',this.value)"></td>
-      <td><input type="number" class="rfq-price-input lock-contract" value="${price != null ? price : ''}" min="0" step="any" placeholder="—" onchange="ordSetLine('${id}','${l.id}','price',this.value)"></td>
-      <td class="ord-amount">${amount != null ? fmtN(amount) : '—'}</td>
-      <td><input type="date" class="rfq-date-input lock-contract" value="${esc(l.deliveryDate || '')}" onchange="ordSetLine('${id}','${l.id}','deliveryDate',this.value)"></td>
-      <td><input type="date" class="rfq-date-input lock-reception" value="${esc(l.confirmedDate || '')}" title="Data che il fornitore ha confermato" onchange="ordSetLine('${id}','${l.id}','confirmedDate',this.value)">
-        ${ordLineDelayHtml(l)}</td>
-      <td><input type="number" class="rfq-qty-input lock-reception" value="${rec}" min="0" step="any" onchange="ordSetLine('${id}','${l.id}','received',this.value)"></td>
-      <td class="ord-residual ${residual > 0 ? 'pos' : ''}">${fmtQty(residual)}</td>
-      <td class="line-actions"><button class="mini-btn" onclick="ordEditLineModal('${id}','${l.id}')" title="Modifica riga / nota">✏</button>
-        <button class="mini-btn danger lock-contract" onclick="ordDelLine('${id}','${l.id}')">🗑</button></td></tr>`;
-  }).join('') || `<tr><td colspan="12" class="empty-text">Nessuna riga. Aggiungi articoli dal catalogo o manualmente.</td></tr>`;
+      ${cell2(i + 1, '', 'ln-idx')}
+      ${cell2(`<span class="ln-code">${codeLink(l.itemId, l.code || '')}</span>`,
+    `${esc(l.description)}${lineOriginTag(l)}${warn ? ' ' + warn : ''}${lotWarn ? ' ' + lotWarn : ''}${siSub}${l.note ? `<div class="line-note">${ico('edit', 'tinted', 'Nota di riga')} ${esc(l.note)}</div>` : ''}${ordClLineActions(o, l)}`)}
+      ${cell2(`<input type="number" class="rfq-qty-input lock-contract" value="${l.qty}" min="0" step="any" title="Quantità ordinata" onchange="ordSetLine('${id}','${l.id}','qty',this.value)">`,
+    esc(l.uom || ''))}
+      ${cell2(`<input type="number" class="rfq-price-input lock-contract" value="${price != null ? price : ''}" min="0" step="any" placeholder="—" title="Prezzo unitario" onchange="ordSetLine('${id}','${l.id}','price',this.value)">`,
+    `<span class="ln-amount">${amount != null ? fmtN(amount) : '—'}</span>`)}
+      ${cell2(`<input type="date" class="rfq-date-input lock-contract" value="${esc(l.deliveryDate || '')}" title="Data che abbiamo chiesto" onchange="ordSetLine('${id}','${l.id}','deliveryDate',this.value)">`,
+    `<input type="date" class="rfq-date-input lock-reception" value="${esc(l.confirmedDate || '')}" title="Data che il fornitore ha confermato" onchange="ordSetLine('${id}','${l.id}','confirmedDate',this.value)">${ordLineDelayHtml(l)}`)}
+      ${cell2(`<input type="number" class="rfq-qty-input lock-reception" value="${rec}" min="0" step="any" title="${l.phaseKey ? 'Pezzi rientrati dal terzista: portano questo ordine a parziale o evaso, ma non caricano il magazzino. Il rientro si registra come movimento.' : 'Quantità ricevuta'}" onchange="ordSetLine('${id}','${l.id}','received',this.value)">`,
+    `<span class="ln-residual ${residual > 0 ? 'pos' : ''}" title="Residuo da ricevere">${fmtQty(residual)}</span>`)}
+      ${cell2(`<button class="mini-btn" onclick="ordEditLineModal('${id}','${l.id}')" title="Modifica riga / nota">${ico('edit', 'tinted', 'Modifica riga / nota')}</button>`,
+    `<button class="mini-btn danger lock-contract" onclick="ordDelLine('${id}','${l.id}')" title="Togli la riga">${ico('trash', 'tinted', 'Togli la riga')}</button>`, 'line-actions')}
+    </tr>`;
+  }).join('') || `<tr><td colspan="7" class="empty-text">Nessuna riga. Aggiungi articoli dal catalogo o manualmente.</td></tr>`;
   const total = orderTotal(o);
   // Se il fornitore ha confermato più tardi di quanto chiesto, si dice subito e
   // in testata: è l'informazione che fa decidere se la commessa slitta, e non
   // deve stare nascosta in una colonna in fondo.
   const ritardo = orderWorstDelay(o);
   const co = db.settings.company || {};
-  const coWarn = co.name ? '' : `<div class="rfq-warn">⚠ Dati azienda non impostati: compilali in <strong>Gestione › Dati azienda</strong> per stamparli sul documento.</div>`;
+  const coWarn = co.name ? '' : `<div class="rfq-warn">${ico('warning', 'tinted', '')} Dati azienda non impostati: compilali in <strong>Gestione › Dati azienda</strong> per stamparli sul documento.</div>`;
   const rfqRef = docOriginRef(o);
   const dis = orderDirty ? 'disabled title="Salva l\'ordine prima di generare il documento"' : '';
   const mode = ordMode(o);
   const lockBanner = docLockBanner(mode, 'Ordine ' + (ORDER_STATUS[o.status] || o.status).toLowerCase(), 'order', id);
   return `<div class="manage-wrap">
     <div class="bom-toolbar">
-      <button class="btn-outline" onclick="orderBackToList()">← Elenco</button>
-      <h2 class="section-title" style="font-family:var(--mono)">${esc(o.number)}</h2>
-      ${statusBadge(ORDER_STATUS, o.status)}
-      <button class="add-btn-sm rfq-save-btn ${orderDirty ? 'dirty' : ''}" id="order-save-btn" onclick="ordSave('${id}')">💾 Salva</button>
+      <div class="bom-toolbar-left">
+        ${worklistCloseBtn('orderBackToList()', "l'ordine")}
+        <h2 class="section-title" style="font-family:var(--mono)">${esc(o.number)}</h2>
+        ${statusBadge(ORDER_STATUS, o.status)}
+        <button class="add-btn-sm rfq-save-btn ${orderDirty ? 'dirty' : ''}" id="order-save-btn" onclick="ordSave('${id}')">${ico('save', 'tinted', '')} Salva</button>
+        <button class="btn-outline" style="color:var(--red);border-color:var(--red)" onclick="delOrder('${id}')" title="Elimina l'ordine">${ico('trash', 'tinted', '')} Elimina</button>
+      </div>
     </div>
     ${coWarn}${rfqRef}${lockBanner}${stampLine(o)}
     <div class="rfq-head">
@@ -1208,32 +1536,34 @@ function renderOrderEdit(id) {
           <datalist id="ord-payment-opts">${(db.settings.paymentOptions || []).map(x => `<option value="${esc(x)}"></option>`).join('')}</datalist></div>
       </div>
       <div class="rfq-head-row">
-        <div class="modal-field"><label>Consegna richiesta</label><input type="date" class="lock-contract" value="${esc(o.requestedDelivery || '')}" onchange="ordSetField('${id}','requestedDelivery',this.value)"></div>
         <div class="modal-field"><label>N° conferma d'ordine fornitore</label><input value="${esc(o.supplierConfirmation || '')}" onchange="ordSetField('${id}','supplierConfirmation',this.value)"></div>
       </div>
       <div class="modal-field"><label>Note</label><textarea rows="2" onchange="ordSetField('${id}','notes',this.value)">${esc(o.notes || '')}</textarea></div>
-      <div class="modal-field"><label>🔒 Note interne (non stampate sui documenti)</label><textarea rows="2" class="notes-internal" onchange="ordSetField('${id}','notesInternal',this.value)">${esc(o.notesInternal || '')}</textarea></div>
+      <div class="modal-field"><label>${ico('lock', 'tinted', '')} Note interne (non stampate sui documenti)</label><textarea rows="2" class="notes-internal" onchange="ordSetField('${id}','notesInternal',this.value)">${esc(o.notesInternal || '')}</textarea></div>
     </div>
-    ${ritardo != null ? `<div class="rfq-warn">⏱ Il fornitore ha confermato con <strong>${ritardo} ${ritardo === 1 ? 'giorno' : 'giorni'}</strong> di ritardo sulla data richiesta. Se questo materiale è a commessa, la consegna al cliente va verificata.</div>` : ''}
+    ${ritardo != null ? `<div class="rfq-warn">${ico('clock', 'tinted', '')} Il fornitore ha confermato con <strong>${ritardo} ${ritardo === 1 ? 'giorno' : 'giorni'}</strong> di ritardo sulla data richiesta. Se questo materiale è a commessa, la consegna al cliente va verificata.</div>` : ''}
     <h3 class="rfq-subhead">Righe ordine
       <span class="rfq-head-actions">
         <button class="add-btn-sm lock-contract" onclick="ordAddCatalogModal('${id}')">+ Da catalogo</button>
         <button class="btn-outline lock-contract" onclick="ordAddManualLineModal('${id}')">+ Riga manuale</button>
         <button class="btn-outline lock-reception" onclick="ordMarkAllReceived('${id}')">✓ Segna tutto ricevuto</button>
       </span></h3>
-    <div class="table-wrap"><table class="rfq-table">
-      <thead><tr><th>#</th><th>Codice</th><th>Descrizione</th><th>U.M.</th><th>Q.tà</th>
-        <th title="Prezzo di una unità, nella U.M. della riga">Prezzo unit. (${esc(cur())}/U.M.)</th><th>Importo (${esc(cur())})</th>
-        <th title="Data che abbiamo chiesto">Richiesta</th>
-        <th title="Data che il fornitore ha confermato">Confermata</th>
-        <th>Ricevuto</th><th>Residuo</th><th></th></tr></thead>
+    <div class="table-wrap"><table class="rfq-table rfq-table-2">
+      <thead><tr>
+        <th scope="col" class="ln-idx">#</th>
+        ${th2('Codice', 'Descrizione')}
+        ${th2('Q.tà', 'U.M.')}
+        ${th2(`Prezzo unit. (${esc(cur())}/U.M.)`, `Importo (${esc(cur())})`, 'Prezzo di una unità, nella U.M. della riga; sotto, quanto fa per la quantità di riga')}
+        ${th2('Richiesta', 'Confermata', 'Sopra la data che abbiamo chiesto, sotto quella che il fornitore ha confermato')}
+        ${th2('Ricevuto', 'Residuo', 'Sopra quanto è arrivato, sotto quanto manca')}
+        <th scope="col"></th></tr></thead>
       <tbody>${lines}</tbody>
-      <tfoot><tr class="rfq-cmp-total"><td colspan="6" style="text-align:right">Totale imponibile</td><td>${fmtN(total)}</td><td colspan="5"></td></tr></tfoot>
+      <tfoot><tr class="rfq-cmp-total"><td colspan="3" style="text-align:right">Totale imponibile</td><td>${fmtN(total)}</td><td colspan="3"></td></tr></tfoot>
     </table></div>
     <div class="rfq-export-bar">
       <label>Documento d'ordine:</label>
-      <button class="export-btn-pdf order-export-btn" onclick="exportOrderPDF('${id}')" ${dis}>📄 PDF</button>
-      <button class="export-btn-xls order-export-btn" onclick="exportOrderExcel('${id}')" ${dis}>📗 Excel</button>
+      <button class="export-btn-pdf order-export-btn" onclick="exportOrderPDF('${id}')" ${dis}>${ico('file', 'tinted', '')} Genera documento PDF</button>
+      <button class="export-btn-xls order-export-btn" onclick="exportOrderExcel('${id}')" ${dis}>${ico('sheet', 'tinted', '')} Genera documento Excel</button>
       ${orderDirty ? '<span class="rfq-dirty-hint">Salva per abilitare la generazione del documento</span>' : ''}
     </div>
   </div>`;
@@ -1270,22 +1600,22 @@ function exportOrderPDF(id) {
     const qty = Number(l.qty) || 0, price = (l.price === '' || l.price == null) ? null : Number(l.price);
     const tail = [(qty + ' ' + (l.uom || '')).trim(),
       price != null ? fmtN(price) + (l.uom ? '/' + l.uom : '') : '',
-      price != null ? fmtN(qty * price) : '', fmtDateIt(l.deliveryDate)];
+      price != null ? fmtN(importoRiga(l)) : '', fmtDateIt(l.deliveryDate)];
     return hasSup ? [i + 1, l.code || '', lineDescDoc(l), si ? si.code : '', si ? si.desc : '', ...tail] : [i + 1, l.code || '', lineDescDoc(l), ...tail];
   });
   const totLabel = { content: 'Totale / Total', styles: { halign: 'right', fontStyle: 'bold' } };
   const totVal = { content: fmtN(orderTotal(o)), styles: { fontStyle: 'bold' } };
   const foot = hasSup ? [['', '', '', '', '', '', totLabel, totVal, '']] : [['', '', '', '', totLabel, totVal, '']];
   doc.autoTable({ startY, head: [head], body, foot, styles: { fontSize: 8 }, headStyles: { fillColor: [58, 123, 232] }, footStyles: { fillColor: [235, 238, 245], textColor: 20 } });
-  let fy = doc.lastAutoTable.finalY + 8;
   doc.setTextColor(80); doc.setFontSize(9);
-  if (o.transport) { doc.text('Trasporto / Shipping: ' + o.transport, 14, fy); fy += 5; }
-  if (o.payment) { doc.text('Pagamento / Payment: ' + o.payment, 14, fy); fy += 5; }
-  if (o.requestedDelivery) { doc.text('Consegna richiesta / Requested delivery: ' + fmtDateIt(o.requestedDelivery), 14, fy); fy += 5; }
-  if (o.supplierConfirmation) { doc.text('Conferma fornitore / Order confirmation: ' + o.supplierConfirmation, 14, fy); fy += 5; }
   // Solo o.notes: le note interne (notesInternal) non escono mai sul documento.
-  if (o.notes) { doc.text('Note / Notes: ' + o.notes, 14, fy); }
-  doc.save(`${o.number}${sup ? '_' + (sup.name || '').replace(/\s+/g, '_') : ''}.pdf`);
+  docCoda(doc, [
+    { etichetta: 'Trasporto / Shipping', testo: o.transport },
+    { etichetta: 'Pagamento / Payment', testo: o.payment },
+    { etichetta: 'Conferma fornitore / Order confirmation', testo: o.supplierConfirmation },
+    { etichetta: 'Note / Notes', testo: o.notes },
+  ], doc.lastAutoTable.finalY + 8);
+  doc.save(nomeFileSicuro(o.number + (sup ? '_' + (sup.name || '') : ''), 'ordine') + '.pdf');
   showToast('PDF esportato');
   askMarkSent(o, `PDF generato.\nSegnare l'ordine ${o.number} come inviato?`, 'inviato', renderOrders);
 }
@@ -1300,7 +1630,6 @@ function exportOrderExcel(id) {
   if (o.rfqId && getRfq(o.rfqId)) data.push(['Da richiesta', getRfq(o.rfqId).number]);
   if (o.transport) data.push(['Trasporto / Shipping', o.transport]);
   if (o.payment) data.push(['Pagamento / Payment', o.payment]);
-  if (o.requestedDelivery) data.push(['Consegna richiesta / Requested delivery', fmtDateIt(o.requestedDelivery)]);
   if (o.supplierConfirmation) data.push(['Conferma fornitore / Order confirmation', o.supplierConfirmation]);
   data.push([]);
   data.push(['RICHIEDENTE', '', 'FORNITORE']);
@@ -1317,7 +1646,7 @@ function exportOrderExcel(id) {
   (o.lines || []).forEach((l, i) => {
     const si = lineSupInfo(o.supplierId, l);
     const qty = Number(l.qty) || 0, price = (l.price === '' || l.price == null) ? '' : Number(l.price);
-    const amount = price === '' ? '' : qty * price;
+    const amount = price === '' ? '' : importoRiga(l);
     const rec = Number(l.received) || 0;
     const supCols = hasSup ? [si ? si.code : '', si ? si.desc : ''] : [];
     data.push([i + 1, l.code || '', l.description, ...supCols, qty, l.uom || '', price, amount, fmtDateIt(l.deliveryDate), rec, qty - rec, l.note || '']);
@@ -1330,9 +1659,393 @@ function exportOrderExcel(id) {
   const ws = XLSX.utils.aoa_to_sheet(data);
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Ordine');
-  XLSX.writeFile(wb, `${o.number}${sup ? '_' + (sup.name || '').replace(/\s+/g, '_') : ''}.xlsx`);
+  XLSX.writeFile(wb, nomeFileSicuro(o.number + (sup ? '_' + (sup.name || '') : ''), 'ordine') + '.xlsx');
   showToast('Excel esportato');
   askMarkSent(o, `Excel generato.\nSegnare l'ordine ${o.number} come inviato?`, 'inviato', renderOrders);
+}
+
+// ═══════════════════════════════════════════════════════════
+//  ORDINI DI LAVORO (ODL) — conto lavoro
+// ═══════════════════════════════════════════════════════════
+// Le lavorazioni affidate a un terzista. Un ordine d'acquisto compra della
+// merce, un ordine di lavoro manda dei pezzi a lavorare: due documenti diversi,
+// due numerazioni, due elenchi. Tenerli insieme costringeva ogni conto — il
+// totale acquistato, il carico di magazzino, la copertura di commessa — a
+// filtrare per un campo, ed è il tipo di distinzione che prima o poi qualcuno
+// dimentica in uno dei posti.
+//
+// Quello che invece **si riusa per intero** è la macchina dei documenti: stati,
+// blocchi per stato, salvataggio differito, righe, ricevimenti, guardie di
+// ruolo. Sta tutta in DOC_KINDS, e l'ODL è la terza voce di quel registro.
+function getOdl(id) { return (db.workOrders || []).find(o => o.id === id); }
+function odlMode(o) { return docMode('odl', o); }
+function odlGuard(id, kind) { return docGuard('odl', id, kind); }
+function odlUnlock(id) { return docUnlock('odl', id); }
+function odlTotal(o) { return totaleRighe(o.lines); }
+// Progressivo per anno: ODL-<anno>-NNN. Numerazione **sua**: un ODL e un ODA
+// dello stesso giorno non devono avere lo stesso numero, o al telefono col
+// terzista non si capisce di quale documento si stia parlando.
+function nextOdlNumber() {
+  const prefix = `ODL-${new Date().getFullYear()}-`;
+  const seqs = (db.workOrders || []).filter(o => (o.number || '').startsWith(prefix))
+    .map(o => parseInt((o.number || '').slice(prefix.length), 10) || 0);
+  return prefix + String((seqs.length ? Math.max(...seqs) : 0) + 1).padStart(3, '0');
+}
+
+function renderOdl() {
+  const host = document.getElementById('view-odl'); if (!host) return;
+  if (odlView === 'edit' && !getOdl(currentOdlId)) { odlView = 'list'; currentOdlId = null; }
+  const o = odlView === 'edit' ? getOdl(currentOdlId) : null;
+  const tutti = db.workOrders || [];
+  host.innerHTML = worklistHtml({
+    titolo: 'Ordini di lavoro', icona: 'wrench', listaId: 'odl-list',
+    comandi: `<button class="add-btn-sm" onclick="newOdl()">+ Nuovo ordine di lavoro</button>
+      ${listExportButtons('odlListExportSpec')}`,
+    filtri: docFilterBar('odl', ORDER_STATUS, docFilterApply('odl', tutti).length, tutti.length),
+    righe: odlListRows(),
+    doc: o ? renderOdlEdit(currentOdlId) : '',
+    vuoto: {
+      titolo: 'Nessun ordine di lavoro aperto qui',
+      testo: 'Scegli un ordine dall\'elenco a destra. Gli ordini di lavoro nascono dal Fabbisogno, dalle fasi di ciclo affidate a un terzista: al centro compaiono le lavorazioni con la tariffa, la data e i pezzi rientrati.',
+      comandi: '<button class="add-btn-sm" onclick="newOdl()">+ Nuovo ordine di lavoro</button>',
+    },
+  });
+  if (o) applyDocLock(odlMode(o), host);
+  a11yFields(host);
+}
+function odlListRows() {
+  const tutti = db.workOrders || [];
+  const list = docFilterApply('odl', tutti.slice().sort((a, b) => (b.number || '').localeCompare(a.number || '')));
+  return list.map(o => {
+    const sup = o.supplierId ? supplierName(o.supplierId) : '— nessun terzista —';
+    const rec = orderReception(o);
+    const recTxt = rec.ordered ? `rientr. ${fmtQty(rec.received)}/${fmtQty(rec.ordered)}` : '';
+    return worklistRow({
+      numero: o.number,
+      badge: statusBadge(ORDER_STATUS, o.status),
+      titolo: o.title || '',
+      meta: `${esc(sup)} · ${fmtN(odlTotal(o))}${recTxt ? ' · ' + recTxt : ''}${o.date ? ' · ' + esc(fmtDateIt(o.date)) : ''}`,
+      sel: odlView === 'edit' && currentOdlId === o.id,
+      spenta: o.status === 'annullato',
+      azione: `openOdlEdit('${o.id}')`,
+      etichetta: `Apri l'ordine di lavoro ${o.number}`,
+    });
+  }).join('') || `<div class="empty-text">${tutti.length ? 'Nessun ordine di lavoro con questi filtri.' : 'Nessun ordine di lavoro. Si generano dal Fabbisogno, dalle fasi affidate a un terzista.'}</div>`;
+}
+function newOdl() {
+  if (!roleGuard('docs')) return;
+  const o = Store.insert('workOrders', { id: gid(), number: nextOdlNumber(), title: '', date: nowISO().slice(0, 10),
+    status: 'bozza', supplierId: null, transport: db.settings.transportDefault || '', payment: db.settings.paymentDefault || '',
+    rfqId: null, planId: null, jobId: null, supplierConfirmation: '', notes: '', notesInternal: '', lines: [], active: true });
+  docLeave('odl'); currentOdlId = o.id; odlView = 'edit'; renderOdl();
+}
+function openOdlEdit(id) { docLeave('odl'); currentOdlId = id; odlView = 'edit'; renderOdl(); }
+function odlBackToList() { docBackToList('odl'); }
+function odlMarkDirty() { docMarkDirty('odl'); }
+function odlSave(id) { docSave('odl', id); }
+function odlSetField(id, field, value) { docSetField('odl', id, field, value); }
+function odlSetSupplier(id, sid) { docSetSupplier('odl', id, sid); }
+function odlSetLine(id, lineId, field, value) { docSetLine('odl', id, lineId, field, value); }
+function odlDelLine(id, lineId) { docDelLine('odl', id, lineId); }
+function odlAddManualLineModal(id) { docAddManualLineModal('odl', id); }
+function odlAddManualLine(id) { docAddManualLine('odl', id); }
+function odlEditLineModal(id, lineId) { docEditLineModal('odl', id, lineId); }
+function odlSaveLineEdit(id, lineId) { docSaveLineEdit('odl', id, lineId); }
+function odlListExportSpec() { return docListExportSpec('odl'); }
+function delOdl(id) { docDel('odl', id); }
+function odlMarkAllReceived(id) {
+  if (!odlGuard(id, 'reception')) return;
+  const o = getOdl(id); if (!o) return;
+  let saltate = 0;
+  (o.lines || []).forEach(l => {
+    if (odlRigaDaOdp(l)) { saltate++; return; }
+    l.received = Number(l.qty) || 0;
+  });
+  ordAutoStatus(o); touch(o); odlMarkDirty(); renderOdl();
+  if (saltate) showToast(`${saltate} ${saltate === 1 ? 'riga viene' : 'righe vengono'} da un ordine di produzione: i pezzi rientrati si dichiarano lì`, 'error');
+}
+
+// ─── Una lavorazione scritta a mano, partendo dal ciclo ───
+// Fin qui un ordine di lavoro nasceva solo da un piano: l'unico modo di
+// riempirne uno vuoto era la riga manuale, testo libero senza `phaseKey` — e
+// quindi senza tariffa dal ciclo e senza nessuno dei comandi del conto lavoro.
+// Ma commissionare una lavorazione fuori piano è il caso normale: un pezzo
+// urgente, un ripasso, una prova.
+//
+// Si parte dal **ciclo**, non da un campo vuoto: si sceglie la parte, si sceglie
+// la tratta, si dicono i pezzi. La riga che ne esce è **identica** a quella
+// generata dal fabbisogno — stessa fabbrica, `planPhaseDocLine` — perché una
+// riga scritta a mano che si comportasse diversamente sarebbe una seconda
+// specie di riga da ricordarsi.
+function odlAddPhaseModal(id) {
+  if (!odlGuard(id, 'contract')) return;
+  catalogPickerModal(ids => odlPhasePickModal(id, ids), {
+    titolo: '+ Lavorazione da ciclo',
+    // Solo gli articoli che una lavorazione ce l'hanno: gli altri aprirebbero
+    // una scheda vuota, e scoprirlo dopo averli scelti è il modo peggiore.
+    filtro: i => (i.cycle || []).some(r => r.kind === 'op'),
+    vuoto: 'Nessun articolo ha un ciclo di lavorazione. Le fasi si scrivono nella scheda dell’articolo, sotto <em>Ciclo</em>.',
+  });
+}
+// La scelta della tratta. Si vedono **tutte** — anche quelle di un altro
+// terzista e quelle interne — marcate per quello che sono: mandare fuori una
+// lavorazione che di solito si fa in casa è un caso vero, e l'app lo segnala
+// invece di impedirlo.
+function odlPhasePickModal(id, ids) {
+  const o = getOdl(id); if (!o) return;
+  const parti = (ids || []).map(getItem).filter(it => it && (it.cycle || []).some(r => r.kind === 'op'));
+  if (!parti.length) { showToast('Nessun articolo con un ciclo di lavorazione', 'error'); return; }
+  const blocchi = parti.map((it, pi) => {
+    const righe = clCycleRuns(it).map(t => {
+      const suo = t.supplierId === o.supplierId;
+      const tag = t.esterna
+        ? (suo ? '' : `<span class="rfq-manual-tag" title="Il ciclo assegna questa lavorazione a un altro terzista">${esc(supplierName(t.supplierId) || 'altro terzista')}</span>`)
+        : '<span class="rfq-manual-tag" title="Il ciclo la fa in casa: mettendola qui la si manda fuori questa volta">interna</span>';
+      const nos = [];
+      for (let k = t.from; k <= t.to; k++) nos.push(cyclePhaseNumber(k));
+      const nomi = odlRunNomi(it, t);
+      return `<label class="rfq-pick-row">
+        <input type="checkbox" class="odl-fase" value="${esc(it.id)}#${t.from}" ${suo ? 'checked' : ''}>
+        <span class="cycle-phase">${esc(nos.join('-'))}</span> ${esc(nomi)} ${tag}</label>`;
+    }).join('');
+    return `<h4 class="settings-group-title">${esc(it.code || '')} ${esc(it.name || '')}</h4>
+      <div class="rfq-pick-list">${righe}</div>
+      <div class="modal-field"><label>${labelUom('Pezzi da lavorare', itemUom(it))}</label>
+        <input type="number" id="odl-pz-${pi}" min="0" step="any" value="1"></div>`;
+  }).join('');
+  window.__odlFasiParti = parti.map(x => x.id);
+  openModal(`<h3>${ico('wrench', 'tinted pill', '')} Lavorazioni da mettere in ${esc(o.number)}</h3>
+    <p class="empty-text" style="text-align:left;padding:0 0 8px">Le fasi <strong>consecutive dello stesso terzista</strong> stanno in una riga sola: è una lavorazione da commissionare, non due. Tariffa e giorni vengono dal ciclo, e si possono correggere sulla riga.</p>
+    ${blocchi}
+    <div class="modal-field"><label>Data di consegna richiesta</label><input type="date" id="odl-fase-due" value=""></div>
+    <p class="empty-text" style="text-align:left;padding:8px 0">Questo ordine <strong>non è legato a un piano</strong>: se la stessa fase sta anche in un fabbisogno, lì continuerà a risultare da ordinare. Il legame col piano lo dà la generazione dal fabbisogno, non questa scheda.</p>
+    <div class="modal-actions">
+      <button class="btn-ghost" onclick="closeModal()">Annulla</button>
+      <button class="add-btn-sm" onclick="odlAddPhases('${esc(id)}')">Aggiungi</button>
+    </div>`, true, 'form');
+}
+// I centri di lavoro toccati da una tratta, nell'ordine del ciclo.
+function odlRunNomi(it, t) {
+  const nomi = [];
+  let k = 0;
+  (it.cycle || []).forEach(r => {
+    if (r.kind !== 'op') return;
+    const i = k++;
+    if (i < t.from || i > t.to) return;
+    const wc = getWorkCenter(r.workCenterId);
+    nomi.push(wc ? wc.name : '(centro mancante)');
+  });
+  return Array.from(new Set(nomi)).join(' + ');
+}
+// Le righe che nascono da una scelta di tratte. Sta fuori dal gesto perché
+// **la decisione è qui** e il gesto è solo il modo di esprimerla: così si può
+// verificare che una riga scritta a mano abbia la stessa forma di una generata,
+// senza passare da caselle e pulsanti.
+function odlPhaseLines(scelte, pezziDi, due) {
+  const out = [];
+  (scelte || []).forEach(chiave => {
+    const itemId = String(chiave).split('#')[0];
+    const from = Number(String(chiave).split('#')[1]) || 0;
+    const it = getItem(itemId); if (!it) return;
+    const pezzi = Number(pezziDi(itemId)) || 0;
+    if (!(pezzi > 0)) return;                  // zero pezzi non è una lavorazione
+    const t = clCycleRuns(it).find(x => x.from === from); if (!t) return;
+    const r = clRunRow(it, t, pezzi, due || '');
+    if (!r) return;
+    out.push(Object.assign(planPhaseDocLine(r, true), { received: 0 }));
+  });
+  return out;
+}
+function odlAddPhases(id) {
+  if (!odlGuard(id, 'contract')) return;
+  const o = getOdl(id); if (!o) return;
+  const scelte = Array.from(document.querySelectorAll('.odl-fase'))
+    .filter(cb => cb.checked).map(cb => cb.value);
+  if (!scelte.length) { showToast('Nessuna lavorazione selezionata', 'error'); return; }
+  const parti = window.__odlFasiParti || [];
+  const righe = odlPhaseLines(scelte, itemId => rawNum('odl-pz-' + parti.indexOf(itemId)), val('odl-fase-due'));
+  if (!righe.length) { showToast('Niente da aggiungere: i pezzi devono essere maggiori di zero', 'error'); return; }
+  righe.forEach(l => o.lines.push(l));
+  touch(o); odlMarkDirty(); closeModal(); renderOdl();
+  showToast(righe.length === 1 ? 'Lavorazione aggiunta' : righe.length + ' lavorazioni aggiunte');
+}
+
+function renderOdlEdit(id) {
+  const o = getOdl(id); if (!o) { odlView = 'list'; return ''; }
+  const lines = (o.lines || []).map((l, i) => {
+    const qty = Number(l.qty) || 0, price = (l.price === '' || l.price == null) ? null : Number(l.price);
+    const amount = price != null ? importoRiga(l) : null;
+    const rec = Number(l.received) || 0, residual = qty - rec;
+    // Le due azioni di conto lavoro stanno sotto la riga che le giustifica:
+    // terzista e ordine sono già decisi, resta da dire cosa esce e quanto.
+    const cl = docClActions(o, l);
+    return `<tr>
+      ${cell2(i + 1, '', 'ln-idx')}
+      ${cell2(`<span class="ln-code">${esc(l.code || '')}</span>`,
+    `${esc(l.description)}${l.note ? `<div class="line-note">${ico('edit', 'tinted', 'Nota di riga')} ${esc(l.note)}</div>` : ''}${cl}`)}
+      ${cell2(`<input type="number" class="rfq-qty-input lock-contract" value="${l.qty}" min="0" step="any" title="Pezzi da lavorare" onchange="odlSetLine('${id}','${l.id}','qty',this.value)">`,
+    esc(l.uom || ''))}
+      ${cell2(`<input type="number" class="rfq-price-input lock-contract" value="${price != null ? price : ''}" min="0" step="any" placeholder="—" title="Tariffa per pezzo" onchange="odlSetLine('${id}','${l.id}','price',this.value)">`,
+    `<span class="ln-amount">${amount != null ? fmtN(amount) : '—'}</span>`)}
+      ${cell2(`<input type="date" class="rfq-date-input lock-contract" value="${esc(l.deliveryDate || '')}" title="Data che abbiamo chiesto" onchange="odlSetLine('${id}','${l.id}','deliveryDate',this.value)">`,
+    `<input type="date" class="rfq-date-input lock-reception" value="${esc(l.confirmedDate || '')}" title="Data che il terzista ha confermato" onchange="odlSetLine('${id}','${l.id}','confirmedDate',this.value)">${ordLineDelayHtml(l)}`)}
+      ${cell2(`<input type="number" class="rfq-qty-input lock-reception" value="${rec}" min="0" step="any" ${odlRigaDaOdp(l) ? 'disabled' : ''} title="${odlRigaDaOdp(l) ? 'I pezzi rientrati li dichiara l&rsquo;ordine di produzione: qui si leggono, non si scrivono.' : 'Pezzi rientrati dal terzista: portano l&rsquo;ordine a parziale o evaso, ma non caricano il magazzino. Il rientro si registra come movimento.'}" onchange="odlSetLine('${id}','${l.id}','received',this.value)">`,
+    `<span class="ln-residual ${residual > 0 ? 'pos' : ''}" title="Pezzi ancora dal terzista">${fmtQty(residual)}</span>`)}
+      ${cell2(`<button class="mini-btn" onclick="odlEditLineModal('${id}','${l.id}')" title="Modifica riga / nota">${ico('edit', 'tinted', 'Modifica riga / nota')}</button>`,
+    `<button class="mini-btn danger lock-contract" onclick="odlDelLine('${id}','${l.id}')" title="Togli la riga">${ico('trash', 'tinted', 'Togli la riga')}</button>`, 'line-actions')}
+    </tr>`;
+  }).join('') || `<tr><td colspan="7" class="empty-text">Nessuna lavorazione. Un ordine di lavoro si genera dal <strong>Fabbisogno</strong>, oppure si scrive qui con <em>+ Lavorazione da ciclo</em>: si sceglie la parte, le fasi da mandare fuori e i pezzi.</td></tr>`;
+  const total = odlTotal(o);
+  const ritardo = orderWorstDelay(o);
+  const co = db.settings.company || {};
+  const coWarn = co.name ? '' : `<div class="rfq-warn">${ico('warning', 'tinted', '')} Dati azienda non impostati: compilali in <strong>Gestione › Dati azienda</strong> per stamparli sul documento.</div>`;
+  const rfqRef = docOriginRef(o);
+  const dis = odlDirty ? 'disabled title="Salva l\'ordine di lavoro prima di generare il documento"' : '';
+  const lockBanner = docLockBanner(odlMode(o), 'Ordine di lavoro ' + (ORDER_STATUS[o.status] || o.status).toLowerCase(), 'odl', id);
+  return `<div class="manage-wrap">
+    <div class="bom-toolbar">
+      <div class="bom-toolbar-left">
+        ${worklistCloseBtn('odlBackToList()', "l'ordine di lavoro")}
+        <h2 class="section-title" style="font-family:var(--mono)">${esc(o.number)}</h2>
+        ${statusBadge(ORDER_STATUS, o.status)}
+        <button class="add-btn-sm rfq-save-btn ${odlDirty ? 'dirty' : ''}" id="odl-save-btn" onclick="odlSave('${id}')">${ico('save', 'tinted', '')} Salva</button>
+        <button class="btn-outline" style="color:var(--red);border-color:var(--red)" onclick="delOdl('${id}')" title="Elimina l'ordine di lavoro">${ico('trash', 'tinted', '')} Elimina</button>
+      </div>
+    </div>
+    ${coWarn}${rfqRef}${odlOdpRef(o)}${lockBanner}${stampLine(o)}
+    <div class="rfq-head">
+      <div class="modal-field"><label>Titolo / oggetto</label><input class="lock-contract" value="${esc(o.title || '')}" onchange="odlSetField('${id}','title',this.value)"></div>
+      <div class="rfq-head-row">
+        <div class="modal-field"><label>Terzista</label><select class="lock-contract" onchange="odlSetSupplier('${id}',this.value)">${supplierOptions(o.supplierId)}</select></div>
+        <div class="modal-field"><label>Data ordine</label><input type="date" class="lock-contract" value="${(o.date || '').slice(0, 10)}" onchange="odlSetField('${id}','date',this.value)"></div>
+        <div class="modal-field"><label>Stato</label><select onchange="odlSetField('${id}','status',this.value)">
+          ${Object.entries(ORDER_STATUS).map(([k, v]) => `<option value="${k}" ${o.status === k ? 'selected' : ''}>${v}</option>`).join('')}
+        </select></div>
+      </div>
+      <div class="rfq-head-row">
+        <div class="modal-field"><label>Tipo di trasporto / resa</label>
+          <input list="odl-transport-opts" class="lock-contract" value="${esc(o.transport || '')}" placeholder="es. Porto franco, EXW…" onchange="odlSetField('${id}','transport',this.value)">
+          <datalist id="odl-transport-opts">${(db.settings.transportOptions || []).map(x => `<option value="${esc(x)}"></option>`).join('')}</datalist></div>
+        <div class="modal-field"><label>Tipo di pagamento</label>
+          <input list="odl-payment-opts" class="lock-contract" value="${esc(o.payment || '')}" placeholder="es. Bonifico 60gg…" onchange="odlSetField('${id}','payment',this.value)">
+          <datalist id="odl-payment-opts">${(db.settings.paymentOptions || []).map(x => `<option value="${esc(x)}"></option>`).join('')}</datalist></div>
+      </div>
+      <div class="rfq-head-row">
+        <div class="modal-field"><label>N° conferma del terzista</label><input value="${esc(o.supplierConfirmation || '')}" onchange="odlSetField('${id}','supplierConfirmation',this.value)"></div>
+      </div>
+      <div class="modal-field"><label>Note</label><textarea rows="2" onchange="odlSetField('${id}','notes',this.value)">${esc(o.notes || '')}</textarea></div>
+      <div class="modal-field"><label>${ico('lock', 'tinted', '')} Note interne (non stampate sui documenti)</label><textarea rows="2" class="notes-internal" onchange="odlSetField('${id}','notesInternal',this.value)">${esc(o.notesInternal || '')}</textarea></div>
+    </div>
+    ${ritardo != null ? `<div class="rfq-warn">${ico('clock', 'tinted', '')} Il terzista ha confermato con <strong>${ritardo} ${ritardo === 1 ? 'giorno' : 'giorni'}</strong> di ritardo sulla data richiesta.</div>` : ''}
+    <p class="empty-text" style="text-align:left;padding:0 0 8px">I <strong>pezzi rientrati</strong> portano l'ordine a parziale o evaso ma <strong>non caricano il magazzino</strong>: il materiale che esce e i pezzi che tornano si registrano come movimenti. È la stessa regola per cui queste righe non hanno un articolo — altrimenti la stessa merce verrebbe contata due volte.<br>Il materiale <strong>esce una volta sola</strong>, alla prima fase di ogni parte, ed è quello scritto nel suo <strong>ciclo</strong>; i pezzi rientrano una volta, all'ultima. Le fasi in mezzo non muovono niente: più fasi dallo stesso terzista sono più lavorazioni sullo <em>stesso</em> pezzo, non più pezzi.</p>
+    <h3 class="rfq-subhead">Lavorazioni
+      <span class="rfq-head-actions">
+        <button class="add-btn-sm lock-contract" onclick="odlAddPhaseModal('${id}')" title="Scegli una parte col suo ciclo e le fasi da commissionare">+ Lavorazione da ciclo</button>
+        <button class="btn-outline lock-contract" onclick="odlAddManualLineModal('${id}')">+ Riga manuale</button>
+        <button class="btn-outline lock-reception" onclick="odlMarkAllReceived('${id}')">✓ Segna tutto rientrato</button>
+      </span></h3>
+    <div class="table-wrap"><table class="rfq-table rfq-table-2">
+      <thead><tr>
+        <th scope="col" class="ln-idx">#</th>
+        ${th2('Parte', 'Lavorazione')}
+        ${th2('Pezzi', 'U.M.')}
+        ${th2(`Tariffa (${esc(cur())}/pz)`, `Importo (${esc(cur())})`, 'Quanto costa lavorare un pezzo; sotto, quanto fa per i pezzi di riga')}
+        ${th2('Richiesta', 'Confermata', 'Sopra la data che abbiamo chiesto, sotto quella che il terzista ha confermato')}
+        ${th2('Rientrati', 'Ancora fuori', 'Sopra quanti pezzi sono tornati, sotto quanti restano dal terzista')}
+        <th scope="col"></th></tr></thead>
+      <tbody>${lines}</tbody>
+      <tfoot><tr class="rfq-cmp-total"><td colspan="3" style="text-align:right">Totale imponibile</td><td>${fmtN(total)}</td><td colspan="3"></td></tr></tfoot>
+    </table></div>
+    <div class="rfq-export-bar">
+      <label>Documento d'ordine di lavoro:</label>
+      <button class="export-btn-pdf odl-export-btn" onclick="exportOdlPDF('${id}')" ${dis}>${ico('file', 'tinted', '')} Genera documento PDF</button>
+      <button class="export-btn-xls odl-export-btn" onclick="exportOdlExcel('${id}')" ${dis}>${ico('sheet', 'tinted', '')} Genera documento Excel</button>
+      ${odlDirty ? '<span class="rfq-dirty-hint">Salva per abilitare la generazione del documento</span>' : ''}
+    </div>
+  </div>`;
+}
+
+// ─── Documento dell'ordine di lavoro ───
+// Bilingue come l'ordine d'acquisto, e con le colonne che servono a un
+// terzista: la parte, la lavorazione, i pezzi. Nessuna colonna «codice presso
+// il fornitore»: una lavorazione non ha un codice a catalogo di nessuno.
+function exportOdlPDF(id) {
+  const o = getOdl(id); if (!o) return;
+  if (!(o.lines || []).length) { showToast('Nessuna riga da esportare', 'error'); return; }
+  const jsPDF = requirePdf(); if (!jsPDF) return;
+  const co = db.settings.company || {};
+  const sup = o.supplierId ? getSupplier(o.supplierId) : null;
+  const doc = new jsPDF({ orientation: 'landscape' });
+  doc.setFontSize(15); doc.setTextColor(30); doc.text(`Ordine di lavoro / Subcontract Order — ${o.number}`, 14, 16);
+  doc.setFontSize(9); doc.setTextColor(90);
+  doc.text(`Data / Date: ${fmtDateIt(o.date) || fmtDateIt(nowISO())}`, 14, 22);
+  if (o.title) doc.text(`Oggetto / Subject: ${o.title}`, 14, 27);
+  const yTop = 36;
+  const block = (x, title, rowsTxt) => {
+    doc.setFontSize(8); doc.setTextColor(130); doc.text(title, x, yTop);
+    doc.setFontSize(9); doc.setTextColor(40);
+    const rows = rowsTxt.filter(Boolean);
+    rows.forEach((t, i) => doc.text(String(t), x, yTop + 5 + i * 4.5));
+    return rows.length;
+  };
+  const n1 = block(14, 'COMMITTENTE / PRINCIPAL', docPartyLines(co, true));
+  const n2 = block(160, 'TERZISTA / SUBCONTRACTOR', sup ? docPartyLines(sup, true) : ['(terzista non selezionato / not selected)']);
+  const startY = yTop + 5 + Math.max(n1, n2) * 4.5 + 4;
+  const head = ['#', 'Parte\nPart', 'Lavorazione\nOperation', 'Pezzi\nQty', 'Tariffa\nUnit rate', 'Importo\nAmount', 'Data consegna\nDelivery date'];
+  const body = (o.lines || []).map((l, i) => {
+    const qty = Number(l.qty) || 0, price = (l.price === '' || l.price == null) ? null : Number(l.price);
+    return [i + 1, l.code || '', lineDescDoc(l), (qty + ' ' + (l.uom || '')).trim(),
+      price != null ? fmtN(price) + (l.uom ? '/' + l.uom : '') : '',
+      price != null ? fmtN(importoRiga(l)) : '', fmtDateIt(l.deliveryDate)];
+  });
+  const totLabel = { content: 'Totale / Total', styles: { halign: 'right', fontStyle: 'bold' } };
+  const totVal = { content: fmtN(odlTotal(o)), styles: { fontStyle: 'bold' } };
+  doc.autoTable({ startY, head: [head], body, foot: [['', '', '', '', totLabel, totVal, '']],
+    styles: { fontSize: 8 }, headStyles: { fillColor: [46, 164, 121] }, footStyles: { fillColor: [235, 242, 238], textColor: 20 } });
+  doc.setTextColor(80); doc.setFontSize(9);
+  // Solo o.notes: le note interne (notesInternal) non escono mai sul documento.
+  docCoda(doc, [
+    { etichetta: 'Trasporto / Shipping', testo: o.transport },
+    { etichetta: 'Pagamento / Payment', testo: o.payment },
+    { etichetta: 'Conferma terzista / Order confirmation', testo: o.supplierConfirmation },
+    { etichetta: 'Note / Notes', testo: o.notes },
+  ], doc.lastAutoTable.finalY + 8);
+  doc.save(nomeFileSicuro(o.number + (sup ? '_' + (sup.name || '') : ''), 'ordine') + '.pdf');
+  showToast('PDF esportato');
+  askMarkSent(o, `PDF generato.\nSegnare l'ordine di lavoro ${o.number} come inviato?`, 'inviato', renderOdl);
+}
+function exportOdlExcel(id) {
+  const o = getOdl(id); if (!o) return;
+  if (!(o.lines || []).length) { showToast('Nessuna riga da esportare', 'error'); return; }
+  const co = db.settings.company || {};
+  const sup = o.supplierId ? getSupplier(o.supplierId) : null;
+  const data = [['Ordine di lavoro / Subcontract Order', o.number], ['Data', fmtDateIt(o.date)]];
+  if (o.title) data.push(['Oggetto', o.title]);
+  if (o.rfqId && getRfq(o.rfqId)) data.push(['Da richiesta', getRfq(o.rfqId).number]);
+  if (o.transport) data.push(['Trasporto / Shipping', o.transport]);
+  if (o.payment) data.push(['Pagamento / Payment', o.payment]);
+  if (o.supplierConfirmation) data.push(['Conferma terzista / Order confirmation', o.supplierConfirmation]);
+  data.push([]);
+  data.push(['COMMITTENTE', '', 'TERZISTA']);
+  const coLines = docPartyLines(co), supLines = docPartyLines(sup);
+  for (let i = 0; i < Math.max(coLines.length, supLines.length); i++) data.push([coLines[i] || '', '', supLines[i] || '']);
+  data.push([]);
+  data.push(['#', 'Parte', 'Lavorazione', 'Pezzi', 'U.M.', `Tariffa (${cur()}/pz)`, `Importo (${cur()})`, 'Consegna', 'Rientrati', 'Ancora fuori', 'Nota']);
+  (o.lines || []).forEach((l, i) => {
+    const qty = Number(l.qty) || 0, price = (l.price === '' || l.price == null) ? '' : Number(l.price);
+    const amount = price === '' ? '' : importoRiga(l);
+    const rec = Number(l.received) || 0;
+    data.push([i + 1, l.code || '', l.description, qty, l.uom || '', price, amount, fmtDateIt(l.deliveryDate), rec, qty - rec, l.note || '']);
+  });
+  data.push([]);
+  data.push(['', 'TOTALE IMPONIBILE / TOTAL', odlTotal(o)]);
+  if (o.notes) { data.push([]); data.push(['Note', o.notes]); }
+  if (!requireXlsx()) return;
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(data), 'Ordine di lavoro');
+  XLSX.writeFile(wb, nomeFileSicuro(o.number + (sup ? '_' + (sup.name || '') : ''), 'ordine') + '.xlsx');
+  showToast('Excel esportato');
+  askMarkSent(o, `Excel generato.\nSegnare l'ordine di lavoro ${o.number} come inviato?`, 'inviato', renderOdl);
 }
 
 function delOrder(id) {

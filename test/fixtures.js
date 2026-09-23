@@ -9,7 +9,9 @@ function makeDb(over) {
   const o = over || {};
   const base = {
     schemaVersion: 2,
-    suppliers: [], rfqs: [], orders: [], users: [], families: [],
+    suppliers: [], rfqs: [], orders: [], workOrders: [], users: [], families: [],
+    attachments: [], attachmentDocs: [], productions: [],
+    prodOrders: [], prodDecls: [],
     workCenters: o.workCenters || [],
     items: o.items || [],
     settings: Object.assign({

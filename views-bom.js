@@ -69,6 +69,7 @@ function onBomSelect() { currentBomId = val('bom-select'); bomExpanded = new Set
 function renderBom() {
   invalidateCaches();   // rete di sicurezza: la cache dei costi vive dentro un singolo disegno
   updateBomMachineFilter();
+  filtScopeApply('bom');   // dopo il sync, non prima: vedi nota in renderCatalog (views-catalog.js)
   ensureCurrentBom();
   document.getElementById('bom-select').innerHTML = productOptions(currentBomId);
   const conta = document.getElementById('bom-count');
@@ -82,7 +83,9 @@ function renderBom() {
   const tree = document.getElementById('bom-tree');
   if (!it) {
     summary.innerHTML = '';
-    tree.innerHTML = '<div class="empty-text">Nessun prodotto. Crea una macchina con "+ Nuova macchina".</div>';
+    tree.innerHTML = '<div class="empty-text">Nessun prodotto. Creane uno in <strong>Anagrafica → Progetto → + Nuovo articolo</strong>.</div>';
+    refreshBomPanelIfOpen();
+    filtMount('bom');
     return;
   }
   const c = costOf(it.id);
@@ -98,7 +101,7 @@ function renderBom() {
     kpi('Spese generali', fmtPer(c.overhead, u), ''),
     kpi('Costo totale', fmtPer(c.total, u), ''),
     kpi('Prezzo vendita', fmtPer(price, u), 'green'),
-  ].join('') + (c.cycle ? '<div class="empty-text" style="color:var(--red)">⚠ Rilevato riferimento ciclico nella distinta!</div>' : '');
+  ].join('') + (c.cycle ? '<div class="empty-text" style="color:var(--red)">' + ico('warning', 'tinted') + ' Rilevato riferimento ciclico nella distinta!</div>' : '');
 
   // Albero
   const head = `<div class="bom-head"><span>Articolo</span><span class="num">Q.tà</span><span>U.M.</span>
@@ -107,10 +110,16 @@ function renderBom() {
   const rows = (it.components || []).map((comp, idx) =>
     renderBomNode(comp, 1, it.id, true, idx, it.id, [it.id], bomPos('', idx))).join('');
   const opsRow = renderOpsBlock(it, true);
-  tree.innerHTML = head + rootRow + (rows || `<div class="empty-text">Nessun componente. Usa "+ Aggiungi componente".</div>`) + opsRow;
+  tree.innerHTML = head + rootRow + (rows || `<div class="empty-text">Nessun componente. Usa "+ Aggiungi componenti".</div>`) + opsRow;
+  refreshBomPanelIfOpen();
+  filtMount('bom');
 }
 function kpi(label, value, cls) {
-  return `<div class="kpi-card ${cls}"><div class="kpi-value">${value}</div><div class="kpi-label">${label}</div></div>`;
+  // L'unità appesa al numero (`€8951.50/pz`) è informazione di contorno: stampata
+  // grande quanto la cifra ruba larghezza e costringe a rimpicciolire tutto il
+  // riquadro. Va in piccolo, così la cifra — il dato vero — resta leggibile.
+  const v = String(value).replace(/(\/[^<>/\s]+)$/, '<span class="kpi-uom">$1</span>');
+  return `<div class="kpi-card ${cls}"><div class="kpi-value">${v}</div><div class="kpi-label">${label}</div></div>`;
 }
 
 // Posizione gerarchica di una riga: "1", poi "1.2", "1.2.1"… La radice non ha numero,
@@ -120,7 +129,7 @@ function bomPos(parentPos, idx) { return parentPos ? parentPos + '.' + (idx + 1)
 // Render ricorsivo di un nodo (componente). editable = riga di primo livello dell'articolo aperto.
 function renderBomNode(comp, level, parentId, editable, idx, pathPrefix, ancestorIds, pos) {
   const child = getItem(comp.itemId);
-  if (!child) return `<div class="bom-node"><span class="bom-name"><span class="bom-pos">${esc(pos || '')}</span>⚠ articolo mancante</span></div>`;
+  if (!child) return `<div class="bom-node"><span class="bom-name"><span class="bom-pos">${esc(pos || '')}</span>${ico('warning', 'tinted')} articolo mancante</span></div>`;
   const nodeKey = pathPrefix + '>' + comp.itemId + '#' + idx;
   const cyc = ancestorIds.includes(comp.itemId);
   const isProd = isAssembly(child.type);
@@ -136,20 +145,20 @@ function renderBomNode(comp, level, parentId, editable, idx, pathPrefix, ancesto
   const indent = (level - 1) * 18;
   const toggle = expandable
     ? `<span class="bom-toggle" ${clickAttrs(`toggleBom('${nodeKey}')`, (expanded ? 'Richiudi ' : 'Espandi ') + child.code)}
-        aria-expanded="${expanded}">${expanded ? '▼' : '▶'}</span>`
+        aria-expanded="${expanded}">${expanded ? ico('chevronDown') : ico('chevronRight')}</span>`
     : `<span class="bom-toggle leaf">•</span>`;
-  const actions = `<button class="mini-btn" title="Dove è usato e impatto costi" onclick="usageModal('${comp.itemId}')">🔗</button>`
-    + (child.type === 'parte' ? `<button class="mini-btn" title="Distinta parte e ciclo di lavorazione" onclick="openCycleFor('${comp.itemId}')">🔧</button>` : '')
+  const actions = `<button class="mini-btn" title="Dove è usato e impatto costi" onclick="usageModal('${comp.itemId}')">${ico('link', 'tinted', 'Dove è usato e impatto costi')}</button>`
+    + (child.type === 'parte' ? `<button class="mini-btn" title="Distinta parte e ciclo di lavorazione" onclick="openCycleFor('${comp.itemId}')">${ico('wrench', 'tinted', 'Distinta parte e ciclo di lavorazione')}</button>` : '')
     + (editable
-      ? `<button class="mini-btn" title="Modifica" onclick="editComponentModal(${idx})">✏</button>
-         <button class="mini-btn danger" title="Elimina" onclick="delComponent(${idx})">🗑</button>`
+      ? `<button class="mini-btn" title="Modifica" onclick="editComponentModal(${idx})">${ico('edit', 'tinted', 'Modifica')}</button>
+         <button class="mini-btn danger" title="Elimina" onclick="delComponent(${idx})">${ico('trash', 'tinted', 'Elimina')}</button>`
       : '');
 
   let h = `<div class="bom-node" style="padding-left:${18 + indent}px">
     <span class="bom-name"><span class="bom-pos">${esc(pos || '')}</span>${toggle}
       <span class="bom-code">${codeLink(child.id, child.code)}</span>
       <span class="bom-type-tag tt-${child.type}">${typeShort(child.type)}</span>
-      <span class="nm" title="${esc(child.name)}">${esc(child.name)}${cyc ? ' ⚠' : ''}</span>
+      <span class="nm" title="${esc(child.name)}">${esc(child.name)}${cyc ? ' ' + ico('warning', 'tinted') : ''}</span>
     </span>
     <span class="num">${qty}</span>
     <span>${esc(child.uom || '')}</span>
@@ -185,11 +194,11 @@ function renderCycleBomNode(row, level, pos) {
     const wc = getWorkCenter(row.workCenterId);
     const sup = supplierName(row.supplierId);
     name = `<span class="bom-type-tag tt-lav">LAV</span>
-      <span class="nm" title="${esc(wc ? wc.name : '?')}">🔧 ${esc(wc ? wc.name : '?')}${sup ? ' · ' + esc(sup) : ''}</span>`;
+      <span class="nm" title="${esc(wc ? wc.name : '?')}">${ico('wrench', 'tinted')} ${esc(wc ? wc.name : '?')}${sup ? ' · ' + esc(sup) : ''}</span>`;
     qtyCell = '—'; uom = ''; unit = lineCost;
   } else {
     const ci = getItem(row.itemId);
-    if (!ci) return `<div class="bom-node" style="padding-left:${18 + indent}px"><span class="bom-name"><span class="bom-pos">${esc(pos || '')}</span>⚠ articolo mancante</span></div>`;
+    if (!ci) return `<div class="bom-node" style="padding-left:${18 + indent}px"><span class="bom-name"><span class="bom-pos">${esc(pos || '')}</span>${ico('warning', 'tinted')} articolo mancante</span></div>`;
     name = `<span class="bom-code">${codeLink(ci.id, ci.code)}</span>
       <span class="bom-type-tag tt-${ci.type}">${typeShort(ci.type)}</span>
       <span class="nm" title="${esc(ci.name)}">${esc(ci.name)}</span>`;
@@ -234,9 +243,9 @@ function renderOpsBlock(item, editable, padLeft) {
     const wc = getWorkCenter(o.workCenterId);
     const cost = (Number(o.hours) || 0) * (wc ? (Number(wc.hourlyRate) || 0) : 0);
     const nome = wc ? wc.name : 'lavorazione';
-    const del = editable ? ` <span style="cursor:pointer;color:var(--red)" title="Elimina" ${clickAttrs(`delOperation(${i})`, 'Elimina ' + nome)}>✕</span>` : '';
+    const del = editable ? ` <span style="cursor:pointer;color:var(--red)" title="Elimina" ${clickAttrs(`delOperation(${i})`, 'Elimina ' + nome)}>${ico('close')}</span>` : '';
     const ed = editable ? `<span style="cursor:pointer" ${clickAttrs(`editOperationModal(${i})`, 'Modifica ' + nome)}>` : '<span>';
-    return `<span class="bom-op-tag">${ed}🔧 ${esc(wc ? wc.name : '?')} · ${(Number(o.hours) || 0)}h · ${fmtN(cost)}</span>${del}</span>`;
+    return `<span class="bom-op-tag">${ed}${ico('wrench', 'tinted')} ${esc(wc ? wc.name : '?')} · ${(Number(o.hours) || 0)}h · ${fmtN(cost)}</span>${del}</span>`;
   }).join('');
   if (!ops.length && !editable) return '';
   const label = editable ? 'Lavorazioni' : 'Lavorazioni (' + esc(item.name) + ')';
@@ -273,27 +282,90 @@ function itemPickerOptions(parentType, selectedId, excludeId) {
   }).join('');
 }
 // Picker a ricerca live: candidati ammessi dal tipo padre, filtrabili per codice/nome.
+// Motore condiviso da due consumatori con id distinti (prefisso `pfx`), così
+// possono stare aperti insieme senza pestarsi i piedi: la modale "Modifica
+// componente" (pfx 'cmp') e il pannello "Aggiungi componenti" (pfx 'bpn').
+onPanelClose('form', () => { window.__pickerCandidates = null; if (window.__pickerAllowed) window.__pickerAllowed.cmp = null; });
 function pickerCandidates(parentType, excludeId) {
   const allowed = ALLOWED_CHILDREN[parentType] || [];
+  // Un articolo Obsoleto resta dov'è già inserito, ma non si propone più come
+  // NUOVO componente: è il senso stesso del marcarlo tale.
   return db.items
-    .filter(i => allowed.includes(i.type) && i.id !== excludeId)
+    .filter(i => allowed.includes(i.type) && i.id !== excludeId && !i.obsolete)
     .sort((a, b) => String(a.code).localeCompare(String(b.code)));
 }
-// Markup del campo di selezione articolo (input ricerca + lista risultati + valore nascosto).
-function itemPickerField(selectedId) {
+// Filtri del picker: tipo (solo se il padre ne ammette più di uno, es. un
+// gruppo può contenere sottogruppi/parti/materie/commerciali) e famiglia/
+// sottofamiglia (solo se tra i tipi ammessi ce n'è uno che le usa). Con
+// decine o centinaia di candidati la sola ricerca testuale non basta.
+function pickerFiltersHtml(pfx, allowed) {
+  window.__pickerAllowed = window.__pickerAllowed || {};
+  window.__pickerAllowed[pfx] = allowed;
+  const typeHtml = allowed.length > 1
+    ? `<div class="modal-field"><label>Tipo</label>
+        <select id="${pfx}-type" onchange="onPickerTypeChange('${pfx}')">
+          <option value="">Tutti i tipi</option>
+          ${allowed.map(t => `<option value="${t}">${typeLabel(t)}</option>`).join('')}
+        </select></div>` : '';
+  const famHtml = allowed.some(usesFamily)
+    ? `<div class="modal-grid">
+        <div class="modal-field"><label>Famiglia</label><select id="${pfx}-family" onchange="onPickerFamilyChange('${pfx}')"><option value="">Tutte le famiglie</option></select></div>
+        <div class="modal-field"><label>Sottofamiglia</label><select id="${pfx}-subfamily" onchange="onPickerResultsRefresh('${pfx}')"><option value="">Tutte le sottofamiglie</option></select></div>
+      </div>` : '';
+  return typeHtml + famHtml;
+}
+// Ridisegna i soli risultati del consumatore che ha cambiato filtro (la modale
+// ha il suo elenco, il pannello il suo: non si ridisegnano a vicenda).
+function onPickerResultsRefresh(pfx) {
+  if (pfx === 'cmp') renderPickerResults(); else if (pfx === 'bpn') renderBomPanelResults();
+}
+function onPickerTypeChange(pfx) { updatePickerFamilyOptions(pfx); onPickerResultsRefresh(pfx); }
+function onPickerFamilyChange(pfx) { updatePickerFamilyOptions(pfx); onPickerResultsRefresh(pfx); }
+// Allinea famiglia/sottofamiglia al tipo scelto nel picker, come in Anagrafica (syncFamilyFilters)
+function updatePickerFamilyOptions(pfx) {
+  const famSel = document.getElementById(pfx + '-family'); if (!famSel) return;
+  const subSel = document.getElementById(pfx + '-subfamily');
+  const typeF = val(pfx + '-type');
+  const kinds = (typeF ? [typeF] : ((window.__pickerAllowed && window.__pickerAllowed[pfx]) || [])).filter(usesFamily);
+  famSel.disabled = !kinds.length; subSel.disabled = !kinds.length;
+  const fams = (db.families || []).filter(f => kinds.includes(f.kind || 'acquistato'));
+  const keepFam = fams.some(f => f.id === famSel.value) ? famSel.value : '';
+  famSel.innerHTML = `<option value="">Tutte le famiglie</option>` +
+    fams.map(f => `<option value="${f.id}" ${f.id === keepFam ? 'selected' : ''}>${esc(f.name)}</option>`).join('');
+  const f = getFamily(keepFam);
+  const subs = (f && f.subs) || [];
+  const keepSub = subs.some(s => s.id === subSel.value) ? subSel.value : '';
+  subSel.innerHTML = `<option value="">Tutte le sottofamiglie</option>` +
+    subs.map(s => `<option value="${s.id}" ${s.id === keepSub ? 'selected' : ''}>${esc(s.name)}</option>`).join('');
+}
+// Applica ai candidati gli stessi filtri (testo + tipo + famiglia/sottofamiglia)
+// per il consumatore `pfx`: unica logica di filtro, due elenchi di risultati diversi.
+function pickerFilterRows(pfx, candidates) {
+  const q = (val(pfx + '-search') || '').toLowerCase();
+  const typeF = val(pfx + '-type');
+  const famF = val(pfx + '-family');
+  const subF = val(pfx + '-subfamily');
+  let rows = candidates || [];
+  if (typeF) rows = rows.filter(i => i.type === typeF);
+  if (famF) rows = rows.filter(i => i.familyId === famF);
+  if (subF) rows = rows.filter(i => i.subFamilyId === subF);
+  if (q) rows = rows.filter(i => (i.code + ' ' + i.name).toLowerCase().includes(q));
+  return rows;
+}
+// Markup del campo di selezione articolo (filtri + input ricerca + lista risultati + valore nascosto).
+function itemPickerField(selectedId, allowed) {
   const sel = selectedId ? getItem(selectedId) : null;
-  return `<div class="modal-field"><label>Articolo</label>
+  return `${pickerFiltersHtml('cmp', allowed)}
+    <div class="modal-field"><label>Articolo</label>
       <input type="hidden" id="cmp-item" value="${selectedId ? esc(selectedId) : ''}">
-      <input type="text" id="cmp-search" class="search" placeholder="🔍 Cerca codice o nome..."
+      <input type="text" id="cmp-search" class="search" placeholder="Cerca codice o nome..."
         value="${sel ? esc(sel.code + ' — ' + sel.name) : ''}" oninput="debounced('picker', renderPickerResults)" autocomplete="off">
       <div id="cmp-results" class="picker-results"></div>
     </div>`;
 }
 function renderPickerResults() {
   const box = document.getElementById('cmp-results'); if (!box) return;
-  const q = (val('cmp-search') || '').toLowerCase();
-  let rows = (window.__pickerCandidates || []);
-  if (q) rows = rows.filter(i => (i.code + ' ' + i.name).toLowerCase().includes(q));
+  let rows = pickerFilterRows('cmp', window.__pickerCandidates);
   const total = rows.length;
   rows = rows.slice(0, 50);
   const sel = val('cmp-item');
@@ -327,53 +399,25 @@ function allowedHint(parentType) {
   const allowed = (ALLOWED_CHILDREN[parentType] || []).map(typeLabel);
   return allowed.length ? `Tipi ammessi in un ${typeLabel(parentType).toLowerCase()}: ${allowed.join(', ')}.` : '';
 }
-function addComponentModal() {
-  if (!roleGuard('bom')) return;
-  const it = getItem(currentBomId); if (!it) return;
-  window.__pickerCandidates = pickerCandidates(it.type, it.id);
-  if (!window.__pickerCandidates.length) { showToast('Nessun articolo dei tipi ammessi. Crealo prima in Anagrafica (Acquisti o Progetto).', 'error'); return; }
-  openModal(`<h3>➕ Aggiungi componente</h3>
-    <p class="empty-text" style="text-align:left;padding:0 0 10px">${allowedHint(it.type)}</p>
-    ${itemPickerField(null)}
-    <div class="modal-grid">
-      <div class="modal-field"><label id="cmp-qty-label">Quantità</label><input type="number" id="cmp-qty" min="0" step="0.001" value="1"></div>
-      <div class="modal-field"><label>Scarto %</label><input type="number" id="cmp-scrap" min="0" step="0.1" value="0"></div>
-    </div>
-    <div class="modal-actions"><button class="btn-ghost" onclick="closeModal()">Annulla</button>
-      <button class="add-btn-sm" onclick="saveNewComponent()">Aggiungi</button></div>`);
-  renderPickerResults();
-  cmpQtyLabelRefresh();
-}
 function isAllowedChild(parentType, childId) {
   const child = getItem(childId);
   return !!child && (ALLOWED_CHILDREN[parentType] || []).includes(child.type);
-}
-function saveNewComponent() {
-  if (!roleGuard('bom')) return;
-  const it = getItem(currentBomId); if (!it) return;
-  const itemId = val('cmp-item');
-  if (!itemId) { showToast('Seleziona un articolo', 'error'); return; }
-  if (!isAllowedChild(it.type, itemId)) { showToast('Tipo non ammesso in un ' + typeLabel(it.type).toLowerCase(), 'error'); return; }
-  if (createsCycle(it.id, itemId)) { showToast('Operazione annullata: creerebbe un ciclo', 'error'); return; }
-  if (isNeg('cmp-qty')) { showToast('La quantità non può essere negativa', 'error'); return; }
-  it.components.push({ itemId, qty: numVal('cmp-qty', 0), scrapPct: numVal('cmp-scrap', 0, 100) });
-  touch(it);
-  saveDB(); closeModal(); renderBom(); showToast('Componente aggiunto');
 }
 function editComponentModal(idx) {
   if (!roleGuard('bom')) return;
   const it = getItem(currentBomId); if (!it) return;
   const comp = it.components[idx]; if (!comp) return;
   window.__pickerCandidates = pickerCandidates(it.type, it.id);
-  openModal(`<h3>✏ Modifica componente</h3>
+  openModal(`<h3>${ico('edit', 'tinted pill', '')} Modifica componente</h3>
     <p class="empty-text" style="text-align:left;padding:0 0 10px">${allowedHint(it.type)}</p>
-    ${itemPickerField(comp.itemId)}
+    ${itemPickerField(comp.itemId, ALLOWED_CHILDREN[it.type] || [])}
     <div class="modal-grid">
       <div class="modal-field"><label id="cmp-qty-label">${labelUom('Quantità', itemUom(getItem(comp.itemId)))}</label><input type="number" id="cmp-qty" min="0" step="0.001" value="${comp.qty}"></div>
       <div class="modal-field"><label>Scarto %</label><input type="number" id="cmp-scrap" min="0" step="0.1" value="${comp.scrapPct || 0}"></div>
     </div>
     <div class="modal-actions"><button class="btn-ghost" onclick="closeModal()">Annulla</button>
       <button class="add-btn-sm" onclick="saveComponentEdit(${idx})">Salva</button></div>`);
+  updatePickerFamilyOptions('cmp');
   renderPickerResults();
 }
 function saveComponentEdit(idx) {
@@ -381,20 +425,218 @@ function saveComponentEdit(idx) {
   const it = getItem(currentBomId); if (!it) return;
   const comp = it.components[idx]; if (!comp) return;
   const itemId = val('cmp-item');
+  // Senza questo controllo, il picker lasciato senza selezione salvava
+  // itemId '' e la distinta si ritrovava una riga orfana, che il report
+  // stampa vuota e il costo non sa valorizzare.
+  if (!itemId) { showToast('Seleziona un articolo', 'error'); return; }
   if (!isAllowedChild(it.type, itemId)) { showToast('Tipo non ammesso in un ' + typeLabel(it.type).toLowerCase(), 'error'); return; }
   if (createsCycle(it.id, itemId)) { showToast('Operazione annullata: creerebbe un ciclo', 'error'); return; }
   if (isNeg('cmp-qty')) { showToast('La quantità non può essere negativa', 'error'); return; }
   comp.itemId = itemId; comp.qty = numVal('cmp-qty', 0); comp.scrapPct = numVal('cmp-scrap', 0, 100);
   touch(it);
-  saveDB(); closeModal(); renderBom(); showToast('Componente aggiornato');
+  saveDB(); closeModal(); renderBom(); savedToast('Componente aggiornato');
 }
 function delComponent(idx) {
   if (!roleGuard('bom')) return;
   const it = getItem(currentBomId); if (!it) return;
   askConfirm('Eliminare questo componente dalla distinta?', () => {
-    it.components.splice(idx, 1); touch(it); saveDB(); renderBom(); showToast('Componente eliminato');
+    it.components.splice(idx, 1); touch(it); saveDB(); renderBom(); savedToast('Componente eliminato');
   });
 }
+
+// ─── Pannello "Aggiungi componenti" ───
+// Pannello laterale fisso, sul modello visivo dell'Ispettore di Anagrafica ma
+// indipendente da esso: qui non si agisce sull'articolo selezionato nella
+// vista corrente, si cercano candidati e li si inserisce come componenti
+// della distinta aperta. Niente checkbox: ogni riga ha una quantità (0 =
+// non scelta) e un solo pulsante "Inserisci", sempre visibile in alto,
+// aggiunge in un colpo solo tutti gli articoli a cui è stata cambiata la
+// quantità — uno solo (inserimento rapido) o molti insieme (multiplo). Le
+// quantità restano impostate anche affinando la ricerca, finché non si
+// inserisce, si cambia distinta o si chiude il pannello.
+let bomPanelQty = new Map();   // itemId -> quantità impostata (solo voci > 0)
+// La distinta a cui appartengono le quantità qui sopra. Serve a distinguere
+// «la vista si è ridisegnata» da «si è cambiata distinta»: sono la stessa
+// chiamata, e senza questo riferimento erano indistinguibili.
+let bomPanelFor = null;
+
+// ─── Ridimensionamento del pannello ───
+// Stesso schema dell'Ispettore di Anagrafica (inspector.js): variabili e
+// chiave di preferenze proprie, per non toccarne una riga.
+const BPN_KEY = 'bomtrack_bom_panel';
+const BPN_MIN = 260, BPN_MAX = 720, BPN_DEF = 360;
+let bomPanelWidth = BPN_DEF;
+function bpnClampWidth(w) {
+  const n = Number(w) || BPN_DEF;
+  return Math.min(BPN_MAX, Math.max(BPN_MIN, Math.round(n)));
+}
+function bpnPrefsLoad() {
+  try {
+    const p = JSON.parse(localPref(BPN_KEY) || 'null');
+    if (p && p.width) bomPanelWidth = bpnClampWidth(p.width);
+  } catch (e) { /* preferenze illeggibili: si riparte da quella di serie */ }
+}
+function bpnPrefsSave() {
+  try { localStorage.setItem(BPN_KEY, JSON.stringify({ width: bomPanelWidth })); } catch (e) { /* niente da salvare, niente da rompere */ }
+}
+function bpnApplyWidth() {
+  const r = typeof document !== 'undefined' && document.documentElement;
+  if (r && r.style && r.style.setProperty) r.style.setProperty('--bpn-w', bomPanelWidth + 'px');
+}
+let _bpnDrag = null;
+function bpnResizeStart(e) {
+  if (!e.target || !e.target.classList || !e.target.classList.contains('bpn-resizer')) return;
+  _bpnDrag = { x: e.clientX, w: bomPanelWidth };
+  document.body.classList.add('bpn-resizing');
+  e.preventDefault();
+}
+function bpnResizeMove(e) {
+  if (!_bpnDrag) return;
+  // Il pannello sta a destra: trascinando verso sinistra si allarga, quindi il
+  // segno è invertito rispetto al movimento del mouse.
+  bomPanelWidth = bpnClampWidth(_bpnDrag.w + (_bpnDrag.x - e.clientX));
+  bpnApplyWidth();
+}
+function bpnResizeEnd() {
+  if (!_bpnDrag) return;
+  _bpnDrag = null;
+  document.body.classList.remove('bpn-resizing');
+  bpnPrefsSave();
+}
+if (typeof document !== 'undefined' && document.addEventListener) {
+  bpnPrefsLoad();
+  document.addEventListener('pointerdown', bpnResizeStart);
+  document.addEventListener('pointermove', bpnResizeMove);
+  document.addEventListener('pointerup', bpnResizeEnd);
+  document.addEventListener('pointercancel', bpnResizeEnd);
+}
+
+function toggleBomPanel() {
+  if (!roleGuard('bom')) return;
+  const it = getItem(currentBomId);
+  if (!it) { showToast('Seleziona prima una macchina, un gruppo o un sottogruppo', 'error'); return; }
+  const panel = document.getElementById('bom-panel'); if (!panel) return;
+  if (panel.classList.contains('open')) closeBomPanel(); else openBomPanel();
+}
+function openBomPanel() {
+  const it = getItem(currentBomId); if (!it) return;
+  // Si apre sempre vuoto, e si dichiara subito per quale distinta: senza,
+  // il primo ridisegno lo troverebbe «di un'altra» e lo azzererebbe di nuovo.
+  bomPanelQty = new Map();
+  bomPanelFor = it.id;
+  document.getElementById('bom-panel').classList.add('open');
+  document.body.classList.add('bom-panel-on');
+  bpnApplyWidth();
+  renderBomPanel();
+}
+function closeBomPanel() {
+  const panel = document.getElementById('bom-panel'); if (!panel) return;
+  panel.classList.remove('open');
+  document.body.classList.remove('bom-panel-on');
+}
+// Richiamata da renderBom() ad ogni ridisegno: tiene il pannello coerente con
+// la distinta aperta quando cambia (menu a tendina o click nell'albero).
+//
+// Le quantità si azzerano **solo** quando la distinta cambia davvero. Prima
+// l'azzeramento era incondizionato, e siccome renderBom() passa di qui a ogni
+// ridisegno bastava espandere un nodo dell'albero — toggleBom() ridisegna — per
+// perdere le quantità impostate su dieci articoli, il testo di ricerca e il
+// punto in cui si stava scrivendo. Era anche l'opposto di quanto promette il
+// commento su bomPanelQty: «restano impostate finché non si inserisce, si
+// cambia distinta o si chiude il pannello».
+function refreshBomPanelIfOpen() {
+  const panel = document.getElementById('bom-panel');
+  if (!panel || !panel.classList.contains('open')) return;
+  const it = getItem(currentBomId);
+  if (!it) { closeBomPanel(); return; }
+  if (bomPanelFor !== it.id) { bomPanelQty = new Map(); bomPanelFor = it.id; }
+  renderBomPanel();
+}
+function renderBomPanel() {
+  const panel = document.getElementById('bom-panel'); if (!panel) return;
+  const it = getItem(currentBomId); if (!it) return;
+  const allowed = ALLOWED_CHILDREN[it.type] || [];
+  window.__bomPanelCandidates = pickerCandidates(it.type, it.id);
+  panel.innerHTML = `
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px">
+      <h3 style="margin:0">${ico('plus', 'tinted pill', '')} Aggiungi componenti</h3>
+      <button class="btn-ghost" onclick="closeBomPanel()" title="Chiudi">✕</button>
+    </div>
+    <button class="add-btn-sm" id="bpn-insert-btn" style="width:100%;margin-bottom:10px" onclick="bomPanelInsertAll()">Inserisci</button>
+    <p class="empty-text" style="text-align:left;padding:0 0 10px">${allowedHint(it.type)}</p>
+    ${pickerFiltersHtml('bpn', allowed)}
+    <div class="modal-field">
+      <input type="text" id="bpn-search" class="search" placeholder="Cerca codice o nome..."
+        oninput="debounced('bompanel', renderBomPanelResults)" autocomplete="off">
+    </div>
+    <div id="bpn-results" class="bpn-results"></div>`;
+  updatePickerFamilyOptions('bpn');
+  renderBomPanelResults();
+  bomPanelUpdateInsertBtn();
+}
+function renderBomPanelResults() {
+  const box = document.getElementById('bpn-results'); if (!box) return;
+  const base = window.__bomPanelCandidates || [];
+  let rows = pickerFilterRows('bpn', base);
+  const total = rows.length;
+  rows = rows.slice(0, 50);
+  let html = rows.map(i => `
+    <div class="bpn-row">
+      <div class="bpn-info">
+        <span class="bpn-code">${esc(i.code)}</span>
+        <span class="bpn-name" title="${esc(i.name)}">${esc(i.name)}</span>
+      </div>
+      <div class="bpn-stepper">
+        <button type="button" class="bpn-step" onclick="bomPanelStep('${i.id}', -1)" title="Diminuisci di 1">−</button>
+        <input type="number" class="bpn-qty" id="bpn-qty-${i.id}" min="0" step="1" value="${bomPanelQty.get(i.id) || 0}"
+          title="Quantità da inserire" oninput="bomPanelQtyChange('${i.id}', this.value)">
+        <button type="button" class="bpn-step" onclick="bomPanelStep('${i.id}', 1)" title="Aumenta di 1">+</button>
+        <span class="bpn-uom">${esc(itemUom(i))}</span>
+      </div>
+    </div>`).join('');
+  if (!html) {
+    html = base.length
+      ? `<div class="picker-empty">Nessun articolo trovato</div>`
+      : `<div class="picker-empty">Nessun articolo dei tipi ammessi. Crealo prima in Anagrafica (Acquisti o Progetto).</div>`;
+  } else if (total > rows.length) html += `<div class="picker-empty">+${total - rows.length} altri — affina la ricerca</div>`;
+  box.innerHTML = html;
+}
+function bomPanelQtyChange(id, v) {
+  const n = parseFloat(v);
+  if (isFinite(n) && n > 0) bomPanelQty.set(id, n); else bomPanelQty.delete(id);
+  bomPanelUpdateInsertBtn();
+}
+// Frecce ±1: la digitazione libera resta possibile (utile per una quantità come
+// 2.5 kg), ma il gesto rapido è cliccare, non calcolare a mente lo scarto.
+function bomPanelStep(id, delta) {
+  const next = Math.max(0, (bomPanelQty.get(id) || 0) + delta);
+  if (next > 0) bomPanelQty.set(id, next); else bomPanelQty.delete(id);
+  const input = document.getElementById('bpn-qty-' + id);
+  if (input) input.value = next;
+  bomPanelUpdateInsertBtn();
+}
+function bomPanelUpdateInsertBtn() {
+  const btn = document.getElementById('bpn-insert-btn'); if (!btn) return;
+  const n = bomPanelQty.size;
+  btn.textContent = n ? `Inserisci (${n})` : 'Inserisci';
+}
+function bomPanelInsertAll() {
+  if (!roleGuard('bom')) return;
+  const it = getItem(currentBomId); if (!it) return;
+  if (!bomPanelQty.size) { showToast('Imposta una quantità per almeno un articolo', 'error'); return; }
+  let added = 0, skipped = 0;
+  bomPanelQty.forEach((qty, itemId) => {
+    if (!isAllowedChild(it.type, itemId) || createsCycle(it.id, itemId)) { skipped++; return; }
+    it.components.push({ itemId, qty, scrapPct: 0 });
+    added++;
+  });
+  bomPanelQty = new Map();
+  if (added) { touch(it); saveDB(); }
+  renderBom();
+  if (added) savedToast(added + (added === 1 ? ' componente aggiunto' : ' componenti aggiunti') + (skipped ? `, ${skipped} scartati` : ''));
+  else showToast('Nessun componente aggiunto: tipi non ammessi o cicli', 'error');
+}
+
 // Verifica se aggiungere childId dentro parentId creerebbe un ciclo.
 //
 // La discesa segue entrambe le strade con cui un articolo ne contiene un altro:
@@ -430,7 +672,23 @@ function supplierOptions(selectedId) {
   return `<option value="">—</option>` + db.suppliers
     .map(s => `<option value="${s.id}" ${s.id === selectedId ? 'selected' : ''}>${esc(s.name)}</option>`).join('');
 }
-// Solo il nome del centro: nel ciclo di una Parte il costo è fisso, la tariffa oraria non si applica.
+// Selettore fornitore per una riga di ciclo: la prima voce è "Interna" (nessun
+// fornitore, valore vuoto — la lavorazione si fa in casa), poi i fornitori
+// conto lavoro già registrati su quel centro con la loro tariffa in etichetta
+// (così si riconoscono a colpo d'occhio), poi gli altri fornitori a catalogo,
+// scelta comunque libera se quello che serve non è ancora registrato lì.
+function wcSupplierOptions(wc, selectedId) {
+  const noti = new Set((wc && wc.suppliers || []).map(s => s.supplierId));
+  const opt = (s, extra) => `<option value="${s.id}" ${s.id === selectedId ? 'selected' : ''}>${esc(s.name)}${extra || ''}</option>`;
+  const abituali = (wc && wc.suppliers || [])
+    .map(s => db.suppliers.find(x => x.id === s.supplierId) && { sup: db.suppliers.find(x => x.id === s.supplierId), rate: s.rate })
+    .filter(Boolean)
+    .map(({ sup, rate }) => opt(sup, ` — ${fmtN(rate)}/h`));
+  const altri = db.suppliers.filter(s => !noti.has(s.id)).map(s => opt(s));
+  return `<option value="">— Interna —</option>` + abituali.join('') + altri.join('');
+}
+// Solo il nome del centro: la tariffa oraria del centro non si applica da sé
+// alle righe di ciclo, ci sono anche quelle a costo fisso (vedi cycleOpsTable).
 function wcOptionsNoRate(selectedId) {
   return db.workCenters.filter(w => w.active !== false)
     .map(w => `<option value="${w.id}" ${w.id === selectedId ? 'selected' : ''}>${esc(w.name)}</option>`).join('');
@@ -443,7 +701,7 @@ function addOperationModal() {
   if (!roleGuard('bom')) return;
   const it = getItem(currentBomId); if (!it) return;
   if (!db.workCenters.length) { showToast('Aggiungi prima un centro di lavoro in Gestione', 'error'); return; }
-  openModal(`<h3>🔧 Aggiungi lavorazione</h3>
+  openModal(`<h3>${ico('wrench', 'tinted pill', '')} Aggiungi lavorazione</h3>
     <div class="modal-field"><label>Centro di lavoro</label><select id="op-wc">${wcOptions(null)}</select></div>
     <div class="modal-grid">
       <div class="modal-field"><label>Ore (h)</label><input type="number" id="op-hours" min="0" step="0.25" value="1"></div>
@@ -458,13 +716,13 @@ function saveNewOperation() {
   if (isNeg('op-hours')) { showToast('Le ore non possono essere negative', 'error'); return; }
   it.operations.push({ workCenterId: val('op-wc'), hours: numVal('op-hours', 0), note: val('op-note') });
   touch(it);
-  saveDB(); closeModal(); renderBom(); showToast('Lavorazione aggiunta');
+  saveDB(); closeModal(); renderBom(); savedToast('Lavorazione aggiunta');
 }
 function editOperationModal(idx) {
   if (!roleGuard('bom')) return;
   const it = getItem(currentBomId); if (!it) return;
   const op = it.operations[idx]; if (!op) return;
-  openModal(`<h3>🔧 Modifica lavorazione</h3>
+  openModal(`<h3>${ico('wrench', 'tinted pill', '')} Modifica lavorazione</h3>
     <div class="modal-field"><label>Centro di lavoro</label><select id="op-wc">${wcOptions(op.workCenterId)}</select></div>
     <div class="modal-grid">
       <div class="modal-field"><label>Ore (h)</label><input type="number" id="op-hours" min="0" step="0.25" value="${op.hours}"></div>
@@ -480,79 +738,27 @@ function saveOperationEdit(idx) {
   if (isNeg('op-hours')) { showToast('Le ore non possono essere negative', 'error'); return; }
   op.workCenterId = val('op-wc'); op.hours = numVal('op-hours', 0); op.note = val('op-note');
   touch(it);
-  saveDB(); closeModal(); renderBom(); showToast('Lavorazione aggiornata');
+  saveDB(); closeModal(); renderBom(); savedToast('Lavorazione aggiornata');
 }
 function delOperation(idx) {
   if (!roleGuard('bom')) return;
   const it = getItem(currentBomId); if (!it) return;
   askConfirm('Eliminare questa lavorazione?', () => {
-    it.operations.splice(idx, 1); touch(it); saveDB(); renderBom(); showToast('Lavorazione eliminata');
+    it.operations.splice(idx, 1); touch(it); saveDB(); renderBom(); savedToast('Lavorazione eliminata');
   });
 }
 
 // ─── Macchina / testata prodotto ───
-function newMachineModal() {
-  if (!roleGuard('bom')) return;
-  const sm = machineScheme(null);
-  openModal(`<h3>🛠 Nuova macchina</h3>
-    <div class="modal-grid">
-      <div class="modal-field"><label>Sigla macchina</label>
-        <input id="mac-sigla" maxlength="10" placeholder="es. TRN" style="text-transform:uppercase;font-family:var(--mono);font-weight:700"
-          oninput="this.value=this.value.toUpperCase();refreshMachineCode()"></div>
-      <div class="modal-field"><label>Codice</label><input id="mac-code" placeholder="auto dalla sigla" oninput="markCodeManual()"></div>
-      <div class="modal-field"><label>U.M.</label><select id="mac-uom">${uomOptions(defaultUom())}</select></div>
-    </div>
-    <div class="modal-field"><label>Nome</label><input id="mac-name" placeholder="Es. Nastro Trasportatore NT-200"></div>
-    <div class="modal-grid">
-      <div class="modal-field"><label>N° car. sigla gruppo</label><input type="number" id="mac-glen" min="1" max="10" value="${sm.gLen}" onchange="refreshMachineCode()"></div>
-      <div class="modal-field"><label>Tipo car. sigla gruppo</label><select id="mac-gtype" onchange="refreshMachineCode()">${typeOptionsHtml(sm.gType)}</select></div>
-      <div class="modal-field"><label>Cifre progressivo S##</label><input type="number" id="mac-incrs" min="1" max="6" value="${sm.incrS}" onchange="refreshMachineCode()"></div>
-      <div class="modal-field"><label>Cifre numerazione ###</label><input type="number" id="mac-incrn" min="1" max="6" value="${sm.incrN}" onchange="refreshMachineCode()"></div>
-    </div>
-    <div class="modal-field"><label>Note</label><textarea id="mac-notes" rows="2"></textarea></div>
-    <div class="modal-actions"><button class="btn-ghost" onclick="closeModal()">Annulla</button>
-      <button class="add-btn-sm" onclick="saveNewMachine()">Crea</button></div>`);
-  itemCodeAuto = true;
-}
-// Bozza macchina dai campi della modale "Nuova macchina"
-function machineDraftFromForm() {
-  return {
-    type: 'macchina', sigla: val('mac-sigla'),
-    gCodeLen: parseInt(val('mac-glen'), 10) || 3,
-    gCodeType: val('mac-gtype') || 'alpha',
-    incrDigitsS: parseInt(val('mac-incrs'), 10) || 2,
-    incrDigitsN: parseInt(val('mac-incrn'), 10) || 3,
-  };
-}
-function refreshMachineCode() {
-  if (!itemCodeAuto) return;
-  const el = document.getElementById('mac-code'); if (!el) return;
-  el.value = genItemCode(machineDraftFromForm());
-}
-function saveNewMachine() {
-  if (!roleGuard('bom')) return;
-  const name = val('mac-name');
-  if (!name) { showToast('Nome richiesto', 'error'); return; }
-  const d = machineDraftFromForm();
-  if (d.sigla && !/^[A-Z0-9]+$/.test(d.sigla)) { showToast('La sigla macchina ammette solo A-Z e 0-9', 'error'); return; }
-  if (d.sigla && machineItems().some(m => m.sigla === d.sigla)) { showToast(`Sigla macchina "${d.sigla}" già in uso`, 'error'); return; }
-  const id = gid();
-  Store.insert('items', Object.assign({
-    id, code: val('mac-code') || id, name, type: 'macchina', uom: val('mac-uom') || defaultUom(),
-    notes: val('mac-notes'), active: true, components: [], operations: [],
-  }, d));
-  currentBomId = id; bomExpanded = new Set();
-  closeModal(); renderBom(); showToast('Macchina creata');
-}
 function editCurrentItemModal() {
   if (!roleGuard('bom')) return;
   const it = getItem(currentBomId); if (!it) return;
-  openModal(`<h3>✏ Modifica testata — <span style="color:var(--text-dim);font-weight:500">${typeLabel(it.type)}</span></h3>
+  openModal(`<h3>${ico('edit', 'tinted pill', '')} Modifica testata — <span style="color:var(--text-dim);font-weight:500">${typeLabel(it.type)}</span></h3>
+    <p class="empty-text" style="text-align:left;padding:0 0 10px">Codice, descrizione e U.M. si modificano solo in Anagrafica → Progetto.</p>
     <div class="modal-grid">
-      <div class="modal-field"><label>Codice</label><input id="mac-code" value="${esc(it.code)}"></div>
-      <div class="modal-field"><label>U.M.</label><select id="mac-uom">${uomOptions(it.uom || defaultUom())}</select></div>
+      <div class="modal-field"><label>Codice</label><input value="${esc(it.code)}" disabled style="font-family:var(--mono);font-weight:700"></div>
+      <div class="modal-field"><label>U.M.</label><input value="${esc(it.uom || defaultUom())}" disabled></div>
     </div>
-    <div class="modal-field"><label>Nome</label><input id="mac-name" value="${esc(it.name)}"></div>
+    <div class="modal-field"><label>Descrizione</label><input value="${esc(it.name)}" disabled></div>
     <div class="modal-grid">
       <div class="modal-field"><label>Spese generali % (override)</label><input type="number" id="mac-ov" step="0.1" value="${it.overheadPctOverride != null ? it.overheadPctOverride : ''}" placeholder="default ${db.settings.overheadPct}%"></div>
       <div class="modal-field"><label>Margine % (override)</label><input type="number" id="mac-mg" step="0.1" value="${it.marginPctOverride != null ? it.marginPctOverride : ''}" placeholder="default ${db.settings.marginPct}%"></div>
@@ -564,20 +770,26 @@ function editCurrentItemModal() {
 function saveCurrentItem() {
   if (!roleGuard('bom')) return;
   const it = getItem(currentBomId); if (!it) return;
-  it.code = val('mac-code'); it.uom = val('mac-uom'); it.name = val('mac-name') || it.name;
   it.notes = val('mac-notes');
   // Vuoto = nessuna sovrascrittura (si usa l'impostazione globale); un valore
   // fuori scala viene riportato dentro l'intervallo, come per le impostazioni.
   const ov = val('mac-ov'); it.overheadPctOverride = ov === '' ? null : clampNum(parseFloat(ov), 0, 1000);
   const mg = val('mac-mg'); it.marginPctOverride = mg === '' ? null : clampNum(parseFloat(mg), 0, 1000);
   touch(it);
-  saveDB(); closeModal(); renderBom(); showToast('Testata aggiornata');
+  saveDB(); closeModal(); renderBom(); savedToast('Testata aggiornata');
 }
 function deleteCurrentMachine() {
   if (!roleGuard('bom')) return;
   const it = getItem(currentBomId); if (!it) return;
   const used = usedBy(it.id);
   if (used.length) { showToast('Usato in: ' + used.map(u => u.code).join(', ') + '. Rimuovilo prima.', 'error'); return; }
+  // Come in delItem (views-catalog.js): oltre a distinte/cicli, il codice può
+  // essere già in magazzino, documenti, piani o revisioni — nessuna eccezione
+  // di ruolo, l'unica via è marcarlo Obsoleto.
+  if (isItemUsedAnywhere(it.id)) {
+    showToast('Articolo già movimentato (magazzino, cicli, documenti o piani): non può essere eliminato. Segnalo come obsoleto per impedirne il riuso.', 'error');
+    return;
+  }
   askConfirm(`Eliminare "${it.name}" e la sua distinta?`, () => {
     currentBomId = null;
     removeConUndo('items', it.id, `"${it.name}" eliminato`, renderBom);
