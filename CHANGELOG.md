@@ -2,6 +2,21 @@
 
 Le revisioni seguono il versionamento semantico `0.MINOR.PATCH`: **MINOR** per nuove funzionalità, **PATCH** per correzioni. La versione in cima è quella in `APP_VERSION` (`core.js`) e mostrata nell'header dell'app.
 
+### 0.80.1 — 2026-10-12
+
+**Correzioni in vista del database condiviso.** Nessun cambiamento visibile nell'app: sono le cose che il giorno di Supabase avrebbero perso dati o fatto fallire il primo invio, chiuse adesso in locale e con un test. Dettaglio in `docs/analisi-tecnica.md` §33–38.
+
+**Corretto**
+- **Ogni riga figlia ha la propria data.** Righe di documento, quotazioni, sottofamiglie, fasi e materiali degli ODP, fornitori dei centri: la data di modifica la scrive lo Store confrontando il contenuto (`stampChildRows`), non più chi modifica — che se ne dimenticava. Senza, il merge per riga dichiarato nello schema non poteva funzionare: due colleghi su due righe dello stesso ordine si sarebbero cancellati a vicenda.
+- **Rinominare un'unità di misura** cambiava le righe dei documenti senza che risultassero da mandare.
+- **Le righe tolte si contano**: `Store.pendingChanges()` porta `removeChildren` per le righe sparite da un padre che resta.
+- **I fornitori di conto lavoro di un centro** sono dichiarati nello schema (`work_center_suppliers`) e nei riferimenti: prima restavano un array dentro il centro e la migrazione v1 non ne riscriveva il fornitore.
+- **Famiglie predefinite con id non UUID** («fm1», «fp2»…) su archivi già v2: il seed ora nasce con UUID e chi li aveva li ritrova riparati al caricamento, articoli compresi.
+- **`remapIds()`** riscrive anche gli utenti e tutti i campi di audit: è lo strumento per il passaggio all'autenticazione del backend.
+
+**Verifica**
+- 18 nuovi controlli in `test/righe-figlie.test.js` (suite da 1845 a 1863), 13 dei quali falliscono sulla 0.80.0.
+
 ### 0.80.0 — 2026-09-23
 
 **Il Riepilogo ha un calendario.** I segnali dicevano *quante* cose sono in ritardo, non *quando* scadono. Le date c'erano già tutte — consegna della commessa, data entro cui ordinare, consegna confermata dal fornitore — ma ognuna nella sua vista: due scadenze sullo stesso martedì si scoprivano il martedì.

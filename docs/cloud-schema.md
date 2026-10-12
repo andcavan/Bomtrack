@@ -50,7 +50,8 @@ immaginarle.
 | `users` | `profiles` | id uuid PK → `auth.users(id)`, name, username unique, email, role (`admin`\|`acquisti`\|`progettazione`\|`lettore`), color, active bool |
 | `suppliers` | `suppliers` | id uuid PK, name, referente, email, phone, vat, street, street_number, zip, city, province, country, default_transport, default_payment, active bool, created_at, updated_at |
 | `customers` | `customers` | id uuid PK, name **unique** (case-insensitive), referente, email, phone, vat, street, street_number, zip, city, province, country, notes, active bool, created_at, updated_at |
-| `workCenters` | `work_centers` | id uuid PK, name, hourly_rate numeric, capacity_hours numeric (ore a settimana), active, created_at, updated_at. **`suppliers` resta annidato** in un campo, non normalizzato: vedi la nota qui sotto |
+| `workCenters` | `work_centers` | id uuid PK, name, hourly_rate numeric, capacity_hours numeric (ore a settimana), active, created_at, updated_at |
+| `workCenters[].suppliers` | `work_center_suppliers` | id uuid PK, work_center_id uuid FK, supplier_id uuid FK, rate numeric, note, created_at, updated_at — i fornitori di conto lavoro abituali del centro, con la tariffa propria (dalla 0.80.1 in `SCHEMA` e `REFS`) |
 | `families` | `families` | id uuid PK, name, kind ('acquistato'\|'materiale'\|'parte'), sigla, created_at, updated_at |
 | `families[].subs` | `sub_families` | id uuid PK, family_id uuid FK, name, sigla, created_at, updated_at |
 | `items` | `items` | id uuid PK, code, name, type enum, uom, notes, active, favorite, obsolete, unit_cost, purchase_price, supplier_id FK, supplier_code, supplier_desc, active_price_id FK → `item_prices(id)`, sourcing ('make'\|'buy'), family_id FK, sub_family_id FK, machine_item_id FK, group_item_id FK, sigla, overhead_pct_override, margin_pct_override, created_at, updated_at |
@@ -149,14 +150,12 @@ immaginarle.
   carico: un centro senza capacità mostra le ore e non il sovraccarico. Senza
   questa distinzione ogni centro esistente risulterebbe sfondato al primo
   caricamento, e il prospetto nascerebbe già da ignorare.
-- **`workCenters[].suppliers` non è dichiarato in `SCHEMA` né in `REFS`**, ed è
-  un difetto noto e non ancora corretto. Conseguenze: `flattenDB()` lo copia
-  come array dentro una colonna invece di esploderlo in `work_center_suppliers`
-  (il giro completo regge, ma la tabella cloud non è normalizzata), e la
-  rimappatura v1→v2 non riscrive `suppliers[].supplierId`. È la stessa famiglia
-  di `plans.jobId`. La correzione è un child def
-  `{ table: 'work_center_suppliers', rowId: 'id', merge: 'row' }` più una voce
-  in `REFS`, ed è una decisione a sé — scritta qui per non riscoprirla.
+- **`workCenters[].suppliers` è una tabella figlia** (`work_center_suppliers`)
+  dalla 0.80.1: dichiarata in `SCHEMA` con merge per riga e in `REFS` per il
+  `supplierId`. Fino alla 0.80 `flattenDB()` la copiava come array dentro la
+  riga del centro, e la rimappatura v1→v2 non ne riscriveva il fornitore. Il
+  campo resta facoltativo: un centro senza fornitori non ha la chiave, e
+  `child_sets` lo distingue dall'elenco vuoto.
 - `item_prices` esiste solo per `type in ('acquistato','materiale','parte')`.
 - `item_prices (rfq_id, line_id)` è la chiave anti-duplicato usata da
   `rfqRecordPrices()`: registrare due volte la stessa offerta non deve creare due
@@ -356,13 +355,27 @@ tutti. Sta nel registro (`SCHEMA` in `store.js`) ed è verificata in
 `test/sync.test.js`.
 
 **Merge per riga** — `item_prices`, `rfq_lines`, `order_lines`,
-`production_plan_lines`, `sub_families`, `production_order_phases`,
-`production_order_materials`. Righe con identità propria, dove
+`work_order_lines`, `production_plan_lines`, `sub_families`,
+`production_order_phases`, `production_order_materials`,
+`work_center_suppliers`. Righe con identità propria, dove
 l'aggiunta concorrente **è lo scenario normale, non un conflitto**: due colleghi
 che registrano una quotazione sullo stesso articolo hanno due id diversi e
 sopravvivono entrambe. Il conflitto vero è altrove, su `items.active_price_id`:
 è un campo scalare del padre, lì vince l'ultimo che salva e **l'utente va
 avvisato**, perché con il prezzo in uso cambia il costo di ogni distinta a monte.
+
+**Ogni riga di queste tabelle porta il proprio `updated_at`**, ed è ciò che
+rende il merge per riga possibile: senza, l'adapter sa che «l'ordine è
+cambiato» ma non quale riga, rimanda tutte le righe nella propria versione e
+cancella la modifica che un collega ha fatto su un'altra riga dello stesso
+documento. Fino alla 0.80 la data l'avevano solo le righe create da alcuni
+punti del codice, e nessuna riga modificata. Dalla 0.80.1 la scrive lo
+**Store**, non le viste: `stampChildRows()` confronta un'impronta del
+contenuto di ogni riga con quella del passaggio precedente (a ogni `commit()`
+e a ogni `pendingChanges()`), e data la riga che è cambiata. Le righe
+storiche senza data prendono quella del padre al caricamento — non l'adesso,
+che le farebbe vincere a torto. Costo misurato: ~85 ms su 42.000 righe e
+9 MB, cioè oltre la quota di `localStorage`; nella misura reale, la metà.
 
 Le fasi di un ordine di produzione stanno qui e **non** fra le sostituzioni,
 al contrario di `item_cycle_rows` da cui nascono: là l'array è la definizione e
@@ -398,7 +411,14 @@ utente cancella riappare al pull successivo. È il difetto più insidioso della
 migrazione, perché non somiglia a un errore: somiglia a un collega distratto che
 ha rimesso dentro qualcosa.
 
-Serve `deleted_at` su ogni tabella sincronizzata per riga. Va deciso anche cosa
+Serve `deleted_at` su ogni tabella sincronizzata per riga — **figlie
+comprese**. Una riga tolta da un ordine che resta non è la cancellazione di un
+record radice, e fino alla 0.80 `pendingChanges()` la riportava solo come
+«l'ordine è cambiato»: con il merge per riga, l'adapter non avrebbe saputo
+distinguere «l'ho tolta» da «non ho mai visto quella che un collega ha
+aggiunto». Dalla 0.80.1 il conto porta anche `removeChildren` (vedi
+l'interfaccia qui sotto); le righe di un padre eliminato non ci compaiono, le
+porta via la cancellazione del padre (`on delete cascade`). Va deciso anche cosa
 vince fra cancellazione e modifica concorrente: oggi i test fissano
 **cancellazione**, perché un articolo mezzo cancellato non esiste. Che sia la
 scelta giusta è discutibile; che debba essere una scelta esplicita, e non l'esito
@@ -409,6 +429,13 @@ casuale di chi arriva per primo, no.
 Il modello locale è già quello di destinazione: `db.users` è 1:1 con `profiles`, i ruoli sono
 quelli che le policy dovranno riconoscere e l'app tiene un solo utente di sessione
 (`currentUser`) da cui dipendono nav, guardie e campi di audit.
+
+**Gli id degli utenti cambiano**: `profiles.id` è quello che assegna
+`auth.users`, non l'UUID scritto in locale. Con l'utente cambiano tutti i
+campi di audit del database (`createdBy`, `updatedBy`, `deletedBy`, su ogni
+record e ogni riga figlia), che `REFS` non elenca collezione per collezione:
+stanno in `AUDIT_REFS` (`store.js`), e `remapIds({ user: { vecchio: nuovo } })`
+li riscrive tutti insieme. Il contenuto del cestino resta com'era.
 
 **Cosa non migra**: `passwordHash` e `passwordSalt`. In locale sono SHA-256(salt + password)
 calcolati in `store.js`; le password vere le possiede Supabase Auth (`auth.users`) e questi due
@@ -445,7 +472,9 @@ Store.adapter = unAltroAdapter;              // unico punto da cui passa la dest
 
 Store.takeChanges()       // { changes, mark } — il conto E la fotografia, insieme
 Store.markSynced(mark)    // riallinea a quella fotografia, non all'adesso
-Store.pendingChanges()    // { items: { upsert: [id…], remove: [id…] }, …, settings: true }
+Store.pendingChanges()    // { items: { upsert: [id…], remove: [id…],
+                          //           removeChildren: { priceList: [id…] } }, …, settings: true }
+                          // removeChildren solo se una riga figlia è sparita da un padre che resta
                           // null = fotografia non valida: serve un riallineamento completo
 Store.schema()            // il registro: collezioni, figli, politica di merge
 ```

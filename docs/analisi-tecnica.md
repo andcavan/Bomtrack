@@ -499,6 +499,64 @@ usando l'app.
 
 ---
 
+## Risolto nella 0.80.1
+
+Controllo fatto con un solo criterio: **cosa si rompe il giorno in cui arriva
+Supabase**. Le voci qui sotto sono quelle che si potevano chiudere in locale,
+con un test, prima di scrivere una riga di codice di rete — tutte in
+`store.js`, coperte da `test/righe-figlie.test.js` (18 controlli, 13 dei quali
+falliscono sul codice della 0.80.0). Le altre trovate nello stesso giro sono
+in fondo alla sezione «Aperto», sotto **D**.
+
+### 33. Il merge «per riga» non aveva le date delle righe
+`SCHEMA` dichiarava `merge: 'row'` per righe di documento, quotazioni, fasi
+degli ODP, ma le righe non avevano un `updatedAt` proprio: `docSetLine`
+toccava il documento, non la riga. In cloud due colleghi su due righe diverse
+dello stesso ordine si sarebbero cancellati a vicenda — l'adapter sapeva che
+l'ordine era cambiato, non quale riga.
+
+Non si è chiesto ai mutatori di ricordarsene: era l'invariante affidata alla
+disciplina, ed era già rotta (§34). `stampChildRows()` confronta un'impronta
+del contenuto di ogni riga con quella del passaggio precedente, a ogni
+`commit()` e `pendingChanges()`, e data quella che è cambiata. Le righe
+storiche prendono la data del padre al caricamento. Costo: ~85 ms su 42.000
+righe (9 MB, oltre la quota di `localStorage`).
+
+### 34. `renameUom` cambiava le righe dei documenti senza segnalarlo
+Le righe di RFQ, ODA e ODL passavano al nuovo codice senza `touch()`, e dopo
+la rinomina `pendingChanges()` contava **zero** documenti da mandare. Chiuso
+da §33, senza toccare la funzione: è il motivo per cui la soluzione sta nello
+Store.
+
+### 35. Le righe figlie cancellate non si contavano
+Un invio di soli upsert non esprime una cancellazione, e il conto delle
+modifiche lo sapeva per i record radice ma non per le righe: una riga tolta da
+un ordine risultava solo «ordine cambiato». Ora `pendingChanges()` porta
+`removeChildren: { lines: [id…] }`, e la fotografia di `takeChanges()` ricorda
+anche gli id delle righe.
+
+### 36. A9 — `workCenters[].suppliers` in `SCHEMA` e `REFS`
+Era «una riga di `SCHEMA`, e dopo sarebbe una migrazione». Ora è una tabella
+figlia `work_center_suppliers` con merge per riga, `REFS` ne riscrive il
+fornitore, e le righe senza id lo ricevono al caricamento.
+
+### 37. Id «fm1», «fp2» su archivi già v2
+I seed una-tantum delle famiglie materie prime e parti copiavano il database
+demo con i suoi id. Su un archivio ancora v1 `migrateV2()` li trasformava in
+UUID subito dopo; su uno già v2 restavano — **43** id non UUID, su cui il
+primo invio a colonne `uuid` sarebbe fallito. Il seed ora nasce con UUID, e
+`riparaIdSeminati()` ripara chi li ha già, riconoscendoli da id **e** nome
+della famiglia demo e riscrivendo gli articoli che le citano.
+
+### 38. I riferimenti agli utenti non erano rimappabili
+Con Supabase Auth l'id di un profilo cambia, e con lui ogni `createdBy`,
+`updatedBy`, `deletedBy` del database — che `REFS` non elencava. La
+riscrittura di `migrateV2()` è diventata `remapIds(maps)`, che accetta anche il
+tipo `'user'` e lo applica ai campi di `AUDIT_REFS` su ogni record e riga
+figlia. È lo strumento della migrazione utenti; oggi nessuno la chiama.
+
+---
+
 ## Aperto
 
 ### A. Sicurezza
@@ -535,15 +593,7 @@ congiuntamente un anello che nessuno dei due vede, e `costOf` ricorre **per
 tutti**: è l'unico vincolo la cui violazione rende l'app inutilizzabile a tutto
 il team. Serve un trigger ricorsivo su `item_components`, e non è opzionale.
 
-**A9 — `workCenters[].suppliers` non è dichiarato in `SCHEMA`.** Il difetto è
-ammesso in `docs/cloud-schema.md`, non era registrato qui. `SCHEMA.workCenters`
-non ha `children`, ma l'array annidato esiste ed è vivo (`views-manage.js`,
-`costing.js`, `views-bom.js`): i fornitori di conto lavoro di un centro. Oggi
-innocuo — nessun codice di rete esiste — ma al primo push `flattenDB()` lo
-lascerebbe dentro la riga padre invece di esplodere una tabella figlia. Va
-chiuso **prima** del backend, non dopo: è una riga di `SCHEMA`, e dopo sarebbe
-una migrazione. Il riferimento `suppliers[].supplierId` è invece già coperto dal
-lato applicativo (`supplierUses()`).
+*(A9 — `workCenters[].suppliers` fuori da `SCHEMA` — chiusa nella 0.80.1, §36.)*
 
 ### B. Prestazioni
 
@@ -588,6 +638,50 @@ sono **1291** e le collisioni **zero**, e `test/scripts.test.js` ora fallisce se
 qualcuno ne introduce una, nominandola. Il prezzo che questa voce dava per
 obbligato non c'era: per non farsi male non serviva rinunciare a niente, serviva
 contare.
+
+### D. Verso il database condiviso *(censite nella 0.80.1)*
+
+Trovate nello stesso giro di §33–38, e non chiudibili in locale: vanno
+nell'adapter o nello schema SQL.
+
+**D1 — `received` è un contatore sovrascritto, e da lì nasce la giacenza.**
+Due ricevimenti concorrenti sulla stessa riga: vince l'ultimo e un carico
+sparisce dal magazzino. Va trasformato in eventi (ricevimenti come righe, o
+movimenti `carico` con `order_id`/`line_id`) con `received` da vista, o al
+minimo una RPC di incremento atomico.
+
+**D2 — `flattenDB()` non traduce i nomi.** Produce camelCase e un `parentId`
+generico; lo schema ha snake_case e `item_id`/`rfq_id`. Esporta anche flag
+locali (`priceListSeeded`) e `''` dove una colonna `numeric` o `date` vuole
+`NULL` (`item_prices.minQty`/`leadDays`, `price` e `deliveryDate` sulle righe).
+Serve una mappa colonne per tabella, con whitelist e `'' → null`, nell'adapter.
+
+**D3 — chiavi esterne circolari.** `items.active_price_id → item_prices →
+items`, componenti e `machine_item_id` fra articoli: vincoli `deferrable` e
+push dentro RPC transazionali, non upsert REST separati.
+
+**D4 — scritture su più collezioni da rendere atomiche.** Una dichiarazione di
+produzione genera movimenti; il lancio di un ODP genera ODL e uscite. In locale
+è un `commit()`; in cloud servono RPC (`declare_progress`, `launch_odp`).
+
+**D5 — `localStorage` non regge lo specchio locale.** Il piano lo retrocede a
+specchio e coda offline, ma la quota è ~5 MB e lo scenario A di
+`sostenibilita-free-tier.md` è decine di MB. Specchio e coda in IndexedDB, che
+l'app usa già per gli allegati.
+
+**D6 — matrice RLS incompleta.** `cloud-schema.md` non copre movimenti
+(`roleGuard('catalog')`), ODP e dichiarazioni (`'docs'`), commesse,
+promemoria, allegati, revisioni, cestino. E chi dichiara l'avanzamento in
+officina oggi deve essere «acquisti»: un ruolo produzione/magazzino va deciso
+prima che diventi una policy.
+
+**D7 — il cestino si pota sul client.** `migrateDB()` toglie le voci oltre
+`TRASH_DAYS`; in cloud ogni client cancellerebbe righe condivise. Va su
+`pg_cron`.
+
+**D8 — avvio e primo amministratore.** Oggi prima i dati e poi il login,
+perché gli utenti stanno nel blob; con RLS l'ordine si rovescia. Il setup del
+primo admin a database vuoto non deve esistere lato client.
 
 ---
 

@@ -358,7 +358,11 @@ const SCHEMA = {
   // Clienti: anagrafica autonoma, come i fornitori. La commessa ne cita il
   // nome, non l'id — vedi il commento su `jobs`.
   customers: { table: 'customers' },
-  workCenters: { table: 'work_centers' },
+  // I fornitori di conto lavoro abituali di un centro, ciascuno con la propria
+  // tariffa. Fino alla 0.80 non erano dichiarati qui: flattenDB() li lasciava
+  // come array dentro la riga del centro, e la rimappatura v1→v2 non ne
+  // riscriveva il `supplierId`. Hanno un id proprio, quindi merge per riga.
+  workCenters: { table: 'work_centers', children: { suppliers: { table: 'work_center_suppliers', rowId: 'id', merge: 'row' } } },
   families: { table: 'families', children: { subs: { table: 'sub_families', rowId: 'id', merge: 'row' } } },
   rfqs: { table: 'rfqs', children: { lines: { table: 'rfq_lines', rowId: 'id', merge: 'row' } } },
   orders: { table: 'orders', children: { lines: { table: 'order_lines', rowId: 'id', merge: 'row' } } },
@@ -446,6 +450,7 @@ const REFS = {
     },
   },
   revisions: { fields: { itemId: 'item' } },
+  workCenters: { children: { suppliers: { supplierId: 'supplier' } } },
   // `orderId` e `lineId` restano fuori: REFS non ha una destinazione 'order',
   // e gli ordini non sono mai stati rimappati. Va scritto, non lasciato muto.
   movements: { fields: { itemId: 'item', supplierId: 'supplier', fromSupplierId: 'supplier' } },
@@ -474,6 +479,13 @@ const REFS = {
   // state rimappate. Va scritto, non lasciato muto.
   prodDecls: { fields: {} },
 };
+// I campi di audit puntano agli utenti, e stanno su **ogni** record e su ogni
+// riga figlia con identità propria: per questo non si ripetono in REFS
+// collezione per collezione. Servono il giorno della migrazione all'auth del
+// backend, dove l'id di un profilo è quello che assegna l'auth e non quello
+// scritto qui: tutti i `createdBy` del database vanno riscritti insieme, o
+// restano orfani. `remapIds({ user: { vecchio: nuovo } })` lo fa.
+const AUDIT_REFS = { createdBy: 'user', updatedBy: 'user', deletedBy: 'user' };
 const COLLECTIONS = Object.keys(SCHEMA);
 function childrenOf(coll) { return (SCHEMA[coll] && SCHEMA[coll].children) || {}; }
 
@@ -515,6 +527,7 @@ function isAssembly(t) { return t === 'macchina' || t === 'gruppo' || t === 'sot
 let dbLoadError = null;
 function loadDB() {
   dbLoadError = null;
+  _childFp = null;   // un database nuovo: il prossimo passaggio fa da riferimento
   let grezzo = null;
   try { grezzo = adapter.read(); }
   catch (e) { dbLoadError = { kind: 'read', err: e }; console.error('Archivio locale non leggibile:', e); }
@@ -575,7 +588,12 @@ function migrateDB() {
   // non «nessuna capacità»: senza questa distinzione ogni centro esistente
   // risulterebbe sovraccarico al primo caricamento, e il prospetto del carico
   // nascerebbe già da ignorare.
-  (db.workCenters || []).forEach(w => { if (w.capacityHours == null) w.capacityHours = 0; });
+  (db.workCenters || []).forEach(w => {
+    if (w.capacityHours == null) w.capacityHours = 0;
+    // Le righe fornitore sono dichiarate in SCHEMA con identità propria: una
+    // senza id non si potrebbe nominare né fondere riga per riga.
+    if (Array.isArray(w.suppliers)) w.suppliers.forEach(r => { if (r && !r.id) r.id = newId(); });
+  });
   if (!db.workOrders) db.workOrders = [];   // ordini di lavoro (conto lavoro)
   if (!db.movements) db.movements = [];   // rettifiche, consumi e conto lavoro
   // Contorno del conto lavoro: da chi sta la merce e quale ordine la giustifica.
@@ -799,14 +817,14 @@ function migrateDB() {
   if (!db.settings.mpFamiliesSeeded) {
     const existingIds = new Set((db.families || []).map(f => f.id));
     defaultDB.families.filter(f => f.kind === 'materiale' && !existingIds.has(f.id))
-      .forEach(f => db.families.push(JSON.parse(JSON.stringify(f))));
+      .forEach(f => db.families.push(famigliaSeminata(f)));
     db.settings.mpFamiliesSeeded = true;
   }
   // Seed una-tantum delle famiglie parti predefinite mancanti (non ripristina quelle cancellate)
   if (!db.settings.partFamiliesSeeded) {
     const existingIds = new Set((db.families || []).map(f => f.id));
     defaultDB.families.filter(f => f.kind === 'parte' && !existingIds.has(f.id))
-      .forEach(f => db.families.push(JSON.parse(JSON.stringify(f))));
+      .forEach(f => db.families.push(famigliaSeminata(f)));
     db.settings.partFamiliesSeeded = true;
   }
   // Famiglie: tipizzazione (materie prime vs commerciali) + sigla per codifica automatica.
@@ -924,6 +942,85 @@ function migrateDB() {
   });
   // Migrazioni versionate
   if ((db.schemaVersion || 1) < 2) { migrateV2(); db.schemaVersion = 2; }
+  riparaIdSeminati();
+}
+// ── Famiglie predefinite: id veri anche quando arrivano dopo la v2 ──
+// I seed una-tantum delle famiglie materie prime e parti copiavano il
+// database demo **con i suoi id** ('fm1', 'fm1s1', 'fp2'…). Su un archivio
+// ancora v1 non era un problema — subito dopo migrateV2() li trasforma in
+// UUID — ma su un archivio già v2 la migrazione non gira più, e quegli id
+// restavano tali e quali: in un database con chiavi `uuid` il primo invio di
+// quelle righe sarebbe fallito. Da qui in poi su un archivio v2 il seed nasce
+// con id veri.
+function famigliaSeminata(f) {
+  const copia = JSON.parse(JSON.stringify(f));
+  if ((db.schemaVersion || 1) < 2) return copia;   // ci penserà migrateV2()
+  copia.id = newId();
+  (copia.subs || []).forEach(s => { s.id = newId(); });
+  return copia;
+}
+// E per gli archivi che quegli id li hanno già: si riconoscono dall'id **e**
+// dal nome della famiglia demo da cui vengono, così un 'fm1' scritto da altri
+// (un test, un import a mano) non viene toccato. Idempotente: dopo il primo
+// giro non resta niente da riparare, e il costo è una passata sulle famiglie.
+function riparaIdSeminati() {
+  if ((db.schemaVersion || 1) < 2) return;
+  const demo = new Map();
+  defaultDB.families.filter(f => f.kind === 'materiale' || f.kind === 'parte').forEach(f => demo.set(f.id, f));
+  const maps = { family: {}, subFamily: {} };
+  let n = 0;
+  (db.families || []).forEach(f => {
+    const d = demo.get(f.id);
+    if (!d || f.name !== d.name) return;
+    maps.family[f.id] = newId(); n++;
+    const subDemo = new Set((d.subs || []).map(s => s.id));
+    (f.subs || []).forEach(s => { if (subDemo.has(s.id) && !UUID_RE.test(String(s.id))) { maps.subFamily[s.id] = newId(); n++; } });
+  });
+  if (n) remapIds(maps);
+  return n;
+}
+// ── Riscrittura degli id e di tutti i riferimenti ───────────
+// `maps` è { tipo: { vecchioId: nuovoId } }, con i tipi di REFS ('item',
+// 'supplier', 'workCenter', 'family', 'subFamily') più 'user'. Riscrive le
+// chiavi primarie delle collezioni che ne sono l'origine e ogni campo che le
+// cita: quelli di REFS, e i campi di audit di ogni record e riga figlia.
+// Il contenuto del cestino resta com'era (vedi il commento su REFS); la voce
+// di cestino in sé — chi ha eliminato — invece si riscrive.
+const ID_ORIGINE = { supplier: 'suppliers', workCenter: 'workCenters', item: 'items', user: 'users' };
+function remapIds(maps) {
+  const m = maps || {};
+  const re = (tipo, id) => (id != null && m[tipo] && m[tipo][id] != null) ? m[tipo][id] : id;
+  Object.keys(ID_ORIGINE).forEach(tipo => {
+    if (m[tipo]) (db[ID_ORIGINE[tipo]] || []).forEach(r => { if (r) r.id = re(tipo, r.id); });
+  });
+  if (m.family || m.subFamily) {
+    (db.families || []).forEach(f => {
+      f.id = re('family', f.id);
+      (f.subs || []).forEach(s => { s.id = re('subFamily', s.id); });
+    });
+  }
+  const riscrivi = (rec, campi) => {
+    if (!rec) return;
+    Object.keys(campi).forEach(k => { if (rec[k] != null) rec[k] = re(campi[k], rec[k]); });
+  };
+  Object.keys(REFS).forEach(coll => {
+    const def = REFS[coll];
+    (db[coll] || []).forEach(rec => {
+      if (def.fields) riscrivi(rec, def.fields);
+      Object.keys(def.children || {}).forEach(figlio => {
+        (rec && rec[figlio] || []).forEach(r => riscrivi(r, def.children[figlio]));
+      });
+    });
+  });
+  if (m.user) {
+    COLLECTIONS.forEach(coll => {
+      const figli = childrenOf(coll);
+      (db[coll] || []).forEach(rec => {
+        riscrivi(rec, AUDIT_REFS);
+        Object.keys(figli).forEach(k => (rec && rec[k] || []).forEach(r => riscrivi(r, AUDIT_REFS)));
+      });
+    });
+  }
 }
 // v2: id legacy (interi/sigle) → UUID su tutte le entità e i riferimenti,
 // timestamp createdAt/updatedAt, rimozione contatore nextId.
@@ -938,28 +1035,9 @@ function migrateV2() {
   db.families.forEach(f => { mapId('family', f); (f.subs || []).forEach(s => mapId('subFamily', s)); });
   db.items.forEach(r => mapId('item', r));
 
-  const re = (tipo, id) => (id != null && maps[tipo][id] != null) ? maps[tipo][id] : id;
-  const rewritePK = (tipo, rec) => { rec.id = re(tipo, rec.id); };
-  db.suppliers.forEach(r => rewritePK('supplier', r));
-  db.workCenters.forEach(r => rewritePK('workCenter', r));
-  db.families.forEach(f => { rewritePK('family', f); (f.subs || []).forEach(s => rewritePK('subFamily', s)); });
-  db.items.forEach(r => rewritePK('item', r));
-
-  // I riferimenti, tutti, letti da REFS: aggiungerne uno è una riga là sopra,
-  // non una riga qui e il ricordo di doverla scrivere.
-  const riscrivi = (rec, campi) => {
-    if (!rec) return;
-    Object.keys(campi).forEach(k => { if (rec[k] != null) rec[k] = re(campi[k], rec[k]); });
-  };
-  Object.keys(REFS).forEach(coll => {
-    const def = REFS[coll];
-    (db[coll] || []).forEach(rec => {
-      if (def.fields) riscrivi(rec, def.fields);
-      Object.keys(def.children || {}).forEach(figlio => {
-        (rec[figlio] || []).forEach(r => riscrivi(r, def.children[figlio]));
-      });
-    });
-  });
+  // Chiavi e riferimenti, tutti, letti da REFS: aggiungerne uno è una riga là
+  // sopra, non una riga qui e il ricordo di doverla scrivere.
+  remapIds(maps);
 
   const t = nowISO();
   const stampAll = rec => { if (!rec.createdAt) rec.createdAt = t; if (!rec.updatedAt) rec.updatedAt = t; };
@@ -1035,6 +1113,7 @@ function snapshotCounts(data) {
 // viste ci scrivono dentro direttamente. Lì si confronta il contenuto, che è
 // piccolo.
 let _baseIds = null;        // Map collezione → Map(id → updatedAt)
+let _baseChildren = null;   // Map 'collezione|array' → Map(id riga → id padre)
 let _baseSettings = '';
 function safeStringify(v) { try { return JSON.stringify(v); } catch (e) { return ''; } }
 // ── Firma di un record ai fini della sincronizzazione ───────
@@ -1064,6 +1143,89 @@ function recSignature(coll, r) {
   });
   return s;
 }
+// ── Righe figlie: la data la mette lo Store, non chi scrive ──
+// Le righe con identità propria (righe di documento, quotazioni, sottofamiglie,
+// fasi e materiali di un ODP, fornitori di un centro) si fondono **per riga**,
+// e per decidere quale versione di una riga vale serve la sua data. Fino alla
+// 0.80 quella data la scrivevano solo alcuni dei punti che creano una riga, e
+// nessuno di quelli che la modificano: chi cambiava una quantità in un ordine
+// toccava l'ordine, e in cloud due colleghi su due righe diverse dello stesso
+// ordine si sarebbero cancellati a vicenda. `renameUom` cambiava le righe dei
+// documenti senza toccare niente, e la rinomina non risultava da mandare.
+//
+// Chiedere a ogni mutatore di ricordarsene è l'invariante affidata alla
+// disciplina che era già rotta. Qui si confronta il contenuto: un'impronta per
+// riga, presa all'ultimo passaggio; se cambia, la riga si data adesso. Le righe
+// nuove nascono con `stampNew()`.
+//
+// Il primo passaggio dopo un caricamento fa da riferimento e non data niente
+// come modificato. Le righe storiche senza data prendono quella del padre —
+// non l'adesso, che le farebbe vincere a torto su una modifica vera altrui.
+let _childFp = null;        // Map 'collezione|array' → Map(id riga → impronta del contenuto)
+// L'impronta è la riga serializzata così com'è, date comprese: si riprende
+// dopo averla datata, quindi la data nuova non conta come modifica al giro
+// successivo. Una copia senza i campi di data costava quattro volte tanto, e su
+// decine di migliaia di righe quanto il salvataggio stesso.
+function childFingerprint(x) {
+  try { return JSON.stringify(x); } catch (e) { return ''; }
+}
+function stampChildRows() {
+  if (!db) return;
+  const riferimento = !_childFp;
+  const prossime = new Map();
+  COLLECTIONS.forEach(c => {
+    const figli = childrenOf(c);
+    Object.keys(figli).forEach(k => {
+      const rowId = figli[k].rowId;
+      if (!rowId) return;
+      const gruppo = c + '|' + k;
+      const prima = riferimento ? null : (_childFp.get(gruppo) || new Map());
+      const dopo = new Map();
+      prossime.set(gruppo, dopo);
+      (db[c] || []).forEach(r => {
+        if (!r || !Array.isArray(r[k])) return;
+        r[k].forEach(x => {
+          if (!x || x[rowId] == null) return;
+          let impronta = childFingerprint(x);
+          if (riferimento) {
+            if (!x.updatedAt && r.updatedAt) {
+              x.updatedAt = r.updatedAt;
+              if (!x.createdAt) x.createdAt = r.createdAt || r.updatedAt;
+              impronta = childFingerprint(x);
+            }
+          } else {
+            const era = prima.get(x[rowId]);
+            if (era === undefined) { if (!x.updatedAt) { stampNew(x); impronta = childFingerprint(x); } }
+            else if (era !== impronta) { touch(x); impronta = childFingerprint(x); }
+          }
+          dopo.set(x[rowId], impronta);
+        });
+      });
+    });
+  });
+  _childFp = prossime;
+}
+// Gli id delle righe figlie con identità propria, e il padre di ciascuna:
+// servono a dire quali righe sono **sparite**. L'assenza di una riga non è
+// un'informazione che un invio di soli upsert possa esprimere — è la stessa
+// ragione dei tombstone sui record radice, un livello più giù.
+function snapshotChildIds() {
+  const m = new Map();
+  COLLECTIONS.forEach(c => {
+    const figli = childrenOf(c);
+    Object.keys(figli).forEach(k => {
+      const rowId = figli[k].rowId;
+      if (!rowId) return;
+      const ids = new Map();
+      (db[c] || []).forEach(r => {
+        if (!r || r.id == null) return;
+        (Array.isArray(r[k]) ? r[k] : []).forEach(x => { if (x && x[rowId] != null) ids.set(x[rowId], r.id); });
+      });
+      m.set(c + '|' + k, ids);
+    });
+  });
+  return m;
+}
 function snapshotSignatures() {
   const m = new Map();
   COLLECTIONS.forEach(c => {
@@ -1084,17 +1246,20 @@ function snapshotSignatures() {
 //   await invia(changes);
 //   Store.markSynced(mark);
 function takeChanges() {
+  const changes = pendingChanges();   // data anche le righe figlie: va prima della fotografia
   return {
-    changes: pendingChanges(),
-    mark: { ids: snapshotSignatures(), settings: safeStringify(db.settings) },
+    changes,
+    mark: { ids: snapshotSignatures(), children: snapshotChildIds(), settings: safeStringify(db.settings) },
   };
 }
 // Senza argomento rifotografa l'adesso: è il caso del caricamento, dove la
 // fotografia *è* lo stato appena letto. Con l'argomento vale la fotografia
 // presa da takeChanges() prima dell'invio.
 function markSynced(mark) {
-  if (mark && mark.ids) { _baseIds = mark.ids; _baseSettings = mark.settings; return; }
+  if (mark && mark.ids) { _baseIds = mark.ids; _baseChildren = mark.children || null; _baseSettings = mark.settings; return; }
+  stampChildRows();
   _baseIds = snapshotSignatures();
+  _baseChildren = snapshotChildIds();
   _baseSettings = safeStringify(db.settings);
 }
 // Dopo un ripristino di backup, un azzeramento o un reset la fotografia non
@@ -1103,12 +1268,15 @@ function markSynced(mark) {
 // mentre è cambiato tutto. Si dichiara di non sapere — `pendingChanges()`
 // tornerà `null` — e il riallineamento tocca all'adapter, che è l'unico a poter
 // confrontare le due parti.
-function markUnknown() { _baseIds = null; _baseSettings = null; }
-// { items: { upsert: [id…], remove: [id…] }, …, settings: true }
-// Le collezioni senza modifiche non compaiono. `null` = nessuna fotografia
-// ancora presa (database mai caricato).
+function markUnknown() { _baseIds = null; _baseChildren = null; _baseSettings = null; _childFp = null; }
+// { items: { upsert: [id…], remove: [id…], removeChildren: { priceList: [id…] } }, …, settings: true }
+// Le collezioni senza modifiche non compaiono, e `removeChildren` compare solo
+// se qualche riga figlia è sparita da un padre che **esiste ancora** — quelle
+// di un padre eliminato le porta via la cancellazione del padre. `null` =
+// nessuna fotografia ancora presa (database mai caricato).
 function pendingChanges() {
   if (!_baseIds) return null;
+  stampChildRows();
   const out = {};
   COLLECTIONS.forEach(c => {
     const prima = _baseIds.get(c) || new Map();
@@ -1121,6 +1289,22 @@ function pendingChanges() {
     });
     prima.forEach((_, id) => { if (!visti.has(id)) remove.push(id); });
     if (upsert.length || remove.length) out[c] = { upsert, remove };
+    if (!_baseChildren) return;
+    const padriTolti = new Set(remove);
+    const figli = childrenOf(c);
+    Object.keys(figli).forEach(k => {
+      if (!figli[k].rowId) return;
+      const primaFigli = _baseChildren.get(c + '|' + k);
+      if (!primaFigli) return;
+      const ora = new Set();
+      (db[c] || []).forEach(r => (r && Array.isArray(r[k]) ? r[k] : []).forEach(x => { if (x && x[figli[k].rowId] != null) ora.add(x[figli[k].rowId]); }));
+      const tolti = [];
+      primaFigli.forEach((padre, id) => { if (!ora.has(id) && !padriTolti.has(padre)) tolti.push(id); });
+      if (!tolti.length) return;
+      if (!out[c]) out[c] = { upsert: [], remove: [] };
+      if (!out[c].removeChildren) out[c].removeChildren = {};
+      out[c].removeChildren[k] = tolti;
+    });
   });
   if (safeStringify(db.settings) !== _baseSettings) out.settings = true;
   return out;
@@ -1209,6 +1393,8 @@ const Store = {
     // copre ogni mutazione. Prima del salvataggio, non dopo: se setItem fallisce
     // la cache resta comunque allineata a ciò che c'è in memoria.
     if (typeof invalidateCaches === 'function') invalidateCaches();
+    // Le righe figlie modificate prendono la loro data prima di essere scritte.
+    stampChildRows();
     let payload;
     try { payload = JSON.stringify(db); }
     catch (e) { return commitFailed('serialize', e, 0); }
