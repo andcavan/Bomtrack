@@ -26,9 +26,12 @@ function base(righe, extra) {
   }, extra || {}));
 }
 // Caricato dall'archivio, come all'avvio: è lì che girano migrazione e riallineamento.
-function caricato(db) {
+// In modo condiviso, come lo vorrà un adattatore cloud: in locale i ricevimenti
+// non diventano eventi (vedi il gruppo in fondo).
+function caricato(db, condiviso) {
   const a = loadApp({ silent: true });
   a.seedStorage(db);
+  if (condiviso !== false) a.eval('Store.modoCondiviso = true');
   a.ref('Store').load();
   a.asRole('admin');
   return a;
@@ -36,6 +39,7 @@ function caricato(db) {
 function ricaricato(a) {
   const b = loadApp({ silent: true });
   b.seedStorage(a.eval('JSON.stringify(db)'));
+  if (a.eval('Store.modoCondiviso')) b.eval('Store.modoCondiviso = true');
   b.ref('Store').load();
   b.asRole('admin');
   return b;
@@ -61,9 +65,27 @@ describe('Il primo caricamento trasforma il ricevuto in un saldo d\'apertura', (
     assert.equal(ricevuto(b), 4);
   });
 
-  it('dopo, il ricevuto discende dagli eventi e non dal numero sulla riga', () => {
+  it('un numero scritto senza passare dagli eventi non si perde: si pareggia', () => {
     const a = caricato(base([riga('l1', { received: 4 })]));
-    a.eval('getOrder("o1").lines[0].received = 99; saveDB();');   // scrittura abusiva
+    a.eval('getOrder("o1").lines[0].received = 7; saveDB();');   // un percorso che scrive il campo a mano
+    const b = ricaricato(a);
+    assert.equal(ricevuto(b), 7, 'in locale il numero che l\'utente ha visto non cambia mai da solo');
+    const ultimo = eventi(b).pop();
+    assert.deepEqual([ultimo.kind, ultimo.qty], ['allineamento', 3]);
+    assert.equal(eventi(ricaricato(b)).length, 2, 'una volta pareggiato, non si ripete');
+  });
+
+  it('il caso peggiore: un archivio che ha già gli eventi, e righe ricevute senza', () => {
+    const db = base([riga('l1', { received: 5 }), riga('l2', { received: 0 })]);
+    db.receipts = [];
+    const a = caricato(db);
+    assert.equal(ricevuto(a, 'l1'), 5, 'fino alla 0.83 tornava 0, senza dirlo');
+    assert.equal(ricevuto(a, 'l2'), 0);
+  });
+
+  it('una riga senza il campo lo ricava dagli eventi: è come arriva da un backend', () => {
+    const a = caricato(base([riga('l1', { received: 4 })]));
+    a.eval('delete getOrder("o1").lines[0].received; saveDB();');
     assert.equal(ricevuto(ricaricato(a)), 4);
   });
 });
@@ -124,7 +146,9 @@ describe('Due ricevimenti concorrenti si sommano', () => {
     // Il server tiene entrambi gli eventi (righe diverse, merge per riga); il
     // pull li porta a tutti e due, e il ricevuto si ricalcola.
     const unione = eventi(a).concat(eventi(b).filter(e => !eventi(a).some(x => x.id === e.id)));
-    a.eval(`db.receipts = ${JSON.stringify(unione)}; riallineaRicevuti(false);`);
+    // Al pull il ricevuto non viaggia (è derivato): la riga arriva senza, e lo
+    // ricava dagli eventi di tutti e due.
+    a.eval(`db.receipts = ${JSON.stringify(unione)}; delete getOrder("o1").lines[0].received; riallineaRicevuti(false);`);
     assert.equal(ricevuto(a), 5,
       'con il numero sulla riga avrebbe vinto l\'ultimo che salva: 2 o 3, mai 5');
   });
@@ -168,5 +192,31 @@ describe('Eventi di righe che non esistono più', () => {
     const a = caricato(base([riga('l1', { received: 4 }), riga('l2', { received: 1 })]));
     a.eval('getOrder("o1").lines = getOrder("o1").lines.filter(l => l.id !== "l1"); saveDB();');
     assert.deepEqual(eventi(ricaricato(a)).map(e => e.lineId), ['l2']);
+  });
+});
+
+describe('In locale il ricevuto resta un numero sulla riga', () => {
+  it('nessun evento, né all\'apertura né registrando', () => {
+    const a = caricato(base([riga('l1', { received: 4 })]), false);
+    a.eval('ordSetLine("o1", "l1", "received", "6")');
+    assert.equal(ricevuto(a), 6);
+    assert.deepEqual(eventi(a), [], 'ogni evento è spazio in un localStorage da ~5 MB, per un vantaggio che esiste solo in due');
+  });
+
+  it('e il numero resta quello che l\'utente ha scritto, di caricamento in caricamento', () => {
+    const a = caricato(base([riga('l1')]), false);
+    a.eval('ordSetLine("o1", "l1", "received", "6"); saveDB();');
+    assert.equal(ricevuto(ricaricato(a)), 6);
+  });
+
+  it('accendere il modo condiviso dopo non perde niente: il ricevuto diventa un evento d\'apertura', () => {
+    const a = caricato(base([riga('l1', { received: 4 })]), false);
+    a.eval('saveDB()');
+    const b = loadApp({ silent: true });
+    b.seedStorage(a.eval('JSON.stringify(db)'));
+    b.eval('Store.modoCondiviso = true');
+    b.ref('Store').load();
+    assert.equal(b.eval('getOrder("o1").lines[0].received'), 4);
+    assert.deepEqual(JSON.parse(b.eval('JSON.stringify(db.receipts.map(e => [e.kind, e.qty]))')), [['apertura', 4]]);
   });
 });

@@ -2,6 +2,21 @@
 
 Le revisioni seguono il versionamento semantico `0.MINOR.PATCH`: **MINOR** per nuove funzionalità, **PATCH** per correzioni. La versione in cima è quella in `APP_VERSION` (`core.js`) e mostrata nell'header dell'app.
 
+### 0.83.1 — 2026-10-12
+
+**Tutto per il locale.** Lo spostamento su un database condiviso non è previsto per ora, e il lavoro delle ultime versioni è stato riletto con un solo criterio: l'app locale funziona almeno come prima? Su due punti no, e sono corretti.
+
+**Corretto**
+- **La preparazione al cloud costava in locale.** Datare ogni riga dei documenti e registrare i ricevimenti come eventi serve solo a chi scrive in due sullo stesso database; in locale gonfiava l'archivio (da 1,43 a 2,01 MB su un archivio di prova, in un salvataggio del browser da ~5 MB) e triplicava il tempo di ogni salvataggio. Ora è spento di serie (`Store.modoCondiviso`): archivio e tempi tornano quelli della 0.80, e accenderlo un giorno non perderà niente.
+- **Un ricevuto poteva azzerarsi da solo** al caricamento, se scritto senza passare dalla funzione dei ricevimenti. In locale il numero che hai visto non cambia mai più da solo.
+- **La data dei documenti nuovi** — richieste, ordini, ODL, piani, ODP — fra mezzanotte e l'una (le due d'estate) era quella di ieri, mentre il numero era già dell'anno nuovo: alle 00:30 di Capodanno nasceva una «RFQ-2027-001» datata 31/12/2026.
+
+**Migliorato**
+- **Import**: fornitori e famiglie si cercano per nome con un indice invece di scorrere l'elenco a ogni riga. Un fornitore rinominato in Gestione fra due import si trova col nome nuovo.
+
+**Verifica**
+- Suite da 1907 a 1922 controlli senza database (1942 con Postgres). Ogni correzione ha un test che fallisce sulla versione precedente.
+
 ### 0.83.0 — 2026-10-12
 
 **I permessi stanno nel database.** Finché i dati sono nel browser, chi apre gli strumenti di sviluppo si assegna il ruolo che vuole; con lo schema di questa versione, sul database condiviso non può più. Nessun cambiamento nell'app.

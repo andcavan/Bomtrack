@@ -368,3 +368,43 @@ describe('Le commesse nel giro verso il database condiviso', () => {
     assert.deepEqual(a.snapshot().jobs, []);
   });
 });
+
+// ─── D9: il giorno di un documento è quello del calendario sul muro ───
+// Richieste, ordini, ODL, piani e ODP nascevano con `nowISO().slice(0, 10)`,
+// cioè il giorno **UTC**: in Italia, fra mezzanotte e l'una (le due d'estate),
+// era quello di ieri — mentre il numero del documento, che prende l'anno
+// locale, era già dell'anno nuovo. «RFQ-2027-001» datata 31/12/2026.
+describe('Il giorno di un documento nuovo è quello locale', () => {
+  const { loadApp } = require('./harness.js');
+  const { makeDb } = require('./fixtures.js');
+  function allOra(isoUtc, tz) {
+    const prima = process.env.TZ;
+    process.env.TZ = tz;
+    const a = loadApp({ silent: true });
+    a.setDb(makeDb({}));
+    a.asRole('admin');
+    a.eval(`(() => { const V = Date; const fisso = V.parse(${JSON.stringify(isoUtc)});
+      Date = class extends V { constructor(...x) { super(...(x.length ? x : [fisso])); } static now() { return fisso; } }; })()`);
+    return { a, ripristina: () => { if (prima === undefined) delete process.env.TZ; else process.env.TZ = prima; } };
+  }
+
+  it('alle 00:30 di Capodanno a Roma la richiesta è del 1° gennaio, come il suo numero', () => {
+    const { a, ripristina } = allOra('2026-12-31T23:30:00Z', 'Europe/Rome');
+    try {
+      a.eval('newRfq()');
+      const r = JSON.parse(a.eval('JSON.stringify(db.rfqs[0])'));
+      assert.equal(r.date, '2027-01-01');
+      assert.match(r.number, /^RFQ-2027-/);
+    } finally { ripristina(); }
+  });
+
+  it('vale per ordini, ordini di lavoro e piani', () => {
+    const { a, ripristina } = allOra('2026-07-14T22:30:00Z', 'Europe/Rome');   // 00:30 del 15, ora legale
+    try {
+      a.eval('newPlan(); newOrder(); newOdl();');
+      assert.equal(a.eval('db.plans[0].date'), '2026-07-15');
+      assert.equal(a.eval('db.orders[0].date'), '2026-07-15');
+      assert.equal(a.eval('db.workOrders[0].date'), '2026-07-15');
+    } finally { ripristina(); }
+  });
+});

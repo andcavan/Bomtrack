@@ -284,7 +284,7 @@ function rfqRecordPrices(id) {
   if (!r.supplierId) { showToast('La richiesta non ha un fornitore', 'error'); return; }
   const righe = rfqPriceCandidates(r);
   if (!righe.length) { showToast('Nessun prezzo nuovo da registrare', 'error'); return; }
-  const data = (r.date || new Date().toISOString()).slice(0, 10);
+  const data = (r.date || oggiISO()).slice(0, 10);
   righe.forEach(l => {
     const it = getItem(l.itemId);
     const si = rfqLineSupInfo(r, l);

@@ -13,7 +13,7 @@
 // Revisione in esecuzione, mostrata accanto al logo. Va tenuta allineata alla
 // voce in cima a CHANGELOG.md (l'app si copia a mano tra PC: sapere
 // quale revisione sta girando su una postazione è l'unico modo per capirlo).
-const APP_VERSION = '0.83.0';
+const APP_VERSION = '0.83.1';
 
 let currentUser = null;      // utente della sessione (null = schermata di accesso)
 let currentBomId = null;     // articolo prodotto attualmente aperto nelle Distinte
@@ -292,6 +292,7 @@ function invalidateCaches() {
   if (typeof invalidateStock === 'function') invalidateStock();   // sta in views-stock.js, caricato dopo
   if (typeof invalidateItemDocs === 'function') invalidateItemDocs(); // sta in views-item.js, caricato dopo
   if (typeof invalidateProd === 'function') invalidateProd();       // sta in views-prod.js, caricato dopo
+  if (typeof invalidateNomiImport === 'function') invalidateNomiImport(); // sta in import-export.js, caricato dopo
 }
 // ─── Librerie esterne (PDF ed Excel) ───
 // Stanno in vendor/, dentro il repo: l'app è fatta per aprirsi con un doppio

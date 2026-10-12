@@ -697,36 +697,98 @@ suo posto ne falliscono sette.
 
 ---
 
+## Risolto nella 0.83.1 — tutto deve funzionare in locale
+
+Lo spostamento su Supabase **non è previsto per ora**. Con questo criterio si è
+riletto il lavoro delle versioni 0.80.1–0.83.0, fatto per prepararlo, chiedendo
+una cosa sola: l'app locale funziona almeno come prima? Su due punti no.
+
+### 46. La preparazione al cloud costava in locale, e non dava niente
+Misurato su un archivio realistico (400 ordini da 8 righe, 1.500 articoli con
+listino), salvato da una versione precedente e riaperto:
+
+| | archivio dopo il primo salvataggio | salvataggio medio |
+|---|---|---|
+| 0.80.0 | 1,29 → 1,43 MB | 10,5 ms |
+| 0.83.0 | 1,29 → 2,01 MB | 28,6 ms |
+| 0.83.1 | 1,29 → 1,43 MB | 7,8 ms |
+
+Due fonti, entrambe utili solo a chi scrive in due sullo stesso database: la
+timbratura delle righe figlie (§33), che al primo caricamento datava ogni riga
+esistente e a ogni salvataggio rifaceva le impronte, e i ricevimenti come eventi
+(§39), ~290 byte per evento. In un `localStorage` da ~5 MB è spazio che manca
+proprio quando serve. Ora stanno dietro `Store.modoCondiviso`, **spento di
+serie**: in locale l'app si comporta come la 0.80, e lo spegnimento non perde
+niente — accendendolo, le righe prendono la data del documento e ogni ricevuto
+diventa un evento d'apertura. I test del modo condiviso lo accendono; tre test
+nuovi verificano che spento non scriva niente.
+
+### 47. Un ricevuto poteva azzerarsi in silenzio al caricamento
+`riallineaRicevuti()` (§39) riscriveva il ricevuto di ogni riga con la somma dei
+suoi eventi. Se un percorso qualunque scriveva il campo senza passare da
+`registraRicevuto()` — oggi nessuno, domani chissà — il numero che l'utente
+aveva visto tornava alla somma al caricamento successivo, senza un avviso; in
+un archivio con la collezione già presente ma senza eventi, a **zero**.
+Trovato misurando §46. La regola ora è che in locale **il numero visto non
+cambia mai da solo**: una differenza diventa un evento di allineamento. Solo una
+riga *senza* il campo — come arriva da un backend, dove non viaggia — lo
+ricava dagli eventi.
+
+### 48. D9 — la data dei documenti nuovi era il giorno UTC
+Richieste, ordini, ODL, piani e ODP nascevano con `nowISO().slice(0, 10)`: in
+Italia, fra mezzanotte e l'una (le due d'estate), con la data di ieri. E il
+numero del documento prende l'anno **locale**: alle 00:30 di Capodanno nasceva
+una «RFQ-2027-001» datata 31/12/2026. Ora `oggiISO()`, che esisteva già. I
+calcoli di `views-mrp.js` (`addDays`, le settimane ISO) restano in UTC, ed è
+giusto: lì sono UTC da capo a fondo. Il test simula le 00:30 a Roma, con e senza
+ora legale, e fallisce sulla versione precedente.
+
+### 49. B1 — fornitori e famiglie per nome, con un indice
+`findOrCreateSupplier` e `findOrCreateFamily` cercavano per nome scorrendo
+l'elenco a ogni riga d'import. Ora un indice con le regole di `codeIndex()`
+(vince il primo; chi crea un record lo aggiunge a mano), azzerato da
+`invalidateCaches()` a ogni salvataggio — senza, un fornitore rinominato in
+Gestione fra due import sarebbe stato cercato col nome vecchio, e duplicato.
+5.000 righe su 500 fornitori: sotto il secondo, con una rete nei test.
+
+---
+
 ## Aperto
+
+> **Lettura per la situazione attuale (0.83.1).** Il backend non è previsto per
+> ora. Le voci contrassegnate *[solo con backend]* — e tutta la sezione D —
+> descrivono cosa servirà il giorno in cui arriverà, e non hanno effetto su
+> come l'app funziona oggi: in locale sono già coperte (un utente solo, e due
+> schede protette dal contatore di revisione, §24). Le altre valgono adesso.
 
 ### A. Sicurezza
 
-**A2 — `hashPassword` è uno SHA-256 a singolo giro** (`store.js`), senza KDF
+**A2 — `hashPassword` è uno SHA-256 a singolo giro** *[solo con backend]* (`store.js`), senza KDF
 né iterazioni, e il backup JSON esporta gli hash. Il limite è documentato
 onestamente (`store.js:161-166`, `README.md`) e l'app è locale e monoutente. Non
 ha senso risolverlo in locale: si chiude passando a Supabase Auth, dove
 `passwordHash`/`passwordSalt` vanno **cancellati** in migrazione.
 
 **A10 — gli allegati sono fuori da `Store`, e il backup lo dice ma non lo
-risolve.** Vedi la sezione 0.77.0 qui sopra. Non è un difetto da correggere in
+risolve.** *[il rimedio vero è col backend; in locale il backup lo dichiara]* Vedi la sezione 0.77.0 qui sopra. Non è un difetto da correggere in
 locale — è una conseguenza inevitabile del tenere dei file su un browser — ma è
 il primo punto in cui «esporta un backup JSON» non basta più a mettersi al
 sicuro, e va chiuso insieme al backend, non dopo.
 
-**A6 residuo — il vincolo `unique` su `items.code` va scritto in SQL.** Il lato
+**A6 residuo — il vincolo `unique` su `items.code` va scritto in SQL.** *[solo con backend]* Il lato
 applicativo è chiuso (§12), ma finché il vincolo non è nel database due client
 possono ancora assegnare lo stesso codice in concorrenza: nessuno dei due vede
 l'altro. Prerequisito: la bonifica dei duplicati storici, che ora ha lo
 strumento per essere fatta.
 
-**A7 — numerazione documenti a `Math.max(...) + 1` su scansione**
+**A7 — numerazione documenti a `Math.max(...) + 1` su scansione** *[solo con backend]*
 (`nextRfqNumber`, `nextOrderNumber`, `nextPlanNumber`). In multiutente due
 persone che creano una richiesta nello stesso minuto ottengono lo stesso numero,
 garantito. Serve un contatore atomico lato server. Attenuante accertata: tutte le
 FK usano l'`id` UUID, **mai il numero** — quindi una rinumerazione al push non
 rompe nessun riferimento.
 
-**A8 residuo — i cicli in distinta restano impediti solo lato client.** Il lato
+**A8 residuo — i cicli in distinta restano impediti solo lato client.** *[solo con backend: in locale il client è uno, e basta]* Il lato
 applicativo è chiuso e ora copre anche la distinta parte (§15), ma `createsCycle()`
 protegge dentro **un solo** client. In cloud due utenti possono creare
 congiuntamente un anello che nessuno dei due vede, e `costOf` ricorre **per
@@ -737,11 +799,7 @@ il team. Serve un trigger ricorsivo su `item_components`, e non è opzionale.
 
 ### B. Prestazioni
 
-**B1 residuo — `findOrCreateSupplier` e `findOrCreateFamily` restano lineari per
-riga.** La parte pesante è risolta (§13): erano gli articoli, che sono migliaia.
-Fornitori e famiglie sono decine, quindi il prodotto resta piccolo — ma su un
-foglio da 5.000 righe con centinaia di fornitori si farebbe sentire, e la
-soluzione è la stessa già scritta. *Non urgente.*
+*(B1 residuo — fornitori e famiglie lineari nell'import — chiuso nella 0.83.1, §49.)*
 
 **B2 — `mrpDescend` non memoizza.** Su una distinta con sottoassiemi molto
 condivisi lo stesso ramo si riesplode per ogni percorso. Meno grave di quanto
@@ -779,7 +837,7 @@ qualcuno ne introduce una, nominandola. Il prezzo che questa voce dava per
 obbligato non c'era: per non farsi male non serviva rinunciare a niente, serviva
 contare.
 
-### D. Verso il database condiviso *(censite nella 0.80.1)*
+### D. Verso il database condiviso *(censite nella 0.80.1 — tutte [solo con backend])*
 
 Trovate nello stesso giro di §33–38, e non chiudibili in locale: vanno
 nell'adapter o nello schema SQL.
@@ -790,12 +848,7 @@ nell'adapter o nello schema SQL.
 
 *(D3 e D4 — chiavi circolari e scritture atomiche — chiuse nella 0.82.0, §41–42.)*
 
-**D9 — le date dei documenti sono il giorno UTC, non quello locale.** Richieste,
-ordini, ODL e piani nascono con `date: nowISO().slice(0, 10)`: fra mezzanotte e
-l'una (le due d'estate) in Italia è la data di ieri. È la lezione già pagata e
-scritta in `cloud-schema.md` — «calcolarle passando per la mezzanotte locale le
-anticipava di un giorno» — al rovescio, e `oggiISO()` in `core.js` esiste già.
-Non riguarda il cloud in sé, ma il cloud la rende condivisa.
+*(D9 — la data dei documenti nuovi in UTC — chiusa nella 0.83.1, §48: valeva anche in locale.)*
 
 **D5 — `localStorage` non regge lo specchio locale.** Il piano lo retrocede a
 specchio e coda offline, ma la quota è ~5 MB e lo scenario A di

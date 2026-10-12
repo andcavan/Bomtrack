@@ -1,9 +1,18 @@
 # Bomtrack — Schema dati cloud (contratto per il futuro adapter)
 
-Stato attuale: **nessun codice di rete**. I dati vivono in `localStorage` (chiave `bomtrack_v1`)
-come unico blob JSON, gestito da `store.js`. Questo documento definisce il contratto verso cui
-il layer dati è già predisposto: un backend condiviso per un piccolo team (Supabase / Cloudflare D1)
+Stato attuale: **nessun codice di rete, e lo spostamento su un backend non è previsto per
+ora.** I dati vivono in `localStorage` (chiave `bomtrack_v1`) come unico blob JSON, gestito da
+`store.js`, e l'app deve funzionare così. Questo documento definisce il contratto verso cui il
+layer dati è predisposto: un backend condiviso per un piccolo team (Supabase / Cloudflare D1)
 con **tabelle normalizzate**.
+
+> **Predisposto, ma spento (dalla 0.83.1).** La contabilità che serve solo a un backend —
+> date e cancellazioni riga per riga delle tabelle figlie, ricevimenti come eventi — costava
+> in locale spazio (+40% e +45% di archivio, misurati, in un localStorage da ~5 MB) e tempo
+> di salvataggio, senza alcun vantaggio per chi lavora da solo. Sta dietro un interruttore,
+> `Store.modoCondiviso`, **spento di serie**; lo accenderà l'adattatore cloud prima di
+> `Store.load()`, e accenderlo dopo non perde niente. Tutto ciò che questo documento descrive
+> resta vero e testato con l'interruttore acceso; in locale l'app si comporta come prima.
 
 ## Predisposizioni già attive (schema v2, aggiornate alla 0.24.0)
 
@@ -212,7 +221,8 @@ immaginarle.
   Le righe di documento (`rfq_lines`, `order_lines`) portano già la propria
   `uom`: è nell'unità del fornitore, e la conversione verso la giacenza si fa
   leggendo quella. Nessuna colonna in più.
-- **Il ricevuto non è una colonna.** Dalla 0.81.0 ogni ricevimento è un evento
+- **Il ricevuto non è una colonna** *(in modo condiviso; in locale resta il numero sulla
+  riga, vedi «Predisposto, ma spento»)*. Dalla 0.81.0 ogni ricevimento è un evento
   in `order_receipts` con la **differenza** rispetto a prima — chi è davanti
   alla merce digita il nuovo totale, l'app scrive il delta — e il ricevuto di
   una riga ne è la somma. Fino alla 0.80 era un numero riscritto sulla riga:

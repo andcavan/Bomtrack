@@ -993,7 +993,7 @@ function odpNew(part, qty, dueDate, extra) {
   return stampNew(Object.assign({
     id: gid(), number: nextOdpNumber(), itemId: part.id,
     code: part.code || '', name: part.name || '', uom: itemUom(part),
-    qty: n, date: nowISO().slice(0, 10), dueDate: dueDate || '',
+    qty: n, date: oggiISO(), dueDate: dueDate || '',
     status: 'bozza', title: '', notes: '', notesInternal: '',
     planId: null, jobId: null,
     phases: opFreezePhases(part), materials: opFreezeMaterials(part, n),
@@ -1144,7 +1144,7 @@ function opDocHead(o, supplierId) {
   const sup = supplierId ? getSupplier(supplierId) : null;
   return {
     title: `${o.number} — ${(o.code || '')}`.trim(),
-    date: nowISO().slice(0, 10), status: 'bozza', supplierId: supplierId || null,
+    date: oggiISO(), status: 'bozza', supplierId: supplierId || null,
     transport: (sup && sup.defaultTransport) || db.settings.transportDefault || '',
     payment: (sup && sup.defaultPayment) || db.settings.paymentDefault || '',
     rfqId: null, planId: o.planId || null, jobId: o.jobId || null,

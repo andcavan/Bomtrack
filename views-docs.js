@@ -817,7 +817,7 @@ function rfqListRows() {
 }
 function newRfq() {
   if (!roleGuard('docs')) return;
-  const r = Store.insert('rfqs', { id: gid(), number: nextRfqNumber(), title: '', date: nowISO().slice(0, 10),
+  const r = Store.insert('rfqs', { id: gid(), number: nextRfqNumber(), title: '', date: oggiISO(),
     status: 'bozza', notes: '', notesInternal: '', supplierId: null, planId: null,
     transport: db.settings.transportDefault || '', payment: db.settings.paymentDefault || '',
     lines: [], active: true });
@@ -1362,7 +1362,7 @@ function orderListRows() {
 }
 function newOrder() {
   if (!roleGuard('docs')) return;
-  const o = Store.insert('orders', { id: gid(), number: nextOrderNumber(), title: '', date: nowISO().slice(0, 10),
+  const o = Store.insert('orders', { id: gid(), number: nextOrderNumber(), title: '', date: oggiISO(),
     status: 'bozza', supplierId: null, transport: db.settings.transportDefault || '', payment: db.settings.paymentDefault || '',
     rfqId: null, planId: null, supplierConfirmation: '', notes: '', notesInternal: '', lines: [], active: true });
   docLeave('order'); currentOrderId = o.id; orderView = 'edit'; renderOrders();
@@ -1372,7 +1372,7 @@ function orderFromRfq(rfqId) {
   const r = getRfq(rfqId); if (!r) return;
   const sup = r.supplierId ? getSupplier(r.supplierId) : null;
   const o = stampNew({ id: gid(), number: nextOrderNumber(),
-    title: r.title || ('Da ' + r.number), date: nowISO().slice(0, 10), status: 'bozza',
+    title: r.title || ('Da ' + r.number), date: oggiISO(), status: 'bozza',
     supplierId: r.supplierId || null,
     transport: r.transport || (sup && sup.defaultTransport) || db.settings.transportDefault || '',
     payment: r.payment || (sup && sup.defaultPayment) || db.settings.paymentDefault || '',
@@ -1742,7 +1742,7 @@ function odlListRows() {
 }
 function newOdl() {
   if (!roleGuard('docs')) return;
-  const o = Store.insert('workOrders', { id: gid(), number: nextOdlNumber(), title: '', date: nowISO().slice(0, 10),
+  const o = Store.insert('workOrders', { id: gid(), number: nextOdlNumber(), title: '', date: oggiISO(),
     status: 'bozza', supplierId: null, transport: db.settings.transportDefault || '', payment: db.settings.paymentDefault || '',
     rfqId: null, planId: null, jobId: null, supplierConfirmation: '', notes: '', notesInternal: '', lines: [], active: true });
   docLeave('odl'); currentOdlId = o.id; odlView = 'edit'; renderOdl();

@@ -22,9 +22,12 @@ function ordine(id, righe) {
 }
 // Caricato dall'archivio, come all'avvio dell'app: è il percorso che fa da
 // riferimento per le impronte delle righe.
-function caricato(db) {
+// Con la traccia delle righe accesa, come la vorrà un adattatore cloud: in
+// locale è spenta (vedi il gruppo in fondo).
+function caricato(db, traccia) {
   const a = loadApp({ silent: true });
   a.seedStorage(db);
+  if (traccia !== false) a.eval('Store.modoCondiviso = true');
   a.ref('Store').load();
   a.asRole('admin');
   return a;
@@ -209,5 +212,27 @@ describe('Una modifica fa sempre avanzare la data', () => {
     const futuro = '2099-01-01T00:00:00.000Z';
     assert.equal(a.eval(`(() => { const r = { updatedAt: '${futuro}' }; touch(r); return r.updatedAt; })()`), '2099-01-01T00:00:00.001Z',
       'chi modifica un record ha visto quella versione: la sua deve vincere su di essa');
+  });
+});
+
+describe('In locale la traccia delle righe è spenta, e non costa niente', () => {
+  it('le righe storiche non si gonfiano di date al caricamento', () => {
+    const a = caricato(makeDb({ orders: [ordine('o1', [{ id: 'l1' }])] }), false);
+    a.eval('saveDB()');
+    const l = riga(a, 'o1', 'l1');
+    assert.equal(l.updatedAt, undefined, 'ogni data in più è spazio in un localStorage da ~5 MB');
+    assert.equal(l.createdAt, undefined);
+  });
+
+  it('modificare una riga non la data: lo farà il backend, quando ci sarà', () => {
+    const a = caricato(makeDb({ orders: [ordine('o1', [{ id: 'l1' }])] }), false);
+    a.eval('db.orders[0].lines[0].qty = 9; saveDB();');
+    assert.equal(riga(a, 'o1', 'l1').updatedAt, undefined);
+  });
+
+  it('accenderla dopo non perde niente: le righe prendono la data del documento', () => {
+    const a = caricato(makeDb({ orders: [ordine('o1', [{ id: 'l1' }])] }), false);
+    a.eval('Store.modoCondiviso = true; Store.markSynced();');
+    assert.equal(riga(a, 'o1', 'l1').updatedAt, VECCHIA);
   });
 });

@@ -963,7 +963,7 @@ function nextPlanNumber() {
 }
 function newPlan() {
   if (!roleGuard('docs')) return;
-  const p = Store.insert('plans', { id: gid(), number: nextPlanNumber(), title: '', date: nowISO().slice(0, 10),
+  const p = Store.insert('plans', { id: gid(), number: nextPlanNumber(), title: '', date: oggiISO(),
     notes: '', lines: [], active: true });
   currentPlanId = p.id; mrpView = 'edit'; renderMrp();
 }
@@ -971,7 +971,7 @@ function duplicatePlan(id) {
   if (!roleGuard('docs')) return;
   const src = getPlan(id); if (!src) return;
   const p = Store.insert('plans', { id: gid(), number: nextPlanNumber(), title: (src.title || src.number) + ' (copia)',
-    date: nowISO().slice(0, 10), notes: src.notes || '',
+    date: oggiISO(), notes: src.notes || '',
     lines: (src.lines || []).map(l => ({ id: gid(), itemId: l.itemId, qty: l.qty })), active: true });
   currentPlanId = p.id; mrpView = 'edit'; renderMrp();
   showToast('Piano ' + p.number + ' creato dalla copia');
@@ -1432,7 +1432,7 @@ function planDocHead(p, supplierId) {
   const sup = supplierId ? getSupplier(supplierId) : null;
   return {
     title: p.title ? p.title + ' — ' + (sup ? sup.name : 'da assegnare') : ('Da ' + p.number),
-    date: nowISO().slice(0, 10), status: 'bozza', supplierId: supplierId || null,
+    date: oggiISO(), status: 'bozza', supplierId: supplierId || null,
     transport: (sup && sup.defaultTransport) || db.settings.transportDefault || '',
     payment: (sup && sup.defaultPayment) || db.settings.paymentDefault || '',
     // La commessa segue il piano fino al documento: è la catena che permette di

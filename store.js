@@ -745,6 +745,16 @@ function migrateDB() {
   // Sono due collezioni e non una perché sono due documenti diversi — merce e
   // lavorazioni — ma i campi che li reggono sono gli stessi, e scriverli due
   // volte significherebbe che la seconda copia prima o poi resta indietro.
+  // Ricevimenti come eventi. Prima della normalizzazione qui sotto, che
+  // metterebbe a zero un `received` assente: assente vuol dire «ricavalo dagli
+  // eventi», zero vuol dire zero. Il primo caricamento dopo la 0.81 trova i
+  // ricevuti scritti sulle righe e nessun evento, e li trasforma in un saldo
+  // d'apertura per riga: il numero resta quello di prima.
+  // Solo in modo condiviso: in locale il ricevuto è il numero sulla riga.
+  // Una collezione dichiarata esiste sempre, anche vuota.
+  const primoGiroRicevimenti = !Array.isArray(db.receipts) || !db.receipts.length;
+  if (!Array.isArray(db.receipts)) db.receipts = [];
+  if (modoCondiviso) riallineaRicevuti(primoGiroRicevimenti);
   [].concat(db.orders || [], db.workOrders || []).forEach(o => {
     if (o.transport == null) o.transport = '';
     if (o.payment == null) o.payment = '';
@@ -798,13 +808,6 @@ function migrateDB() {
     if (!Array.isArray(p.lines)) p.lines = [];
     p.lines.forEach(l => { if (l.qty == null) l.qty = 0; });
   });
-  // Ricevimenti come eventi. Il primo caricamento dopo la 0.80.1 trova i
-  // ricevuti scritti sulle righe e nessun evento: li trasforma in un saldo
-  // d'apertura per riga, così il numero resta quello di prima. Da lì in poi è
-  // il ricevuto a discendere dagli eventi, a ogni caricamento.
-  const primoGiroRicevimenti = !Array.isArray(db.receipts);
-  if (primoGiroRicevimenti) db.receipts = [];
-  riallineaRicevuti(primoGiroRicevimenti);
   // ─── Ordini di produzione e dichiarazioni ───
   if (!db.prodOrders) db.prodOrders = [];
   if (!db.prodDecls) db.prodDecls = [];
@@ -984,8 +987,16 @@ function migrateDB() {
 const RICEVIMENTO_COLLS = ['orders', 'workOrders'];
 function ricevutoDaEventi(l) { return !!l && !l.odpId; }
 function arrotondaQta(x) { return Math.round((Number(x) || 0) * 1e6) / 1e6; }
-// Riporta `received` di ogni riga alla somma dei suoi eventi. Con `apertura`
-// fa il contrario, una volta sola: scrive un evento per il ricevuto che c'è.
+// Tiene d'accordo il ricevuto scritto sulla riga e la somma dei suoi eventi.
+// La regola, in locale, è che **il numero che l'utente vede non cambia mai da
+// solo**:
+//  - una riga senza `received` lo ricava dagli eventi: è il caso di una lettura
+//    da un backend, dove il campo — derivato — non viaggia;
+//  - una riga con un numero diverso dalla somma riceve un evento che pareggia
+//    la differenza (`apertura` al primo giro, `allineamento` dopo). Succede se
+//    qualche percorso scrive il campo senza passare da registraRicevuto():
+//    fino alla 0.83 qui si riscriveva il numero con la somma, e quel percorso
+//    avrebbe azzerato in silenzio un ricevuto che l'utente aveva visto.
 // Pota gli eventi di righe che non esistono più — tranne quelli di un
 // documento nel cestino, che ripristinato deve ritrovarli.
 function riallineaRicevuti(apertura) {
@@ -1006,14 +1017,17 @@ function riallineaRicevuti(apertura) {
     }
     return nelCestino.has(r.orderId);
   });
+  const oggi = typeof oggiISO === 'function' ? oggiISO() : nowISO().slice(0, 10);
   righe.forEach(({ o, l, c }, id) => {
-    if (apertura) {
-      const n = arrotondaQta(l.received);
-      if (n) db.receipts.push(stampNew({ id: newId(), coll: c, orderId: o.id, lineId: id, qty: n,
-        kind: 'apertura', date: String(o.updatedAt || o.date || nowISO()).slice(0, 10), note: '' }));
-      return;
-    }
-    l.received = arrotondaQta(somme.get(id) || 0);
+    const somma = arrotondaQta(somme.get(id) || 0);
+    if (l.received == null) { l.received = somma; return; }
+    const visto = arrotondaQta(l.received);
+    const diff = arrotondaQta(visto - somma);
+    l.received = visto;
+    if (!diff) return;
+    db.receipts.push(stampNew({ id: newId(), coll: c, orderId: o.id, lineId: id, qty: diff,
+      kind: apertura ? 'apertura' : 'allineamento',
+      date: apertura ? String(o.date || o.updatedAt || oggi).slice(0, 10) : oggi, note: '' }));
   });
 }
 // L'unico modo di cambiare il ricevuto di una riga: si dice il **nuovo
@@ -1023,7 +1037,8 @@ function registraRicevuto(coll, doc, l, totale) {
   const nuovo = arrotondaQta(totale);
   const delta = arrotondaQta(nuovo - (Number(l.received) || 0));
   l.received = nuovo;
-  if (!delta || !doc || l.id == null || !ricevutoDaEventi(l)) return null;
+  // In locale basta il numero: l'evento serve solo dove si scrive in due.
+  if (!modoCondiviso || !delta || !doc || l.id == null || !ricevutoDaEventi(l)) return null;
   if (!Array.isArray(db.receipts)) db.receipts = [];
   const oggi = typeof oggiISO === 'function' ? oggiISO() : nowISO().slice(0, 10);
   const ev = stampNew({ id: newId(), coll, orderId: doc.id, lineId: l.id, qty: delta, kind: 'ricevimento', date: oggi, note: '' });
@@ -1248,6 +1263,20 @@ function recSignature(coll, r) {
 // come modificato. Le righe storiche senza data prendono quella del padre —
 // non l'adesso, che le farebbe vincere a torto su una modifica vera altrui.
 let _childFp = null;        // Map 'collezione|array' → Map(id riga → impronta del contenuto)
+// ─── Modo condiviso: spento di serie ───
+// Due contabilità servono solo a un backend condiviso, e in locale costano:
+//  - date e cancellazioni riga per riga delle tabelle figlie (stampChildRows):
+//    la prima volta datavano ogni riga esistente (+40% di archivio, misurato,
+//    in un localStorage da ~5 MB) e a ogni salvataggio rifacevano le impronte
+//    (tempo di salvataggio quasi triplicato);
+//  - i ricevimenti come eventi (registraRicevuto): un evento per ogni modifica
+//    del ricevuto, ~290 byte l'uno (+45% di archivio su 2.000 righe ricevute).
+// Il loro scopo è far convivere due persone che scrivono insieme, e in locale
+// quella situazione non esiste. Accenderle dopo non perde niente: le righe
+// senza data prendono quella del padre, e ogni ricevuto scritto sulle righe
+// diventa un evento d'apertura. Le accende un adattatore cloud, con
+// `Store.modoCondiviso = true` **prima** di Store.load().
+let modoCondiviso = false;
 // L'impronta è la riga serializzata così com'è, date comprese: si riprende
 // dopo averla datata, quindi la data nuova non conta come modifica al giro
 // successivo. Una copia senza i campi di data costava quattro volte tanto, e su
@@ -1256,7 +1285,7 @@ function childFingerprint(x) {
   try { return JSON.stringify(x); } catch (e) { return ''; }
 }
 function stampChildRows() {
-  if (!db) return;
+  if (!db || !modoCondiviso) return;
   const riferimento = !_childFp;
   const prossime = new Map();
   COLLECTIONS.forEach(c => {
@@ -1296,6 +1325,7 @@ function stampChildRows() {
 // un'informazione che un invio di soli upsert possa esprimere — è la stessa
 // ragione dei tombstone sui record radice, un livello più giù.
 function snapshotChildIds() {
+  if (!modoCondiviso) return null;
   const m = new Map();
   COLLECTIONS.forEach(c => {
     const figli = childrenOf(c);
@@ -1520,6 +1550,10 @@ const Store = {
   // Vero finché una modifica è rimasta solo in memoria. Chiudere la scheda in
   // questo stato perde tutto il lavoro fatto dal primo errore in poi.
   isUnsaved() { return dbUnsaved; },
+  // La contabilità che serve solo a un backend condiviso: vedi modoCondiviso.
+  // La accende chi sincronizza; in locale resta spenta.
+  get modoCondiviso() { return modoCondiviso; },
+  set modoCondiviso(v) { modoCondiviso = !!v; _childFp = null; },
   // Il prossimo commit() scrive anche se un'altra scheda ha modificato
   // l'archivio: lo chiama chi ha letto l'avviso e ha scelto di tenere la
   // propria versione. Vale una volta sola, di proposito — una scelta fatta su

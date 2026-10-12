@@ -155,10 +155,43 @@ function resolveType(raw) {
   return '';
 }
 // Trova (o crea) un fornitore per nome
+// ─── Fornitori e famiglie per nome, durante un import (B1) ───
+// Erano una ricerca lineare per riga: su un foglio da 5.000 righe con
+// centinaia di fornitori, milioni di confronti. Un indice per nome, con la
+// stessa regola di codeIndex(): vale finché l'array è lo stesso e non ha
+// cambiato lunghezza, e chi crea un record durante l'import ce lo aggiunge a
+// mano — altrimenti ogni creazione lo farebbe ricostruire da capo. Vince il
+// primo, come faceva il `.find()` che sostituisce.
+const _nomeIdx = { arr: null, len: -1, map: null };
+const _famNomeIdx = { arr: null, len: -1, map: null };
+function indiceNomi(cache, arr, chiave) {
+  if (cache.map && cache.arr === arr && cache.len === arr.length) return cache.map;
+  const m = new Map();
+  arr.forEach(x => { const k = chiave(x); if (!m.has(k)) m.set(k, x); });
+  cache.arr = arr; cache.len = arr.length; cache.map = m;
+  return m;
+}
+function aggiungiANomi(cache, arr, chiave, x) {
+  if (!cache.map || cache.arr !== arr) return;
+  const k = chiave(x);
+  if (!cache.map.has(k)) cache.map.set(k, x);
+  cache.len = arr.length;
+}
+// Azzerati da invalidateCaches(), a ogni salvataggio, come gli indici di
+// core.js: un fornitore rinominato in Gestione non cambia la lunghezza
+// dell'elenco, e un indice tenuto da un import all'altro lo cercherebbe ancora
+// col nome vecchio.
+function invalidateNomiImport() { _nomeIdx.map = null; _famNomeIdx.map = null; }
+const chiaveFornitore = x => String((x && x.name) || '').toLowerCase();
+const chiaveFamiglia = x => String((x && x.name) || '').toLowerCase() + '\u0000' + ((x && x.kind) || 'acquistato');
 function findOrCreateSupplier(name, report) {
   const n = String(name).trim(); if (!n) return '';
-  let s = db.suppliers.find(x => x.name.toLowerCase() === n.toLowerCase());
-  if (!s) { s = stampNew({ id: gid(), name: n, referente: '', email: '', active: true }); db.suppliers.push(s); report.createdSuppliers++; }
+  let s = indiceNomi(_nomeIdx, db.suppliers, chiaveFornitore).get(n.toLowerCase());
+  if (!s) {
+    s = stampNew({ id: gid(), name: n, referente: '', email: '', active: true });
+    db.suppliers.push(s); report.createdSuppliers++;
+    aggiungiANomi(_nomeIdx, db.suppliers, chiaveFornitore, s);
+  }
   return s.id;
 }
 // Le sigle già occupate nel campo di gara di chi sta per nascere: l'ambito per
@@ -192,10 +225,12 @@ function findOrCreateFamily(famName, subName, type, report) {
   if (!fn) return result;
   const kind = type;
   const avvisa = report && report.warnings ? (m => report.warnings.push(m)) : null;
-  let f = (db.families || []).find(x => x.name.toLowerCase() === fn.toLowerCase() && (x.kind || 'acquistato') === kind);
+  if (!db.families) db.families = [];
+  let f = indiceNomi(_famNomeIdx, db.families, chiaveFamiglia).get(chiaveFamiglia({ name: fn, kind }));
   if (!f) {
     const sigla = siglaImport(fn, '', sigleFamiglia(kind), avvisa, 'Macrofamiglia');
     f = stampNew({ id: gid(), name: fn, kind, sigla, subs: [] }); db.families.push(f); report.createdFamilies++;
+    aggiungiANomi(_famNomeIdx, db.families, chiaveFamiglia, f);
   }
   result.familyId = f.id;
   const sn = String(subName).trim();
