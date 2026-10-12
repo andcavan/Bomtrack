@@ -183,3 +183,163 @@ function tablesForChanges(changes) {
   });
   return out;
 }
+
+// ═══════════════════════════════════════════════════════════
+//  Righe locali ↔ righe del database (nomi delle colonne e tipi)
+// ═══════════════════════════════════════════════════════════
+// flattenDB() produce righe con i nomi del codice — `unitCost`, `parentId` —
+// mentre le tabelle hanno i nomi di SQL: `unit_cost`, `item_id`. E il modello
+// locale scrive `''` per «vuoto» anche dove una colonna `numeric`, `date` o
+// `uuid` vuole NULL: Postgres rifiuterebbe la riga, e con lei l'intero invio.
+// Qui sta la traduzione, in tutte e due le direzioni, separata da flattenDB()
+// perché quella resta l'inverso esatto del documento locale e questa no:
+// un `''` che va al server come NULL torna come NULL.
+//
+// La convenzione è una sola — camelCase → snake_case — e le eccezioni sono
+// scritte qui sotto, per tabella. Un campo che nessuno ha dichiarato passa con
+// il nome convertito: se la colonna non esiste il server lo rifiuta **ad alta
+// voce**, che è meglio di un elenco chiuso che lo butterebbe in silenzio.
+
+// La colonna che riporta la riga figlia al padre (`parentId` in flattenDB).
+// `rename`: dove la convenzione non basta. Nelle righe di distinta e di ciclo
+// `itemId` è il **figlio**, e `item_id` è già il padre; in `item_prices`
+// `desc` è una parola riservata di SQL.
+// `drop`: campi che servono solo in locale e non hanno una colonna.
+// `id`: il tipo della chiave quando non è un uuid — le righe senza identità
+// propria hanno una chiave costruita (`itemId#components#0`), che è testo.
+const CLOUD_TABLES = {
+  items: { drop: ['priceListSeeded'] },
+  item_components: { parent: 'item_id', rename: { itemId: 'child_item_id' }, id: 'text' },
+  item_operations: { parent: 'item_id', id: 'text' },
+  item_cycle_rows: { parent: 'item_id', rename: { itemId: 'child_item_id' }, id: 'text' },
+  item_prices: { parent: 'item_id', rename: { desc: 'description' } },
+  sub_families: { parent: 'family_id' },
+  work_center_suppliers: { parent: 'work_center_id' },
+  rfq_lines: { parent: 'rfq_id' },
+  order_lines: { parent: 'order_id' },
+  work_order_lines: { parent: 'work_order_id' },
+  production_plan_lines: { parent: 'plan_id' },
+  production_order_phases: { parent: 'production_order_id' },
+  production_order_materials: { parent: 'production_order_id' },
+};
+
+// Il tipo SQL delle colonne che non sono testo, per nome del campo locale.
+// Vale per tutte le tabelle: lo stesso nome ha lo stesso significato ovunque,
+// ed è una regola che il modello rispetta già. I campi `…Id` sono uuid
+// (eccetto quelli in COLONNE_TESTO_ID); tutto il resto è testo.
+const CLOUD_TYPES = (() => {
+  const t = {};
+  ['qty', 'price', 'minQty', 'leadDays', 'scrapPct', 'hours', 'days', 'rate', 'cost', 'costOverride',
+    'unitCost', 'purchasePrice', 'altFactor', 'overheadPctOverride', 'marginPctOverride', 'hourlyRate',
+    'capacityHours', 'received', 'perPezzo', 'scrap', 'lotSize', 'safetyStock', 'size'].forEach(k => { t[k] = 'numeric'; });
+  ['pos', 'runFrom', 'runTo', 'seq', 'opIndex', 'passata', 'page', 'incrDigitsN', 'incrDigitsS', 'gCodeLen'].forEach(k => { t[k] = 'int'; });
+  ['date', 'dueDate', 'deliveryDate', 'confirmedDate'].forEach(k => { t[k] = 'date'; });
+  ['createdAt', 'updatedAt', 'deletedAt', 'doneAt'].forEach(k => { t[k] = 'timestamptz'; });
+  ['active', 'favorite', 'obsolete', 'done'].forEach(k => { t[k] = 'bool'; });
+  ['snapshot', 'record'].forEach(k => { t[k] = 'jsonb'; });
+  ['createdBy', 'updatedBy', 'deletedBy'].forEach(k => { t[k] = 'uuid'; });
+  return t;
+})();
+// Campi che finiscono in `Id` ma non puntano a un record con chiave uuid: i
+// concetti vivono nelle impostazioni, con id leggibili ('cn-albero').
+const COLONNE_TESTO_ID = ['conceptId'];
+function cloudType(table, campo) {
+  if (campo === 'id') return (CLOUD_TABLES[table] && CLOUD_TABLES[table].id) || 'uuid';
+  if (CLOUD_TYPES[campo]) return CLOUD_TYPES[campo];
+  if (/Id$/.test(campo) && !COLONNE_TESTO_ID.includes(campo)) return 'uuid';
+  return 'text';
+}
+
+// Al ritorno, NULL torna `''` dove il modello locale scrive `''` per «vuoto»:
+// sono le normalizzazioni di migrateDB(), e un `null` lì farebbe risultare
+// modificato ogni record al primo confronto. Altrove NULL resta null.
+const VUOTO_STRINGA = ['price', 'minQty', 'leadDays', 'deliveryDate', 'dueDate', 'confirmedDate'];
+const VUOTO_STRINGA_TABELLA = {
+  items: ['familyId', 'subFamilyId', 'groupItemId', 'machineItemId'],
+  reminders: ['jobId'],
+};
+
+function camelToSnake(k) { return String(k).replace(/[A-Z]/g, c => '_' + c.toLowerCase()); }
+function snakeToCamel(k) { return String(k).replace(/_([a-z0-9])/g, (_, c) => c.toUpperCase()); }
+const UUID_COLONNA = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const DATA_COLONNA = /^\d{4}-\d{2}-\d{2}$/;
+
+// { tabella: [righe di flattenDB] } → { tabella: [righe con i nomi e i tipi del database] }.
+// Lancia, con l'elenco dei problemi, se una riga non entrerebbe: un valore che
+// non è un numero in una colonna numerica, una data illeggibile, un oggetto
+// fuori da una colonna jsonb, un id che non è un uuid. Meglio fermarsi qui,
+// tutti insieme e con nome e riga, che alla prima risposta 400 del server.
+// `opts.uuid === false` salta il controllo degli id (dati di prova).
+function righeCloud(tables, opts) {
+  const o = opts || {};
+  const out = {};
+  const problemi = [];
+  const segnala = (tab, r, campo, msg) => { if (problemi.length < 50) problemi.push(`${tab}/${r.id}: ${campo} ${msg}`); };
+  Object.keys(tables || {}).forEach(tab => {
+    const def = CLOUD_TABLES[tab] || {};
+    const via = new Set(def.drop || []);
+    out[tab] = (tables[tab] || []).map(r => {
+      const riga = {};
+      Object.keys(r).forEach(k => {
+        if (via.has(k)) return;
+        let v = r[k];
+        if (v === undefined) return;
+        const tipo = k === 'parentId' ? 'uuid' : cloudType(tab, k);
+        const col = k === 'parentId' ? (def.parent || 'parent_id')   // ogni tabella figlia è in CLOUD_TABLES; il ripiego è per sicurezza
+          : (def.rename && def.rename[k]) || camelToSnake(k);
+        if (tipo !== 'text' && v === '') v = null;
+        if (v !== null) {
+          if (tipo === 'jsonb') { /* qualunque valore */ }
+          else if (typeof v === 'object') segnala(tab, r, k, 'è un oggetto, e la colonna non è jsonb');
+          else if (tipo === 'numeric' || tipo === 'int') {
+            const n = typeof v === 'number' ? v : Number(v);
+            if (typeof v === 'boolean' || !Number.isFinite(n)) segnala(tab, r, k, `non è un numero (${JSON.stringify(v)})`);
+            else v = n;
+          }
+          else if (tipo === 'date' && !DATA_COLONNA.test(String(v))) segnala(tab, r, k, `non è una data AAAA-MM-GG (${JSON.stringify(v)})`);
+          else if (tipo === 'bool' && typeof v !== 'boolean') segnala(tab, r, k, `non è vero/falso (${JSON.stringify(v)})`);
+          else if (tipo === 'uuid' && o.uuid !== false && !UUID_COLONNA.test(String(v))) segnala(tab, r, k, `non è un uuid (${JSON.stringify(v)})`);
+        }
+        riga[col] = v;
+      });
+      return riga;
+    });
+  });
+  if (problemi.length) {
+    const e = new Error('righe non valide per il database:\n' + problemi.join('\n'));
+    e.problemi = problemi;
+    throw e;
+  }
+  return out;
+}
+
+// L'inverso: righe del database → righe come le vuole nestDB().
+function righeLocali(tables) {
+  const out = {};
+  Object.keys(tables || {}).forEach(tab => {
+    const def = CLOUD_TABLES[tab] || {};
+    const indietro = {};
+    Object.keys(def.rename || {}).forEach(k => { indietro[def.rename[k]] = k; });
+    const vuoti = new Set(VUOTO_STRINGA.concat(VUOTO_STRINGA_TABELLA[tab] || []));
+    out[tab] = (tables[tab] || []).map(r => {
+      const riga = {};
+      Object.keys(r).forEach(col => {
+        const k = (def.parent && col === def.parent) ? 'parentId' : (indietro[col] || snakeToCamel(col));
+        let v = r[col];
+        if (v === null && vuoti.has(k)) v = '';
+        riga[k] = v;
+      });
+      return riga;
+    });
+  });
+  return out;
+}
+
+// Il percorso intero, nei due sensi. Verso il server si tolgono **sempre** i
+// segreti e i campi derivati: queste sono le righe da inviare, non una copia.
+function dbVersoCloud(source, opts) {
+  return righeCloud(flattenDB(source, { stripSecrets: true, stripDerived: true }), opts);
+}
+function dbDaCloud(tables, extra) {
+  return nestDB(righeLocali(tables), extra);
+}

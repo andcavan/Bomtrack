@@ -592,6 +592,32 @@ stima di `sostenibilita-free-tier.md` insieme a `production_declarations`.
 
 ---
 
+## Risolto nella 0.81.1
+
+### 40. D2 — dalla riga locale alla riga del database
+`flattenDB()` produceva i nomi del codice (`unitCost`, un `parentId`
+generico), flag locali (`priceListSeeded`) e `''` dove una colonna `numeric`,
+`date` o `uuid` vuole NULL: il primo invio sarebbe stato rifiutato per intero.
+Prima di scrivere la traduzione si è misurato invece di indovinare: la suite
+intera è stata fatta girare registrando, a ogni salvataggio, nome e tipo di
+ogni campo di ogni tabella. L'inventario ha trovato quello che a mano non si
+vedeva — riferimenti uuid a `''` negli articoli (`familyId`, `groupItemId`…)
+e nei promemoria, `''` e `null` mescolati nei riferimenti delle righe di
+ciclo, `desc` come nome di colonna (parola riservata in SQL).
+
+`cloud-map.js` ha ora `righeCloud()` / `righeLocali()` e i due percorsi
+completi `dbVersoCloud()` / `dbDaCloud()`. La regola è una (camelCase →
+snake_case, `''` → NULL nelle colonne tipizzate) e le eccezioni sono un
+registro (`CLOUD_TABLES`, `CLOUD_TYPES`). Prima di inviare si controlla
+tutto, e si dice tutto insieme. I riferimenti vuoti del ciclo sono
+normalizzati a `null` in `migrateDB()`. `flattenDB()` non è stato toccato: resta
+l'inverso esatto del documento locale.
+
+Coperto da `test/cloud-colonne.test.js` (16 controlli), incluso il giro
+completo righe locali → SQL → righe locali.
+
+---
+
 ## Aperto
 
 ### A. Sicurezza
@@ -681,11 +707,7 @@ nell'adapter o nello schema SQL.
 
 *(D1 — il ricevuto come contatore sovrascritto — chiusa nella 0.81.0, §39.)*
 
-**D2 — `flattenDB()` non traduce i nomi.** Produce camelCase e un `parentId`
-generico; lo schema ha snake_case e `item_id`/`rfq_id`. Esporta anche flag
-locali (`priceListSeeded`) e `''` dove una colonna `numeric` o `date` vuole
-`NULL` (`item_prices.minQty`/`leadDays`, `price` e `deliveryDate` sulle righe).
-Serve una mappa colonne per tabella, con whitelist e `'' → null`, nell'adapter.
+*(D2 — nomi e tipi delle colonne — chiusa nella 0.81.1, §40.)*
 
 **D3 — chiavi esterne circolari.** `items.active_price_id → item_prices →
 items`, componenti e `machine_item_id` fra articoli: vincoli `deferrable` e

@@ -57,8 +57,8 @@ immaginarle.
 | `items` | `items` | id uuid PK, code, name, type enum, uom, notes, active, favorite, obsolete, unit_cost, purchase_price, supplier_id FK, supplier_code, supplier_desc, active_price_id FK → `item_prices(id)`, sourcing ('make'\|'buy'), family_id FK, sub_family_id FK, machine_item_id FK, group_item_id FK, sigla, overhead_pct_override, margin_pct_override, created_at, updated_at |
 | `items[].components` | `item_components` | item_id uuid FK, child_item_id uuid FK, qty numeric, scrap_pct numeric |
 | `items[].operations` | `item_operations` | item_id uuid FK, work_center_id uuid FK, hours numeric, note |
-| `items[].cycle` | `item_cycle_rows` | item_id uuid FK, kind ('item'\|'op'), pos int. **Riga articolo** (`kind='item'`): item_id di riferimento, qty, cost_override nullable. **Riga lavorazione** (`kind='op'`): work_center_id FK, supplier_id FK **nullable** (nullo = interna, valorizzato = conto lavoro esterno), cost_mode ('fisso'\|'orario'), hours numeric, days int, rate numeric, cost numeric, note |
-| `items[].priceList` | `item_prices` | id uuid PK, item_id uuid FK, supplier_id FK **nullable** (quotazione inserita a mano), price numeric, min_qty numeric, lead_days int, code, desc, date, rfq_id FK nullable, line_id, note, created_at, updated_at |
+| `items[].cycle` | `item_cycle_rows` | item_id uuid FK, kind ('item'\|'op'), pos int. **Riga articolo** (`kind='item'`): child_item_id (l'articolo citato; `item_id` è il padre), qty, cost_override nullable. **Riga lavorazione** (`kind='op'`): work_center_id FK, supplier_id FK **nullable** (nullo = interna, valorizzato = conto lavoro esterno), cost_mode ('fisso'\|'orario'), hours numeric, days int, rate numeric, cost numeric, note |
+| `items[].priceList` | `item_prices` | id uuid PK, item_id uuid FK, supplier_id FK **nullable** (quotazione inserita a mano), price numeric, min_qty numeric, lead_days int, code, description (in locale `desc`, che in SQL è una parola riservata), date, rfq_id FK nullable, line_id, note, created_at, updated_at |
 | `rfqs` | `rfqs` | id uuid PK, number unique per anno, title, date, status ('bozza'\|'inviata'\|'ricevuta'\|'chiusa'), supplier_id FK, transport, payment, plan_id FK nullable, notes, notes_internal, active, created_at, updated_at |
 | `rfqs[].lines` | `rfq_lines` | id uuid PK, rfq_id uuid FK, item_id FK **nullable** (riga manuale, o riga di conto lavoro), phase_key text **nullable**, phase_keys text **nullable** (tutte le fasi della tratta, separate da virgola), code, description, uom, qty, price nullable, delivery_date, note |
 | `orders` | `orders` | id uuid PK, number unique per anno, title, date, status ('bozza'\|'inviato'\|'confermato'\|'parziale'\|'evaso'\|'annullato'), supplier_id FK, transport, payment, rfq_id FK nullable, plan_id FK nullable, supplier_confirmation, notes, notes_internal, active, created_at, updated_at |
@@ -363,6 +363,47 @@ non è un array. Le scrive `flattenDB()` e le toglie `nestDB()`.
 | `parent_id uuid` | ogni tabella figlia | La chiave che riporta la riga al suo documento. |
 | `id` costruito | `item_components`, `item_operations`, `item_cycle_rows` | Quelle righe non hanno un id proprio: in locale la loro identità è la posizione. La chiave si costruisce deterministica (`itemId#array#pos`) — **non è un'identità stabile nel tempo**, e non pretende di esserlo: quelle tre tabelle si sincronizzano sostituendo l'insieme intero, proprio perché un'identità di riga lì non esiste. |
 | `child_sets text` | ogni tabella radice con figli | Distingue un array figlio **vuoto** da uno **assente**, differenza che «nessuna riga» non sa esprimere. Non è una sottigliezza: un assieme con la distinta svuotata a mano ha `components: []`, un commerciale non ha `components` affatto. Se al pull l'assieme si ritrovasse senza il campo, `saveNewComponent()` lancerebbe al primo componente aggiunto. |
+
+## Nomi e tipi: dalla riga locale alla riga del database
+
+`flattenDB()` resta l'inverso esatto del documento locale, e parla la lingua
+del codice. La traduzione verso SQL è un passo a sé, in `cloud-map.js`
+(dalla 0.81.1):
+
+```js
+dbVersoCloud(db)            // flattenDB senza segreti né derivati, poi righeCloud()
+dbDaCloud(tabelle, extra)   // righeLocali(), poi nestDB()
+righeCloud(t, { uuid })     // { tabella: [righe camelCase] } → righe SQL; lancia con l'elenco dei problemi
+righeLocali(t)              // l'inverso
+```
+
+- **Nomi**: camelCase → snake_case, sempre. Le eccezioni stanno in
+  `CLOUD_TABLES`: la colonna padre di ogni tabella figlia (`item_id`,
+  `rfq_id`, `production_order_id`…, al posto del `parentId` generico),
+  `child_item_id` in `item_components` e `item_cycle_rows` (dove `item_id` è
+  già il padre), `description` per `desc` in `item_prices`, e i campi che non
+  hanno colonna (`priceListSeeded`). Un campo non dichiarato passa col nome
+  convertito: se la colonna non esiste il server lo rifiuta ad alta voce, che
+  è meglio di un elenco chiuso che lo butterebbe in silenzio.
+- **Tipi**: `CLOUD_TYPES`, per nome di campo e uguale in tutte le tabelle
+  (`qty`/`price` numeric, `date`/`dueDate` date, `active` bool, `snapshot`/`record`
+  jsonb…); i campi `…Id` sono uuid tranne `conceptId` (i concetti vivono nelle
+  impostazioni, con id leggibili). Le chiavi costruite delle righe senza
+  identità (`item_components`, `item_operations`, `item_cycle_rows`) sono testo.
+- **Vuoto**: `''` diventa NULL in ogni colonna che non è testo — un prezzo non
+  quotato, una data non fissata, una famiglia non assegnata. Al ritorno NULL
+  torna `''` sui campi dove il modello locale scrive `''` (`VUOTO_STRINGA`):
+  senza, ogni record risulterebbe modificato al primo confronto.
+- **Controllo prima dell'invio**: `righeCloud()` si ferma, con tabella, id e
+  campo di ogni problema, su un numero illeggibile, una data non AAAA-MM-GG,
+  un oggetto fuori da una colonna jsonb, un id non uuid. Un invio è
+  tutto-o-niente: meglio saperlo qui, tutto insieme, che dalla prima risposta
+  400.
+
+Una conseguenza da conoscere: una colonna che il record locale non aveva
+torna dal server come `null` esplicito. È innocuo per i lettori (che
+guardano la verità del valore) e per la sincronizzazione (che guarda
+`updated_at`), ma il documento non è identico byte per byte.
 
 ## Politica di merge, per tabella
 

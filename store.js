@@ -923,6 +923,10 @@ function migrateDB() {
     // costo — il prezzo concordato col terzista è quello, non ore × tariffa — ma
     // dicono quanto la fase occupa il centro, ed è da lì che nasce il carico.
     (it.cycle || []).forEach(row => {
+      // Riferimenti vuoti: `''` e `null` dicevano la stessa cosa — «nessuno» —
+      // e convivevano. In una colonna uuid `''` non entra, e al ritorno dal
+      // server diventerebbe null: si sceglie null una volta, qui.
+      ['itemId', 'workCenterId', 'supplierId'].forEach(k => { if (row[k] === '') row[k] = null; });
       if (row.kind !== 'op') return;
       const wc = db.workCenters.find(w => w.id === row.workCenterId);
       const tariffa = wc ? (Number(wc.hourlyRate) || 0) : 0;

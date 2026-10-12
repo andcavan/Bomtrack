@@ -2,6 +2,20 @@
 
 Le revisioni seguono il versionamento semantico `0.MINOR.PATCH`: **MINOR** per nuove funzionalità, **PATCH** per correzioni. La versione in cima è quella in `APP_VERSION` (`core.js`) e mostrata nell'header dell'app.
 
+### 0.81.1 — 2026-10-12
+
+**Le righe parlano SQL.** Preparazione al database condiviso, nessun cambiamento visibile nell'app. `flattenDB()` produceva i nomi del codice e `''` dove una colonna numerica, di data o uuid vuole NULL: il primo invio sarebbe stato rifiutato per intero.
+
+**Aggiunto**
+- `dbVersoCloud()` / `dbDaCloud()` in `cloud-map.js`: nomi delle colonne in snake_case, la colonna padre di ogni tabella figlia col suo nome (`item_id`, `order_id`…), `child_item_id` in distinta e ciclo, `description` al posto di `desc` (parola riservata), `''` → NULL nelle colonne tipizzate e ritorno esatto.
+- Controllo prima dell'invio: numeri illeggibili, date storte, oggetti fuori posto e id non uuid si elencano tutti insieme, con tabella, riga e campo.
+
+**Corretto**
+- Nelle righe di ciclo i riferimenti vuoti erano a volte `''` e a volte `null`: ora sempre `null`.
+
+**Verifica**
+- 16 nuovi controlli in `test/cloud-colonne.test.js` (suite da 1877 a 1893).
+
 ### 0.81.0 — 2026-10-12
 
 **I ricevimenti diventano eventi.** Il ricevuto di una riga d'ordine era un numero riscritto a ogni arrivo, e la giacenza ne è la somma: con il database condiviso, due persone che registrano un arrivo sulla stessa riga si sarebbero sovrascritte, e un carico sarebbe sparito dal magazzino senza un avviso. Ora ogni ricevimento è un evento con la differenza, e il ricevuto ne è la somma. Per chi usa l'app non cambia niente: si digita il totale ricevuto come prima.
