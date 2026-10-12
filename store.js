@@ -265,8 +265,18 @@ function nowISO() { return new Date().toISOString(); }
 // createdBy/updatedBy di ogni record → created_by/updated_by in cloud.
 let actorId = null;
 let lastTrashId = null;   // ultima voce di cestino creata (per l'annulla immediato)
+// L'istante di una modifica: adesso, ma sempre **dopo** quello che il record
+// aveva. Due scritture nello stesso millisecondo producevano la stessa data, e
+// per la sincronizzazione — che riconosce una modifica dal cambio di
+// `updatedAt` e decide chi vince confrontandolo — la seconda non esisteva.
+// Succedeva davvero: un test di rinomina falliva una volta su otto.
+function istanteDopo(prec) {
+  const ora = Date.now();
+  const p = prec ? Date.parse(prec) : NaN;
+  return new Date(Number.isFinite(p) && p >= ora ? p + 1 : ora).toISOString();
+}
 function stampNew(rec) {
-  const t = nowISO();
+  const t = istanteDopo(rec.updatedAt);
   if (!rec.createdAt) rec.createdAt = t;
   rec.updatedAt = t;
   if (actorId) { if (!rec.createdBy) rec.createdBy = actorId; rec.updatedBy = actorId; }
@@ -274,7 +284,7 @@ function stampNew(rec) {
 }
 function touch(rec) {
   if (!rec) return rec;
-  rec.updatedAt = nowISO();
+  rec.updatedAt = istanteDopo(rec.updatedAt);
   if (actorId) rec.updatedBy = actorId;
   return rec;
 }

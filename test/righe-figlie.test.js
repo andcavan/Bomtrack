@@ -196,3 +196,18 @@ describe('remapIds — i riferimenti agli utenti', () => {
     assert.equal(db.trash[0].record.createdBy, 'u-vecchio', 'il contenuto del cestino è una fotografia e non si riscrive');
   });
 });
+
+describe('Una modifica fa sempre avanzare la data', () => {
+  it('due touch nello stesso millisecondo danno due date diverse, in ordine', () => {
+    const a = loadApp({ silent: true });
+    const [d1, d2, d3] = JSON.parse(a.eval('(() => { const r = {}; touch(r); const x = r.updatedAt; touch(r); const y = r.updatedAt; touch(r); return JSON.stringify([x, y, r.updatedAt]); })()'));
+    assert.ok(d1 < d2 && d2 < d3, `${d1} ${d2} ${d3}`);
+  });
+
+  it('anche su un record datato nel futuro da un orologio avanti', () => {
+    const a = loadApp({ silent: true });
+    const futuro = '2099-01-01T00:00:00.000Z';
+    assert.equal(a.eval(`(() => { const r = { updatedAt: '${futuro}' }; touch(r); return r.updatedAt; })()`), '2099-01-01T00:00:00.001Z',
+      'chi modifica un record ha visto quella versione: la sua deve vincere su di essa');
+  });
+});

@@ -1953,14 +1953,20 @@ function bulkFavorite(ids, valore) {
 function bulkDelete(ids) {
   if (!roleGuard('catalog')) return;
   const items = (ids || []).map(getItem).filter(Boolean);
-  const usati = items.filter(it => usedBy(it.id).length);
-  const liberi = items.filter(it => !usedBy(it.id).length);
+  // La stessa doppia regola di delItem: non solo le distinte, anche documenti,
+  // cicli, piani e magazzino. Fino alla 0.81 qui contava solo la distinta, e un
+  // articolo già ordinato o movimentato spariva lasciando righe e movimenti
+  // orfani — che il database condiviso, con le sue chiavi, avrebbe rifiutato
+  // facendo fallire l'intero invio.
+  const inUso = it => usedBy(it.id).length > 0 || isItemUsedAnywhere(it.id);
+  const usati = items.filter(inUso);
+  const liberi = items.filter(it => !inUso(it));
   if (!liberi.length) {
-    showToast(`${usati.length === 1 ? 'L\'articolo è usato' : 'Sono tutti usati'} in una distinta: rimuovili prima.`, 'error');
+    showToast(`${usati.length === 1 ? 'L\'articolo è usato' : 'Sono tutti usati'} in distinte, documenti o magazzino: rimuovili prima, o segnali come obsoleti.`, 'error');
     return;
   }
   const avviso = usati.length
-    ? `\n\n${usati.length} ${usati.length === 1 ? 'articolo resta' : 'articoli restano'} dov'${usati.length === 1 ? 'è' : 'erano'}: ${usati.length === 1 ? 'è usato' : 'sono usati'} in una distinta.`
+    ? `\n\n${usati.length} ${usati.length === 1 ? 'articolo resta' : 'articoli restano'} dov'${usati.length === 1 ? 'è' : 'erano'}: ${usati.length === 1 ? 'è usato' : 'sono usati'} in distinte, documenti o magazzino.`
     : '';
   askConfirm(`Eliminare ${liberi.length} ${liberi.length === 1 ? 'articolo' : 'articoli'}?${avviso}`, () => {
     const cestinati = [];

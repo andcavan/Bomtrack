@@ -207,8 +207,16 @@ function tablesForChanges(changes) {
 // `drop`: campi che servono solo in locale e non hanno una colonna.
 // `id`: il tipo della chiave quando non è un uuid — le righe senza identità
 // propria hanno una chiave costruita (`itemId#components#0`), che è testo.
+// `types`: dove lo stesso nome ha un altro tipo. Negli **eventi** (movimenti,
+// dichiarazioni, avanzamenti, revisioni) `date` è l'istante in cui è successo
+// (`nowISO()`), non un giorno di calendario: lì è `timestamptz`.
+const EVENTO = { date: 'timestamptz' };
 const CLOUD_TABLES = {
   items: { drop: ['priceListSeeded'] },
+  stock_movements: { types: EVENTO },
+  production_declarations: { types: EVENTO },
+  productions: { types: EVENTO },
+  item_revisions: { types: EVENTO },
   item_components: { parent: 'item_id', rename: { itemId: 'child_item_id' }, id: 'text' },
   item_operations: { parent: 'item_id', id: 'text' },
   item_cycle_rows: { parent: 'item_id', rename: { itemId: 'child_item_id' }, id: 'text' },
@@ -244,7 +252,9 @@ const CLOUD_TYPES = (() => {
 // concetti vivono nelle impostazioni, con id leggibili ('cn-albero').
 const COLONNE_TESTO_ID = ['conceptId'];
 function cloudType(table, campo) {
-  if (campo === 'id') return (CLOUD_TABLES[table] && CLOUD_TABLES[table].id) || 'uuid';
+  const def = CLOUD_TABLES[table] || {};
+  if (campo === 'id') return def.id || 'uuid';
+  if (def.types && def.types[campo]) return def.types[campo];
   if (CLOUD_TYPES[campo]) return CLOUD_TYPES[campo];
   if (/Id$/.test(campo) && !COLONNE_TESTO_ID.includes(campo)) return 'uuid';
   return 'text';
@@ -297,6 +307,7 @@ function righeCloud(tables, opts) {
             else v = n;
           }
           else if (tipo === 'date' && !DATA_COLONNA.test(String(v))) segnala(tab, r, k, `non è una data AAAA-MM-GG (${JSON.stringify(v)})`);
+          else if (tipo === 'timestamptz' && !(DATA_COLONNA.test(String(v).slice(0, 10)) && Number.isFinite(Date.parse(v)))) segnala(tab, r, k, `non è un istante leggibile (${JSON.stringify(v)})`);
           else if (tipo === 'bool' && typeof v !== 'boolean') segnala(tab, r, k, `non è vero/falso (${JSON.stringify(v)})`);
           else if (tipo === 'uuid' && o.uuid !== false && !UUID_COLONNA.test(String(v))) segnala(tab, r, k, `non è un uuid (${JSON.stringify(v)})`);
         }
@@ -314,6 +325,16 @@ function righeCloud(tables, opts) {
 }
 
 // L'inverso: righe del database → righe come le vuole nestDB().
+//
+// Due differenze dal giro esatto, entrambe volute:
+//  - il server restituisce **ogni** colonna, e quelle che il record locale non
+//    aveva tornano `null`. Si tolgono: nel modello locale un campo assente e un
+//    campo null dicono la stessa cosa, e dove la presenza conta (`orderId:
+//    null` sui movimenti…) la rimette migrateDB(), che gira dopo ogni lettura;
+//  - un istante torna come Postgres lo scrive («…+00:00», microsecondi). Si
+//    riporta alla forma di toISOString(): l'app confronta le date come
+//    stringhe (il cestino, gli ordinamenti), e due forme dello stesso istante
+//    si ordinerebbero male.
 function righeLocali(tables) {
   const out = {};
   Object.keys(tables || {}).forEach(tab => {
@@ -326,7 +347,14 @@ function righeLocali(tables) {
       Object.keys(r).forEach(col => {
         const k = (def.parent && col === def.parent) ? 'parentId' : (indietro[col] || snakeToCamel(col));
         let v = r[col];
-        if (v === null && vuoti.has(k)) v = '';
+        if (v === null) {
+          if (vuoti.has(k)) riga[k] = '';
+          return;
+        }
+        if (cloudType(tab, k) === 'timestamptz' && typeof v === 'string') {
+          const t = Date.parse(v);
+          if (Number.isFinite(t)) v = new Date(t).toISOString();
+        }
         riga[k] = v;
       });
       return riga;

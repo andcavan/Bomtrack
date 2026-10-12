@@ -445,10 +445,12 @@ stessa ragione.
 `item_cycle_rows`. L'array *è* la definizione dell'oggetto: metà distinta di uno
 e metà dell'altro è un prodotto che nessuno ha progettato, e mezzo ciclo di
 lavorazione è un costo sbagliato che nessuno verifica. L'ultimo che salva
-sostituisce l'insieme intero per quel padre, e l'altro riceve un avviso. Da
-implementare come **una RPC transazionale** `save_item(jsonb, expected_updated_at)`
-con controllo ottimistico: è il controllo ottimistico a rendere la sostituzione
-sicura invece che pericolosa.
+sostituisce l'insieme intero per quel padre, e l'altro riceve un avviso. Dalla
+0.82.0 lo fa `push_changes()` (vedi «Lo schema SQL» qui sotto): l'insieme si
+sostituisce **solo se il padre passa** il confronto su `updated_at`, e un padre
+respinto si porta dietro i suoi figli. È quel controllo a rendere la
+sostituzione sicura invece che pericolosa — la `save_item` ipotizzata fino
+alla 0.81 non serve più come funzione a sé.
 
 **Il cestino non è un tombstone**, e i due non vanno confusi: `trash` serve
 all'utente che si è pentito, il tombstone serve al protocollo per far sapere
@@ -568,14 +570,75 @@ lavoriamo in squadra».
    `Store.commit()` resta sincrono — zero `async` nelle viste, nessuno dei
    `saveDB()` cambia. localStorage non viene sostituito: viene **retrocesso a
    specchio locale e coda offline**. Il salvataggio accoda, un flusher con
-   debounce drena. Più tombstone, RPC `save_item` per gli insiemi atomici, e
-   l'indicatore delle modifiche non inviate.
+   debounce drena: ogni lotto di `Store.takeChanges()` diventa **una**
+   chiamata a `push_changes()`, mai spezzata. Più l'indicatore delle
+   modifiche non inviate e l'avviso sulle righe respinte.
 3. **Pull**: polling ogni 20-30 s, al ritorno sulla finestra e dopo ogni invio
    riuscito — prima di Realtime, che aggiunge riconnessione, rinnovo del token e
    ordinamento degli eventi per un vantaggio che in una squadra piccola non si
    percepisce. L'applicazione di un pull va rinviata finché c'è una scheda aperta
    con un form a metà.
 4. **Autenticazione** (vedi sopra).
+
+## Lo schema SQL
+
+Dalla 0.82.0 lo schema è scritto: `supabase/schema.sql`, da eseguire nell'editor
+SQL di Supabase (si può rieseguire: è idempotente). Contiene le tabelle, i
+vincoli, il registro `sync_tables`, le lapidi e le due funzioni da cui passa
+tutta la sincronizzazione. `test/schema-sql.test.js` lo tiene allineato al
+codice — tabelle, padri, politiche di merge e tipo di ogni colonna — e, con un
+Postgres a disposizione (`BOMTRACK_PG`, in CI c'è), lo carica e ci fa passare un
+database che tocca tutte le tabelle.
+
+**Chiavi esterne differite.** Tutte `deferrable initially deferred`: i
+riferimenti circolari (`items.active_price_id` ↔ `item_prices`, distinte fra
+articoli dello stesso invio) non impongono un ordine di inserimento, e i
+vincoli si controllano insieme alla fine dell'invio. Che cosa può citare che
+cosa lo decide l'app:
+
+| Riferimento | Regola | Perché |
+|---|---|---|
+| fornitori, articoli, famiglie, centri, commesse, documenti d'archivio | `no action` | l'app impedisce di eliminarli finché sono citati (`supplierUses`, `isItemUsedAnywhere`, `delJob`…): una violazione è un difetto dell'app, e il commit la rifiuta |
+| `rfq_id`, `plan_id`, `odp_id`, `odp_phase_id`, `decl_id`, `active_price_id`, `job_id` di ODP e promemoria | `set null` | tracciabilità: l'app elimina liberamente il documento citato, e la lettura locale è già «best effort» |
+| righe figlie → padre | `cascade` | |
+| `order_id`/`line_id` di movimenti e ricevimenti | nessuna chiave | polimorfi: un ODA, un ODL o un ODP |
+
+**`push_changes(payload)`** — l'unica via di scrittura, e una transazione sola:
+
+```json
+{ "upsert": { "tabella": [righe di dbVersoCloud] },
+  "remove": { "tabella": [id] },
+  "settings": { "data": {}, "updated_at": "…", "updated_by": "…" } }
+```
+
+- radici e figlie per riga: last-write-wins su `updated_at`; chi perde torna in
+  `rejected` e l'app lo deve dire;
+- figlie `replace`: per ogni padre accettato l'insieme si sostituisce con
+  quello inviato, vuoto compreso — il client manda sempre l'insieme intero;
+- `remove`: cancella e lascia una lapide in `sync_tombstones`; la lapide cede
+  solo a un `updated_at` più recente (il ripristino dal cestino);
+- una colonna o una tabella sconosciuta ferma l'invio: `jsonb_populate_recordset`
+  la ignorerebbe in silenzio.
+
+**Atomicità (D4).** Una dichiarazione di produzione e i movimenti che genera, il
+lancio di un ODP con l'ODL e le uscite, l'eliminazione di un ODP con le sue
+dichiarazioni: in locale sono un `commit()`, e finiscono nello stesso lotto di
+`takeChanges()`. Il lotto è un invio, l'invio è una transazione: entra intero o
+non entra. Per questo non servono RPC per operazione (`declare_progress`,
+`launch_odp`): basta che l'adapter **non spezzi mai un lotto**.
+
+**`pull_changes(since)`** — ciò che è cambiato sul server dopo `since`, più le
+lapidi. Il confronto è su `synced_at`, l'ora del **server** scritta da un
+trigger, non su `updated_at`, che è l'ora del client: un client con l'orologio
+indietro scrive date vecchie, ma le sue righe vanno comunque a chi legge dopo.
+Le figlie `replace` tornano per padre, intere. `now` va ripassato come `since`
+al giro successivo **meno un margine**: una transazione lunga può scrivere un
+`synced_at` più vecchio di un pull già fatto, e rileggere una riga non costa
+niente.
+
+**Accesso.** RLS attiva su ogni tabella, con una policy **provvisoria**
+(chiunque sia autenticato legge e scrive): la matrice per ruolo è D6. Le
+funzioni sono `security invoker`, e la rispetteranno senza modifiche.
 
 ## Deploy
 

@@ -618,6 +618,58 @@ completo righe locali → SQL → righe locali.
 
 ---
 
+## Risolto nella 0.82.0
+
+Lo schema SQL esiste, ed è provato su un Postgres vero: `supabase/schema.sql`,
+verificato da `test/schema-sql.test.js` (18 controlli; i 12 che richiedono il
+database girano in CI con un servizio Postgres, e in locale con `BOMTRACK_PG`).
+
+### 41. D3 — chiavi circolari: differite, e un invio solo
+Tutte le chiavi esterne sono `deferrable initially deferred` e si scrive solo
+attraverso `push_changes()`: l'ordine degli inserimenti non conta più, i
+vincoli si controllano insieme alla fine. Il test spinge in un invio solo un
+database che tocca tutte le 33 tabelle — `active_price_id` circolare
+compreso — e lo rilegge identico con `pull_changes()` e `dbDaCloud()`.
+Le regole delle chiavi seguono le protezioni che l'app ha già: `no action` dove
+l'app impedisce di eliminare un record citato, `set null` sui riferimenti di
+sola tracciabilità, nessuna chiave sui polimorfi. In `docs/cloud-schema.md`
+c'è la tabella.
+
+### 42. D4 — atomicità senza RPC per operazione
+La voce chiedeva `declare_progress`, `launch_odp`. Leggendo il codice la
+risposta è più semplice: ogni operazione composta è già **un `commit()`**, e
+quindi un lotto di `takeChanges()`. Se il lotto è una transazione, l'operazione
+lo è. Il test lo prova sul caso che motivava la voce: una dichiarazione con un
+movimento che non può entrare — e la dichiarazione non resta. La regola che ne
+discende per l'adapter: **un lotto non si spezza mai**.
+
+### 43. L'eliminazione multipla lasciava riferimenti orfani
+`bulkDelete` controllava solo le distinte, mentre `delItem` controlla anche
+documenti, cicli, piani e magazzino (`isItemUsedAnywhere`). Un articolo già
+ordinato o movimentato spariva con l'eliminazione in blocco, lasciando righe e
+movimenti che puntavano al nulla — e con le chiavi esterne l'invio intero
+sarebbe stato rifiutato. Trovato scrivendo le regole delle chiavi: ogni
+`no action` presuppone una protezione nell'app, e questa mancava.
+
+### 44. Due modifiche nello stesso millisecondo erano una sola
+`touch()` scriveva l'ora corrente: due scritture nello stesso millisecondo
+davano lo stesso `updatedAt`, e per la sincronizzazione — che riconosce una
+modifica dal cambio di data — la seconda non esisteva. Un test di
+`sync.test.js` falliva una volta su otto, e il riepilogo della suite lo
+nascondeva sotto la riga «0 fallito» di un giro precedente. Ora `istanteDopo()`
+garantisce che la data salga sempre, anche su un record datato nel futuro da
+un orologio avanti: chi modifica una versione deve vincere su di essa.
+
+### Trovato e corretto nello stesso giro
+`date` sui **movimenti, dichiarazioni, avanzamenti e revisioni** è un istante
+(`nowISO()`), non un giorno: la mappatura della 0.81.1 l'avrebbe rifiutato come
+«data non AAAA-MM-GG». Lì il tipo è `timestamptz` (`CLOUD_TABLES[…].types`). E i
+timestamp tornano da Postgres in un'altra forma («+00:00», microsecondi):
+`righeLocali()` li riporta a quella di `toISOString()`, perché l'app li confronta
+come stringhe.
+
+---
+
 ## Aperto
 
 ### A. Sicurezza
@@ -709,13 +761,14 @@ nell'adapter o nello schema SQL.
 
 *(D2 — nomi e tipi delle colonne — chiusa nella 0.81.1, §40.)*
 
-**D3 — chiavi esterne circolari.** `items.active_price_id → item_prices →
-items`, componenti e `machine_item_id` fra articoli: vincoli `deferrable` e
-push dentro RPC transazionali, non upsert REST separati.
+*(D3 e D4 — chiavi circolari e scritture atomiche — chiuse nella 0.82.0, §41–42.)*
 
-**D4 — scritture su più collezioni da rendere atomiche.** Una dichiarazione di
-produzione genera movimenti; il lancio di un ODP genera ODL e uscite. In locale
-è un `commit()`; in cloud servono RPC (`declare_progress`, `launch_odp`).
+**D9 — le date dei documenti sono il giorno UTC, non quello locale.** Richieste,
+ordini, ODL e piani nascono con `date: nowISO().slice(0, 10)`: fra mezzanotte e
+l'una (le due d'estate) in Italia è la data di ieri. È la lezione già pagata e
+scritta in `cloud-schema.md` — «calcolarle passando per la mezzanotte locale le
+anticipava di un giorno» — al rovescio, e `oggiISO()` in `core.js` esiste già.
+Non riguarda il cloud in sé, ma il cloud la rende condivisa.
 
 **D5 — `localStorage` non regge lo specchio locale.** Il piano lo retrocede a
 specchio e coda offline, ma la quota è ~5 MB e lo scenario A di

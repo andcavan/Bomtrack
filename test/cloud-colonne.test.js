@@ -46,6 +46,17 @@ function dbVuoti() {
     users: [{ id: 'u1', name: 'Anna', email: 'a@x.it', role: 'admin', active: true, passwordHash: 'abc', passwordSalt: 'def' }],
   });
 }
+// Nel modello locale un campo null e un campo assente dicono la stessa cosa,
+// e al ritorno dal server i null spariscono: i confronti li ignorano.
+function senzaNull(x) {
+  if (Array.isArray(x)) return x.map(senzaNull);
+  if (x && typeof x === 'object') {
+    const o = {};
+    Object.keys(x).forEach(k => { if (x[k] !== null) o[k] = senzaNull(x[k]); });
+    return o;
+  }
+  return x;
+}
 const piatte = a => ev(a, 'flattenDB(db, { stripSecrets: true, stripDerived: true })');
 const cloud = a => ev(a, 'dbVersoCloud(db, { uuid: false })');
 
@@ -124,17 +135,24 @@ describe('Vuoto è NULL dove la colonna ha un tipo', () => {
     assert.equal('price_list_seeded' in t.items.find(i => i.id === 'm1'), false);
   });
 
-  it('al ritorno NULL torna `\'\'` dove il modello locale scrive `\'\'`: il giro è esatto', () => {
+  it('al ritorno NULL torna `\'\'` dove il modello locale scrive `\'\'`, e sparisce altrove', () => {
     const a = app(dbVuoti());
-    const prima = piatte(a);
+    const prima = senzaNull(piatte(a));
     delete prima.items.find(i => i.id === 'm1').priceListSeeded;   // non ha colonna: si perde, ed è voluto
     const dopo = ev(a, 'righeLocali(righeCloud(flattenDB(db, { stripSecrets: true, stripDerived: true }), { uuid: false }))');
     assert.deepEqual(dopo, prima);
+    assert.equal(dopo.rfq_lines[0].price, '', 'il prezzo non quotato torna vuoto, come lo scrive migrateDB');
+  });
+
+  it('gli istanti tornano nella forma di toISOString, anche se Postgres li scrive diversi', () => {
+    const a = app();
+    const r = ev(a, `righeLocali({ suppliers: [{ id: 'x', created_at: '2026-10-12T06:41:58.13+00:00', notes: null }] })`);
+    assert.deepEqual(r.suppliers[0], { id: 'x', createdAt: '2026-10-12T06:41:58.130Z' });
   });
 
   it('dal database al documento locale, passando da nestDB', () => {
     const a = app();
-    const atteso = ev(a, 'nestDB(flattenDB(db, { stripSecrets: true, stripDerived: true }))');
+    const atteso = senzaNull(ev(a, 'nestDB(flattenDB(db, { stripSecrets: true, stripDerived: true }))'));
     delete atteso.settings;
     const giro = ev(a, 'dbDaCloud(dbVersoCloud(db))');
     atteso.items.forEach(i => { delete i.priceListSeeded; });

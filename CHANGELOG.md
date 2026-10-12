@@ -2,6 +2,24 @@
 
 Le revisioni seguono il versionamento semantico `0.MINOR.PATCH`: **MINOR** per nuove funzionalità, **PATCH** per correzioni. La versione in cima è quella in `APP_VERSION` (`core.js`) e mostrata nell'header dell'app.
 
+### 0.82.0 — 2026-10-12
+
+**Lo schema del database condiviso esiste, ed è provato su un Postgres vero.** `supabase/schema.sql` si esegue nell'editor SQL di Supabase (anche più volte): tabelle, vincoli, registro delle tabelle sincronizzate, lapidi delle cancellazioni e le due funzioni da cui passa tutta la sincronizzazione.
+
+**Aggiunto**
+- `push_changes()`: un invio è **una transazione** — entra intero o non entra. Vince chi ha scritto dopo, e chi perde torna in un elenco da mostrare all'utente; distinte e cicli si sostituiscono interi solo se l'articolo passa; le cancellazioni lasciano una lapide che cede solo a un ripristino.
+- `pull_changes()`: ciò che è cambiato dopo un istante del server, più le cancellazioni.
+- Chiavi esterne tutte differite: i riferimenti circolari (prezzo in uso ↔ listino) non impongono un ordine. `no action` dove l'app protegge già il record citato, `set null` sui riferimenti di tracciabilità.
+- `test/schema-sql.test.js`: lo schema verificato contro il codice (tabelle, padri, merge, tipo di ogni colonna) e, con un Postgres, il giro completo di un database che tocca tutte le 33 tabelle. La CI ora avvia un Postgres per farlo a ogni push.
+
+**Corretto**
+- **L'eliminazione multipla di articoli** controllava solo le distinte: un articolo già ordinato o movimentato spariva lasciando righe e movimenti orfani. Ora segue la stessa regola dell'eliminazione singola.
+- **Due modifiche nello stesso millisecondo** davano la stessa data, e la seconda era invisibile alla sincronizzazione: la data di modifica ora sale sempre. Un test falliva per questo una volta su otto.
+- La traduzione verso il database trattava come giorno di calendario la `date` di movimenti, dichiarazioni, avanzamenti e revisioni, che è un istante; e gli istanti riletti dal database tornano nella forma che l'app confronta.
+
+**Verifica**
+- Suite da 1893 a 1904 controlli senza database, 1915 con un Postgres (`BOMTRACK_PG`, vedi `test/pg.js`).
+
 ### 0.81.1 — 2026-10-12
 
 **Le righe parlano SQL.** Preparazione al database condiviso, nessun cambiamento visibile nell'app. `flattenDB()` produceva i nomi del codice e `''` dove una colonna numerica, di data o uuid vuole NULL: il primo invio sarebbe stato rifiutato per intero.

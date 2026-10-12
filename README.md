@@ -254,6 +254,7 @@ Il motivo è lo storico: finché lo stesso dato si poteva scrivere in due posti,
 - `icons-preview.html` — galleria delle icone: ogni disegno accanto all’emoji che ha sostituito, alle varie misure e nelle tre varianti di colore. Serve a giudicarle quando se ne aggiunge una; **non serve all’app**, che non la carica.
 - `CHANGELOG.md` — lo storico completo delle versioni.
 - `docs/cloud-schema.md` — contratto per il futuro backend condiviso (mappatura tabelle, adapter).
+- `supabase/schema.sql` — lo schema del database condiviso: tabelle, vincoli, e le funzioni `push_changes`/`pull_changes` da cui passa la sincronizzazione. Si esegue nell'editor SQL di Supabase.
 - `docs/sostenibilita-free-tier.md` — quanto occuperebbero quelle tabelle e quando il piano gratuito Supabase smette di bastare: stime per scenario, modello di calcolo riutilizzabile, e i vincoli che stringono prima dello spazio.
 - `docs/analisi-tecnica.md` — controllo generale del codice: cosa è stato risolto, cosa resta aperto e perché.
 - `test/` — suite di verifica del motore di costo, delle migrazioni, del salvataggio, dell'import Excel e dell'accesso. **Non serve all'app**: `index.html` non la carica, e copiando la cartella su un altro PC si può anche omettere.
@@ -268,6 +269,14 @@ node test/bench.js    # benchmark del motore di costificazione
 ```
 
 Richiede solo **Node 18 o superiore** — nessun `npm install`, nessuna dipendenza: la suite usa i moduli core e carica i sorgenti dell'app in un contesto isolato, nella stessa sequenza di `index.html`.
+
+I test di `supabase/schema.sql` su un database vero girano se c'è un Postgres raggiungibile con `psql` (in CI c'è):
+
+```
+BOMTRACK_PG="host=localhost port=5432 user=postgres" node test/run.js
+```
+
+Senza la variabile si dichiarano saltati; quelli che confrontano lo schema con il codice girano comunque.
 
 ## Changelog
 
