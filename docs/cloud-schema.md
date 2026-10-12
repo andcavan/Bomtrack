@@ -515,9 +515,9 @@ funzionante è `timetrack-supabase` (`migrations/schema.sql`, `supabase/function
 | `db.users` da `Store.load()` | `select * from profiles` |
 | `canWrite(area)` / `roleGuard(area)` | restano **invariati**, raddoppiati da policy RLS per ruolo |
 
-Schema delle policy: lettura a tutti i profili attivi; scrittura su `items`/`item_*` ai ruoli
-`admin` e `progettazione`, su `rfqs`/`orders` ad `admin` e `acquisti`, su `settings`, anagrafiche
-e `profiles` al solo `admin` — la stessa matrice di `ROLE_WRITE` in `core.js`.
+Schema delle policy: scritto in `supabase/schema.sql` dalla 0.83.0 — vedi
+«Accesso» nella sezione sullo schema SQL. La matrice è quella di `ROLE_WRITE`
+in `core.js`, applicata tabella per tabella.
 
 ## Interfaccia adapter
 
@@ -636,9 +636,34 @@ al giro successivo **meno un margine**: una transazione lunga può scrivere un
 `synced_at` più vecchio di un pull già fatto, e rileggere una riga non costa
 niente.
 
-**Accesso.** RLS attiva su ogni tabella, con una policy **provvisoria**
-(chiunque sia autenticato legge e scrive): la matrice per ruolo è D6. Le
-funzioni sono `security invoker`, e la rispetteranno senza modifiche.
+**Accesso (dalla 0.83.0).** RLS attiva su ogni tabella, con la matrice
+dell'app scritta dove non si può aggirare. Due registri, e le policy si
+generano da quelli:
+
+- `role_areas` — ruolo → aree che scrive: è `ROLE_WRITE` di `core.js`, e il test
+  lo verifica riga per riga;
+- `table_areas` — tabella → aree che la scrivono. **Misurata, non dedotta**: la
+  suite è stata fatta girare registrando quali aree `roleGuard` lasciava
+  passare a ogni salvataggio e quali collezioni cambiavano. Una tabella scritta
+  da più gesti accetta tutte le loro aree (i movimenti: magazzino *e*
+  dichiarazioni di produzione), perché una policy più stretta dell'app
+  rifiuterebbe un invio che l'app considera lecito, e con lui l'intero lotto.
+
+| Chi | Legge | Scrive |
+|---|---|---|
+| admin | tutto | tutto |
+| acquisti | tutto | documenti, ricevimenti, ODP e dichiarazioni, movimenti, commesse, promemoria |
+| progettazione | tutto | articoli e loro righe, revisioni, allegati, richieste d'offerta (dal listino), movimenti, promemoria |
+| lettore | tutto | niente |
+| profilo sospeso | niente | niente |
+
+Più due regole: il proprio profilo si aggiorna (nome, colore) ma non il proprio
+ruolo né il proprio stato (trigger `profiles_guardia`); cestino e lapidi li
+scrive chiunque elimini qualcosa. `push_changes()` controlla i permessi di
+**ogni** tabella del lotto prima di toccarne una, e si ferma dicendo quale: RLS
+da sola non basta, perché una `DELETE` non permessa non dà errore — tocca zero
+righe — e la lapide resterebbe, facendo cancellare la riga agli altri client.
+La chiave di servizio (migrazione, primo amministratore) non ha RLS e passa.
 
 ## Deploy
 

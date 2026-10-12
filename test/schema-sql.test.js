@@ -299,3 +299,115 @@ describe('Postgres: invio e lettura', () => {
     assert.throws(() => d.push({ upsert: { work_order_lines: [w] } }), /work_order_lines_mai_articolo/);
   }));
 });
+
+// ═══════════════════════════════════════════════════════════
+//  D6 — chi legge e chi scrive
+// ═══════════════════════════════════════════════════════════
+function coppieSql(nome) {
+  const blocco = SQL.match(new RegExp(`insert into public\\.${nome} \\([^)]*\\)[\\s\\S]*?;\\n`))[0];
+  const out = [];
+  const re = /\('(\w+)', '(\w+)'\)/g;
+  let m;
+  while ((m = re.exec(blocco))) out.push([m[1], m[2]]);
+  return out;
+}
+
+describe('I permessi del database sono quelli dell\'app', () => {
+  const a = app(makeDb({}));
+  it('role_areas è ROLE_WRITE, riga per riga', () => {
+    const atteso = ev(a, 'Object.keys(ROLE_WRITE).flatMap(r => ROLE_WRITE[r].map(x => [r, x]))').map(x => x.join(':')).sort();
+    assert.deepEqual(coppieSql('role_areas').map(x => x.join(':')).sort(), atteso);
+  });
+
+  it('ogni tabella sincronizzata ha almeno un\'area che la scrive, e solo aree vere', () => {
+    const aree = new Set(ev(a, 'Object.values(ROLE_WRITE).flat()'));
+    const perTabella = {};
+    coppieSql('table_areas').forEach(([t, x]) => {
+      assert.ok(aree.has(x), `${t}: area sconosciuta ${x}`);
+      (perTabella[t] = perTabella[t] || []).push(x);
+    });
+    Object.keys(registroSql()).concat(['settings', 'sync_tombstones'])
+      .forEach(t => assert.ok(perTabella[t], `nessuno può scrivere ${t}`));
+  });
+});
+
+describe('Postgres: permessi per ruolo (D6)', () => {
+  if (!pg.disponibile()) {
+    it('saltato: BOMTRACK_PG non impostata (vedi test/pg.js)', () => {});
+    return;
+  }
+  const a = app(dbCompleto());
+  const righe = ev(a, 'dbVersoCloud(db)');
+  const ADMIN = righe.profiles[0].id;
+  const ACQ = U(601), PROG = U(602), LETT = U(603), SOSP = U(604);
+  const conDb = fn => () => {
+    const d = pg.nuovoDatabase();
+    try {
+      d.utenti([ADMIN, ACQ, PROG, LETT, SOSP]);
+      d.push({ upsert: righe });   // da superutente: è il caricamento iniziale
+      d.sql(`insert into profiles (id, name, role, active) values
+        ('${ACQ}', 'Bruno', 'acquisti', true), ('${PROG}', 'Carla', 'progettazione', true),
+        ('${LETT}', 'Dario', 'lettore', true), ('${SOSP}', 'Elena', 'acquisti', false);`);
+      fn(d);
+    } finally { d.chiudi(); }
+  };
+  const dopo = (r, campi) => Object.assign({}, r, campi, { updated_at: '2026-05-01T00:00:00.000Z' });
+  const ordine = () => dopo(righe.orders[0], { title: 'modificato' });
+  const articolo = () => dopo(righe.items[0], { name: 'modificato' });
+
+  it('acquisti scrive gli ordini, non gli articoli', conDb(d => {
+    assert.deepEqual(d.come(ACQ).push({ upsert: { orders: [ordine()] } }).rejected, []);
+    assert.throws(() => d.come(ACQ).push({ upsert: { items: [articolo()] } }), /il ruolo acquisti non scrive: items/);
+  }));
+
+  it('progettazione scrive gli articoli, non gli ordini', conDb(d => {
+    assert.deepEqual(d.come(PROG).push({ upsert: { items: [articolo()] } }).rejected, []);
+    assert.throws(() => d.come(PROG).push({ upsert: { orders: [ordine()] } }), /il ruolo progettazione non scrive: orders/);
+  }));
+
+  it('un invio con anche una sola tabella vietata non entra per niente', conDb(d => {
+    assert.throws(() => d.come(ACQ).push({ upsert: { orders: [ordine()], items: [articolo()] } }), /non scrive: items/);
+    assert.equal(d.sql(`select title from orders where id = '${righe.orders[0].id}'`), '', 'nemmeno la parte permessa');
+  }));
+
+  it('acquisti registra ricevimenti e movimenti: nascono dal suo lavoro', conDb(d => {
+    const rc = Object.assign({}, righe.order_receipts[0], { id: U(700), qty: 5 });
+    const mv = Object.assign({}, righe.stock_movements[0], { id: U(701) });
+    assert.deepEqual(d.come(ACQ).push({ upsert: { order_receipts: [rc], stock_movements: [mv] } }).rejected, []);
+  }));
+
+  it('una cancellazione vietata si ferma, invece di lasciare una lapide senza cancellare', conDb(d => {
+    assert.throws(() => d.come(ACQ).push({ remove: { attachments: [righe.attachments[0].id] } }), /non scrive: attachments/);
+    assert.equal(d.sql('select count(*) from sync_tombstones'), '0');
+    assert.equal(d.sql(`select count(*) from attachments`), '1');
+  }));
+
+  it('il lettore legge tutto e non scrive niente', conDb(d => {
+    assert.ok(d.come(LETT).pull(null).tables.items.length > 0);
+    assert.throws(() => d.come(LETT).push({ upsert: { reminders: [dopo(righe.reminders[0], { done: true })] } }), /il ruolo lettore non scrive: reminders/);
+  }));
+
+  it('un utente sospeso non legge più niente, anche con la sessione aperta', conDb(d => {
+    const p = d.come(SOSP).pull(null);
+    assert.deepEqual(Object.keys(p.tables).filter(t => p.tables[t].length), []);
+    assert.throws(() => d.come(SOSP).push({ upsert: { orders: [ordine()] } }), /nessun profilo attivo/);
+  }));
+
+  it('le impostazioni sono della gestione', conDb(d => {
+    assert.throws(() => d.come(ACQ).push({ settings: { data: {} } }), /non scrive: settings/);
+    d.come(ADMIN).push({ settings: { data: { currency: '$' } } });
+    assert.equal(d.sql(`select data->>'currency' from settings`), '$');
+  }));
+
+  it('il proprio profilo si aggiorna, il proprio ruolo no', conDb(d => {
+    d.come(ACQ).sql(`update profiles set color = '#123456' where id = '${ACQ}'`);
+    assert.equal(d.sql(`select color from profiles where id = '${ACQ}'`), '#123456');
+    assert.throws(() => d.come(ACQ).sql(`update profiles set role = 'admin' where id = '${ACQ}'`), /solo la gestione utenti/);
+    assert.equal(d.sql(`select role from profiles where id = '${ACQ}'`), 'acquisti');
+  }));
+
+  it('i registri si leggono e non si scrivono', conDb(d => {
+    assert.equal(d.come(LETT).sql('select count(*) from role_areas'), '10');
+    assert.throws(() => d.come(ADMIN).sql(`insert into role_areas values ('lettore', 'docs')`), /row-level security/);
+  }));
+});

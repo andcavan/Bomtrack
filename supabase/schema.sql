@@ -544,6 +544,21 @@ begin
     raise exception 'push_changes: tabelle sconosciute: %', sconosciuti;
   end if;
 
+  -- Permessi, prima di toccare qualunque cosa. RLS da sola non basta: una
+  -- DELETE che la policy non permette non dà errore, tocca zero righe — e la
+  -- lapide resterebbe, facendo cancellare la riga agli altri client al pull.
+  -- Il controllo vale solo dove RLS si applica: la chiave di servizio (la
+  -- migrazione, la creazione del primo amministratore) passa.
+  select string_agg(k, ', ') into sconosciuti
+    from (select jsonb_object_keys(coalesce(payload->'upsert', '{}')) k
+          union select jsonb_object_keys(coalesce(payload->'remove', '{}'))
+          union select 'settings' where payload ? 'settings') x
+    where row_security_active(('public.' || k)::regclass) and not public.puo_scrivere_tabella(k);
+  if sconosciuti is not null then
+    raise exception 'push_changes: il ruolo % non scrive: %', coalesce(public.ruolo_attivo(), '(nessun profilo attivo)'), sconosciuti
+      using errcode = '42501';
+  end if;
+
   -- Upsert: prima le radici, poi le figlie per riga, poi le sostituzioni.
   for reg in
     select s.* from sync_tables s
@@ -684,20 +699,115 @@ begin
     'settings', (select to_jsonb(s) - 'synced_at' - 'id' from settings s where s.synced_at > dal));
 end $$;
 
--- ─── Accesso ────────────────────────────────────────────────
--- RLS attiva ovunque: una tabella senza RLS in Supabase è leggibile da chiunque
--- abbia la chiave pubblica. La policy qui sotto è **PROVVISORIA** — chiunque
--- sia autenticato legge e scrive tutto — ed è il punto D6 di
--- docs/analisi-tecnica.md: la matrice per ruolo (ROLE_WRITE in core.js) la
--- sostituisce. Le funzioni sono `security invoker`, quindi la rispetteranno
--- senza cambiare.
+-- ─── Accesso: chi legge e chi scrive ────────────────────────
+-- La stessa matrice dell'app (ROLE_WRITE e roleGuard in core.js), scritta dove
+-- non si può aggirare: in locale chi apre i DevTools si assegna il ruolo che
+-- vuole, qui no. test/schema-sql.test.js verifica che `role_areas` sia
+-- ROLE_WRITE riga per riga.
+--
+-- Due registri, e le policy si generano da quelli:
+--   role_areas   ruolo → aree che può scrivere (ROLE_WRITE)
+--   table_areas  tabella → aree che la scrivono
+-- `table_areas` non è stata dedotta dalla documentazione ma **misurata**: la
+-- suite intera è stata fatta girare registrando, a ogni salvataggio, quali aree
+-- roleGuard aveva lasciato passare e quali collezioni erano cambiate. Il verso
+-- dell'errore conta: una policy più stretta dell'app rifiuta un invio che
+-- l'app considera lecito, e con lui l'intero lotto. Per questo una tabella
+-- scritta da più gesti accetta tutte le loro aree — i movimenti nascono sia in
+-- magazzino (catalog) sia dalle dichiarazioni di produzione (docs).
+--
+-- Lettura: chiunque abbia un profilo **attivo**. Un utente sospeso non legge
+-- più niente, anche se la sessione è ancora valida.
+create table if not exists public.role_areas (
+  role text not null, area text not null, primary key (role, area)
+);
+delete from public.role_areas;
+insert into public.role_areas (role, area) values
+  ('admin', 'catalog'), ('admin', 'bom'), ('admin', 'docs'), ('admin', 'manage'), ('admin', 'agenda'),
+  ('acquisti', 'docs'), ('acquisti', 'agenda'),
+  ('progettazione', 'catalog'), ('progettazione', 'bom'), ('progettazione', 'agenda');
+
+create table if not exists public.table_areas (
+  tab text not null, area text not null, primary key (tab, area)
+);
+delete from public.table_areas;
+insert into public.table_areas (tab, area)
+select t, a from (values
+  ('profiles', 'manage'), ('suppliers', 'manage'), ('customers', 'manage'),
+  ('work_centers', 'manage'), ('work_center_suppliers', 'manage'),
+  ('families', 'manage'), ('sub_families', 'manage'), ('settings', 'manage'),
+  ('items', 'catalog'), ('items', 'bom'), ('items', 'manage'),
+  ('item_components', 'catalog'), ('item_components', 'bom'), ('item_components', 'manage'),
+  ('item_operations', 'catalog'), ('item_operations', 'bom'), ('item_operations', 'manage'),
+  ('item_cycle_rows', 'catalog'), ('item_cycle_rows', 'bom'), ('item_cycle_rows', 'manage'),
+  ('item_prices', 'catalog'), ('item_prices', 'bom'), ('item_prices', 'manage'),
+  ('item_revisions', 'catalog'), ('item_revisions', 'bom'),
+  ('attachments', 'catalog'), ('attachment_docs', 'catalog'),
+  ('rfqs', 'docs'), ('rfqs', 'catalog'), ('rfq_lines', 'docs'), ('rfq_lines', 'catalog'),
+  ('orders', 'docs'), ('order_lines', 'docs'), ('order_receipts', 'docs'),
+  ('work_orders', 'docs'), ('work_order_lines', 'docs'),
+  ('production_plans', 'docs'), ('production_plan_lines', 'docs'),
+  ('production_orders', 'docs'), ('production_order_phases', 'docs'), ('production_order_materials', 'docs'),
+  ('production_declarations', 'docs'), ('productions', 'docs'),
+  ('stock_movements', 'catalog'), ('stock_movements', 'docs'),
+  ('jobs', 'docs'), ('jobs', 'manage'),
+  ('reminders', 'agenda'),
+  -- Il cestino e le lapidi li scrive chiunque elimini qualcosa, in qualunque area.
+  ('trash', 'catalog'), ('trash', 'bom'), ('trash', 'docs'), ('trash', 'manage'), ('trash', 'agenda'),
+  ('sync_tombstones', 'catalog'), ('sync_tombstones', 'bom'), ('sync_tombstones', 'docs'),
+  ('sync_tombstones', 'manage'), ('sync_tombstones', 'agenda')
+) v(t, a);
+
+-- `security definer`: leggono `profiles` senza passare dalle sue policy, che a
+-- loro volta le chiamano — altrimenti la lettura del ruolo ricorrerebbe su sé
+-- stessa.
+create or replace function public.ruolo_attivo() returns text
+language sql stable security definer set search_path = public as $$
+  select role from public.profiles where id = auth.uid() and active is not false
+$$;
+create or replace function public.puo_scrivere_tabella(t text) returns boolean
+language sql stable security definer set search_path = public as $$
+  select exists (select 1 from public.table_areas ta join public.role_areas ra on ra.area = ta.area
+                 where ta.tab = t and ra.role = public.ruolo_attivo())
+$$;
+
+-- Il proprio profilo si può aggiornare (nome, colore), ma non il proprio ruolo
+-- né il proprio stato: quello resta della gestione utenti.
+create or replace function public.profiles_guardia() returns trigger language plpgsql as $$
+begin
+  if not public.puo_scrivere_tabella('profiles')
+     and (new.role is distinct from old.role or new.active is distinct from old.active or new.id <> old.id) then
+    raise exception 'solo la gestione utenti cambia ruolo e stato di un profilo';
+  end if;
+  return new;
+end $$;
+drop trigger if exists profiles_guardia on public.profiles;
+create trigger profiles_guardia before update on public.profiles for each row execute function public.profiles_guardia();
+
+-- RLS attiva ovunque: in Supabase una tabella senza RLS è leggibile da chiunque
+-- abbia la chiave pubblica. Le funzioni sono `security invoker`: push_changes()
+-- e pull_changes() rispettano queste policy senza bisogno di saperle.
 do $$
 declare t text;
 begin
-  foreach t in array (select array_agg(tab) from public.sync_tables) || array['settings', 'sync_tombstones', 'sync_tables'] loop
+  foreach t in array (select array_agg(tab) from public.sync_tables) || array['settings', 'sync_tombstones'] loop
     execute format('alter table public.%I enable row level security', t);
     execute format('drop policy if exists provvisoria_autenticati on public.%I', t);
-    execute format('create policy provvisoria_autenticati on public.%I for all to authenticated using (true) with check (true)', t);
+    execute format('drop policy if exists lettura on public.%I', t);
+    execute format('drop policy if exists scrittura on public.%I', t);
+    execute format('create policy lettura on public.%I for select to authenticated using (public.ruolo_attivo() is not null)', t);
+    execute format('create policy scrittura on public.%I for all to authenticated using (public.puo_scrivere_tabella(%L)) with check (public.puo_scrivere_tabella(%L))', t, t, t);
+  end loop;
+  -- Il proprio profilo, in aggiunta: vedi profiles_guardia.
+  drop policy if exists se_stesso on public.profiles;
+  create policy se_stesso on public.profiles for update to authenticated
+    using (id = auth.uid() and public.ruolo_attivo() is not null) with check (id = auth.uid());
+  -- I registri si leggono, non si scrivono.
+  foreach t in array array['sync_tables', 'role_areas', 'table_areas'] loop
+    execute format('alter table public.%I enable row level security', t);
+    execute format('drop policy if exists provvisoria_autenticati on public.%I', t);
+    execute format('drop policy if exists lettura on public.%I', t);
+    execute format('create policy lettura on public.%I for select to authenticated using (true)', t);
   end loop;
 end $$;
 grant execute on function public.push_changes(jsonb) to authenticated;

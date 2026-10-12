@@ -7,3 +7,8 @@ create or replace function auth.uid() returns uuid language sql stable as
   $$ select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$;
 do $$ begin create role authenticated; exception when duplicate_object then null; end $$;
 do $$ begin create role anon; exception when duplicate_object then null; end $$;
+-- In Supabase i ruoli dell'API hanno già i permessi di tabella sullo schema
+-- public, e le policy RLS decidono il resto. Qui si danno a mano.
+grant usage on schema public, auth to authenticated, anon;
+grant execute on function auth.uid() to authenticated, anon;
+alter default privileges in schema public grant all on tables to authenticated, anon;

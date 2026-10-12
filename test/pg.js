@@ -49,6 +49,17 @@ function nuovoDatabase() {
     nome,
     sql: q => esegui(nome, q),
     push: payload => JSON.parse(esegui(nome, `select public.push_changes(${letterale(payload)});`)),
+    // Le stesse chiamate come un utente dell'app: ruolo `authenticated` e il suo
+    // id dove auth.uid() lo legge. Il superutente ignora RLS, e un test di
+    // permessi fatto da lui non proverebbe niente.
+    come: uid => {
+      const pre = `set role authenticated; select set_config('request.jwt.claim.sub', '${uid}', false) \\g /dev/null\n`;
+      return {
+        sql: q => esegui(nome, pre + q),
+        push: payload => JSON.parse(esegui(nome, pre + `select public.push_changes(${letterale(payload)});`)),
+        pull: since => JSON.parse(esegui(nome, pre + `select public.pull_changes(${since ? `'${since}'::timestamptz` : 'null'});`)),
+      };
+    },
     pull: since => JSON.parse(esegui(nome, `select public.pull_changes(${since ? `'${since}'::timestamptz` : 'null'});`)),
     utenti: ids => ids.length && esegui(nome, `insert into auth.users (id) select unnest(array[${ids.map(i => `'${i}'::uuid`).join(',')}]) on conflict do nothing;`),
     chiudi: () => { try { esegui('postgres', `drop database if exists ${nome};`); } catch (e) { /* resta: si vede */ } },

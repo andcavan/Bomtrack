@@ -670,6 +670,33 @@ come stringhe.
 
 ---
 
+## Risolto nella 0.83.0
+
+### 45. D6 — i permessi nel database
+La policy provvisoria («chiunque sia autenticato scrive tutto») è sostituita
+dalla matrice dell'app: `role_areas` (che è `ROLE_WRITE`) e `table_areas`, da
+cui `schema.sql` genera le policy di ogni tabella. La seconda **non è stata
+dedotta dalla documentazione** — che copriva metà delle tabelle — ma misurata:
+la suite intera è stata fatta girare registrando, a ogni salvataggio, le aree
+lasciate passare da `roleGuard` e le collezioni cambiate. Ne sono usciti casi
+che a leggerla non si vedevano: i movimenti scritti anche da `docs` (le
+dichiarazioni di produzione), le richieste d'offerta anche da `catalog`
+(registrare i prezzi di un'offerta nel listino), le commesse anche da `manage`
+(rinominare un cliente).
+
+Scrivendola è emerso un difetto di `push_changes()` che con la policy
+provvisoria non si poteva vedere: sotto RLS una `DELETE` non permessa non dà
+errore, tocca zero righe. La riga restava e la lapide veniva scritta — al pull
+gli altri client l'avrebbero cancellata. Ora i permessi si controllano per
+tabella, su tutto il lotto, prima di toccare qualcosa.
+
+Coperto da 12 controlli nuovi in `test/schema-sql.test.js`, che girano come
+utenti veri (ruolo `authenticated` e il loro id): fatti dal superutente, che
+ignora RLS, non avrebbero provato niente. Con la policy provvisoria rimessa al
+suo posto ne falliscono sette.
+
+---
+
 ## Aperto
 
 ### A. Sicurezza
@@ -775,11 +802,7 @@ specchio e coda offline, ma la quota è ~5 MB e lo scenario A di
 `sostenibilita-free-tier.md` è decine di MB. Specchio e coda in IndexedDB, che
 l'app usa già per gli allegati.
 
-**D6 — matrice RLS incompleta.** `cloud-schema.md` non copre movimenti
-(`roleGuard('catalog')`), ODP e dichiarazioni (`'docs'`), commesse,
-promemoria, allegati, revisioni, cestino. E chi dichiara l'avanzamento in
-officina oggi deve essere «acquisti»: un ruolo produzione/magazzino va deciso
-prima che diventi una policy.
+*(D6 — la matrice dei permessi nel database — chiusa nella 0.83.0, §45.)*
 
 **D7 — il cestino si pota sul client.** `migrateDB()` toglie le voci oltre
 `TRASH_DAYS`; in cloud ogni client cancellerebbe righe condivise. Va su
@@ -787,7 +810,17 @@ prima che diventi una policy.
 
 **D8 — avvio e primo amministratore.** Oggi prima i dati e poi il login,
 perché gli utenti stanno nel blob; con RLS l'ordine si rovescia. Il setup del
-primo admin a database vuoto non deve esistere lato client.
+primo admin a database vuoto non deve esistere lato client. *(Dalla 0.83.0 lo
+schema lo rende obbligatorio: senza un profilo attivo non si legge niente.
+Il primo profilo si crea dall'editor SQL o con la chiave di servizio, che non
+ha RLS; resta da scrivere la procedura, e la edge function d'invito.)*
+
+**D10 — un ruolo per l'officina.** Chi dichiara l'avanzamento in produzione
+oggi deve essere «acquisti» (`roleGuard('docs')`), che però scrive anche
+ordini e richieste. Con la matrice ora nel database, un ruolo
+produzione/magazzino è una riga in `ROLE_WRITE`, una in `role_areas` e una
+nuova area sulle tabelle di dichiarazioni, movimenti e ricevimenti — ma è una
+decisione di come lavora l'azienda, non del codice.
 
 ---
 

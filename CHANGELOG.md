@@ -2,6 +2,22 @@
 
 Le revisioni seguono il versionamento semantico `0.MINOR.PATCH`: **MINOR** per nuove funzionalità, **PATCH** per correzioni. La versione in cima è quella in `APP_VERSION` (`core.js`) e mostrata nell'header dell'app.
 
+### 0.83.0 — 2026-10-12
+
+**I permessi stanno nel database.** Finché i dati sono nel browser, chi apre gli strumenti di sviluppo si assegna il ruolo che vuole; con lo schema di questa versione, sul database condiviso non può più. Nessun cambiamento nell'app.
+
+**Aggiunto**
+- In `supabase/schema.sql` la matrice dei ruoli sostituisce la regola provvisoria: admin scrive tutto; acquisti documenti, ricevimenti, produzione, movimenti, commesse e promemoria; progettazione articoli, distinte, revisioni, allegati, movimenti e promemoria; il lettore legge e basta; un utente sospeso non legge più niente, anche con la sessione aperta.
+- Chi scrive cosa è stato **misurato** facendo girare la suite e registrando i permessi controllati a ogni salvataggio, non dedotto dalla documentazione: una regola più stretta dell'app avrebbe fatto fallire invii leciti.
+- Il proprio profilo si aggiorna, il proprio ruolo no.
+
+**Corretto**
+- `push_changes()` controlla i permessi di ogni tabella del lotto prima di toccarne una: una cancellazione non permessa non dava errore e lasciava la lapide senza cancellare la riga.
+- CI: azioni `checkout` e `setup-node` alla v5 (la v4 girava su Node 20, in dismissione), suite su Node 22.
+
+**Verifica**
+- 12 nuovi controlli, eseguiti come utenti veri e non come superutente (suite da 1904 a 1907 senza database, da 1915 a 1927 con Postgres). Con la regola provvisoria rimessa al suo posto ne falliscono sette.
+
 ### 0.82.0 — 2026-10-12
 
 **Lo schema del database condiviso esiste, ed è provato su un Postgres vero.** `supabase/schema.sql` si esegue nell'editor SQL di Supabase (anche più volte): tabelle, vincoli, registro delle tabelle sincronizzate, lapidi delle cancellazioni e le due funzioni da cui passa tutta la sincronizzazione.
