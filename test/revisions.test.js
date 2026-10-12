@@ -310,3 +310,130 @@ describe('Le revisioni nel giro verso il database condiviso', () => {
     assert.deepEqual(a.snapshot().revisions, [], 'la collezione si ricostruisce vuota');
   });
 });
+
+// ─── Due revisioni a confronto ───
+// Fino alla 0.84 lo storico confrontava ogni revisione solo con la distinta
+// attuale, mentre il manuale prometteva due revisioni affiancate.
+describe('Due revisioni a confronto, non solo con l\'attuale', () => {
+  const pannello = (a, key) => Array.from(a.el('modal-root').children).find(p => p.dataset.panelKey === key).innerHTML;
+  function treRevisioni() {
+    const a = app();
+    const rA = rilascia(a, 'g1', 'prima');
+    a.eval('getItem("g1").components.push({ itemId: "m2", qty: 1, scrapPct: 0 }); Store.commit();');
+    const rB = rilascia(a, 'g1', 'seconda');
+    a.eval('getItem("g1").components[0].qty = 5; Store.commit();');
+    return { a, rA, rB };
+  }
+
+  it('A con B: si vede l\'aggiunta fatta fra le due, non la modifica fatta dopo', () => {
+    const { a, rA, rB } = treRevisioni();
+    a.eval(`revCompareModal(${JSON.stringify(rA.id)}, ${JSON.stringify(rB.id)})`);
+    const h = pannello(a, 'confronto');
+    assert.match(h, /Rev\. A → Rev\. B/);
+    assert.match(h, /Aggiunte \(1\)/);
+    assert.match(h, /M2/);
+    assert.doesNotMatch(h, /Quantità cambiate/, 'la quantità di M1 è cambiata dopo la B');
+  });
+
+  it('l\'ordine della scelta non conta: si legge sempre dalla più vecchia', () => {
+    const { a, rA, rB } = treRevisioni();
+    a.eval(`revCompareModal(${JSON.stringify(rB.id)}, ${JSON.stringify(rA.id)})`);
+    const h = pannello(a, 'confronto');
+    assert.match(h, /Rev\. A → Rev\. B/);
+    assert.match(h, /Aggiunte \(1\)/);
+    assert.doesNotMatch(h, /Rimosse/);
+  });
+
+  it('senza l\'altra metà resta il confronto con l\'attuale, e il selettore propone le altre', () => {
+    const { a, rA } = treRevisioni();
+    a.eval(`revCompareModal(${JSON.stringify(rA.id)})`);
+    const h = pannello(a, 'confronto');
+    assert.match(h, /Rev\. A → attuale \(C\)/);
+    assert.match(h, /Quantità cambiate \(1\)/);
+    assert.match(h, /<select id="rev-contro"/);
+    assert.match(h, /la Rev\. B del/);
+  });
+
+  it('i costi delle due tessere sono quelli congelati di ciascuna', () => {
+    const { a, rA, rB } = treRevisioni();
+    a.eval(`revCompareModal(${JSON.stringify(rA.id)}, ${JSON.stringify(rB.id)})`);
+    const h = pannello(a, 'confronto');
+    approx(rA.snapshot.cost.total, 40);
+    approx(rB.snapshot.cost.total, 43);
+    assert.match(h, /Costo alla Rev\. A/);
+    assert.match(h, /Costo alla Rev\. B/);
+    assert.match(h, /\+€ 3,00|\+ ?€ ?3,00/);
+  });
+});
+
+// ─── Confronto fra due distinte qualsiasi ───
+describe('Confronto fra due distinte, su tutti i livelli', () => {
+  function varianti() {
+    return makeDb({
+      workCenters: [wc('w1', 40)],
+      items: [
+        // A: due sottogruppi che usano entrambi C1 — il totale è la somma dei rami.
+        asm('a', 'macchina', { components: [comp('s1', 1), comp('s2', 2)] }),
+        asm('s1', 'sottogruppo', { components: [comp('c1', 3), comp('m1', 1)] }),
+        asm('s2', 'sottogruppo', { components: [comp('c1', 1)] }),
+        // B: stesso S1, niente S2, una parte fatta in casa in più.
+        asm('b', 'macchina', { components: [comp('s1', 1), comp('p1', 2, 10)] }),
+        parte('p1', { cycle: [{ itemId: 'm2', qty: 0.5 }] }),
+        mat('m1', 10), acq('c1', 5), mat('m2', 3),
+      ],
+    });
+  }
+  const conf = (a, x, y) => JSON.parse(a.eval(`JSON.stringify(confrontaDistinte("${x}", "${y}").righe.map(r => ({ code: r.item.code, sez: r.sezione, qa: r.qa, qb: r.qb, delta: r.delta, stato: r.stato, valore: r.valore })))`));
+  const riga = (rr, code) => rr.find(r => r.code === code);
+
+  it('lo stesso componente in due rami è sommato: è la quantità che si compra', () => {
+    const a = app(varianti());
+    const c1 = riga(conf(a, 'a', 'b'), 'C1');
+    assert.equal(c1.qa, 3 + 2 * 1);
+    assert.equal(c1.qb, 3);
+    assert.equal(c1.stato, 'cambiato');
+    approx(c1.valore, -2 * 5, 'meno due commerciali da 5');
+  });
+
+  it('quello che c\'è solo da una parte è aggiunto o tolto, scarti compresi', () => {
+    const a = app(varianti());
+    const rr = conf(a, 'a', 'b');
+    const p1 = riga(rr, 'P1');
+    assert.equal(p1.sez, 'make');
+    assert.equal(p1.stato, 'aggiunto');
+    approx(p1.qb, 2.2, 'scarto del 10% come nel fabbisogno');
+    assert.equal(p1.valore, null, 'una parte fabbricata vale i suoi materiali, già contati sotto');
+    const m2 = riga(rr, 'M2');
+    approx(m2.qb, 1.1);
+    assert.equal(m2.stato, 'aggiunto');
+    assert.equal(riga(rr, 'M1').stato, 'uguale');
+  });
+
+  it('una distinta con sé stessa non ha differenze', () => {
+    const a = app(varianti());
+    a.eval('getItem("b").components.push({ itemId: "a", qty: 1, scrapPct: 0 })');
+    assert.ok(conf(a, 'a', 'a').every(r => r.stato === 'uguale'));
+  });
+
+  it('la scheda mostra i costi, solo le differenze di serie, e si esporta', () => {
+    const a = app(varianti());
+    a.eval('bomCompareModal("a", "b")');
+    const h = Array.from(a.el('modal-root').children).find(p => p.dataset.panelKey === 'confronto-db').innerHTML;
+    assert.match(h, /Costo A/);
+    assert.match(h, /Da acquistare/);
+    assert.match(h, /Da fabbricare/);
+    assert.doesNotMatch(h, />M1</, 'uguale, quindi nascosto');
+    const spec = JSON.parse(a.eval('JSON.stringify(bomCompareExportSpec())'));
+    assert.equal(spec.sezioni.length, 2);
+    assert.deepEqual(spec.sezioni[0].righe.map(r => r[0]).sort(), ['C1', 'M2']);
+    assert.equal(spec.sezioni[0].colonne.at(-1).h, 'Δ valore');
+  });
+
+  it('il pulsante sta nella barra delle distinte, non in quella dei cicli', () => {
+    const a = app(varianti());
+    a.eval('renderRevBar("modal-root", "a")');
+    assert.match(a.html('modal-root'), /bomCompareModal\('a'\)/);
+    a.eval('renderRevBar("modal-root", "p1")');
+    assert.doesNotMatch(a.html('modal-root'), /bomCompareModal/);
+  });
+});

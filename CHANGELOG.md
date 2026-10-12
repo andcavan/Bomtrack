@@ -2,6 +2,17 @@
 
 Le revisioni seguono il versionamento semantico `0.MINOR.PATCH`: **MINOR** per nuove funzionalità, **PATCH** per correzioni. La versione in cima è quella in `APP_VERSION` (`core.js`) e mostrata nell'header dell'app.
 
+### 0.85.0 — 2026-10-12
+
+**Confrontare distinte e revisioni.**
+
+**Nuovo**
+- **Due revisioni a confronto.** Lo storico confrontava ogni revisione solo con la distinta attuale, mentre il manuale prometteva due revisioni affiancate: ora dal confronto si sceglie l'altra metà — la distinta attuale o un'altra revisione — e si legge sempre dalla più vecchia alla più nuova, con il costo congelato di ciascuna.
+- **⇄ Confronta con…** in *Gestione DB*: la distinta aperta contro un'altra qualsiasi, **su tutti i livelli**, con le quantità per una macchina calcolate come nel fabbisogno (scarti compresi, rami sommati). Due elenchi — da acquistare, con la differenza di valore, e da fabbricare — il costo delle due distinte, solo le differenze di serie, export Excel e PDF.
+
+**Verifica**
+- `test/revisions.test.js`: revisione con revisione in entrambi gli ordini, costi congelati, totali su più livelli con lo stesso componente in due rami, scarti, una distinta con sé stessa. L'impaginazione del confronto entra nei controlli in Chromium.
+
 ### 0.84.0 — 2026-10-12
 
 **I dati al sicuro.** L'archivio esiste solo in questo browser, e il backup c'era — ma niente ricordava di farlo, e lo spazio si vedeva solo aprendo *Gestione → Backup*.

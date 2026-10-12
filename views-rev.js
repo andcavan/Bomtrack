@@ -168,7 +168,8 @@ function renderRevBar(elId, itemId) {
   if (!it || !hasRevisions(it)) { el.innerHTML = ''; return; }
   el.innerHTML = `${revBadge(it)}
     <button class="btn-outline" onclick="releaseRevisionModal('${it.id}')">${ico('pin', 'tinted', '')} Nuova revisione</button>
-    <button class="btn-outline" onclick="revHistoryModal('${it.id}')">${ico('clock', 'tinted', '')} Storico revisioni</button>`;
+    <button class="btn-outline" onclick="revHistoryModal('${it.id}')">${ico('clock', 'tinted', '')} Storico revisioni</button>${isAssembly(it.type) ? `
+    <button class="btn-outline" onclick="bomCompareModal('${it.id}')" title="Le differenze con un'altra distinta, su tutti i livelli">⇄ Confronta con…</button>` : ''}`;
 }
 function renderBomRevBar() { renderRevBar('bom-rev-bar', currentBomId); }
 function renderCyclesRevBar() { renderRevBar('cycles-rev-bar', currentCycleItemId); }
@@ -236,11 +237,18 @@ function revHistoryModal(itemId) {
     <div class="modal-actions"><button class="btn-ghost" onclick="closeModal()">Chiudi</button></div>`, true, 'storico');
 }
 
-// Confronto fra una revisione rilasciata e la distinta attuale.
-function revCompareModal(revId) {
+// Confronto fra una revisione rilasciata e un'altra, o la distinta attuale.
+// `controId` vuoto = la distinta attuale. Fra due revisioni si legge sempre
+// dalla più vecchia alla più nuova, qualunque si sia scelta per prima: «aggiunta»
+// vuol dire aggiunta col passare del tempo, non «c'è a destra e non a sinistra».
+function revCompareModal(revId, controId) {
   const r = getRevision(revId); if (!r) return;
   const it = getItem(r.itemId); if (!it) return;
-  const d = revDiff(r.snapshot, revSnapshot(it));
+  const lista = revisionsOf(it.id);   // dalla più recente
+  const contro = controId ? getRevision(controId) : null;
+  let prima = r, dopo = contro;
+  if (contro && lista.indexOf(contro) > lista.indexOf(r)) { prima = contro; dopo = r; }
+  const d = revDiff(prima.snapshot, dopo ? dopo.snapshot : revSnapshot(it));
   const riga = (x, segno, colore, extra) => `<div class="mgmt-item">
       <span style="color:${colore};font-weight:700;width:18px">${segno}</span>
       <span style="flex:1">${esc(x.etichetta)}</span>
@@ -249,15 +257,24 @@ function revCompareModal(revId) {
     </div>`;
   const sezione = (titolo, righe) => righe.length
     ? `<h4 class="settings-group-title">${titolo} (${righe.length})</h4>${righe.join('')}` : '';
-  const costoPrima = r.snapshot.cost ? r.snapshot.cost.total : 0;
-  const costoOra = costOf(it.id).total;
-  const delta = costoOra - costoPrima;
+  const costoPrima = prima.snapshot.cost ? prima.snapshot.cost.total : 0;
+  const costoDopo = dopo ? (dopo.snapshot.cost ? dopo.snapshot.cost.total : 0) : costOf(it.id).total;
+  const delta = costoDopo - costoPrima;
   const u = itemUom(it);
-  openModal(`<h3>⇄ Rev. ${esc(r.rev)} → attuale (${esc(itemRev(it))})</h3>
-    <p>${esc(it.code)} — ${esc(it.name)}${r.motivo ? ` · <em>${esc(r.motivo)}</em>` : ''}</p>
+  const nomeDopo = dopo ? 'Rev. ' + dopo.rev : 'attuale (' + itemRev(it) + ')';
+  // Il selettore propone sempre l'altra metà del confronto: la distinta attuale
+  // e ogni revisione diversa da quella di partenza.
+  const opzioni = [`<option value=""${!contro ? ' selected' : ''}>la distinta attuale (${esc(itemRev(it))})</option>`]
+    .concat(lista.filter(x => x.id !== r.id).map(x =>
+      `<option value="${esc(x.id)}"${contro && contro.id === x.id ? ' selected' : ''}>la Rev. ${esc(x.rev)} del ${esc(String(x.date || '').slice(0, 10))}</option>`)).join('');
+  const motivo = dopo && dopo.motivo ? dopo.motivo : (!dopo && prima.motivo ? prima.motivo : '');
+  openModal(`<h3>⇄ Rev. ${esc(prima.rev)} → ${esc(nomeDopo)}</h3>
+    <p>${esc(it.code)} — ${esc(it.name)}${motivo ? ` · <em>${esc(motivo)}</em>` : ''}</p>
+    ${lista.length > 1 ? `<div class="modal-field" style="max-width:420px;margin-top:10px"><label>Confronta la Rev. ${esc(r.rev)} con</label>
+      <select id="rev-contro" onchange="revCompareModal('${r.id}', this.value)">${opzioni}</select></div>` : ''}
     <div class="cost-summary">
-      ${kpi('Costo alla Rev. ' + esc(r.rev), fmtPer(costoPrima, u), '')}
-      ${kpi('Costo attuale', fmtPer(costoOra, u), '')}
+      ${kpi('Costo alla Rev. ' + esc(prima.rev), fmtPer(costoPrima, u), '')}
+      ${kpi(dopo ? 'Costo alla Rev. ' + esc(dopo.rev) : 'Costo attuale', fmtPer(costoDopo, u), '')}
       ${kpi('Differenza', (delta >= 0 ? '+' : '') + fmtPer(delta, u), delta > 0 ? 'orange' : (delta < 0 ? 'green' : ''))}
     </div>
     ${revDiffVuoto(d) ? '<div class="empty-text">Nessuna differenza nella distinta. Se il costo è cambiato, è cambiato un prezzo, non la distinta.</div>' : ''}
@@ -266,4 +283,118 @@ function revCompareModal(revId) {
     ${sezione('Quantità cambiate', d.cambiate.map(x => riga(x, '≠', 'var(--orange, #d90)',
       `${fmtQty(x.qtyPrima)} → ${fmtUom(x.qty, x.uom)}`)))}
     <div class="modal-actions"><button class="btn-ghost" onclick="closeModal()">Chiudi</button></div>`, true, 'confronto');
+}
+
+// ─── Confronto fra due distinte qualsiasi ───
+// Le revisioni rispondono a «com'era questa macchina»; qui la domanda è
+// «che differenza c'è fra queste due»: la variante, la versione per un altro
+// cliente, la macchina nuova nata da una vecchia. Si confronta su tutti i
+// livelli, per articolo, con le quantità **totali per una macchina** — le
+// stesse del fabbisogno, perché è mrpExplode a calcolarle: scarti compresi,
+// e lo stesso componente in due rami è sommato.
+// Due elenchi come nel piano: quello che si compra e quello che si fabbrica.
+// Il valore cambia solo sul primo: una parte fabbricata vale i suoi materiali
+// e le sue ore, già contati sotto — sommarli due volte gonfierebbe la differenza.
+function confrontaDistinte(aId, bId) {
+  const esplodi = id => mrpExplode([{ itemId: id, qty: 1 }]);
+  const ea = esplodi(aId), eb = esplodi(bId);
+  const righe = [];
+  [['buy', 'Da acquistare'], ['make', 'Da fabbricare']].forEach(([k, sezione]) => {
+    const m = new Map();
+    ea[k].forEach(e => m.set(e.item.id, { item: e.item, sezione: k, qa: e.qty, qb: 0 }));
+    eb[k].forEach(e => {
+      const r = m.get(e.item.id) || { item: e.item, sezione: k, qa: 0, qb: 0 };
+      r.qb = e.qty; m.set(e.item.id, r);
+    });
+    m.forEach(r => {
+      r.delta = r.qb - r.qa;
+      if (Math.abs(r.delta) < 1e-9) r.delta = 0;
+      r.stato = !r.qa ? 'aggiunto' : (!r.qb ? 'tolto' : (r.delta ? 'cambiato' : 'uguale'));
+      r.valore = k === 'buy' ? r.delta * itemUnitCost(r.item) : null;
+      righe.push(r);
+    });
+  });
+  righe.sort((x, y) => x.sezione.localeCompare(y.sezione) || String(x.item.code).localeCompare(String(y.item.code)));
+  return { righe, costoA: costOf(aId).total, costoB: costOf(bId).total, anello: ea.cycle || eb.cycle };
+}
+
+let _bomConfronto = { a: '', b: '', soloDiff: true };
+// Con il segno sempre davanti al simbolo: «+€ 8,00», «−€ 320,00», non «€ -320,00».
+function fmtNSegno(v) { return (v > 0 ? '+' : v < 0 ? '−' : '') + fmtN(Math.abs(v)); }
+const qtyUomIt = (n, u) => fmtQtyIt(n) + uomSuffix(u);
+function bomCompareModal(aId, bId) {
+  const a = getItem(aId || currentBomId); if (!a) return;
+  const candidati = (db.items || []).filter(i => isAssembly(i.type) && i.id !== a.id && i.active !== false)
+    .sort((x, y) => String(x.code).localeCompare(String(y.code)));
+  if (bId === undefined) bId = _bomConfronto.a === a.id ? _bomConfronto.b : '';
+  _bomConfronto.a = a.id; _bomConfronto.b = bId || '';
+  const b = bId ? getItem(bId) : null;
+  const scelta = `<div class="modal-field" style="max-width:520px"><label>Confronta ${esc(a.code)} con</label>
+    <select id="bom-contro" onchange="bomCompareModal('${a.id}', this.value)">
+      <option value="">— scegli una distinta —</option>
+      ${candidati.map(i => `<option value="${esc(i.id)}"${b && b.id === i.id ? ' selected' : ''}>${esc(i.code)} — ${esc(i.name)}</option>`).join('')}
+    </select></div>`;
+  let corpo = '';
+  if (!candidati.length) corpo = '<div class="empty-text">Non ci sono altre distinte con cui confrontarla.</div>';
+  else if (b) {
+    const c = confrontaDistinte(a.id, b.id);
+    const delta = c.costoB - c.costoA;
+    const diverse = c.righe.filter(r => r.stato !== 'uguale');
+    const mostrate = _bomConfronto.soloDiff ? diverse : c.righe;
+    const segno = { aggiunto: ['+', 'var(--green)'], tolto: ['−', 'var(--red)'], cambiato: ['≠', 'var(--orange, #d90)'], uguale: ['=', 'var(--text-dim)'] };
+    const tabella = sez => {
+      const rr = mostrate.filter(r => r.sezione === sez);
+      if (!rr.length) return '';
+      return `<h4 class="settings-group-title">${sez === 'buy' ? 'Da acquistare' : 'Da fabbricare'} (${rr.length})</h4>
+      <div class="table-wrap"><table class="bom-compare">
+        <thead><tr><th></th><th>Codice</th><th>Descrizione</th><th class="num">${esc(a.code)}</th><th class="num">${esc(b.code)}</th><th class="num">Δ</th>${sez === 'buy' ? '<th class="num">Δ valore</th>' : ''}</tr></thead>
+        <tbody>${rr.map(r => `<tr>
+          <td style="color:${segno[r.stato][1]};font-weight:700">${segno[r.stato][0]}</td>
+          <td><span class="code-link" ${clickAttrs(`itemInfoModal('${r.item.id}', event)`, 'Scheda di ' + r.item.code)}>${esc(r.item.code)}</span></td>
+          <td>${esc(r.item.name)}</td>
+          <td class="num">${r.qa ? qtyUomIt(r.qa, itemUom(r.item)) : '—'}</td>
+          <td class="num">${r.qb ? qtyUomIt(r.qb, itemUom(r.item)) : '—'}</td>
+          <td class="num">${r.delta ? (r.delta > 0 ? '+' : '−') + fmtQtyIt(Math.abs(r.delta)) : ''}</td>
+          ${sez === 'buy' ? `<td class="num">${r.valore ? fmtNSegno(r.valore) : ''}</td>` : ''}
+        </tr>`).join('')}</tbody></table></div>`;
+    };
+    corpo = `<div class="cost-summary">
+        ${kpi('Costo ' + esc(a.code), fmtN(c.costoA), '')}
+        ${kpi('Costo ' + esc(b.code), fmtN(c.costoB), '')}
+        ${kpi('Differenza', fmtNSegno(delta), delta > 0 ? 'orange' : (delta < 0 ? 'green' : ''))}
+      </div>
+      ${c.anello ? '<p style="color:var(--red)">Una delle due distinte contiene sé stessa: l\'esplosione si ferma all\'anello.</p>' : ''}
+      <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin:8px 0">
+        <label style="display:flex;gap:6px;align-items:center"><input type="checkbox" ${_bomConfronto.soloDiff ? 'checked' : ''}
+          onchange="_bomConfronto.soloDiff = this.checked; bomCompareModal('${a.id}', '${b.id}')"> Solo le differenze</label>
+        <span class="empty-text" style="padding:0">${diverse.length} articoli diversi su ${c.righe.length} · quantità per una macchina, su tutti i livelli, scarti compresi</span>
+        <span style="flex:1"></span>
+        ${listExportButtons('bomCompareExportSpec').replace('class="export-pair"', 'class="export-pair export-pair-row"')}
+      </div>
+      ${mostrate.length ? tabella('buy') + tabella('make') : '<div class="empty-text">Le due distinte usano gli stessi articoli nelle stesse quantità.</div>'}`;
+  }
+  openModal(`<h3>⇄ Confronta distinte — ${esc(a.code)} ${esc(a.name)}</h3>
+    ${scelta}${corpo}
+    <div class="modal-actions"><button class="btn-ghost" onclick="closeModal()">Chiudi</button></div>`, true, 'confronto-db');
+}
+function bomCompareExportSpec() {
+  const a = getItem(_bomConfronto.a), b = getItem(_bomConfronto.b);
+  if (!a || !b) return null;
+  const c = confrontaDistinte(a.id, b.id);
+  const righe = c.righe.filter(r => !_bomConfronto.soloDiff || r.stato !== 'uguale');
+  const STATO = { aggiunto: 'Solo in ' + b.code, tolto: 'Solo in ' + a.code, cambiato: 'Quantità diversa', uguale: 'Uguale' };
+  const colonne = [{ h: 'Codice', w: 18 }, { h: 'Descrizione', w: 40 }, { h: 'UM', w: 6 },
+    { h: a.code, w: 12, num: true }, { h: b.code, w: 12, num: true }, { h: 'Δ', w: 10, num: true }, { h: 'Esito', w: 18 }];
+  const sez = (k, nome) => {
+    const rr = righe.filter(r => r.sezione === k);
+    const cols = k === 'buy' ? colonne.concat([{ h: 'Δ valore', w: 12, num: true }]) : colonne;
+    return { nome, colonne: cols, righe: rr.map(r => {
+      const base = [r.item.code, r.item.name, itemUom(r.item), r.qa, r.qb, r.delta, STATO[r.stato]];
+      return k === 'buy' ? base.concat([r.valore || 0]) : base;
+    }) };
+  };
+  return { titolo: `Confronto distinte ${a.code} / ${b.code}`, slug: `confronto_${a.code}_${b.code}`,
+    filtri: [['Distinta A', a.code + ' — ' + a.name], ['Distinta B', b.code + ' — ' + b.name],
+      ['Costo A', c.costoA], ['Costo B', c.costoB], ['Righe', _bomConfronto.soloDiff ? 'solo le differenze' : 'tutte']],
+    sezioni: [sez('buy', 'Da acquistare'), sez('make', 'Da fabbricare')] };
 }

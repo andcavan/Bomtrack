@@ -1007,12 +1007,37 @@ una lettera che parte da `A`. Ci si lavora liberamente.
 2. **congela** la distinta com'è adesso, con il costo di oggi;
 3. passa alla lettera successiva, che diventa quella in lavorazione.
 
-**Storico revisioni** mostra le revisioni rilasciate, con data, autore e motivo.
-**Confronta revisioni** mette due revisioni a fianco e dice cosa è **aggiunto**, cosa **rimosso** e
-cosa **modificato**.
+**Storico revisioni** mostra le revisioni rilasciate, con data, autore e motivo. **⇄ Confronta**,
+su ogni riga, mette quella revisione a fianco della distinta attuale; dal menu **Confronta la Rev. …
+con** si sceglie invece un'altra revisione (dalla 0.85.0). Il confronto dice cosa è **aggiunto**,
+cosa **rimosso** e cosa ha **cambiato quantità**, con il costo congelato di ciascuna delle due e la
+differenza. Fra due revisioni si legge sempre dalla più vecchia alla più nuova, in qualunque
+ordine le si scelga.
 
-**Da sapere.** Se dall'ultimo rilascio non è cambiato niente, l'app lo dice invece di creare una
-revisione identica alla precedente.
+**Da sapere.**
+- Se dall'ultimo rilascio non è cambiato niente, l'app lo dice invece di creare una revisione
+  identica alla precedente.
+- Il confronto fra revisioni guarda un livello: i componenti diretti. Un sottogruppo che ha
+  cambiato la *sua* distinta lo dicono le revisioni del sottogruppo.
+
+### Confrontare due distinte diverse
+
+**⇄ Confronta con…**, nella barra revisioni di *Gestione DB*, mette la distinta aperta a fianco di
+**un'altra distinta qualsiasi**: la variante per un altro cliente, la macchina nuova nata da una
+vecchia, i due gruppi che dovrebbero essere uguali.
+
+Qui il confronto è **su tutti i livelli**, articolo per articolo, con le quantità **per una
+macchina** — le stesse del fabbisogno: scarti compresi, e lo stesso componente usato in due rami
+contato una volta sola con la somma. Due elenchi, come nel piano:
+
+| Elenco | Cosa contiene | Δ valore |
+|---|---|---|
+| **Da acquistare** | commerciali, materie prime, parti comprate | sì: differenza di quantità × costo unitario |
+| **Da fabbricare** | le parti fatte in casa | no: una parte vale i suoi materiali e le sue ore, già contati nell'elenco sopra |
+
+Di serie si vedono **solo le differenze**; togliendo la spunta compaiono anche gli articoli uguali.
+In alto il costo delle due distinte e la differenza. Il confronto si esporta in Excel o PDF, un
+foglio per elenco.
 
 ---
 

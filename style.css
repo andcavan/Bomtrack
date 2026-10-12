@@ -1147,3 +1147,6 @@ body.insp-on .row-actions{display:none}
   .rfq-qty-input,.rfq-price-input{min-height:38px}
 }
 .backup-vecchio{color:var(--orange)}
+/* Confronto fra due distinte */
+.bom-compare th,.bom-compare td{padding:7px 8px}
+.bom-compare .num{font-family:var(--mono);text-align:right;white-space:nowrap}
