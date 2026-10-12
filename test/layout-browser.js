@@ -40,7 +40,11 @@ const LARGHEZZE = [1920, 1440, 1366, 1280, 1024, 820, 390];
     const errori = [];
     page.on('pageerror', e => errori.push(e.message));
     await page.goto('file://' + APP);
+    await page.waitForFunction(() => typeof Store !== 'undefined' && Store.archivio !== undefined && typeof db !== 'undefined' && db);
     const uid = await page.evaluate(SEED);
+    // Con l'archivio in IndexedDB il salvataggio finisce dopo: si ricarica
+    // solo quando è arrivato.
+    await page.waitForFunction(() => Store.scrittureInVolo() === 0);
     await page.evaluate(id => localStorage.setItem('bomtrack_session', JSON.stringify({ userId: id, ts: new Date().toISOString() })), uid);
     await page.reload(); await page.waitForTimeout(300);
     for (const [nome, js] of VISTE) {

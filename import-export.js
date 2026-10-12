@@ -984,11 +984,37 @@ function closeImportReport() {
 // Lo spazio di localStorage è circa 5 MB per sito: oltre i 4 conviene saperlo
 // prima di sbatterci contro, non quando il salvataggio comincia a fallire.
 // Il Riepilogo avvisa prima, al 70%: lì è un promemoria, qui un allarme.
+//
+// Con l'archivio in IndexedDB (dalla 0.87.0) il limite è lo spazio che il
+// browser concede al sito, che chiede navigator.storage.estimate(): di solito
+// una frazione del disco, cioè gigabyte. Lì conta l'uso di tutto il sito,
+// allegati compresi, non solo l'archivio.
 const DB_SPAZIO_MB = 5;
 const DB_SIZE_WARN_MB = 4;
-function dbSpazioPct() { return Math.round(Store.sizeInfo().mb / DB_SPAZIO_MB * 100); }
+let _stimaSpazio = null;   // { usoMB, quotaMB } da navigator.storage.estimate()
+function aggiornaStimaSpazio() {
+  const st = typeof navigator !== 'undefined' && navigator.storage;
+  if (!st || !st.estimate) return Promise.resolve(null);
+  return st.estimate().then(e => {
+    _stimaSpazio = e && e.quota ? { usoMB: (e.usage || 0) / 1048576, quotaMB: e.quota / 1048576 } : null;
+    return _stimaSpazio;
+  }).catch(() => null);
+}
+const inIndexedDb = () => Store.archivio === 'indexeddb';
+// { usatoMB, limiteMB } — limiteMB null se non si sa.
+function dbSpazio() {
+  if (inIndexedDb()) return _stimaSpazio ? { usatoMB: _stimaSpazio.usoMB, limiteMB: _stimaSpazio.quotaMB } : { usatoMB: Store.sizeInfo().mb, limiteMB: null };
+  return { usatoMB: Store.sizeInfo().mb, limiteMB: DB_SPAZIO_MB };
+}
+function dbSpazioPct() { const s = dbSpazio(); return s.limiteMB ? Math.round(s.usatoMB / s.limiteMB * 100) : 0; }
+function fmtMB(mb) { return mb >= 1024 ? (mb / 1024).toFixed(1).replace('.', ',') + ' GB' : mb.toFixed(2) + ' MB'; }
 function dbSizeLine() {
   const { mb } = Store.sizeInfo();
+  if (inIndexedDb()) {
+    const s = dbSpazio(), pct = dbSpazioPct();
+    return `<p style="margin-top:6px">Spazio occupato dall'archivio: <strong${pct >= 90 ? ' style="color:var(--red)"' : ''}>${mb.toFixed(2)} MB</strong>,
+      nel database del browser (IndexedDB)${s.limiteMB ? ` — il sito usa ${fmtMB(s.usatoMB)} sui ${fmtMB(s.limiteMB)} che il browser gli concede` : ''}.</p>`;
+  }
   const vicino = mb >= DB_SIZE_WARN_MB;
   return `<p style="margin-top:6px">Spazio occupato: <strong${vicino ? ' style="color:var(--red)"' : ''}>${mb.toFixed(2)} MB</strong>
     ${vicino ? '— vicino al limite del browser (circa 5 MB). Esporta un backup e alleggerisci il database.' : 'sui circa 5 MB che il browser riserva a questa app.'}</p>`;
@@ -1052,7 +1078,7 @@ function renderBackup() {
   return `<div class="cloud-section">
     <div style="flex:1">
       <strong>${ico('save', 'tinted', '')} Backup locale</strong>
-      <p>I dati sono salvati nel browser (localStorage). Esporta un file JSON per conservare un backup o trasferire i dati su un altro PC. L'import sovrascrive i dati attuali.</p>
+      <p>I dati sono salvati nel browser (${inIndexedDb() ? 'IndexedDB' : 'localStorage'}). Esporta un file JSON per conservare un backup o trasferire i dati su un altro PC. L'import sovrascrive i dati attuali.</p>
       <p><strong>I documenti d'archivio sì, i vecchi file no.</strong> Di un documento d'archivio il backup porta il <em>percorso</em> dentro la cartella, che è un dato come gli altri: ripristinandolo su un PC che ha la sua copia dell'archivio i collegamenti valgono ancora. I file caricati <em>dentro</em> Bomtrack prima della 0.78.0 restano invece fuori dal JSON — sono byte, e nel JSON non ci starebbero — quindi il backup ne porta l'<em>elenco</em> e non il contenuto: si vede che cosa manca invece di trovare una scheda vuota. Prima di trasferirsi su un altro PC vanno riscaricati a mano dalla scheda Allegati di ciascun articolo.</p>
       ${dbSizeLine()}
       ${backupLine()}
@@ -1289,7 +1315,11 @@ function resetViewState() {
 // ═══════════════════════════════════════════════════════════
 //  INIT
 // ═══════════════════════════════════════════════════════════
-function init() {
+// Async per un solo motivo: aprire l'archivio in IndexedDB richiede di
+// aspettare. Da lì in poi tutto è sincrono come prima.
+async function init() {
+  await Store.preparaArchivio();
+  if (Store.archivio === 'indexeddb') aggiornaStimaSpazio();
   Store.load();
   const ver = 'v' + APP_VERSION;
   ['app-version', 'app-version-login'].forEach(id => {

@@ -175,7 +175,7 @@ function homeSegnali() {
     const pct = dbSpazioPct();
     if (pct >= 70) out.push({ n: pct, testo: '% dello spazio del browser occupato dall\'archivio',
       vista: 'manage', apri: "homeApri('backup')", gravita: pct >= 90 ? 'alta' : 'media',
-      voci: [voce(Store.sizeInfo().mb.toFixed(2) + ' MB su ' + DB_SPAZIO_MB, 'Oltre il limite i salvataggi falliscono: esporta un backup e alleggerisci l\'archivio', '')] });
+      voci: [voce(fmtMB(dbSpazio().usatoMB) + ' su ' + fmtMB(dbSpazio().limiteMB), 'Oltre il limite i salvataggi falliscono: esporta un backup e alleggerisci l\'archivio', '')] });
   }
 
   return out;

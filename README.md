@@ -2,7 +2,7 @@
 
 App per creare e gestire **distinte base (BOM) multi-livello** di macchine meccaniche, ottenere la **costificazione automatica** e gestire il ciclo acquisti (**richieste di offerta** e **ordini a fornitore**).
 
-Costruita con lo stesso stile di TimeTrack: vanilla JavaScript + HTML + CSS, nessun build, tema dark. **Database solo locale** (`localStorage`) — nessun server, nessun Supabase.
+Costruita con lo stesso stile di TimeTrack: vanilla JavaScript + HTML + CSS, nessun build, tema dark. **Database solo locale** (IndexedDB del browser, `localStorage` se manca) — nessun server, nessun Supabase.
 
 ➡️ **[MANUALE D'USO](MANUALE.md)** — il manuale operativo completo: cosa fa ogni schermata, come si compilano i campi, e il **flusso di lavoro** dalla commessa del cliente alla merce a magazzino. Dentro l'app si apre con il pulsante 📖 nell'intestazione (`manuale.html`, offline come tutto il resto); `genera-manuale.py` lo rigenera da `MANUALE.md`, che resta l'unica fonte. Questo README è invece la documentazione funzionale, orientata al perché delle scelte.
 
@@ -218,7 +218,7 @@ Il motivo è lo storico: finché lo stesso dato si poteva scrivere in due posti,
 - `index.html` — struttura, navigazione, barre filtri delle due anagrafiche, caricamento degli script.
 - `vendor/` — le librerie di export (SheetJS per Excel, jsPDF per i PDF), tenute nel repo invece che su un CDN. Versioni, origine e come si aggiornano: `vendor/LEGGIMI.md`.
 - `theme.js` — tema chiaro/scuro/automatico: scrive `data-theme` sull'elemento radice, che è tutto ciò che `style.css` legge. La preferenza sta nel browser di chi lavora, non nel database.
-- `store.js` — layer dati: schema, migrazioni versionate, `Store` (API repository) su localStorage, hashing delle password e autore delle modifiche.
+- `store.js` — layer dati: schema, migrazioni versionate, `Store` (API repository) su IndexedDB o localStorage, hashing delle password e autore delle modifiche.
 - Il codice dell'app, diviso in **classic script caricati in sequenza** da `index.html` (nessun modulo, nessun build: la pagina si apre anche con un doppio click). Lo scope globale è condiviso, quindi restano un solo insieme di funzioni e un solo stato:
 
 | File | Contenuto |

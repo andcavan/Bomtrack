@@ -523,7 +523,7 @@ Ogni segnale **nomina i codici e i numeri che lo riguardano** (fino a otto, poi 
 | 9 | Fasi a costo orario senza ore dichiarate | 🟠 media | al ciclo |
 | 10 | Codici articolo duplicati | 🟠 media | a Gestione |
 | 11 | Giorni dall'ultimo backup (da 7; 🔴 da 30) — *solo amministratori* | 🟠 media | a Gestione → Backup |
-| 12 | Spazio del browser occupato (dal 70%; 🔴 dal 90%) — *solo amministratori* | 🟠 media | a Gestione → Backup |
+| 12 | Spazio del browser occupato (dal 70%; 🔴 dal 90%) — *solo amministratori*. Con l'archivio in IndexedDB conta lo spazio di tutto il sito, allegati compresi | 🟠 media | a Gestione → Backup |
 
 **Il backup che invecchia.** L'archivio esiste solo in questo browser: il segnale 11 conta i
 giorni dall'ultimo *Esporta JSON* fatto **da questo browser**, e porta il pulsante **Esporta ora**.
@@ -2336,13 +2336,25 @@ Non c'è backend e non c'è database remoto.
 
 ## A.2 Dove risiedono i dati
 
-Tutto sta nel **`localStorage` del browser**, sotto la chiave **`bomtrack_v1`**: un unico documento
-JSON.
+L'archivio è un unico documento JSON. Dalla 0.87.0 sta in **IndexedDB**, il database del browser,
+nel database **`bomtrack_archivio`**: lì il limite è lo spazio che il browser concede al sito
+(di solito gigabyte), non i circa 5 MB di `localStorage` dove stava prima. Il primo avvio della
+0.87 lo trasloca da solo: copia, rilegge la copia e solo se coincide libera `localStorage`. Se il
+browser non ha IndexedDB, l'archivio resta in `localStorage` come prima.
+
+| Dove | Chiave | Contenuto |
+|---|---|---|
+| IndexedDB | `db` | **L'archivio.** Tutto il lavoro sta qui |
+| IndexedDB | `illeggibile` | Dove finisce un archivio che non si riesce più a leggere, invece di essere sovrascritto dai dati di esempio |
+| localStorage | `bomtrack_v1_rev` | Il contatore delle scritture, con cui due schede aperte si accorgono l'una dell'altra |
+| localStorage | `bomtrack_v1_in_indexeddb` | Il segno che l'archivio è traslocato: se un giorno IndexedDB non si apre, l'app non riparte dai dati di esempio |
+| localStorage | `bomtrack_ultimo_backup` | La data dell'ultimo *Esporta JSON* da questo browser |
+
+Senza IndexedDB le prime due stanno in `localStorage`, come `bomtrack_v1` e
+`bomtrack_v1_illeggibile`. Le chiavi qui sotto sono invece sempre in `localStorage`:
 
 | Chiave | Contenuto |
 |---|---|
-| `bomtrack_v1` | **L'archivio.** Tutto il lavoro sta qui |
-| `bomtrack_v1_illeggibile` | Dove finisce un archivio che non si riesce più a leggere, invece di essere sovrascritto dai dati di esempio |
 | `bomtrack_theme` | Il tema scelto |
 | `bomtrack_session` | La sessione aperta |
 | `bomtrack_columns` | Le colonne nascoste, per vista |
@@ -2353,8 +2365,8 @@ Le ultime cinque sono **preferenze personali di questa macchina**, non dati azie
 nel backup e non si condividono. La cartella d'archivio sta fra queste di proposito: ogni PC ha la
 sua, e importarla da un backup imporrebbe a tutti la lettera di unità del primo che l'ha scelta.
 
-**Fuori da `localStorage`** stanno due cose, entrambe fatte di file. In **IndexedDB** i byte degli
-allegati caricati dentro l'app prima della 0.78.0. Nella **cartella d'archivio** i PDF dei
+**Fuori dall'archivio** stanno due cose, entrambe fatte di file. In **IndexedDB**, in un database
+a parte (`bomtrack_allegati`), i byte degli allegati caricati dentro l'app prima della 0.78.0. Nella **cartella d'archivio** i PDF dei
 documenti (→ [cap. 8](#8-la-scheda-articolo-campo-per-campo)): quella cartella non appartiene a
 Bomtrack, che ci guarda dentro e basta.
 
@@ -2444,8 +2456,9 @@ La suite gira anche in CI a ogni push.
 - **Un archivio per browser.** Niente concorrenza, niente sincronizzazione, niente storico
   condiviso. Ci si allinea con i backup JSON.
 - **Il controllo dei permessi è sul client.** Chi apre gli strumenti di sviluppo lo aggira.
-- **La dimensione dell'archivio è limitata** da quanto `localStorage` concede al browser (in genere
-  qualche megabyte). *Gestione → Backup* mostra la dimensione corrente.
+- **La dimensione dell'archivio è limitata** da quanto il browser concede al sito: con IndexedDB
+  (dalla 0.87.0) di solito gigabyte, senza qualche megabyte. *Gestione → Backup* mostra la
+  dimensione corrente e lo spazio disponibile.
 
 La direzione presa per superarli è un backend con autenticazione e permessi sul server;
 `cloud-map.js` e `docs/cloud-schema.md` sono la preparazione a quel passaggio, e **non**

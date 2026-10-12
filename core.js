@@ -13,7 +13,7 @@
 // Revisione in esecuzione, mostrata accanto al logo. Va tenuta allineata alla
 // voce in cima a CHANGELOG.md (l'app si copia a mano tra PC: sapere
 // quale revisione sta girando su una postazione è l'unico modo per capirlo).
-const APP_VERSION = '0.86.0';
+const APP_VERSION = '0.87.0';
 
 let currentUser = null;      // utente della sessione (null = schermata di accesso)
 let currentBomId = null;     // articolo prodotto attualmente aperto nelle Distinte
@@ -982,12 +982,17 @@ function onLoadError(info) {
 function showLoadErrorModal(info) {
   const kb = info && info.bytes ? ` (erano circa ${Math.round(info.bytes / 1024)} KB)` : '';
   const dove = info && info.rescued
-    ? `Sono stati messi da parte così com'erano, sotto la voce <span style="font-family:var(--mono)">${esc(DB_KEY_RESCUE)}</span> dell'archivio locale del browser, e restano recuperabili a mano.`
+    ? (Store.archivio === 'indexeddb'
+      ? `Sono stati messi da parte così com'erano, alla voce <span style="font-family:var(--mono)">illeggibile</span> del database <span style="font-family:var(--mono)">${esc(IDB_NOME)}</span> del browser, e restano recuperabili a mano.`
+      : `Sono stati messi da parte così com'erano, sotto la voce <span style="font-family:var(--mono)">${esc(DB_KEY_RESCUE)}</span> dell'archivio locale del browser, e restano recuperabili a mano.`)
     : 'Una copia di scorta era già stata messa da parte in precedenza, e non è stata toccata.';
   const testo = info && info.kind === 'parse'
     ? `<p>I dati salvati su questo computer non si riescono più a leggere${kb}: il contenuto risulta interrotto o alterato.</p>
        <p><strong>Non sono stati cancellati.</strong> ${dove}</p>
        <p>Quello che vedi adesso è un database di esempio, e <strong>non è ancora stato salvato</strong>: finché non modifichi qualcosa, l'originale resta dov'è. Prima di lavorare, reimporta l'ultimo backup JSON — o fai vedere questa schermata a chi segue l'app.</p>`
+    : Store.archivio === 'irraggiungibile'
+    ? `<p>L'archivio sta nel database del browser (IndexedDB), e questa volta il browser non l'ha aperto. <strong>I dati non sono persi.</strong></p>
+       <p>Chiudi le altre schede o finestre con Bomtrack e ricarica la pagina. Finché l'archivio non torna raggiungibile, l'app non salva niente: quello che vedi è un database di esempio.</p>`
     : `<p>Il browser non consente di leggere l'archivio locale: succede in navigazione privata, o quando i dati dei siti sono bloccati.</p>
        <p>Quello che vedi è un database di esempio. <strong>Non lavorarci sopra</strong>: alla chiusura non resterebbe nulla.</p>`;
   // Chiave propria, come per l'avviso di salvataggio: si affianca a ciò che è
@@ -1005,6 +1010,7 @@ function showLoadErrorModal(info) {
 // altro momento: quello lo mostra mentre si lavora, questo lo difende all'uscita.
 function lavoroInSospeso() {
   if (typeof Store !== 'undefined' && Store.isUnsaved && Store.isUnsaved()) return true;
+  if (typeof Store !== 'undefined' && Store.scrittureInVolo && Store.scrittureInVolo() > 0) return true;
   return !!(typeof rfqDirty !== 'undefined' && rfqDirty)
     || !!(typeof orderDirty !== 'undefined' && orderDirty)
     || !!(typeof odlDirty !== 'undefined' && odlDirty);
@@ -1441,7 +1447,7 @@ if (typeof document !== 'undefined') {
   });
   // ── L'app anche senza rete ──
   // Il service worker mette in cache i file del programma (non i dati: quelli
-  // stanno in localStorage e non passano di lì) così l'app si apre offline e si
+  // stanno nel browser, in IndexedDB o localStorage, e non passano di lì) così l'app si apre offline e si
   // può installare sul PC dell'officina.
   //
   // Su file:// non esiste e il browser lo rifiuta: è il modo in cui l'app si

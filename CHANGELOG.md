@@ -2,6 +2,27 @@
 
 Le revisioni seguono il versionamento semantico `0.MINOR.PATCH`: **MINOR** per nuove funzionalità, **PATCH** per correzioni. La versione in cima è quella in `APP_VERSION` (`core.js`) e mostrata nell'header dell'app.
 
+### 0.87.0 — 2026-10-12
+
+**L'archivio senza il tetto dei 5 MB.** L'archivio passa da `localStorage` (circa 5 MB per sito, e un archivio con qualche anno di ordini e movimenti ci arriva) a **IndexedDB**, il database del browser, dove il limite è lo spazio che il browser concede al sito: di solito gigabyte.
+
+**Cosa cambia per chi usa l'app**
+- Niente da fare: al primo avvio l'archivio trasloca da solo. L'originale in `localStorage` si cancella solo dopo aver riletto la copia e verificato che coincide; se non coincide, l'archivio resta dov'era.
+- La scheda Backup dice dove stanno i dati e quanto spazio concede il browser; il segnale dello spazio nel Riepilogo si regola su quello.
+- Il backup resta indispensabile: IndexedDB sta nello stesso browser, sullo stesso disco.
+
+**Le cautele**
+- L'app continua a ragionare in modo sincrono: legge l'archivio una volta all'avvio, poi tiene una copia in memoria e scrive in coda, nell'ordine. Chiudere la scheda mentre una scrittura è in viaggio chiede conferma.
+- Due schede aperte si accorgono ancora l'una dell'altra: il contatore delle scritture resta in `localStorage`.
+- Una scheda rimasta aperta con la versione vecchia, che scrive ancora in `localStorage` dopo il trasloco, non perde il lavoro: al caricamento successivo vince la scrittura più recente.
+- Se un giorno IndexedDB non si apre, l'app non riparte dai dati di esempio (salvandoli sopra l'archivio vero al giro dopo): lo dice e non salva finché l'archivio non torna raggiungibile.
+- Una scrittura rifiutata si segnala come prima, e il badge «non salvato» si spegne solo quando una scrittura è davvero arrivata.
+- Senza IndexedDB tutto resta in `localStorage`, come prima.
+
+**Verifica**
+- `test/idb.test.js`: trasloco, verifica fallita, installazione nuova, ordine delle scritture, scheda con l'app vecchia, IndexedDB irraggiungibile, archivio da 8 MB, quota esaurita e ripresa. In Chromium, con IndexedDB vero: archivio da 8 MB salvato e ritrovato, trasloco, due schede.
+- Il runner esegue i file uno alla volta, aspettando i test asincroni di ciascuno.
+
 ### 0.86.0 — 2026-10-12
 
 **Il cruscotto.** Una pagina nuova sotto *Riepilogo*: il Riepilogo dice cosa fare adesso, il cruscotto come stanno le cose.

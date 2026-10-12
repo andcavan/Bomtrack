@@ -1459,6 +1459,133 @@ const LocalAdapter = {
 };
 let adapter = LocalAdapter;
 
+// ── IndexedDB: l'archivio senza il tetto dei 5 MB ──────────
+// localStorage tiene circa 5 MB per sito, e un archivio con qualche anno di
+// ordini e movimenti ci arriva. IndexedDB ha per limite lo spazio del disco.
+//
+// L'app però ragiona in modo sincrono — `Store.commit()` risponde subito, e
+// ottanta punti ci contano — mentre IndexedDB risponde solo con richiamate.
+// Il ponte è una copia in memoria: all'avvio `preload()` legge l'archivio
+// (l'unico momento in cui si aspetta), poi `read()` restituisce la copia e
+// `write()` la aggiorna subito e accoda la scrittura vera. Le scritture partono
+// nell'ordine in cui arrivano, ciascuna con la sua transazione: IndexedDB le
+// esegue in quell'ordine, e una scheda che legge dopo trova l'ultima.
+//
+// Il contatore di revisione resta in localStorage: sono pochi byte, e l'evento
+// `storage` con cui le altre schede si accorgono di una scrittura esiste solo
+// lì. Accanto all'archivio si salva anche la revisione a cui è stato scritto:
+// se una scheda con una versione vecchia dell'app scrive ancora in localStorage
+// dopo il trasloco, la sua revisione è più alta e al caricamento vince lei.
+const IDB_NOME = 'bomtrack_archivio';
+// Messo dopo il trasloco: da lì in poi l'archivio vero sta in IndexedDB, e
+// localStorage vuoto non vuol dire «archivio nuovo».
+const DB_KEY_IN_IDB = 'bomtrack_v1_in_indexeddb';
+const IDB_STORE = 'archivio';
+function creaIdbAdapter(fabbrica) {
+  let conn = null, copia = null, copiaRescue = null, inVolo = 0, segnato = false;
+  const attesa = req => new Promise((ok, ko) => { req.onsuccess = () => ok(req.result); req.onerror = () => ko(req.error); });
+  const completa = tx => new Promise((ok, ko) => {
+    tx.oncomplete = () => ok();
+    tx.onerror = () => ko(tx.error);
+    tx.onabort = () => ko(tx.error || new Error('transazione annullata'));
+  });
+  const apri = () => new Promise((ok, ko) => {
+    const req = fabbrica.open(IDB_NOME, 1);
+    req.onupgradeneeded = () => { const d = req.result; if (!d.objectStoreNames.contains(IDB_STORE)) d.createObjectStore(IDB_STORE); };
+    req.onsuccess = () => ok(req.result);
+    req.onerror = () => ko(req.error);
+    req.onblocked = () => ko(new Error('archivio bloccato da un\'altra scheda'));
+  });
+  const leggi = chiave => attesa(conn.transaction(IDB_STORE, 'readonly').objectStore(IDB_STORE).get(chiave));
+  const scriviTutto = coppie => {
+    const tx = conn.transaction(IDB_STORE, 'readwrite');
+    const st = tx.objectStore(IDB_STORE);
+    coppie.forEach(([k, v]) => st.put(v, k));
+    return completa(tx);
+  };
+  const lsRev = () => LocalAdapter.leggiRev();
+  return {
+    name: 'indexeddb',
+    async preload() {
+      conn = await apri();
+      copia = (await leggi('db')) || null;
+      copiaRescue = (await leggi('illeggibile')) || null;
+      const revIdb = Number(await leggi('rev')) || 0;
+      // Il trasloco da localStorage: la prima volta, o quando una scheda con
+      // l'app vecchia ha scritto lì dopo l'ultimo salvataggio qui.
+      let vecchio = null;
+      try { vecchio = localStorage.getItem(DB_KEY); } catch (e) { /* localStorage non leggibile: si resta con quel che c'è */ }
+      if (vecchio && (copia == null || lsRev() > revIdb)) {
+        await scriviTutto([['db', vecchio], ['rev', lsRev()]]);
+        // Si rilegge prima di cancellare l'originale: se la copia non torna
+        // identica, l'originale resta dov'è.
+        if ((await leggi('db')) !== vecchio) throw new Error('verifica del trasloco fallita');
+        copia = vecchio;
+        try { localStorage.removeItem(DB_KEY); } catch (e) { /* resta una copia in più, non un danno */ }
+      }
+      try { if (copia != null) localStorage.setItem(DB_KEY_IN_IDB, '1'); } catch (e) { /* senza il segno resta solo la rete qui sotto in meno */ }
+      return this;
+    },
+    read() { return copia; },
+    write(payload) {
+      copia = payload;
+      inVolo++;
+      // La revisione che commit() sta per scrivere, presa nello stesso istante.
+      const rev = lsRev() + 1;
+      scriviTutto([['db', payload], ['rev', rev]])
+        .then(() => {
+          inVolo--;
+          if (!segnato) { try { localStorage.setItem(DB_KEY_IN_IDB, '1'); segnato = true; } catch (e) { /* si riprova alla prossima */ } }
+          scritturaRiuscita();
+        },
+              e => { inVolo--; commitFailed(isQuotaError(e) ? 'quota' : 'storage', e, payload.length); });
+    },
+    size() { return copia ? copia.length : 0; },
+    rescue(payload) {
+      if (copiaRescue != null) return false;
+      copiaRescue = payload;
+      scriviTutto([['illeggibile', payload]]).catch(e => console.error('Copia di soccorso non salvata:', e));
+      return true;
+    },
+    rescued() { return copiaRescue; },
+    leggiRev: () => LocalAdapter.leggiRev(),
+    scriviRev: n => LocalAdapter.scriviRev(n),
+    // La scrittura parte subito ma finisce dopo: commit() non deve dichiarare
+    // salvato quello che non lo è ancora (vedi scritturaRiuscita).
+    asincrono: true,
+    inVolo: () => inVolo,
+  };
+}
+// Sceglie dove sta l'archivio, prima del caricamento: IndexedDB se il browser
+// ce l'ha e si apre, altrimenti localStorage come sempre. Non fallisce mai:
+// il peggio che succede è restare dove si era.
+//
+// Con un'eccezione, ed è quella che conta: se l'archivio era già stato
+// traslocato, localStorage è vuoto, e ripiegarci vorrebbe dire partire dai
+// dati di esempio e salvarli — con una revisione più alta, che al prossimo
+// avvio riuscito vincerebbe sull'archivio vero. Allora si resta fermi: lettura
+// fallita (l'app lo dice e non salva), scritture rifiutate.
+const ArchivioIrraggiungibile = {
+  name: 'irraggiungibile',
+  read() { throw new Error('L\'archivio sta in IndexedDB, che il browser non ha aperto'); },
+  write() { throw new Error('L\'archivio sta in IndexedDB, che il browser non ha aperto'); },
+  size() { return 0; },
+  leggiRev: () => LocalAdapter.leggiRev(),
+  scriviRev: n => LocalAdapter.scriviRev(n),
+};
+function archivioGiaTraslocato() { try { return localStorage.getItem(DB_KEY_IN_IDB) === '1'; } catch (e) { return false; } }
+async function preparaArchivio(fabbrica) {
+  const f = fabbrica !== undefined ? fabbrica : (typeof indexedDB !== 'undefined' ? indexedDB : null);
+  try {
+    if (!f) throw new Error('IndexedDB assente');
+    adapter = await creaIdbAdapter(f).preload();
+  } catch (e) {
+    adapter = archivioGiaTraslocato() ? ArchivioIrraggiungibile : LocalAdapter;
+    console.warn('IndexedDB non disponibile, archivio ' + (adapter === LocalAdapter ? 'in localStorage' : 'non raggiungibile') + ':', e);
+  }
+  return adapter;
+}
+
 // ── Esito dei salvataggi ────────────────────────────────────
 // Quando localStorage rifiuta la scrittura, l'app continua a funzionare
 // mostrando i dati aggiornati: la memoria diverge dal persistito e alla
@@ -1492,6 +1619,15 @@ function isQuotaError(e) {
 // es. navigazione privata) | 'serialize' (dati non serializzabili).
 // La segnalazione all'utente sta in core.js, dietro l'hook onPersistError:
 // store.js resta senza codice di interfaccia.
+// Una scrittura è arrivata a destinazione: se prima una era fallita, adesso
+// memoria e archivio coincidono di nuovo. Con un adapter sincrono lo si sa
+// subito; con IndexedDB quando la transazione si chiude.
+function scritturaRiuscita() {
+  if (!dbUnsaved) return;
+  if (adapter.inVolo && adapter.inVolo() > 0) return;   // ne manca ancora una
+  dbUnsaved = false;
+  if (typeof onPersistRecovered === 'function') onPersistRecovered();
+}
 function commitFailed(kind, err, bytes) {
   dbUnsaved = true;
   console.error('Salvataggio locale fallito (' + kind + '):', err);
@@ -1538,10 +1674,7 @@ const Store = {
       // conflitto che non c'è stato.
       revVista = revAttuale + 1;
       try { if (adapter.scriviRev) adapter.scriviRev(revVista); } catch (e) { /* il blob è salvo: il contatore si riallinea al prossimo caricamento */ }
-      if (dbUnsaved) {
-        dbUnsaved = false;
-        if (typeof onPersistRecovered === 'function') onPersistRecovered();
-      }
+      if (!adapter.asincrono) scritturaRiuscita();
       return true;
     } catch (e) {
       return commitFailed(isQuotaError(e) ? 'quota' : 'storage', e, payload.length);
@@ -1550,6 +1683,12 @@ const Store = {
   // Vero finché una modifica è rimasta solo in memoria. Chiudere la scheda in
   // questo stato perde tutto il lavoro fatto dal primo errore in poi.
   isUnsaved() { return dbUnsaved; },
+  // Scritture partite e non ancora arrivate (solo IndexedDB). Chiudere la
+  // scheda adesso perderebbe l'ultima.
+  scrittureInVolo() { return adapter.inVolo ? adapter.inVolo() : 0; },
+  // Dove sta l'archivio: 'local' o 'indexeddb'.
+  get archivio() { return adapter.name; },
+  preparaArchivio(fabbrica) { return preparaArchivio(fabbrica); },
   // La contabilità che serve solo a un backend condiviso: vedi modoCondiviso.
   // La accende chi sincronizza; in locale resta spenta.
   get modoCondiviso() { return modoCondiviso; },

@@ -117,7 +117,7 @@ describe('Il Riepilogo avvisa quando lo spazio si riempie', () => {
     let s = spazioSig(a);
     assert.equal(s.n, 72);
     assert.equal(s.gravita, 'media');
-    assert.match(s.voci[0].testo, /3\.60 MB su 5/);
+    assert.match(s.voci[0].testo, /3\.60 MB su 5\.00 MB/);
     conSpazio(a, 4.6);
     assert.equal(spazioSig(a).gravita, 'alta');
   });
