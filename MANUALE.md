@@ -1,6 +1,6 @@
 # Bomtrack — Manuale d'uso
 
-**Versione dell'app documentata: 0.73.0**
+**Versione dell'app documentata: 0.87.0**
 
 📖 **[Leggilo come pagina web](https://claude.ai/code/artifact/726a0963-2db0-4947-999b-d7b5beb91a0b)** — stesso testo, con indice laterale, filtro dei capitoli e tema chiaro/scuro. Comodo da tenere aperto di fianco all'app.
 
@@ -160,7 +160,7 @@ la sessione aperta fino a **Esci**; quanto duri lo decide l'amministratore in
 
 ### La versione
 
-Il numero di versione si legge **accanto al logo, in alto a sinistra** (es. `v0.73.0`).
+Il numero di versione si legge **accanto al logo, in alto a sinistra** (es. `v0.87.0`).
 Corrisponde alla voce in cima al changelog: serve quando si segnala un problema.
 
 ### Dove sta questo manuale
@@ -194,7 +194,7 @@ In alto, da sinistra a destra:
 |---|---|
 | **Logo e versione** | Identità dell'app e revisione in esecuzione |
 | **Barra di navigazione** | I sette gruppi di funzioni (vedi sotto) |
-| **Badge modifiche non salvate** | Compare quando un documento aperto ha modifiche in sospeso |
+| **Badge modifiche non salvate** | Compare quando un salvataggio non è riuscito, o quando un'altra scheda ha modificato l'archivio (→ [cap. 30](#30-backup-e-manutenzione)) |
 | **Orologio** | Data e ora correnti |
 | **Pillola utente** | Chi è connesso, con il suo colore |
 | 🔎 **Cerca ovunque** | Ricerca globale — `Ctrl+K` |
@@ -219,12 +219,12 @@ l'ultima voce usata**: tornando su *Documenti* si riapre dove si era rimasti.
 
 | Gruppo | Voci |
 |---|---|
-| 🏠 **Riepilogo** | *(voce unica)* |
+| 🏠 **Riepilogo** | Riepilogo · Cruscotto |
 | 📇 **Anagrafica** | Acquisti · Progetto |
 | 📦 **Magazzino** | *(voce unica)* |
 | 🔧 **Cicli di lavorazione** | Cicli di lavorazione · Carico centri |
 | 🌳 **Distinta base** | Gestione DB · Visualizza DB |
-| 📨 **Documenti** | Commesse · Fabbisogno · Richieste offerta · Ordini · Ordini di lavoro |
+| 📨 **Documenti** | Commesse · Fabbisogno · Ordini di produzione · Richieste offerta · Ordini · Ordini di lavoro |
 | ⚙️ **Gestione** | *(voce unica — solo amministratori)* |
 
 La vista aperta finisce **nell'indirizzo del browser** (`…index.html#mrp`). Ne segue che i tasti
@@ -495,8 +495,13 @@ la risposta a «cosa lancio per primo».
 ### 4.9 Il ciclo quotidiano
 
 Ogni mattina si apre il **🏠 Riepilogo**: commesse in ritardo, righe da ordinare che scadono,
-ordini confermati oltre la data, richieste senza risposta, articoli sotto scorta o senza prezzo.
-Ogni voce è cliccabile e porta esattamente dove si risolve.
+ordini confermati oltre la data, richieste senza risposta, articoli sotto scorta o senza prezzo —
+e, per l'amministratore, da quanti giorni non si fa un backup. Ogni voce è cliccabile e porta
+esattamente dove si risolve.
+
+Ogni tanto — a fine settimana, prima di una riunione — si guarda il **Cruscotto** (*Riepilogo →
+Cruscotto*): quanto vale il magazzino, cosa è fermo a scaffale da mesi, quali fornitori sono in
+ritardo (→ [cap. 5](#il-cruscotto)).
 
 ---
 
@@ -920,6 +925,7 @@ lavorazioni. La schermata si intitola **«Distinta Base & Costificazione»**.
 | **+ Aggiungi componenti** | Apre il pannello laterale ridimensionabile per pescare dagli archivi |
 | **+ Aggiungi lavorazione** | Aggiunge una fase all'assieme (il montaggio) |
 | **⊞ Espandi tutto** / **⊟ Comprimi tutto** | Apre e chiude tutti i rami |
+| **⇄ Confronta con…** *(barra revisioni)* | Mette la distinta a fianco di un'altra qualsiasi, su tutti i livelli (→ [cap. 15](#confrontare-due-distinte-diverse)) |
 
 **Filtri.** Ricerca «Cerca codice o nome distinta…»; **livello** (Tutti i livelli · Macchine ·
 Gruppi · Sottogruppi); **macchina di appartenenza**; il menu della distinta aperta; il contatore.
@@ -1115,7 +1121,8 @@ non conosce la divisione fra acquisti e progetto. Gli **assiemi restano fuori** 
 non si stoccano.
 
 In testa quattro **KPI**: *Articoli a magazzino* · *Sotto scorta minima* · *Con merce in arrivo* ·
-**Valore giacenza (€)**.
+**Valore giacenza (€)** (esistente × costo unitario). Il valore ripartito per tipo e per famiglia,
+e gli articoli fermi da mesi, stanno nel **Cruscotto** (→ [cap. 5](#il-cruscotto)).
 
 **Le colonne, e come si calcolano.**
 
@@ -1933,7 +1940,7 @@ Bomtrack ha due famiglie di export, e vale la pena distinguerle.
 
 Hanno i pulsanti **Esporta Excel** ed **Esporta PDF**: Magazzino · Acquisti · Progetto · Cicli ·
 Carico centri · Commesse · Richieste · Ordini · Ordini di lavoro · elenco Piani ·
-Materiale presso terzi.
+Materiale presso terzi · **Cruscotto** · **Confronto distinte**.
 
 **Si esporta quello che si vede**: i filtri attivi sono applicati e le colonne sono le stesse.
 La paginazione a schermo (i 200 articoli per volta) **non taglia niente**.
@@ -1990,7 +1997,8 @@ documento, non l'elenco**.
 | **↺ Ripristina dati esempio** | Rimette la macchina dimostrativa |
 
 > ⚠️ **Fai backup regolari.** I dati stanno in questo browser: non esiste una copia da nessun'altra
-> parte. Un backup a fine giornata costa dieci secondi.
+> parte. Un backup a fine giornata costa dieci secondi. Dopo 7 giorni senza, il Riepilogo lo
+> ricorda (→ [cap. 5](#5-riepilogo--richiede-attenzione)).
 >
 > ⚠️ **Il backup contiene gli utenti con i loro hash di password.** È un file riservato.
 
@@ -2237,6 +2245,10 @@ dentro**: uscendo e rientrando, il documento torna bloccato.
 | **Saturazione** | La percentuale di capacità di un centro occupata in una settimana |
 | **Capacità** | Le ore che un centro può fare in una settimana. **0 = non dichiarata** |
 | **Revisione** | Una fotografia congelata di una distinta, identificata da una lettera |
+| **Cruscotto** | La pagina che dice come stanno le cose: valore di magazzino, articoli fermi, sotto scorta, consegne scadute (→ [cap. 5](#il-cruscotto)) |
+| **Articolo fermo** | Un articolo con giacenza e nessun movimento da 3, 6 o 12 mesi: denaro immobilizzato a scaffale |
+| **Valore giacenza** | Esistente × costo unitario, sommato su tutto il magazzino |
+| **IndexedDB** | Il database interno del browser dove sta l'archivio dalla 0.87.0. Prima stava in `localStorage`, limitato a circa 5 MB |
 | **Archivio condiviso** | Il database unico su cui lavorano tutti i colleghi, al posto di una copia per PC. Progettato, non ancora attivo (→ [cap. 31](#31-quando-larchivio-è-condiviso-supabase)) |
 | **Supabase** | Il servizio scelto per ospitare l'archivio condiviso: database, autenticazione e permessi |
 | **Permessi sul server** | I ruoli applicati dal database invece che dall'app. È la differenza fra separare le responsabilità e proteggere davvero i dati |
@@ -2298,6 +2310,25 @@ I dati stanno **in questo browser, su questo PC**. Controlla: stai usando lo ste
 stesso profilo? Sono stati puliti i dati del sito? Se hai un backup JSON, *Gestione → Backup →
 Importa JSON*. Se hai eliminato qualcosa per errore negli ultimi **30 giorni**, guarda nel
 **Cestino** prima di disperare.
+
+**Ho due schede di Bomtrack aperte e una dice «Modificato in un'altra scheda».**
+L'altra scheda ha salvato dopo che questa aveva caricato i dati. L'ultima modifica di questa scheda
+**non è stata salvata**, di proposito: avrebbe cancellato il lavoro dell'altra. Le strade sono tre:
+**Esporta backup** (prima di tutto, se hai dubbi), **Ricarica dall'archivio** (si perde quello che
+questa scheda non ha salvato) o **Tieni questa versione** (si perde quello che l'altra ha fatto).
+Il modo per non trovarsi lì è lavorare in una scheda sola.
+
+**All'avvio compare «Dati non caricati».**
+Il browser non ha lasciato leggere l'archivio. Se il testo dice che **l'archivio sta in
+IndexedDB e il browser non l'ha aperto**, i dati non sono persi: chiudi le altre schede o finestre
+con Bomtrack e ricarica. Finché l'avviso resta, l'app non salva niente. Se invece dice che i dati
+salvati **non si riescono più a leggere**, una copia è stata messa da parte: reimporta l'ultimo
+backup JSON.
+
+**Lo spazio del browser è quasi pieno.**
+Dalla 0.87.0 l'archivio sta in IndexedDB e lo spazio è di solito di gigabyte: l'avviso compare
+solo se il disco stesso è quasi pieno. Su un browser senza IndexedDB il limite resta di circa 5 MB:
+esporta un backup, svuota il cestino e recupera lo spazio degli allegati (*Gestione → Backup*).
 
 **Come lavoriamo in due sullo stesso archivio?**
 Oggi non si può in tempo reale: ogni PC ha la sua copia. Ci si allinea passandosi il **backup
@@ -2449,7 +2480,10 @@ node test/run.js      # la suite completa
 node test/bench.js    # benchmark del motore di costificazione
 ```
 
-La suite gira anche in CI a ogni push.
+Due gruppi di test si attivano solo se trovano quello che serve, e altrimenti si dichiarano
+**saltati**: quelli nel browser vero (impaginazione a sette larghezze, IndexedDB) vogliono
+**Playwright** con Chromium; quelli dello schema del database condiviso vogliono un **Postgres**,
+indicato dalla variabile `BOMTRACK_PG`. In CI, a ogni push, ci sono entrambi e gira tutto.
 
 ## A.6 I limiti architetturali
 
