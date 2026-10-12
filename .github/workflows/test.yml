@@ -31,8 +31,12 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: '22'   # il README chiede Node 18+; qui si prova su una LTS ancora supportata
+      # Chromium per test/layout.test.js: l'app vera a sette larghezze. Senza,
+      # quei controlli si dichiarano saltati e il resto gira uguale.
+      - name: Chromium per i test d'impaginazione
+        run: npm install -g playwright@1.56.1 && npx playwright install --with-deps chromium
       - name: Suite di test
-        run: node test/run.js
+        run: NODE_PATH="$(npm root -g)" node test/run.js
       - name: Benchmark
         # Non fa fallire la build: è una misura, non un limite. Il numero resta
         # nel log per confrontarlo con quello della versione precedente.

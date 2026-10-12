@@ -753,6 +753,49 @@ Gestione fra due import sarebbe stato cercato col nome vecchio, e duplicato.
 
 ---
 
+## Risolto nella 0.83.2 — grafica e impaginazione
+
+L'app è stata aperta in Chromium con dati realistici (nomi lunghi, documenti
+con dodici righe) a 1440, 1280, 820 e 390 px, nei due temi: 15 viste e 6
+editor, 168 schermate, ciascuna misurata — scorrimento laterale, elementi fuori
+schermo, testo tagliato, corpo sotto 11 px, contrasto WCAG, bersagli sotto i 32
+px al telefono — e poi guardata. Il contrasto era già a posto ovunque.
+
+### 50. La barra delle sezioni nascondeva sezioni intere
+`.nav` era centrata con `justify-content:center` **e** scorrevole: quando non ci
+stava, la parte in eccesso finiva oltre il bordo sinistro, dove nessuno
+scorrimento arriva. E le etichette si spegnevano con una media query a 1330 px,
+mentre ci stavano solo da ~1700: a 1366–1440 px Riepilogo e Gestione erano
+invisibili, a 820 restava un'icona e mezza, a 390 la barra era larga zero.
+Ora la centratura la fanno i margini automatici, e i gradi di degradazione
+(`h-l1`…`h-l4`) li sceglie `adattaHeader()` **misurando**, perché lo spazio
+dipende dal nome nella pill e dalle sezioni del ruolo, che una soglia fissa non
+conosce. Due menu a tendina nuovi: ⋯ per i comandi di contorno, ☰ per le
+sezioni.
+
+### 51. Al telefono ogni pagina scorreva di lato
+Due cause: l'intestazione (risolta da §50) e `.wl{grid-template-columns:1fr}`
+sotto i 1100 px — una colonna `1fr` non scende sotto la larghezza minima del
+contenuto, e la barra del documento la allargava di 160–300 px. Ora
+`minmax(0,1fr)`, come già la versione a due colonne.
+
+### 52. Il resto, in breve
+- Codici articolo che andavano a capo sul trattino: `.code-link` è `nowrap`.
+- Importi all'italiana (`numIt()` in `core.js`, scritto a mano: non deve
+  dipendere dai dati di lingua del browser). Le quantità restano col punto:
+  `fmtQty` finisce anche nei campi numerici e in testi che rientrano in Excel, e
+  cambiarla in 120 punti non valeva il rischio — vedi C5.
+- Bersagli da almeno 34 px su schermi stretti o a sfioramento; etichette di
+  stato e tipo da 9–10 a 10,5 px (maiuscole: a quel corpo si leggono come 12).
+- Export neutri (il formato lo dice l'icona); riga dei comandi della lista;
+  barra del piano in due righe, con il perché sui «Genera…» spenti — un
+  pulsante `disabled` non mostra il suggerimento, lo porta l'involucro; schede
+  più staccate dalla pagina; pannello laterale chiuso di serie sotto i 1400 px.
+
+Coperto da `test/layout.test.js`, che in CI apre l'app vera a sette larghezze.
+
+---
+
 ## Aperto
 
 > **Lettura per la situazione attuale (0.83.1).** Il backend non è previsto per
@@ -822,6 +865,12 @@ code identiche di richiesta, ordine e ODL.)*
 `anagrafiche` e `concorrenza`)*. Export PDF/Excel e `renameUom` sono ora coperti.
 Restano scoperti `printView` (`shell.js`) e le anagrafiche di servizio minori di
 `views-manage.js`.
+
+**C5 — le quantità a schermo sono ancora col punto decimale** *(0.83.2)*. Gli
+importi sono all'italiana, le quantità no («1.5 kg»): `fmtQty` finisce anche in
+campi numerici e in testi che rientrano in Excel. Si chiude con una funzione per
+la sola lettura (`fmtQtyIt` esiste già, usata nella nota delle fasi) applicata
+vista per vista, non cambiando `fmtQty`.
 
 **C4 — file lunghi con scope globale piatto:** `views-docs.js` ~1990 righe,
 `views-catalog.js` ~1970, `views-mrp.js` ~1880, `core.js` ~1430, `store.js` ~1240,

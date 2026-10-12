@@ -278,6 +278,8 @@ BOMTRACK_PG="host=localhost port=5432 user=postgres" node test/run.js
 
 Senza la variabile si dichiarano saltati; quelli che confrontano lo schema con il codice girano comunque.
 
+Allo stesso modo `test/layout.test.js` apre l'app vera in Chromium a sette larghezze se trova [Playwright](https://playwright.dev) (`npm install -g playwright && npx playwright install chromium`, poi `NODE_PATH="$(npm root -g)" node test/run.js`); senza, verifica solo l'algoritmo dell'intestazione e le regole CSS.
+
 ## Changelog
 
 Le revisioni seguono il versionamento semantico `0.MINOR.PATCH`: **MINOR** per nuove funzionalità, **PATCH** per correzioni. La versione in cima è quella in `APP_VERSION` (`core.js`) e mostrata nell'header dell'app.

@@ -291,7 +291,7 @@ describe('Conto lavoro: dal fabbisogno al documento', () => {
     const app = conDb();
     app.eval(`Object.assign(getItem('perno').cycle[2], { costMode: 'orario', hours: 0.25, rate: 32 });
       invalidateCaches();`);
-    assert.equal(genera(app, 'odl').lines[0].note, '0.25 h/pz × €32.00/h');
+    assert.equal(genera(app, 'odl').lines[0].note, '0,25 h/pz × € 32,00/h');
   });
 
   it('l ordine di lavoro nasce con la sua numerazione', () => {

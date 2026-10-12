@@ -13,7 +13,7 @@
 // Revisione in esecuzione, mostrata accanto al logo. Va tenuta allineata alla
 // voce in cima a CHANGELOG.md (l'app si copia a mano tra PC: sapere
 // quale revisione sta girando su una postazione è l'unico modo per capirlo).
-const APP_VERSION = '0.83.1';
+const APP_VERSION = '0.83.2';
 
 let currentUser = null;      // utente della sessione (null = schermata di accesso)
 let currentBomId = null;     // articolo prodotto attualmente aperto nelle Distinte
@@ -46,7 +46,23 @@ let odpDirty = false;        // modifiche non salvate nell'editor ODP
 //  UTILITY
 // ═══════════════════════════════════════════════════════════
 function cur() { return (db.settings && db.settings.currency) || '€'; }
-function fmtN(n) { return cur() + (Number(n) || 0).toFixed(2); }
+// Gli importi si scrivono all'italiana: «€ 1.125,50», non «€1125.50». Su un
+// ordine che parte verso un fornitore il formato inglese si nota subito, e il
+// punto senza separatore delle migliaia si legge male da mille in su.
+// Scritto a mano e non con toLocaleString: il risultato non deve dipendere dai
+// dati di lingua che il browser ha installato — su alcuni manca l'italiano, e
+// lo stesso PDF uscirebbe diverso da un PC all'altro.
+// Vale per ciò che si **legge** (schermo, PDF): gli Excel scrivono numeri veri,
+// e i campi di input vogliono il punto.
+function numIt(n, decimali) {
+  const d = decimali == null ? 2 : decimali;
+  const v = Number(n) || 0;
+  const s = Math.abs(v).toFixed(d);
+  const [intera, fraz] = s.split('.');
+  const gruppi = intera.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+  return (v < 0 && Number(s) !== 0 ? '-' : '') + gruppi + (fraz ? ',' + fraz : '');
+}
+function fmtN(n) { return cur() + ' ' + numIt(n, 2); }
 // ─── L'importo di una riga di documento ───
 // Quantità × prezzo, arrotondato ai centesimi **una volta sola**.
 //
@@ -82,12 +98,16 @@ function esc(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').repla
 //
 //   fmtQty  15        →  "15"          quantità nuda (una colonna U.M. accanto)
 //   fmtUom  15, 'm'   →  "15 m"        quantità con la sua unità
-//   fmtPer  3.2, 'kg' →  "€3.20/kg"    prezzo o costo *per* unità
+//   fmtPer  3.2, 'kg' →  "€ 3,20/kg"   prezzo o costo *per* unità
 //   labelUom('Scorta minima', 'm')     →  "Scorta minima (m)"
 //
 // L'unità vuota non produce niente: un articolo senza U.M. resta un numero
 // nudo, non "15 " con uno spazio in fondo o "15 (—)".
 function fmtQty(n) { n = Number(n) || 0; return Number.isInteger(n) ? String(n) : String(+n.toFixed(3)); }
+// La stessa quantità con la virgola, per il testo che si **legge** accanto a un
+// importo all'italiana («0,25 h/pz × € 32,00/h»). fmtQty resta col punto: finisce
+// anche nei campi numerici, che la virgola non la accettano.
+function fmtQtyIt(n) { return fmtQty(n).replace('.', ','); }
 function uomSuffix(u) { return u ? ' ' + esc(u) : ''; }
 function fmtUom(n, u) { return fmtQty(n) + uomSuffix(u); }
 function fmtPer(n, u) { return fmtN(n) + (u ? '/' + esc(u) : ''); }

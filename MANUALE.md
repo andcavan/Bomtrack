@@ -204,6 +204,13 @@ In alto, da sinistra a destra:
 | 🔑 **Cambia password** | La propria password |
 | **Esci** | Chiude la sessione |
 
+**Su uno schermo più stretto** l'intestazione resta su una riga sola e fa spazio da sé, un passo
+alla volta, solo quanto serve: prima spariscono il ruolo nella pillola e la data; poi stampa,
+manuale, tema, password ed esci passano sotto il pulsante **⋯** (*Altri comandi*); poi le sezioni
+restano con la sola icona (il nome compare passandoci sopra); per ultimo, sul telefono, le sezioni
+stesse si aprono dal pulsante **☰**. I due menu si chiudono con `Esc`, con un clic fuori o
+scegliendo una voce.
+
 ### La navigazione a due livelli
 
 La barra dei comandi ha **sette gruppi**. Cliccando un gruppo, le sue voci compaiono su una

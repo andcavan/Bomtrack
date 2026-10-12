@@ -182,6 +182,7 @@ function renderUserPill() {
   pill.title = `${currentUser.name} · ${roleLabel(currentUser.role)}`;
   pill.innerHTML = `<span class="user-dot" style="background:${safeColor(currentUser.color)}"></span>${esc(currentUser.name.split(' ')[0])}
     <span class="user-role">${esc(roleLabel(currentUser.role))}</span>`;
+  if (typeof adattaHeader === 'function') adattaHeader();   // un nome lungo cambia lo spazio che resta
 }
 // Orologio dell'header: data per esteso e ora, allineato al minuto
 let clockTimer = null;

@@ -187,6 +187,7 @@ function viewLabel(v) {
 const lastViewOfGroup = {};
 function openNavGroup(gid) {
   const g = NAV.find(x => x.id === gid); if (!g) return;
+  headerMenuChiudi();
   setView(lastViewOfGroup[gid] || g.views[0].id);
 }
 function renderNav() {
@@ -206,6 +207,70 @@ function renderNav() {
   const voci = attivo && attivo.views.length > 1 ? attivo.views : [];
   sub.innerHTML = voci.map(w =>
     `<button class="subnav-btn ${activeView === w.id ? 'active' : ''}" onclick="setView('${w.id}')" title="${esc(w.label)}" aria-current="${activeView === w.id ? 'page' : 'false'}">${esc(w.label)}</button>`).join('');
+  adattaHeader();
+}
+// ─── L'intestazione che si adatta ───
+// Una riga sola a qualunque larghezza. Quando non ci sta si cede spazio per
+// gradi (vedi «Header» in style.css), e il grado si **misura** invece di
+// indovinarlo con una soglia in pixel: lo spazio che serve dipende dal nome
+// nella pill, dalle sezioni che il ruolo vede, dal carattere installato. Con le
+// soglie fisse, fino alla 0.83, fra 1331 e 1700 px le etichette restavano
+// accese senza starci e Riepilogo e Gestione sparivano oltre il bordo.
+const HEADER_LIVELLI = ['h-l1', 'h-l2', 'h-l3', 'h-l4'];
+function adattaHeader() {
+  // Misura un layout vero: senza motore di disegno (i test) non c'è niente da misurare.
+  if (typeof document === 'undefined' || typeof getComputedStyle !== 'function') return;
+  const h = document.getElementById('app-header');
+  const nav = document.getElementById('main-nav');
+  if (!h || !nav || !h.classList || (h.style && h.style.display === 'none')) return;
+  const trabocca = () => h.scrollWidth > h.clientWidth + 1
+    || (getComputedStyle(nav).display !== 'none' && nav.scrollWidth > nav.clientWidth + 1);
+  const aperti = ['menu-nav', 'menu-extra'].filter(c => h.classList.contains(c));
+  aperti.forEach(c => h.classList.remove(c));
+  HEADER_LIVELLI.forEach(c => h.classList.remove(c));
+  for (let i = 0; i < HEADER_LIVELLI.length && trabocca(); i++) h.classList.add(HEADER_LIVELLI[i]);
+  // Un menu aperto resta aperto solo se il suo pulsante c'è ancora.
+  if (aperti.includes('menu-nav') && h.classList.contains('h-l4')) h.classList.add('menu-nav');
+  if (aperti.includes('menu-extra') && h.classList.contains('h-l2')) h.classList.add('menu-extra');
+  aggiornaEspansi();
+}
+function aggiornaEspansi() {
+  const h = document.getElementById('app-header'); if (!h) return;
+  const b1 = document.getElementById('nav-menu-btn'), b2 = document.getElementById('extra-menu-btn');
+  if (b1) b1.setAttribute('aria-expanded', String(h.classList.contains('menu-nav')));
+  if (b2) b2.setAttribute('aria-expanded', String(h.classList.contains('menu-extra')));
+}
+// Apre o chiude uno dei due menu (`'nav'` le sezioni, `'extra'` i comandi);
+// aprirne uno chiude l'altro.
+function headerMenu(quale) {
+  const h = typeof document !== 'undefined' && document.getElementById('app-header'); if (!h) return;
+  const c = 'menu-' + quale, altro = quale === 'nav' ? 'menu-extra' : 'menu-nav';
+  const apri = !h.classList.contains(c);
+  h.classList.remove(altro);
+  h.classList.toggle(c, apri);
+  aggiornaEspansi();
+}
+function headerMenuChiudi() {
+  const h = typeof document !== 'undefined' && document.getElementById('app-header'); if (!h) return;
+  h.classList.remove('menu-nav', 'menu-extra');
+  aggiornaEspansi();
+}
+if (typeof window !== 'undefined' && typeof document !== 'undefined' && document.addEventListener) {
+  let attesa = 0;
+  window.addEventListener('resize', () => {
+    if (attesa) return;
+    attesa = requestAnimationFrame(() => { attesa = 0; adattaHeader(); });
+  });
+  // Un menu a tendina si chiude come ci si aspetta: clic fuori, Esc, o una
+  // voce scelta (un comando del menu ⋯ lo chiude da sé: il clic è dentro, ma
+  // dopo il comando non c'è più niente da scegliere).
+  document.addEventListener('click', e => {
+    const h = document.getElementById('app-header');
+    if (!h || !(h.classList.contains('menu-nav') || h.classList.contains('menu-extra'))) return;
+    if (e.target.closest('.header-menu-btn')) return;
+    if (e.target.closest('#main-nav') || e.target.closest('#header-extra') || !e.target.closest('#app-header')) headerMenuChiudi();
+  });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') headerMenuChiudi(); });
 }
 // ─── Navigazione e indirizzo ───
 // La vista aperta finisce nell'hash dell'indirizzo. Non è un vezzo: senza,

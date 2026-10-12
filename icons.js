@@ -56,6 +56,9 @@ const ICONS = {
   tag: '<path d="M11.7 3.4H4.6a1.2 1.2 0 0 0-1.2 1.2v7.1a1.2 1.2 0 0 0 .35.85l8.2 8.2a1.2 1.2 0 0 0 1.7 0l7.1-7.1a1.2 1.2 0 0 0 0-1.7l-8.2-8.2a1.2 1.2 0 0 0-.85-.35z"/><circle cx="8" cy="8" r="1.4"/>',
   clipboard: '<rect x="5.4" y="4.6" width="13.2" height="16" rx="1.8"/><path d="M9 4.6V3.4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v1.2"/><path d="M9 10.6h6M9 14.4h6M9 18h3.5"/>',
   list: '<path d="M9 6.4h11.4M9 12h11.4M9 17.6h11.4"/><path d="M4.4 6.4h.01M4.4 12h.01M4.4 17.6h.01"/>',
+  // I due menu dell'intestazione stretta: le sezioni (☰) e i comandi (⋯).
+  menu: '<path d="M4 6.5h16M4 12h16M4 17.5h16"/>',
+  more: '<circle cx="5.5" cy="12" r="1.3"/><circle cx="12" cy="12" r="1.3"/><circle cx="18.5" cy="12" r="1.3"/>',
   receipt: '<path d="M5.4 2.8h13.2v18.4l-2.6-1.6-2.6 1.6-2.6-1.6-2.6 1.6-2.8-1.6z"/><path d="M9 7.8h6M9 11.6h6M9 15.2h3.4"/>',
   scale: '<path d="M12 4.4v15.2M7.4 20.6h9.2M4.6 6.6h14.8"/><path d="M4.6 6.6 2.2 12.4h4.8zM19.4 6.6 17 12.4h4.8"/><path d="M2.2 12.4a2.4 2.4 0 0 0 4.8 0M17 12.4a2.4 2.4 0 0 0 4.8 0"/>',
   chart: '<path d="M3.6 20.4h16.8"/><path d="M6.8 20.4v-6.6M11.6 20.4V7.6M16.4 20.4v-9.4"/>',
@@ -108,6 +111,7 @@ const ICON_TINT = {
   save: 'accent', download: 'green', upload: 'accent', users: 'accent', ruler: 'purple',
   // Header
   printer: 'text-dim', key: 'orange', logout: 'red', logo: 'accent', book: 'text-dim',
+  menu: 'text-dim', more: 'text-dim',
 };
 
 // Le regole di tinta si generano dalla mappa qui sopra: la tavolozza resta in

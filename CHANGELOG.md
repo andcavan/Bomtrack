@@ -2,6 +2,28 @@
 
 Le revisioni seguono il versionamento semantico `0.MINOR.PATCH`: **MINOR** per nuove funzionalità, **PATCH** per correzioni. La versione in cima è quella in `APP_VERSION` (`core.js`) e mostrata nell'header dell'app.
 
+### 0.83.2 — 2026-10-12
+
+**Grafica e impaginazione.** L'app è stata guardata in un browser vero a quattro larghezze (desktop, portatile, tablet, telefono) e nei due temi, 168 schermate misurate una per una. I colori erano già a posto — nessun testo sotto il contrasto richiesto, in nessuno dei due temi — ma l'intestazione e il telefono no.
+
+**Corretto**
+- **La barra delle sezioni nascondeva Riepilogo e Gestione** proprio sui portatili più comuni (1366–1440 px), e su tablet e telefono restavano una sezione e mezza, o nessuna. Ora l'intestazione fa spazio da sé, un passo alla volta e solo quanto serve: via il ruolo e la data, poi i comandi di contorno sotto **⋯**, poi i nomi delle sezioni (restano le icone), e sul telefono le sezioni sotto **☰**. A 1440 px le sezioni si leggono di nuovo per nome.
+- **Al telefono ogni pagina scorreva di lato**, fino a 300 px negli ordini e nelle commesse: ora nessuna.
+- **I codici articolo andavano a capo sul trattino** («CMM-» sopra, «100» sotto).
+- **Gli importi si leggono all'italiana**: «€ 1.125,50» e non più «€1125.50», a schermo e nei PDF. Gli Excel restano numeri veri.
+
+**Migliorato**
+- Al telefono e sugli schermi a sfioramento nessun comando sotto i 34 px: linguette, pulsantini di riga, chiusura delle schede.
+- Le etichette di stato e di tipo, prima a 9–10 px, sono un po' più grandi.
+- I pulsanti **Esporta Excel / PDF** sono neutri, col formato detto dall'icona: il verde e il rosso pieni pesavano più del «+ Nuovo» accanto. Quelli che generano il documento di una richiesta o di un ordine restano grandi, col bordo nel colore del formato.
+- «+ Nuovo ordine» non è più un blocco blu alto 62 px.
+- Nel piano di fabbisogno i quattro «Genera…» stanno su una riga loro, e passandoci sopra quando sono spenti dicono perché.
+- Con una scheda aperta la pagina dietro si attenua (torna piena portandoci sopra il mouse) e la scheda ha un'ombra più netta.
+- Il pannello laterale dell'anagrafica si apre di serie solo da 1400 px in su.
+
+**Verifica**
+- `test/layout.test.js`: l'algoritmo dell'intestazione su un DOM simulato, le regole che avevano causato i difetti, e — se c'è Playwright, in CI c'è — l'app vera in Chromium a sette larghezze: nessuna pagina che scorre di lato, ogni sezione raggiungibile, nessun comando sotto i 32 px al telefono. Sulla 0.83.1 fallisce tutto.
+
 ### 0.83.1 — 2026-10-12
 
 **Tutto per il locale.** Lo spostamento su un database condiviso non è previsto per ora, e il lavoro delle ultime versioni è stato riletto con un solo criterio: l'app locale funziona almeno come prima? Su due punti no, e sono corretti.

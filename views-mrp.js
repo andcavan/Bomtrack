@@ -1227,8 +1227,11 @@ function planDocButton(p, kind, label) {
   const titolo = n
     ? `${n} ${n === 1 ? 'riga ancora da mettere' : 'righe ancora da mettere'} in ${doc}`
     : `Tutte le righe di questo fabbisogno sono già in ${doc}`;
-  return `<button class="${kind === 'order' ? 'add-btn-sm' : 'btn-outline'}" onclick="planDocsModal('${p.id}','${kind}')"
+  const btn = `<button class="${kind === 'order' ? 'add-btn-sm' : 'btn-outline'}" onclick="planDocsModal('${p.id}','${kind}')"
     ${n ? '' : 'disabled'} title="${esc(titolo)}">${label}${n ? ` (${n})` : ''}</button>`;
+  // Un pulsante disattivato non riceve il mouse, e il suo suggerimento non
+  // compare: proprio dove serve dire *perché* non si può. Lo dice l'involucro.
+  return n ? btn : `<span class="plan-gen-off" title="${esc(titolo)}">${btn}</span>`;
 }
 function planDocsHint(kind) {
   if (kind === 'odp') return 'Un ordine di produzione <strong>per parte</strong>: le fasi del ciclo si congelano dentro, in successione. Da lì si seguono i pezzi, si generano gli ordini di lavoro per le fasi esterne, e il magazzino si muove ai due estremi del ciclo. Il <strong>fabbisogno netto non si applica</strong>: lanciare un pezzo è una decisione di produzione, non di acquisto.';
@@ -1495,7 +1498,7 @@ function planPhaseDocLine(r, conPrezzo) {
   const dettaglio = f => (f.costMode === 'orario'
     // fmtPer porta gia' la valuta e il "per unita'": scriverle a mano qui
     // produceva "€32.00 €/h".
-    ? `${fmtQty(f.hoursUnit)} h/pz × ${fmtPer(f.rate, 'h')}`
+    ? `${fmtQtyIt(f.hoursUnit)} h/pz × ${fmtPer(f.rate, 'h')}`
     : fmtPer(f.price, 'pz'));
   const note = fasi.length > 1
     ? fasi.map(f => `fase ${f.phaseNo} ${f.wcName}: ${dettaglio(f)}`).join(' · ')
@@ -1718,14 +1721,18 @@ function renderPlanEdit(id) {
         <button class="btn-outline" style="color:var(--red);border-color:var(--red)" onclick="delPlan('${id}')" title="Elimina il piano">${ico('trash', 'tinted', '')} Elimina</button>
       </div>
       <div class="bom-toolbar-right">
+        <div class="export-pair export-pair-row">
+          <button class="export-btn-xls" onclick="exportMrpExcel('${id}')">${ico('sheet', 'tinted', '')} Esporta Excel</button>
+          <button class="export-btn-pdf" onclick="exportMrpPDF('${id}')">${ico('file', 'tinted', '')} Esporta PDF</button>
+        </div>
+      </div>
+      <!-- I documenti che nascono dal piano: una riga loro, sotto i comandi del
+           piano. Mescolati a quelli andavano a capo a caso, uno per riga. -->
+      <div class="plan-genera">
         ${planDocButton(p, 'rfq', ico('mail', 'tinted', '') + ' Genera richieste')}
         ${planDocButton(p, 'order', ico('receipt', 'tinted', '') + ' Genera ordini')}
         ${planDocButton(p, 'odp', ico('factory', 'tinted', '') + ' Genera ordini di produzione')}
         ${planDocButton(p, 'odl', ico('wrench', 'tinted', '') + ' Genera ordini di lavoro')}
-        <div class="export-pair">
-          <button class="export-btn-xls" onclick="exportMrpExcel('${id}')">${ico('sheet', 'tinted', '')} Esporta Excel</button>
-          <button class="export-btn-pdf" onclick="exportMrpPDF('${id}')">${ico('file', 'tinted', '')} Esporta PDF</button>
-        </div>
       </div>
     </div>
     <div class="modal-grid">
