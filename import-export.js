@@ -997,7 +997,7 @@ function renderBackup() {
 // pentimento immediato; questo copre quello di domani mattina.
 const TRASH_LABELS = { items: 'Articolo', suppliers: 'Fornitore', customers: 'Cliente', workCenters: 'Centro di lavoro',
   families: 'Macrofamiglia', rfqs: 'Richiesta', orders: 'Ordine', workOrders: 'Ordine di lavoro', plans: 'Piano', users: 'Utente',
-  jobs: 'Commessa', movements: 'Movimento', revisions: 'Revisione',
+  jobs: 'Commessa', movements: 'Movimento', receipts: 'Ricevimento', revisions: 'Revisione',
   prodOrders: 'Ordine di produzione', prodDecls: 'Dichiarazione di produzione', reminders: 'Promemoria' };
 function trashDescr(t) {
   const r = t.record || {};

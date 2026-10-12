@@ -62,9 +62,10 @@ immaginarle.
 | `rfqs` | `rfqs` | id uuid PK, number unique per anno, title, date, status ('bozza'\|'inviata'\|'ricevuta'\|'chiusa'), supplier_id FK, transport, payment, plan_id FK nullable, notes, notes_internal, active, created_at, updated_at |
 | `rfqs[].lines` | `rfq_lines` | id uuid PK, rfq_id uuid FK, item_id FK **nullable** (riga manuale, o riga di conto lavoro), phase_key text **nullable**, phase_keys text **nullable** (tutte le fasi della tratta, separate da virgola), code, description, uom, qty, price nullable, delivery_date, note |
 | `orders` | `orders` | id uuid PK, number unique per anno, title, date, status ('bozza'\|'inviato'\|'confermato'\|'parziale'\|'evaso'\|'annullato'), supplier_id FK, transport, payment, rfq_id FK nullable, plan_id FK nullable, supplier_confirmation, notes, notes_internal, active, created_at, updated_at |
-| `orders[].lines` | `order_lines` | id uuid PK, order_id uuid FK, item_id FK **nullable**, phase_key text **nullable**, phase_keys text **nullable**, code, description, uom, qty, price nullable, delivery_date, received numeric, note |
+| `orders[].lines` | `order_lines` | id uuid PK, order_id uuid FK, item_id FK **nullable**, phase_key text **nullable**, phase_keys text **nullable**, code, description, uom, qty, price nullable, delivery_date, note. **Nessuna colonna `received`**: è la somma di `order_receipts` (vista `order_line_received`) |
 | `workOrders` | `work_orders` | id uuid PK, number unique per anno (**ODL-**), title, date, status (stesso vocabolario di `orders`), supplier_id FK (il **terzista**), transport, payment, rfq_id FK nullable, plan_id FK nullable, job_id FK nullable, supplier_confirmation, notes, notes_internal, odp_id uuid FK **nullable** (l'ordine di produzione che l'ha generato), active, created_at, updated_at |
-| `workOrders[].lines` | `work_order_lines` | id uuid PK, work_order_id uuid FK, **item_id sempre NULL**, phase_key text (la **prima** fase della tratta), phase_keys text (tutte le fasi della tratta), code (della parte), description, uom, qty (pezzi), price (tariffa per pezzo) nullable, delivery_date, confirmed_date, received numeric, note, odp_id uuid FK **nullable**, odp_phase_id uuid FK **nullable** |
+| `workOrders[].lines` | `work_order_lines` | id uuid PK, work_order_id uuid FK, **item_id sempre NULL**, phase_key text (la **prima** fase della tratta), phase_keys text (tutte le fasi della tratta), code (della parte), description, uom, qty (pezzi), price (tariffa per pezzo) nullable, delivery_date, confirmed_date, note, odp_id uuid FK **nullable**, odp_phase_id uuid FK **nullable**. `received` come sopra: somma di `order_receipts`, o — sulle righe con `odp_id` — pezzi buoni dichiarati sull'ultima fase della tratta |
+| `receipts` | `order_receipts` | id uuid PK, coll ('orders'\|'workOrders'), order_id uuid (FK all'una o all'altra tabella secondo `coll`, `on delete cascade`), line_id uuid FK, qty numeric **con segno** (differenza: una correzione all'ingiù è negativa), kind ('apertura'\|'ricevimento'), date, note, created_by, created_at — **append-only**, come `stock_movements` |
 | `prodOrders` | `production_orders` | id uuid PK, number unique per anno (**ODP-**), item_id uuid FK (la **parte**), code, name, uom (congelati), qty numeric (pezzi lanciati), date, due_date, status ('bozza'\|'lanciato'\|'corso'\|'completato'\|'chiuso'\|'annullato'), title, notes, notes_internal, plan_id FK nullable, job_id FK nullable, active, created_at, updated_at |
 | `prodOrders[].phases` | `production_order_phases` | id uuid PK **proprio**, production_order_id uuid FK, seq int (10, 20, 30…), op_index int (posizione d'origine nel ciclo), phase_key text (ponte verso il fabbisogno), work_center_id FK nullable, wc_name (congelato), supplier_id FK **nullable** (nullo = fase interna), supplier_name (congelato), run_from int, run_to int, passata int, cost_mode, hours, days, rate, cost, note — **nessuna colonna di stato** |
 | `prodOrders[].materials` | `production_order_materials` | id uuid PK, production_order_id uuid FK, item_id uuid FK, code, name, uom (congelati), per_pezzo numeric, qty numeric |
@@ -211,8 +212,23 @@ immaginarle.
   Le righe di documento (`rfq_lines`, `order_lines`) portano già la propria
   `uom`: è nell'unità del fornitore, e la conversione verso la giacenza si fa
   leggendo quella. Nessuna colonna in più.
+- **Il ricevuto non è una colonna.** Dalla 0.81.0 ogni ricevimento è un evento
+  in `order_receipts` con la **differenza** rispetto a prima — chi è davanti
+  alla merce digita il nuovo totale, l'app scrive il delta — e il ricevuto di
+  una riga ne è la somma. Fino alla 0.80 era un numero riscritto sulla riga:
+  due ricevimenti concorrenti sulla stessa riga si sarebbero sovrascritti, e
+  dato che la giacenza ne è la somma, un carico sarebbe sparito dal magazzino
+  senza un avviso. Due eventi invece si sommano, e sono righe diverse: merge per
+  riga, nessun conflitto. In locale `received` resta sulla riga come lettura
+  (la ricalcola `riallineaRicevuti()` a ogni caricamento) ed è dichiarato
+  `derived` in `SCHEMA`: l'adapter lo toglie con `flattenDB(db, { stripDerived: true })`.
+  In cloud è una vista. Il primo caricamento di un archivio precedente
+  trasforma il ricevuto di ogni riga in un evento `apertura`.
+  Il tetto «non più dell'ordinato» resta un controllo dell'interfaccia: con due
+  ricevimenti concorrenti la somma può superarlo, ed è giusto che si veda —
+  è merce arrivata davvero.
 - **La giacenza non è una colonna.** Non esiste `items.on_hand`, e non va aggiunta:
-  l'esistente è `Σ order_lines.received + Σ stock_movements.qty` **dei movimenti
+  l'esistente è `Σ order_receipts.qty` (delle righe con articolo) `+ Σ stock_movements.qty` **dei movimenti
   che toccano il magazzino**, cioè tutti tranne `clStep` (vedi sotto). Un campo
   aggiornato a parte diventerebbe una seconda verità che diverge dalla prima, ed
   è l'errore già corretto una volta con i prezzi. In cloud conviene una **vista**

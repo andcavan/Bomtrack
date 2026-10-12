@@ -2,6 +2,19 @@
 
 Le revisioni seguono il versionamento semantico `0.MINOR.PATCH`: **MINOR** per nuove funzionalità, **PATCH** per correzioni. La versione in cima è quella in `APP_VERSION` (`core.js`) e mostrata nell'header dell'app.
 
+### 0.81.0 — 2026-10-12
+
+**I ricevimenti diventano eventi.** Il ricevuto di una riga d'ordine era un numero riscritto a ogni arrivo, e la giacenza ne è la somma: con il database condiviso, due persone che registrano un arrivo sulla stessa riga si sarebbero sovrascritte, e un carico sarebbe sparito dal magazzino senza un avviso. Ora ogni ricevimento è un evento con la differenza, e il ricevuto ne è la somma. Per chi usa l'app non cambia niente: si digita il totale ricevuto come prima.
+
+**Modificato**
+- Nuova collezione `receipts` (ricevimenti). La compila il campo «ricevuto» delle righe di ODA e ODL e il pulsante «ricevuto tutto»; una correzione all'ingiù è un evento negativo.
+- Al primo avvio i ricevuti già registrati diventano un **saldo d'apertura** per riga: i numeri restano quelli di prima.
+- Le righe di ODL nate da un ordine di produzione non cambiano: i pezzi rientrati li dichiara l'ODP.
+- `flattenDB(db, { stripDerived: true })` toglie il ricevuto dalle righe da inviare: è una lettura, non un dato.
+
+**Verifica**
+- 14 nuovi controlli in `test/ricevimenti.test.js` (suite da 1863 a 1877), fra cui due ricevimenti concorrenti che si sommano invece di sovrascriversi.
+
 ### 0.80.1 — 2026-10-12
 
 **Correzioni in vista del database condiviso.** Nessun cambiamento visibile nell'app: sono le cose che il giorno di Supabase avrebbero perso dati o fatto fallire il primo invio, chiuse adesso in locale e con un test. Dettaglio in `docs/analisi-tecnica.md` §33–38.

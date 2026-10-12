@@ -328,6 +328,14 @@ const SCHEMA = {
   // movimento non duplica il ricevimento: è l'unica scrittura che muove il
   // magazzino, e l'ordine dice solo da dove viene.
   movements: { table: 'stock_movements' },
+  // Ricevimenti delle righe d'ordine e di ordine di lavoro: **eventi**, come i
+  // movimenti. Fino alla 0.80 il ricevuto era un numero scritto sulla riga e
+  // riscritto a ogni ricevimento: in cloud due magazzinieri che registrano un
+  // arrivo sulla stessa riga si sarebbero sovrascritti, e un carico sarebbe
+  // sparito dalla giacenza senza un avviso. Due eventi invece si sommano.
+  // `received` resta sulla riga come **lettura**, ricavata da qui
+  // (riallineaRicevuti), e non si invia: vedi `derived`.
+  receipts: { table: 'order_receipts' },
   // Allegati: **solo i dati**. I byte dei file stanno in IndexedDB (allegati.js)
   // e non passano né da qui né dal backup JSON — un disegno pesa più di tutto il
   // database, e localStorage non li reggerebbe. Il record dice che il file
@@ -365,14 +373,18 @@ const SCHEMA = {
   workCenters: { table: 'work_centers', children: { suppliers: { table: 'work_center_suppliers', rowId: 'id', merge: 'row' } } },
   families: { table: 'families', children: { subs: { table: 'sub_families', rowId: 'id', merge: 'row' } } },
   rfqs: { table: 'rfqs', children: { lines: { table: 'rfq_lines', rowId: 'id', merge: 'row' } } },
-  orders: { table: 'orders', children: { lines: { table: 'order_lines', rowId: 'id', merge: 'row' } } },
+  // `derived`: campi della riga che si leggono e non si scrivono — li ricava lo
+  // Store da altre collezioni, e mandarli al backend farebbe vincere la copia
+  // di chi ha inviato per ultimo sulla somma degli eventi. flattenDB() li
+  // toglie con `stripDerived`.
+  orders: { table: 'orders', children: { lines: { table: 'order_lines', rowId: 'id', merge: 'row', derived: ['received'] } } },
   // Ordini di lavoro: la stessa forma degli ordini d'acquisto, e una collezione
   // a sé. Le due cose che si comprano da un fornitore — merce e lavorazioni —
   // hanno numerazione, elenco e stampa distinti perché sono due documenti
   // diversi nella realtà: uno chiede della roba, l'altro manda dei pezzi a
   // lavorare. Tenerli in una tabella sola costringeva ogni conto a filtrare per
   // un campo, ed è il tipo di distinzione che prima o poi qualcuno dimentica.
-  workOrders: { table: 'work_orders', children: { lines: { table: 'work_order_lines', rowId: 'id', merge: 'row' } } },
+  workOrders: { table: 'work_orders', children: { lines: { table: 'work_order_lines', rowId: 'id', merge: 'row', derived: ['received'] } } },
   plans: { table: 'production_plans', children: { lines: { table: 'production_plan_lines', rowId: 'id', merge: 'row' } } },
   // ─── Ordini di produzione (ODP) ───
   // Il documento che segue una parte lungo il suo ciclo: le fasi congelate in
@@ -776,6 +788,13 @@ function migrateDB() {
     if (!Array.isArray(p.lines)) p.lines = [];
     p.lines.forEach(l => { if (l.qty == null) l.qty = 0; });
   });
+  // Ricevimenti come eventi. Il primo caricamento dopo la 0.80.1 trova i
+  // ricevuti scritti sulle righe e nessun evento: li trasforma in un saldo
+  // d'apertura per riga, così il numero resta quello di prima. Da lì in poi è
+  // il ricevuto a discendere dagli eventi, a ogni caricamento.
+  const primoGiroRicevimenti = !Array.isArray(db.receipts);
+  if (primoGiroRicevimenti) db.receipts = [];
+  riallineaRicevuti(primoGiroRicevimenti);
   // ─── Ordini di produzione e dichiarazioni ───
   if (!db.prodOrders) db.prodOrders = [];
   if (!db.prodDecls) db.prodDecls = [];
@@ -943,6 +962,59 @@ function migrateDB() {
   // Migrazioni versionate
   if ((db.schemaVersion || 1) < 2) { migrateV2(); db.schemaVersion = 2; }
   riparaIdSeminati();
+}
+// ── Ricevuto: somma di eventi, non un numero riscritto ──
+// Valgono per le righe di ordini d'acquisto e di lavoro **che non vengono da
+// un ordine di produzione**: su quelle i pezzi rientrati li dichiara l'ODP
+// (opSyncOdlReceived), che è già fatto di eventi.
+const RICEVIMENTO_COLLS = ['orders', 'workOrders'];
+function ricevutoDaEventi(l) { return !!l && !l.odpId; }
+function arrotondaQta(x) { return Math.round((Number(x) || 0) * 1e6) / 1e6; }
+// Riporta `received` di ogni riga alla somma dei suoi eventi. Con `apertura`
+// fa il contrario, una volta sola: scrive un evento per il ricevuto che c'è.
+// Pota gli eventi di righe che non esistono più — tranne quelli di un
+// documento nel cestino, che ripristinato deve ritrovarli.
+function riallineaRicevuti(apertura) {
+  if (!Array.isArray(db.receipts)) db.receipts = [];
+  const righe = new Map();
+  RICEVIMENTO_COLLS.forEach(c => (db[c] || []).forEach(o => (o && o.lines || []).forEach(l => {
+    if (l && l.id != null && ricevutoDaEventi(l)) righe.set(l.id, { o, l, c });
+  })));
+  const nelCestino = new Set((db.trash || [])
+    .filter(t => t && RICEVIMENTO_COLLS.includes(t.coll) && t.record).map(t => t.record.id));
+  const somme = new Map();
+  db.receipts = db.receipts.filter(r => {
+    if (!r) return false;
+    const dove = righe.get(r.lineId);
+    if (dove && dove.o.id === r.orderId) {
+      somme.set(r.lineId, (somme.get(r.lineId) || 0) + (Number(r.qty) || 0));
+      return true;
+    }
+    return nelCestino.has(r.orderId);
+  });
+  righe.forEach(({ o, l, c }, id) => {
+    if (apertura) {
+      const n = arrotondaQta(l.received);
+      if (n) db.receipts.push(stampNew({ id: newId(), coll: c, orderId: o.id, lineId: id, qty: n,
+        kind: 'apertura', date: String(o.updatedAt || o.date || nowISO()).slice(0, 10), note: '' }));
+      return;
+    }
+    l.received = arrotondaQta(somme.get(id) || 0);
+  });
+}
+// L'unico modo di cambiare il ricevuto di una riga: si dice il **nuovo
+// totale**, come lo scrive chi è davanti alla merce, e qui diventa un evento
+// con la differenza. La riga si aggiorna subito, per chi la sta guardando.
+function registraRicevuto(coll, doc, l, totale) {
+  const nuovo = arrotondaQta(totale);
+  const delta = arrotondaQta(nuovo - (Number(l.received) || 0));
+  l.received = nuovo;
+  if (!delta || !doc || l.id == null || !ricevutoDaEventi(l)) return null;
+  if (!Array.isArray(db.receipts)) db.receipts = [];
+  const oggi = typeof oggiISO === 'function' ? oggiISO() : nowISO().slice(0, 10);
+  const ev = stampNew({ id: newId(), coll, orderId: doc.id, lineId: l.id, qty: delta, kind: 'ricevimento', date: oggi, note: '' });
+  db.receipts.push(ev);
+  return ev;
 }
 // ── Famiglie predefinite: id veri anche quando arrivano dopo la v2 ──
 // I seed una-tantum delle famiglie materie prime e parti copiavano il

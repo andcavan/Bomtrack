@@ -46,6 +46,10 @@ function childRowId(parentId, arrayName, pos) {
 // `opts.stripSecrets` toglie i campi che non devono lasciare il browser (gli
 // hash delle password): il backend ha la propria autenticazione, e un hash
 // spedito è un hash in più in giro per niente.
+// `opts.stripDerived` toglie dalle righe figlie i campi che lo Store ricava da
+// altre collezioni (`derived` nel registro, oggi `received`): sono una lettura,
+// e inviarli farebbe vincere la copia dell'ultimo arrivato sulla somma degli
+// eventi. Il giro completo resta esatto senza l'opzione.
 function flattenDB(source, opts) {
   const o = opts || {};
   const out = {};
@@ -84,6 +88,7 @@ function flattenDB(source, opts) {
         (rec[a] || []).forEach((child, j) => {
           if (!child) return;
           const r = Object.assign({}, child);
+          if (o.stripDerived) (cdef.derived || []).forEach(k => { delete r[k]; });
           r.parentId = rec.id;
           r.pos = j;
           // Con un id proprio si conserva quello: è l'identità che il merge per

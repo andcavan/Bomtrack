@@ -557,6 +557,41 @@ figlia. È lo strumento della migrazione utenti; oggi nessuno la chiama.
 
 ---
 
+## Risolto nella 0.81.0
+
+### 39. D1 — i ricevimenti sono eventi
+Il ricevuto di una riga d'ordine era un numero riscritto a ogni arrivo, e la
+giacenza ne è la somma: in cloud due ricevimenti concorrenti sulla stessa riga
+si sarebbero sovrascritti e un carico sarebbe sparito dal magazzino, senza
+errore. Era l'ultimo saldo scrivibile rimasto in un modello che per la
+giacenza, il conto lavoro e l'avanzamento aveva già scelto gli eventi.
+
+Nuova collezione `receipts` (`order_receipts`): ogni ricevimento è un evento
+con la **differenza** rispetto a prima, e `received` resta sulla riga come
+lettura ricavata (`riallineaRicevuti()` a ogni caricamento). L'interfaccia non
+cambia: si digita il totale, `registraRicevuto()` scrive il delta. I lettori di
+`received` — giacenza, stato dell'ordine, fabbisogno, export — non sono stati
+toccati. Il campo è dichiarato `derived` in `SCHEMA` e `flattenDB()` lo toglie
+con `stripDerived`, perché inviarlo farebbe vincere di nuovo l'ultimo arrivato.
+
+Scelte da conoscere:
+- il primo caricamento trasforma ogni ricevuto esistente in un evento
+  `apertura`, una volta sola (la riconosce dall'assenza della collezione);
+- le righe di ODL nate da un ordine di produzione restano fuori: i loro pezzi
+  rientrati li dichiara l'ODP, che è già fatto di eventi;
+- gli eventi di un documento nel cestino restano, per il ripristino; quelli di
+  righe che non esistono più si potano al caricamento;
+- correggere all'ingiù è un evento negativo: la storia resta leggibile.
+
+Coperto da `test/ricevimenti.test.js` (14 controlli), compreso lo scenario che
+motivava la voce: due ricevimenti concorrenti, 3 + 2, danno 5.
+
+Da tenere d'occhio: la collezione **cresce** come i movimenti — un evento per
+ogni modifica del campo, più uno d'apertura per riga ricevuta. Va contata nella
+stima di `sostenibilita-free-tier.md` insieme a `production_declarations`.
+
+---
+
 ## Aperto
 
 ### A. Sicurezza
@@ -644,11 +679,7 @@ contare.
 Trovate nello stesso giro di §33–38, e non chiudibili in locale: vanno
 nell'adapter o nello schema SQL.
 
-**D1 — `received` è un contatore sovrascritto, e da lì nasce la giacenza.**
-Due ricevimenti concorrenti sulla stessa riga: vince l'ultimo e un carico
-sparisce dal magazzino. Va trasformato in eventi (ricevimenti come righe, o
-movimenti `carico` con `order_id`/`line_id`) con `received` da vista, o al
-minimo una RPC di incremento atomico.
+*(D1 — il ricevuto come contatore sovrascritto — chiusa nella 0.81.0, §39.)*
 
 **D2 — `flattenDB()` non traduce i nomi.** Produce camelCase e un `parentId`
 generico; lo schema ha snake_case e `item_id`/`rfq_id`. Esporta anche flag

@@ -292,12 +292,20 @@ function docSetLine(k, id, lineId, field, value) {
   const doc = K.get(id); if (!doc) return;
   const l = (doc.lines || []).find(x => x.id === lineId); if (!l) return;
   const before = doc.status;
+  const ricevutoPrima = l.received;
   // Modifica diretta in tabella: niente messaggi, si riporta a 0 (il vincolo è
   // anche sull'input, qui si copre l'incollaggio di testo).
   if (K.numLineFields.includes(field)) {
     l[field] = (value === '' ? (field === 'received' ? 0 : '') : clampNum(parseFloat(value), 0));
   } else l[field] = value;
   if (K.afterSetLine) K.afterSetLine(doc, l, field);
+  // Il ricevuto non si scrive: si registra la differenza come evento. Il
+  // totale digitato resta la cosa che l'utente vede e controlla.
+  if (field === 'received') {
+    const totale = l.received;
+    l.received = ricevutoPrima;
+    registraRicevuto(K.coll, doc, l, totale);
+  }
   K.autoStatus(doc);   // anche cambiare una quantità sposta la soglia di evasione
   touch(doc); docMarkDirty(k);
   if (doc.status !== before) { K.render(); showToast('Stato: ' + (K.STATUS[doc.status] || doc.status)); }
@@ -1430,7 +1438,7 @@ function ordDelLine(id, lineId) { docDelLine('order', id, lineId); }
 function ordMarkAllReceived(id) {
   if (!ordGuard(id, 'reception')) return;
   const o = getOrder(id); if (!o) return;
-  (o.lines || []).forEach(l => { l.received = Number(l.qty) || 0; });
+  (o.lines || []).forEach(l => { registraRicevuto('orders', o, l, Number(l.qty) || 0); });
   ordAutoStatus(o); touch(o); orderMarkDirty(); renderOrders();
 }
 
@@ -1759,7 +1767,7 @@ function odlMarkAllReceived(id) {
   let saltate = 0;
   (o.lines || []).forEach(l => {
     if (odlRigaDaOdp(l)) { saltate++; return; }
-    l.received = Number(l.qty) || 0;
+    registraRicevuto('workOrders', o, l, Number(l.qty) || 0);
   });
   ordAutoStatus(o); touch(o); odlMarkDirty(); renderOdl();
   if (saltate) showToast(`${saltate} ${saltate === 1 ? 'riga viene' : 'righe vengono'} da un ordine di produzione: i pezzi rientrati si dichiarano lì`, 'error');
