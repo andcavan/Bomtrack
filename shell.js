@@ -143,7 +143,10 @@ function openManual() {
 // gruppo sparisce e la barra resta su una riga sola (vedi .nav-label).
 const NAV = [
   { id: 'home', icon: 'home', label: 'Riepilogo', views: [
-    { id: 'home', label: 'Riepilogo' }] },
+    { id: 'home', label: 'Riepilogo' },
+    // Il Riepilogo dice cosa fare adesso, il cruscotto come stanno le cose:
+    // due domande, la stessa porta d'ingresso.
+    { id: 'dash', label: 'Cruscotto' }] },
   { id: 'anag', icon: 'contacts', label: 'Anagrafica', views: [
     { id: 'buy', label: 'Acquisti' },
     { id: 'design', label: 'Progetto' }] },
@@ -326,6 +329,7 @@ function setView(v) {
   else if (v === 'cycles') renderCycles();
   else if (v === 'report') renderReport();
   else if (v === 'home') renderHome();
+  else if (v === 'dash') renderDash();
   else if (v === 'jobs') renderJobs();
   else if (v === 'mrp') renderMrp();
   else if (v === 'rfq') renderRfq();

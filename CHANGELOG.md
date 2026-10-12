@@ -2,6 +2,23 @@
 
 Le revisioni seguono il versionamento semantico `0.MINOR.PATCH`: **MINOR** per nuove funzionalità, **PATCH** per correzioni. La versione in cima è quella in `APP_VERSION` (`core.js`) e mostrata nell'header dell'app.
 
+### 0.86.0 — 2026-10-12
+
+**Il cruscotto.** Una pagina nuova sotto *Riepilogo*: il Riepilogo dice cosa fare adesso, il cruscotto come stanno le cose.
+
+**Nuovo**
+- **Valore di magazzino**, totale e ripartito per tipo e per famiglia.
+- **Articoli fermi** da 3, 6 o 12 mesi, dal più costoso, con il valore immobilizzato.
+- **Sotto scorta minima**, con quanto manca e se quello in arrivo basta.
+- **Consegne scadute per fornitore**: righe, valore da ricevere, ritardo peggiore, documenti cliccabili.
+- Export Excel e PDF di tutto il cruscotto.
+
+**Sotto il cofano**
+- Le righe d'ordine ancora da ricevere hanno una funzione sola (`righeDaRicevere`), usata dal cruscotto e dal calendario del Riepilogo; il valore di una giacenza anche (`valoreGiacenza`), usata dal cruscotto e dalla tessera del magazzino.
+
+**Verifica**
+- `test/dashboard.test.js`; la vista entra nei controlli d'impaginazione in Chromium.
+
 ### 0.85.0 — 2026-10-12
 
 **Confrontare distinte e revisioni.**

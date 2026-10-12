@@ -1150,3 +1150,15 @@ body.insp-on .row-actions{display:none}
 /* Confronto fra due distinte */
 .bom-compare th,.bom-compare td{padding:7px 8px}
 .bom-compare .num{font-family:var(--mono);text-align:right;white-space:nowrap}
+/* Cruscotto */
+#view-dash{display:none;flex-direction:column;gap:14px}
+#view-dash.active{display:flex}
+.dash-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,420px),1fr));gap:14px}
+.dash-card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:14px 16px;min-width:0}
+.dash-card > .settings-group-title{margin-top:0}
+.dash-head{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+.dash-head .settings-group-title{margin:0}
+.dash-nota{color:var(--text-dim);font-size:12px;margin:6px 0 0}
+.dash-table th,.dash-table td{padding:7px 8px}
+.dash-table .num{font-family:var(--mono);text-align:right;white-space:nowrap}
+#view-dash > .bom-toolbar,#view-dash > .cost-summary{margin:0}

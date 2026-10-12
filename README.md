@@ -236,6 +236,7 @@ Il motivo è lo storico: finché lo stesso dato si poteva scrivere in due posti,
 | `views-stock.js` | giacenze, movimenti di magazzino, impegni dei piani aperti, calcolo del fabbisogno netto e vista **Magazzino** |
 | `views-jobs.js` | commesse cliente e tracciabilità commessa → fabbisogno → richiesta → ordine |
 | `views-home.js` | riepilogo: cosa richiede attenzione, con il collegamento a dove si risolve |
+| `views-dash.js` | cruscotto: valore di magazzino, articoli fermi, sotto scorta, consegne scadute per fornitore |
 | `views-catalog.js` | anagrafiche, listino fornitori, scheda articolo, cicli di lavorazione |
 | `views-report.js` | costificazione e report |
 | `views-mrp.js` | fabbisogno materiali |

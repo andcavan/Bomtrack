@@ -538,6 +538,26 @@ rivedere i prezzi in uso.
 **Da sapere.** Il Riepilogo è **derivato**: non c'è niente da compilare e niente da spuntare. Un
 segnale sparisce quando sparisce la sua causa.
 
+### Il cruscotto
+
+**Come ci si arriva.** 🏠 *Riepilogo → Cruscotto* (dalla 0.86.0).
+
+Il Riepilogo dice cosa c'è da fare adesso; il cruscotto dice **come stanno le cose**. Non calcola
+niente di nuovo — le cifre sono quelle del magazzino, delle scorte e degli ordini — ma le mette
+insieme in una pagina sola. È in sola lettura, per tutti i ruoli.
+
+| Sezione | Cosa mostra |
+|---|---|
+| **Tessere** | Valore della giacenza, valore fermo, articoli sotto scorta, righe di consegna scadute |
+| **Valore per tipo / per famiglia** | Esistente × costo unitario, come la tessera del *Magazzino*; solo le giacenze positive |
+| **Articoli fermi** | Con giacenza e nessun movimento da 3, 6 o 12 mesi, dal più costoso: è il denaro immobilizzato a scaffale |
+| **Sotto scorta minima** | Quanto manca alla scorta e quanto è già in arrivo; ✓ se l'arrivo basta |
+| **Consegne scadute per fornitore** | Righe di ODA e ODL non ancora ricevute oltre la data confermata (o richiesta): quante, quanto valgono, il ritardo peggiore e i documenti, cliccabili |
+
+**Da sapere.** I ricevimenti d'ordine non hanno una data propria — il ricevuto è un numero sulla
+riga — quindi per gli *articoli fermi* un ricevimento conta con la **data dell'ordine**. Tutto il
+cruscotto si esporta in Excel o PDF, un foglio per sezione.
+
 ---
 
 # Parte III — Gli archivi
@@ -2395,7 +2415,7 @@ Ogni record porta `id` (UUID), `createdAt` / `updatedAt`, `createdBy` / `updated
 | `views-bom.js` · `views-rev.js` | Distinte e revisioni |
 | `views-stock.js` | Magazzino, movimenti, conto lavoro |
 | `views-catalog.js` | Anagrafiche, listino, scheda articolo, cicli |
-| `views-report.js` · `views-item.js` · `views-home.js` | Costificazione · scheda di sola lettura · Riepilogo |
+| `views-report.js` · `views-item.js` · `views-home.js` · `views-dash.js` | Costificazione · scheda di sola lettura · Riepilogo · Cruscotto |
 | `views-mrp.js` | Fabbisogno e Carico centri |
 | `views-jobs.js` · `views-docs.js` | Commesse · RFQ, ODA, ODL |
 | `views-prod.js` | Ordini di produzione: fasi congelate, avanzamento, movimenti |

@@ -294,20 +294,17 @@ function homeEventi() {
 
   // Ordini d'acquisto e di lavoro: le consegne ancora da ricevere, alla data
   // confermata se c'è. Insieme, come nei segnali: la domanda è una — cosa arriva.
-  [].concat((db.orders || []).map(o => ({ o, tipo: 'order' })), (db.workOrders || []).map(o => ({ o, tipo: 'odl' }))).forEach(({ o, tipo }) => {
-    if (o.active === false || o.status === 'bozza' || o.status === 'annullato' || o.status === 'evaso') return;
+  // Quali righe aspettano ancora merce lo dice righeDaRicevere() (views-dash.js),
+  // la stessa regola delle consegne scadute del cruscotto.
+  righeDaRicevere().forEach(({ o, tipo, l, data }) => {
     const forn = (db.suppliers || []).find(s => s.id === o.supplierId);
-    (o.lines || []).forEach(l => {
-      const data = l.confirmedDate || l.deliveryDate;
-      if (!data || (Number(l.received) || 0) >= (Number(l.qty) || 0)) return;
-      let grav = data < oggi ? 'alta' : calGravitaData(data, oggi);
-      if (grav === 'info' && (ordLineDelay(l) || 0) > 0) grav = 'media';
-      const g = raggruppa(tipo + '|' + o.id + '|' + data, { tipo: 'ordine', data, icona: tipo === 'odl' ? 'wrench' : 'truck',
-        azione: `homeApri('${tipo}','${o.id}')`,
-        dettaglio: [forn && forn.name, o.title].filter(Boolean).join(' — ') }, grav);
-      g.testo = `${tipo === 'odl' ? 'Rientro ODL' : 'Consegna ordine'} ${o.number || ''}`.trim() + (g.n > 1 ? ` (${g.n} righe)` : '');
-      if ((ordLineDelay(l) || 0) > 0) g.ritardo = true;
-    });
+    let grav = data < oggi ? 'alta' : calGravitaData(data, oggi);
+    if (grav === 'info' && (ordLineDelay(l) || 0) > 0) grav = 'media';
+    const g = raggruppa(tipo + '|' + o.id + '|' + data, { tipo: 'ordine', data, icona: tipo === 'odl' ? 'wrench' : 'truck',
+      azione: `homeApri('${tipo}','${o.id}')`,
+      dettaglio: [forn && forn.name, o.title].filter(Boolean).join(' — ') }, grav);
+    g.testo = `${tipo === 'odl' ? 'Rientro ODL' : 'Consegna ordine'} ${o.number || ''}`.trim() + (g.n > 1 ? ` (${g.n} righe)` : '');
+    if ((ordLineDelay(l) || 0) > 0) g.ritardo = true;
   });
 
   // Ordini di produzione lanciati o in corso: quando il prodotto deve essere finito
