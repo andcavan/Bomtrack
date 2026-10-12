@@ -3,7 +3,7 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
-const { summary } = require('./tap.js');
+const { summary, attendi } = require('./tap.js');
 
 const files = fs.readdirSync(__dirname)
   .filter(f => f.endsWith('.test.js'))
@@ -15,4 +15,4 @@ files.forEach(f => {
   require(path.join(__dirname, f));
 });
 
-process.exitCode = summary() ? 1 : 0;
+attendi().then(() => { process.exitCode = summary() ? 1 : 0; });

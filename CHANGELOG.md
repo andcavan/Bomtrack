@@ -2,6 +2,20 @@
 
 Le revisioni seguono il versionamento semantico `0.MINOR.PATCH`: **MINOR** per nuove funzionalità, **PATCH** per correzioni. La versione in cima è quella in `APP_VERSION` (`core.js`) e mostrata nell'header dell'app.
 
+### 0.84.0 — 2026-10-12
+
+**I dati al sicuro.** L'archivio esiste solo in questo browser, e il backup c'era — ma niente ricordava di farlo, e lo spazio si vedeva solo aprendo *Gestione → Backup*.
+
+**Nuovo**
+- **Il Riepilogo ricorda il backup**: dopo 7 giorni senza un *Esporta JSON* da questo browser avvisa, dopo 30 è un allarme, con **Esporta ora** a portata di clic. Solo per gli amministratori, che sono gli unici a poterlo fare. Un'installazione nuova non parte già in allarme: si conta dal primo giorno.
+- **Il Riepilogo avvisa quando lo spazio si riempie**: dal 70% dei circa 5 MB del browser, allarme dal 90%. Prima lo si scopriva quando i salvataggi cominciavano a fallire.
+- **Archiviazione persistente**: all'avvio l'app chiede al browser di non cancellare i suoi dati quando il disco è pieno, e la scheda Backup dice se l'ha ottenuto.
+- La scheda Backup mostra la data dell'ultimo backup.
+
+**Verifica**
+- `test/sicurezza-dati.test.js`.
+- Il runner dei test aspetta i test asincroni: prima li dava per buoni subito, e un'asserzione fallita dopo un `await` usciva fuori dal conteggio.
+
 ### 0.83.2 — 2026-10-12
 
 **Grafica e impaginazione.** L'app è stata guardata in un browser vero a quattro larghezze (desktop, portatile, tablet, telefono) e nei due temi, 168 schermate misurate una per una. I colori erano già a posto — nessun testo sotto il contrasto richiesto, in nessuno dei due temi — ma l'intestazione e il telefono no.

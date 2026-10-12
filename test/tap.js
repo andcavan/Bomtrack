@@ -14,18 +14,27 @@ function describe(name, fn) {
   suite = '';
 }
 
+// Un test che restituisce una Promise (async) si conta quando si chiude: prima
+// veniva dato per buono subito, e un'asserzione fallita dopo un `await`
+// diventava un rifiuto non gestito, fuori dal conteggio. `attendi()` li aspetta
+// tutti prima del riepilogo.
+const inSospeso = [];
 function it(name, fn) {
-  try {
-    fn();
-    passed++;
-    console.log('    ok   ' + name);
-  } catch (e) {
+  const ok = () => { passed++; console.log('    ok   ' + name); };
+  const ko = (e, s) => {
     failed++;
-    failures.push({ suite, name, err: e });
+    failures.push({ suite: s, name, err: e });
     console.log('    FAIL ' + name);
     console.log('         ' + String((e && e.message) || e).split('\n').join('\n         '));
-  }
+  };
+  const s = suite;
+  try {
+    const r = fn();
+    if (r && typeof r.then === 'function') inSospeso.push(Promise.resolve(r).then(ok, e => ko(e, s)));
+    else ok();
+  } catch (e) { ko(e, s); }
 }
+function attendi() { return Promise.all(inSospeso.splice(0)); }
 
 // I costi sono float: il confronto esatto fallirebbe su valori come 220.00000000000003.
 function approx(actual, expected, msg, eps) {
@@ -48,4 +57,4 @@ function summary() {
   return failed;
 }
 
-module.exports = { describe, it, approx, summary };
+module.exports = { describe, it, approx, summary, attendi };

@@ -162,6 +162,22 @@ function homeSegnali() {
   agg(dup.map(g => voce(g.code, `${g.items.length} articoli con questo codice: ${g.items.map(i => i.name || '(senza nome)').join(', ')}`, '')),
     'codice articolo duplicato', 'codici articolo duplicati', isAdmin() ? 'manage' : 'buy', 'media');
 
+  // La sicurezza dell'archivio: l'unica copia sta in questo browser. Solo per
+  // chi può esportare — a un lettore direbbe di fare una cosa che non può fare.
+  // Qui il numero non conta voci ma giorni (o percentuale): `apri` porta dritto
+  // alla scheda Backup invece che all'ultima scheda aperta della Gestione.
+  if (isAdmin()) {
+    const b = statoBackup();
+    if (b.giorni >= BACKUP_AVVISO_GG) out.push({ n: b.giorni,
+      testo: b.mai ? 'giorni senza un backup: non ne è mai stato esportato uno da questo browser' : 'giorni dall\'ultimo backup',
+      vista: 'manage', apri: "homeApri('backup')", gravita: b.giorni >= BACKUP_ALLARME_GG ? 'alta' : 'media',
+      voci: [voce('Esporta ora', 'Scarica il backup JSON dell\'intero archivio', 'exportBackup();renderHome()')] });
+    const pct = dbSpazioPct();
+    if (pct >= 70) out.push({ n: pct, testo: '% dello spazio del browser occupato dall\'archivio',
+      vista: 'manage', apri: "homeApri('backup')", gravita: pct >= 90 ? 'alta' : 'media',
+      voci: [voce(Store.sizeInfo().mb.toFixed(2) + ' MB su ' + DB_SPAZIO_MB, 'Oltre il limite i salvataggi falliscono: esporta un backup e alleggerisci l\'archivio', '')] });
+  }
+
   return out;
 }
 // Aprire ciò che l'avviso nomina. Stessa strada della ricerca globale: prima la
@@ -175,6 +191,7 @@ function homeApri(tipo, id) {
   else if (tipo === 'odl') { setView('odl'); openOdlEdit(id); }
   else if (tipo === 'odp') { setView('odp'); openOdpEdit(id); }
   else if (tipo === 'cycle') { setView('cycles'); openCycleFor(id); }
+  else if (tipo === 'backup') { setView('manage'); setMgmtTab('backup'); }
 }
 // Quante voci si scrivono per esteso. Oltre, l'elenco smetterebbe di essere un
 // dettaglio e diventerebbe la vista che si apre cliccando la riga.
@@ -509,7 +526,7 @@ function renderHome() {
   // **fuori** da quel bersaglio, ognuna con il proprio, perché un pulsante
   // dentro un pulsante non si sa più cosa apre — né col mouse né da tastiera.
   const righe = segnali.map(s => `<div class="home-sig">
-      <div class="mgmt-item" ${clickAttrs(`setView('${s.vista}')`, `${s.n} ${s.testo} — vai a ${viewLabel(s.vista)}`)} style="cursor:pointer">
+      <div class="mgmt-item" ${clickAttrs(s.apri || `setView('${s.vista}')`, `${s.n} ${s.testo} — vai a ${viewLabel(s.vista)}`)} style="cursor:pointer">
         <span style="font-family:var(--mono);font-weight:700;width:60px;text-align:right;color:${GRAVITA[s.gravita]}">${s.n}</span>
         <span style="flex:1">${esc(s.testo)}</span>
         <span class="empty-text" style="padding:0">${esc(viewLabel(s.vista))} →</span>

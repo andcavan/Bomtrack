@@ -983,12 +983,70 @@ function closeImportReport() {
 
 // Lo spazio di localStorage è circa 5 MB per sito: oltre i 4 conviene saperlo
 // prima di sbatterci contro, non quando il salvataggio comincia a fallire.
+// Il Riepilogo avvisa prima, al 70%: lì è un promemoria, qui un allarme.
+const DB_SPAZIO_MB = 5;
 const DB_SIZE_WARN_MB = 4;
+function dbSpazioPct() { return Math.round(Store.sizeInfo().mb / DB_SPAZIO_MB * 100); }
 function dbSizeLine() {
   const { mb } = Store.sizeInfo();
   const vicino = mb >= DB_SIZE_WARN_MB;
   return `<p style="margin-top:6px">Spazio occupato: <strong${vicino ? ' style="color:var(--red)"' : ''}>${mb.toFixed(2)} MB</strong>
     ${vicino ? '— vicino al limite del browser (circa 5 MB). Esporta un backup e alleggerisci il database.' : 'sui circa 5 MB che il browser riserva a questa app.'}</p>`;
+}
+
+// ─── Quando è stato fatto l'ultimo backup ───
+// L'archivio esiste solo in questo browser, e nessuno si ricorda di esportarlo
+// finché non serve. La data sta in localStorage e non nel database: riguarda
+// questa copia, e dentro il database viaggerebbe col backup stesso, dicendo il
+// falso su ogni PC dove lo si ripristina.
+// Il riferimento (`…_dal`) è il primo giorno in cui l'app ha contato: senza,
+// un'installazione nuova partirebbe già «senza backup da sempre».
+const BACKUP_DATA_KEY = 'bomtrack_ultimo_backup';
+const BACKUP_DAL_KEY = 'bomtrack_ultimo_backup_dal';
+const BACKUP_AVVISO_GG = 7, BACKUP_ALLARME_GG = 30;
+function _lsLeggi(k) { try { return localStorage.getItem(k) || ''; } catch (e) { return ''; } }
+function _lsScrivi(k, v) { try { localStorage.setItem(k, v); return true; } catch (e) { return false; } }
+function ultimoBackup() { return _lsLeggi(BACKUP_DATA_KEY); }
+function registraBackup() { _lsScrivi(BACKUP_DATA_KEY, oggiISO()); }
+// { data, giorni, mai }: `giorni` dall'ultimo backup, o dal primo giorno contato
+// se non ce n'è mai stato uno.
+function statoBackup() {
+  const data = ultimoBackup();
+  let rif = data;
+  if (!rif) {
+    rif = _lsLeggi(BACKUP_DAL_KEY);
+    if (!rif) { rif = oggiISO(); _lsScrivi(BACKUP_DAL_KEY, rif); }
+  }
+  const g = giorniTra(rif.slice(0, 10), oggiISO());
+  return { data, giorni: Math.max(0, g == null ? 0 : g), mai: !data };
+}
+function backupLine() {
+  const s = statoBackup();
+  const vecchio = s.giorni >= BACKUP_AVVISO_GG;
+  const testo = s.mai ? 'Nessun backup esportato da questo browser.'
+    : `Ultimo backup: <strong>${fmtDateIt(s.data)}</strong>${s.giorni ? ` (${s.giorni === 1 ? 'ieri' : s.giorni + ' giorni fa'})` : ' (oggi)'}.`;
+  return `<p style="margin-top:6px"${vecchio ? ' class="backup-vecchio"' : ''}>${testo}</p>`;
+}
+
+// ─── Archiviazione persistente ───
+// Quando il disco si riempie, il browser può cancellare da solo i dati dei
+// siti «non persistenti», partendo dai meno usati. Chiedere la persistenza lo
+// impedisce; Chrome la concede senza domande a un'app installata o usata
+// spesso, Firefox chiede all'utente. L'esito si mostra in Backup.
+let _persistenza = null;   // null = non si sa (API assente o non ancora risposto)
+function richiediPersistenza() {
+  const st = typeof navigator !== 'undefined' && navigator.storage;
+  if (!st || !st.persisted || !st.persist) return Promise.resolve(null);
+  return st.persisted()
+    .then(gia => gia || st.persist())
+    .then(ok => { _persistenza = !!ok; return _persistenza; })
+    .catch(() => null);
+}
+function persistenzaLine() {
+  if (_persistenza === null) return '';
+  return _persistenza
+    ? '<p style="margin-top:6px">Il browser tiene questi dati come <strong>persistenti</strong>: non li cancella da solo quando il disco si riempie.</p>'
+    : '<p style="margin-top:6px">Il browser <strong>può cancellare questi dati da solo</strong> se il disco si riempie: un motivo in più per i backup. Installare l\'app (icona nella barra degli indirizzi) di solito lo evita.</p>';
 }
 function renderBackup() {
   return `<div class="cloud-section">
@@ -997,6 +1055,8 @@ function renderBackup() {
       <p>I dati sono salvati nel browser (localStorage). Esporta un file JSON per conservare un backup o trasferire i dati su un altro PC. L'import sovrascrive i dati attuali.</p>
       <p><strong>I documenti d'archivio sì, i vecchi file no.</strong> Di un documento d'archivio il backup porta il <em>percorso</em> dentro la cartella, che è un dato come gli altri: ripristinandolo su un PC che ha la sua copia dell'archivio i collegamenti valgono ancora. I file caricati <em>dentro</em> Bomtrack prima della 0.78.0 restano invece fuori dal JSON — sono byte, e nel JSON non ci starebbero — quindi il backup ne porta l'<em>elenco</em> e non il contenuto: si vede che cosa manca invece di trovare una scheda vuota. Prima di trasferirsi su un altro PC vanno riscaricati a mano dalla scheda Allegati di ciascun articolo.</p>
       ${dbSizeLine()}
+      ${backupLine()}
+      ${persistenzaLine()}
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
         <button class="add-btn-sm" onclick="exportBackup()">${ico('download', 'tinted', '')} Esporta JSON</button>
         <button class="btn-outline" onclick="document.getElementById('import-file').click()">${ico('upload', 'tinted', '')} Importa JSON</button>
@@ -1124,6 +1184,7 @@ function exportBackup() {
   const a = document.createElement('a');
   a.href = url; a.download = `bomtrack_backup_${oggiISO()}.json`;
   a.click(); URL.revokeObjectURL(url);
+  registraBackup();
   showToast('Backup esportato');
 }
 function importBackup(ev) {
@@ -1236,6 +1297,7 @@ function init() {
   });
   // Sessione salvata → si rientra diretti; altrimenti accesso (o setup del primo admin)
   if (!restoreSession()) renderLogin();
+  richiediPersistenza();
 }
 // Nel browser parte da sé; sotto test (Node, nessun DOM) il file si carica
 // senza avviare l'app, così la suite può pilotare Store e il motore di costo.

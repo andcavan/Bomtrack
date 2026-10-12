@@ -522,6 +522,14 @@ Ogni segnale **nomina i codici e i numeri che lo riguardano** (fino a otto, poi 
 | 8 | Articoli d'acquisto senza prezzo | 🟠 media | alla scheda articolo |
 | 9 | Fasi a costo orario senza ore dichiarate | 🟠 media | al ciclo |
 | 10 | Codici articolo duplicati | 🟠 media | a Gestione |
+| 11 | Giorni dall'ultimo backup (da 7; 🔴 da 30) — *solo amministratori* | 🟠 media | a Gestione → Backup |
+| 12 | Spazio del browser occupato (dal 70%; 🔴 dal 90%) — *solo amministratori* | 🟠 media | a Gestione → Backup |
+
+**Il backup che invecchia.** L'archivio esiste solo in questo browser: il segnale 11 conta i
+giorni dall'ultimo *Esporta JSON* fatto **da questo browser**, e porta il pulsante **Esporta ora**.
+Se non se n'è mai fatto uno, conta dal primo giorno in cui l'app l'ha tenuto d'occhio — una
+installazione nuova non parte già in allarme. La data non sta nel database: un backup ripristinato
+su un altro PC non porta con sé la data, perché lì il backup non è mai stato fatto.
 
 **Il risparmio potenziale.** In fondo la pagina calcola quanto si risparmierebbe scegliendo
 ovunque la quotazione più bassa già presente a listino. Non cambia niente da solo: è un invito a
@@ -1931,7 +1939,7 @@ documento, non l'elenco**.
 
 | Comando | Cosa fa |
 |---|---|
-| *(in testa)* | La **dimensione** dell'archivio |
+| *(in testa)* | La **dimensione** dell'archivio, la **data dell'ultimo backup** e se il browser tiene i dati come **persistenti** |
 | **Esporta JSON** | Scarica l'intero archivio in un file |
 | **Importa JSON** | Carica un file **sovrascrivendo i dati attuali** |
 | **↺ Ripristina dati esempio** | Rimette la macchina dimostrativa |
@@ -1940,6 +1948,12 @@ documento, non l'elenco**.
 > parte. Un backup a fine giornata costa dieci secondi.
 >
 > ⚠️ **Il backup contiene gli utenti con i loro hash di password.** È un file riservato.
+
+**Dati persistenti.** Quando il disco si riempie, un browser può cancellare da solo i dati dei
+siti che considera sacrificabili. All'avvio Bomtrack chiede di essere tenuto come
+**persistente**; la scheda Backup dice se il browser l'ha concesso. Chrome di solito lo concede a
+un'app installata (icona nella barra degli indirizzi) o usata spesso; Firefox lo chiede a te. Non
+sostituisce il backup: protegge dal browser, non da un disco che si guasta o da un PC che cambia.
 
 I backup di versioni vecchie si **migrano da soli** all'import: un file esportato mesi fa si
 ricarica senza conversioni.
