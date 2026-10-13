@@ -2,6 +2,21 @@
 
 Le revisioni seguono il versionamento semantico `0.MINOR.PATCH`: **MINOR** per nuove funzionalità, **PATCH** per correzioni. La versione in cima è quella in `APP_VERSION` (`core.js`) e mostrata nell'header dell'app.
 
+### 0.94.0 — 2026-10-13
+
+**Testate più pulite.** Le testate dei documenti arrivavano a sette pulsanti dello stesso peso, e il gesto principale non si distingueva dal resto.
+
+**Nuovo**
+- **Esporta ▾**: Excel e PDF in un menu solo, in tutti gli elenchi (anagrafiche, magazzino, cicli, distinte, documenti, cruscotto, carico, listino, confronto distinte) e nelle schede di piano e ordine di produzione.
+- **⋯ Altri comandi** nei documenti: *Duplica* (piano), *Annulla* (ordine di produzione), *Crea ordine da questa richiesta* ed **Elimina**, che non sta più in vista accanto a *Salva*.
+- I menu si chiudono con un clic fuori, con `Esc` o scegliendo una voce; in stampa non compaiono.
+
+**Da sapere**
+- I comandi sono gli stessi di prima, con gli stessi effetti: cambia solo dove stanno. Il grande pulsante «Genera documento» di richieste e ordini resta dov'era.
+
+**Verifica**
+- `test/tendine.test.js`: voci e comandi del menu, «Esporta» con gli stessi comandi di prima, nome del pulsante ⋯, Elimina e Duplica fuori dalla vista in piano, richiesta, ordine e commessa.
+
 ### 0.93.0 — 2026-10-13
 
 **A che punto è, e da dove viene.** Il giro commessa → piano → richiesta → ordine → ricevimento era scritto nel manuale e in un menu «Stato»: il documento diceva in che stato era, non quale fosse il passo dopo, né a cosa fosse legato.

@@ -150,7 +150,7 @@ function renderDash() {
 
   host.innerHTML = `<div class="bom-toolbar" style="justify-content:space-between">
       <h2 class="section-title" style="margin:0">${ico('chart', 'tinted pill', '')} Cruscotto</h2>
-      ${listExportButtons('dashExportSpec').replace('class="export-pair"', 'class="export-pair export-pair-row"')}
+      ${listExportButtons('dashExportSpec')}
     </div>
     <div class="cost-summary">
       ${kpi(`Valore giacenza (${esc(cur())})`, fmtN(m.totale), 'purple')}

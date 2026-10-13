@@ -133,6 +133,55 @@ function openManual() {
 }
 
 // ═══════════════════════════════════════════════════════════
+//  MENU A TENDINA DELLE TESTATE (0.94.0)
+// ═══════════════════════════════════════════════════════════
+// Le testate dei documenti arrivavano a sette pulsanti dello stesso peso:
+// Chiudi, Aperto, Duplica, Elimina, Esporta Excel, Esporta PDF… e il gesto
+// principale non si distingueva dal resto. Ora i comandi di contorno stanno in
+// due menu: «Esporta ▾» (Excel e PDF) e «⋯» (duplica, annulla, elimina).
+// Elimina in un menu è anche una protezione: non sta più a un clic di
+// distanza da Salva.
+//
+// <details> e non un menu fatto a mano: si apre con Invio e Spazio, si legge
+// con un lettore di schermo, e funziona anche quando uno script si rompe.
+// Quello che <details> non fa da solo (chiudersi con un clic fuori, con Esc o
+// scelta una voce) lo fa l'ascoltatore qui sotto.
+//   voce = { label, onclick, icon?, title?, danger?, disabled?, cls? }
+function tendina(sommario, voci, opts) {
+  const o = opts || {};
+  const items = (voci || []).filter(Boolean).map(v => `<button type="button" class="dd-item${v.danger ? ' danger' : ''}${v.cls ? ' ' + v.cls : ''}" role="menuitem"
+      onclick="${v.onclick}"${v.disabled ? ' disabled' : ''}${v.title ? ` title="${esc(v.title)}"` : ''}>${v.icon ? ico(v.icon, 'tinted', '') + ' ' : ''}${esc(v.label)}</button>`).join('');
+  if (!items) return '';
+  return `<details class="dd${o.cls ? ' ' + o.cls : ''}"><summary class="btn-outline${o.icona ? ' btn-icon' : ''}"${o.title ? ` title="${esc(o.title)}" aria-label="${esc(o.title)}"` : ''}>${sommario}</summary>
+    <div class="dd-menu" role="menu">${items}</div></details>`;
+}
+// «Esporta ▾» con Excel e PDF: gli `onclick` sono quelli dei pulsanti di prima.
+function menuEsporta(xls, pdf, opts) {
+  return tendina(`${ico('download', 'tinted', '')} Esporta <span class="dd-caret" aria-hidden="true">▾</span>`, [
+    { label: 'Excel', icon: 'sheet', onclick: xls, cls: 'dd-xls' },
+    { label: 'PDF', icon: 'file', onclick: pdf, cls: 'dd-pdf' },
+  ], Object.assign({ cls: 'dd-export' }, opts || {}));
+}
+// «⋯» con i comandi di contorno di un documento.
+function menuAltro(voci) {
+  return tendina(ico('more', 'tinted', ''), voci, { icona: true, title: 'Altri comandi', cls: 'dd-more' });
+}
+function tendineChiudi(tranne) {
+  if (typeof document === 'undefined') return;
+  document.querySelectorAll('details.dd[open]').forEach(d => { if (d !== tranne) d.removeAttribute('open'); });
+}
+if (typeof window !== 'undefined' && typeof document !== 'undefined' && document.addEventListener) {
+  document.addEventListener('click', e => {
+    const t = e.target && e.target.closest ? e.target : null;
+    if (!t) return;
+    const dd = t.closest('details.dd');
+    if (dd && t.closest('.dd-item')) { dd.removeAttribute('open'); return; }
+    tendineChiudi(dd);
+  });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') tendineChiudi(null); });
+}
+
+// ═══════════════════════════════════════════════════════════
 //  NAVIGAZIONE
 // ═══════════════════════════════════════════════════════════
 // Due livelli: i gruppi in barra, le loro voci su una seconda riga che

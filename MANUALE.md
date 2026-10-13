@@ -1,6 +1,6 @@
 # Bomtrack — Manuale d'uso
 
-**Versione dell'app documentata: 0.93.0**
+**Versione dell'app documentata: 0.94.0**
 
 📖 **[Leggilo come pagina web](https://claude.ai/code/artifact/726a0963-2db0-4947-999b-d7b5beb91a0b)** — stesso testo, con indice laterale, filtro dei capitoli e tema chiaro/scuro. Comodo da tenere aperto di fianco all'app.
 
@@ -161,7 +161,7 @@ la sessione aperta fino a **Esci**; quanto duri lo decide l'amministratore in
 
 ### La versione
 
-Il numero di versione si legge **accanto al logo, in alto a sinistra** (es. `v0.93.0`).
+Il numero di versione si legge **accanto al logo, in alto a sinistra** (es. `v0.94.0`).
 Corrisponde alla voce in cima al changelog: serve quando si segnala un problema.
 
 ### Dove sta questo manuale
@@ -235,6 +235,15 @@ Fino alla 0.90 i gruppi erano divisi per tipo di dato (*Anagrafica*, *Cicli di l
 La vista aperta finisce **nell'indirizzo del browser** (`…index.html#mrp`). Ne segue che i tasti
 *Indietro* e *Avanti* del browser funzionano, e che un indirizzo si può salvare tra i preferiti o
 mandare a un collega che ha la stessa app.
+
+### Esporta ▾ e ⋯
+
+Dalla 0.94.0 i comandi di contorno non stanno più in fila nella testata. **Esporta ▾** apre un
+menu con *Excel* e *PDF*: dove questo manuale dice «Esporta Excel» o «Esporta PDF», sono le due
+voci di quel menu. Il pulsante **⋯** raccoglie i comandi del documento che non sono il lavoro di
+tutti i giorni: *Duplica*, *Annulla*, *Crea ordine da questa richiesta* e **Elimina**, in rosso.
+Elimina sta lì apposta: in vista, accanto a *Salva*, era a un clic di distanza da un errore. I
+menu si chiudono con un clic fuori, con `Esc` o scegliendo una voce.
 
 ### A che punto è un documento
 
@@ -1326,7 +1335,7 @@ I badge di riga dicono `aperto` o `chiuso`.
 
 | A sinistra | A destra |
 |---|---|
-| chiudi · numero del piano · **Aperto — chiudi** / **Chiuso — riapri** · **Duplica** · **Elimina** | **Esporta Excel** · **Esporta PDF** |
+| chiudi · numero del piano · **Aperto — chiudi** / **Chiuso — riapri** | **Esporta ▾** (Excel, PDF) · **⋯** (Duplica, Elimina) |
 
 I pulsanti **Genera…** non stanno più nella toolbar (dalla 0.92.0): ciascuno sta nella scheda
 delle righe su cui agisce, vedi sotto.
@@ -2708,6 +2717,6 @@ fusa, e il punto in cui si sostituisce la destinazione dei dati è uno solo.
 
 ---
 
-*Manuale di Bomtrack — aggiornato alla versione 0.93.0.*
+*Manuale di Bomtrack — aggiornato alla versione 0.94.0.*
 *Le funzioni descritte qui corrispondono a quella revisione; il changelog dell'app elenca le
 differenze rispetto alle versioni successive.*

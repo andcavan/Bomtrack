@@ -1133,10 +1133,12 @@ function renderRfqEdit(id) {
         <h2 class="section-title" style="font-family:var(--mono)">${esc(r.number)}</h2>
         ${statusBadge(RFQ_STATUS, r.status)}
         <button class="add-btn-sm rfq-save-btn ${rfqDirty ? 'dirty' : ''}" id="rfq-save-btn" onclick="rfqSave('${id}')">${ico('save', 'tinted', '')} Salva</button>
-        <button class="btn-outline" style="color:var(--red);border-color:var(--red)" onclick="delRfq('${id}')" title="Elimina la richiesta">${ico('trash', 'tinted', '')} Elimina</button>
       </div>
       <div class="bom-toolbar-right">
-        <button class="btn-outline" onclick="orderFromRfq('${id}')" title="Crea un ordine a fornitore da questa richiesta">${ico('receipt', 'tinted', '')} Crea ordine</button>
+        ${menuAltro([
+          { label: 'Crea ordine da questa richiesta', icon: 'receipt', onclick: `orderFromRfq('${id}')` },
+          { label: 'Elimina la richiesta', icon: 'trash', onclick: `delRfq('${id}')`, danger: true },
+        ])}
       </div>
     </div>
     ${docStepperHtml('rfq', r)}${docLinksHtml('rfq', r)}
@@ -1626,7 +1628,9 @@ function renderOrderEdit(id) {
         <h2 class="section-title" style="font-family:var(--mono)">${esc(o.number)}</h2>
         ${statusBadge(ORDER_STATUS, o.status)}
         <button class="add-btn-sm rfq-save-btn ${orderDirty ? 'dirty' : ''}" id="order-save-btn" onclick="ordSave('${id}')">${ico('save', 'tinted', '')} Salva</button>
-        <button class="btn-outline" style="color:var(--red);border-color:var(--red)" onclick="delOrder('${id}')" title="Elimina l'ordine">${ico('trash', 'tinted', '')} Elimina</button>
+      </div>
+      <div class="bom-toolbar-right">
+        ${menuAltro([{ label: "Elimina l'ordine", icon: 'trash', onclick: `delOrder('${id}')`, danger: true }])}
       </div>
     </div>
     ${docStepperHtml('order', o)}${docLinksHtml('order', o)}
@@ -2021,7 +2025,9 @@ function renderOdlEdit(id) {
         <h2 class="section-title" style="font-family:var(--mono)">${esc(o.number)}</h2>
         ${statusBadge(ORDER_STATUS, o.status)}
         <button class="add-btn-sm rfq-save-btn ${odlDirty ? 'dirty' : ''}" id="odl-save-btn" onclick="odlSave('${id}')">${ico('save', 'tinted', '')} Salva</button>
-        <button class="btn-outline" style="color:var(--red);border-color:var(--red)" onclick="delOdl('${id}')" title="Elimina l'ordine di lavoro">${ico('trash', 'tinted', '')} Elimina</button>
+      </div>
+      <div class="bom-toolbar-right">
+        ${menuAltro([{ label: "Elimina l'ordine di lavoro", icon: 'trash', onclick: `delOdl('${id}')`, danger: true }])}
       </div>
     </div>
     ${docStepperHtml('odl', o)}${docLinksHtml('odl', o)}

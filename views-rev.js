@@ -369,7 +369,7 @@ function bomCompareModal(aId, bId) {
           onchange="_bomConfronto.soloDiff = this.checked; bomCompareModal('${a.id}', '${b.id}')"> Solo le differenze</label>
         <span class="empty-text" style="padding:0">${diverse.length} articoli diversi su ${c.righe.length} · quantità per una macchina, su tutti i livelli, scarti compresi</span>
         <span style="flex:1"></span>
-        ${listExportButtons('bomCompareExportSpec').replace('class="export-pair"', 'class="export-pair export-pair-row"')}
+        ${listExportButtons('bomCompareExportSpec')}
       </div>
       ${mostrate.length ? tabella('buy') + tabella('make') : '<div class="empty-text">Le due distinte usano gli stessi articoli nelle stesse quantità.</div>'}`;
   }

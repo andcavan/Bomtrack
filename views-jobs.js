@@ -377,7 +377,9 @@ function renderJobEdit(id) {
       <div class="bom-toolbar-left">
         ${worklistCloseBtn('jobBackToList()', 'la commessa')}
         <h2 class="section-title" style="margin:0">${ico('clipboard', 'tinted pill', 'Commessa')} ${esc(j.number)}</h2>
-        <button class="btn-outline" style="color:var(--red);border-color:var(--red)" onclick="delJob('${id}')">${ico('trash', 'tinted', '')} Elimina</button>
+      </div>
+      <div class="bom-toolbar-right">
+        ${menuAltro([{ label: 'Elimina la commessa', icon: 'trash', onclick: `delJob('${id}')`, danger: true }])}
       </div>
     </div>
     ${docStepperHtml('job', j)}

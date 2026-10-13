@@ -645,14 +645,13 @@ function renderOdpEdit(id) {
         ${statusBadge(ODP_STATUS, o.status)}
         ${ODP_APERTI.includes(o.status) || o.status === 'completato'
     ? `<button class="btn-outline" onclick="odpChiudi('${id}')" title="Chiude l'ordine: non si dichiara più niente">${ico('lock', 'tinted', '')} Chiudi</button>` : ''}
-        ${o.status !== 'annullato' ? `<button class="btn-outline" onclick="odpAnnulla('${id}')" title="Annulla l'ordine">${ico('close', 'tinted', '')} Annulla</button>` : ''}
-        <button class="btn-outline" style="color:var(--red);border-color:var(--red)" onclick="delOdp('${id}')" title="Elimina l'ordine di produzione">${ico('trash', 'tinted', '')} Elimina</button>
       </div>
       <div class="bom-toolbar-right">
-        <div class="export-pair">
-          <button class="export-btn-xls" onclick="exportOdpExcel('${id}')">${ico('sheet', 'tinted', '')} Esporta Excel</button>
-          <button class="export-btn-pdf" onclick="exportOdpPDF('${id}')">${ico('file', 'tinted', '')} Esporta PDF</button>
-        </div>
+        ${menuEsporta(`exportOdpExcel('${id}')`, `exportOdpPDF('${id}')`)}
+        ${menuAltro([
+          o.status !== 'annullato' ? { label: "Annulla l'ordine", icon: 'close', onclick: `odpAnnulla('${id}')` } : null,
+          { label: "Elimina l'ordine di produzione", icon: 'trash', onclick: `delOdp('${id}')`, danger: true },
+        ])}
       </div>
     </div>
     ${docStepperHtml('odp', o)}${docLinksHtml('odp', o)}

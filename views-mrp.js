@@ -2088,14 +2088,13 @@ function renderPlanEdit(id) {
         <button class="btn-outline" onclick="planToggleActive('${id}')" title="${p.active === false
           ? 'Chiuso: non impegna materiale. Riaprendolo tornerà a riservarsi quello che gli serve.'
           : 'Aperto: impegna a magazzino il materiale che gli serve, e gli altri piani non se lo contano. Chiudendolo quella quota torna libera.'}">${p.active === false ? ico('unlock', 'tinted', '') + ' Chiuso — riapri' : ico('lock', 'tinted', '') + ' Aperto — chiudi'}</button>
-        <button class="btn-outline" onclick="duplicatePlan('${id}')" title="Duplica il piano">${ico('copy', 'tinted', '')} Duplica</button>
-        <button class="btn-outline" style="color:var(--red);border-color:var(--red)" onclick="delPlan('${id}')" title="Elimina il piano">${ico('trash', 'tinted', '')} Elimina</button>
       </div>
       <div class="bom-toolbar-right">
-        <div class="export-pair export-pair-row">
-          <button class="export-btn-xls" onclick="exportMrpExcel('${id}')">${ico('sheet', 'tinted', '')} Esporta Excel</button>
-          <button class="export-btn-pdf" onclick="exportMrpPDF('${id}')">${ico('file', 'tinted', '')} Esporta PDF</button>
-        </div>
+        ${menuEsporta(`exportMrpExcel('${id}')`, `exportMrpPDF('${id}')`)}
+        ${menuAltro([
+          { label: 'Duplica il piano', icon: 'copy', onclick: `duplicatePlan('${id}')` },
+          { label: 'Elimina il piano', icon: 'trash', onclick: `delPlan('${id}')`, danger: true },
+        ])}
       </div>
     </div>
     <div class="modal-grid">
@@ -2325,10 +2324,7 @@ function planAgendaHtml(plan) {
   const ritardi = tutti.filter(e => e.stato === 'ritardo').length;
   const testa = `<div class="cycle-section-head"><h3>${ico('clock', 'tinted pill', '')} Programma</h3>
       <button class="btn-outline${agendaSoloDaFare ? ' active' : ''}" onclick="toggleAgendaDaFare()" title="Solo ciò che va ancora emesso: ordini, invii, lanci">${agendaSoloDaFare ? '☑' : '☐'} Solo da fare</button>
-      <div class="export-pair export-pair-row" style="margin-left:auto">
-        <button class="export-btn-xls" onclick="exportListXlsx(planAgendaExportSpec())">${ico('sheet', 'tinted', '')} Esporta Excel</button>
-        <button class="export-btn-pdf" onclick="exportListPdf(planAgendaExportSpec())">${ico('file', 'tinted', '')} Esporta PDF</button>
-      </div></div>
+      ${menuEsporta('exportListXlsx(planAgendaExportSpec())', 'exportListPdf(planAgendaExportSpec())', { cls: 'dd-export dd-push' })}</div>
     <p class="empty-text" style="text-align:left;padding:0 0 8px">Tutto quello che deve succedere perché le consegne reggano, <strong>in ordine di data</strong>: le date vengono dalla programmazione a ritroso sul calendario di fabbrica. «Fatto» vuol dire che il documento è stato emesso da questo piano.${ritardi ? ` <span class="mrp-warn">${ico('warning', 'tinted', '')} ${ritardi} ${ritardi === 1 ? 'voce è' : 'voci sono'} già oltre la data.</span>` : ''}</p>`;
   if (!ev.length) return `${testa}<div class="empty-text">${tutti.length ? 'Niente da fare: è tutto emesso.' : 'Nessuna data: le righe di piano non hanno una consegna.'}</div>`;
   let giorno = '';
