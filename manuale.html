@@ -195,7 +195,7 @@ a:focus-visible,button:focus-visible,input:focus-visible{outline:2px solid var(-
     <div class="brand">
       <div class="brand-top">
         <span class="brand-name">Bomtrack</span>
-        <span class="chip">v0.91.0</span>
+        <span class="chip">v0.92.0</span>
       </div>
       <div class="brand-sub">Manuale d&rsquo;uso</div>
     </div>
@@ -301,7 +301,7 @@ a:focus-visible,button:focus-visible,input:focus-visible{outline:2px solid var(-
 <h3 id="gli-avvii-successivi">Gli avvii successivi</h3>
 <p>Si entra con <strong>email e password</strong>. La casella <strong>Ricordami su questo PC</strong> conserva l'email e tiene la sessione aperta fino a <strong>Esci</strong>; quanto duri lo decide l'amministratore in <em>Gestione → Impostazioni → Accesso</em> (0 giorni = non scade mai).</p>
 <h3 id="la-versione">La versione</h3>
-<p>Il numero di versione si legge <strong>accanto al logo, in alto a sinistra</strong> (es. <code>v0.91.0</code>). Corrisponde alla voce in cima al changelog: serve quando si segnala un problema.</p>
+<p>Il numero di versione si legge <strong>accanto al logo, in alto a sinistra</strong> (es. <code>v0.92.0</code>). Corrisponde alla voce in cima al changelog: serve quando si segnala un problema.</p>
 <h3 id="dove-sta-questo-manuale">Dove sta questo manuale</h3>
 <p>Il pulsante 📖 <strong>Manuale d'uso</strong> nell'intestazione lo apre in una scheda nuova, da qualunque schermata. È il file <code>manuale.html</code>, che sta nella cartella dell'app accanto a <code>index.html</code>: funziona <strong>senza rete</strong> come tutto il resto, e viaggia con la cartella quando la si copia su un altro PC. Si apre nel tema scelto nell'app, e si stampa con <code>Ctrl+P</code>.</p>
 <p>Nella cartella c'è anche <code>MANUALE.md</code>, lo stesso testo in formato Markdown: è la versione che si legge in un editor o su GitHub.</p>
@@ -644,12 +644,16 @@ prezzo vendita = costo totale × (1 + margine %)</code></pre>
 <p><strong>Comandi dell'elenco.</strong> <strong>+ Nuovo piano</strong> · <strong>Esporta Excel</strong> · <strong>Esporta PDF</strong>. I badge di riga dicono <code>aperto</code> o <code>chiuso</code>.</p>
 <p><strong>Filtri.</strong> Ricerca «Numero o titolo…»; periodo; contatore.</p>
 <p><strong>La toolbar del piano.</strong></p>
-<div class="tw"><table><thead><tr><th>A sinistra</th><th>A destra</th></tr></thead><tbody><tr><td>chiudi · numero del piano · <strong>Aperto — chiudi</strong> / <strong>Chiuso — riapri</strong> · <strong>Duplica</strong> · <strong>Elimina</strong></td><td><strong>Genera richieste (N)</strong> · <strong>Genera ordini (N)</strong> · <strong>Genera ordini di lavoro (N)</strong> · <strong>Esporta Excel</strong> · <strong>Esporta PDF</strong></td></tr></tbody></table></div>
+<div class="tw"><table><thead><tr><th>A sinistra</th><th>A destra</th></tr></thead><tbody><tr><td>chiudi · numero del piano · <strong>Aperto — chiudi</strong> / <strong>Chiuso — riapri</strong> · <strong>Duplica</strong> · <strong>Elimina</strong></td><td><strong>Esporta Excel</strong> · <strong>Esporta PDF</strong></td></tr></tbody></table></div>
+<p>I pulsanti <strong>Genera…</strong> non stanno più nella toolbar (dalla 0.92.0): ciascuno sta nella scheda delle righe su cui agisce, vedi sotto.</p>
 <p><strong>I campi di testata.</strong> Titolo · Data · <strong>Consegna richiesta</strong> · <strong>Commessa</strong> · Note.</p>
 <h3 id="le-sezioni">Le sezioni</h3>
+<p>In alto, sempre visibili, stanno le righe <strong>Da produrre</strong> e i <strong>KPI</strong>. Il resto è diviso in <strong>schede</strong> (dalla 0.92.0), ciascuna con il numero delle sue righe:</p>
+<div class="tw"><table><thead><tr><th>Scheda</th><th>Cosa contiene</th><th>Pulsanti</th></tr></thead><tbody><tr><td><strong>Da acquistare (N)</strong></td><td>La lista consolidata del materiale</td><td>Genera richieste · Genera ordini</td></tr><tr><td><strong>Conto lavoro (N)</strong></td><td>Le fasi <em>Da far lavorare fuori</em></td><td>Genera richieste · Genera ordini di lavoro</td></tr><tr><td><strong>Da fabbricare (N)</strong></td><td>Le parti a produzione interna, con l'avanzamento</td><td>Genera ordini di produzione</td></tr><tr><td><strong>Programma</strong></td><td>L'agenda del piano in ordine di data</td><td>—</td></tr><tr><td><strong>Gantt</strong></td><td>Il programma disegnato, riga per riga</td><td>—</td></tr><tr><td><strong>Carico</strong></td><td>Le ore che questo piano chiede ai centri</td><td>—</td></tr><tr><td><strong>Documenti (N)</strong></td><td>Richieste, ordini, ODL e ODP nati dal piano</td><td>—</td></tr></tbody></table></div>
+<p>La scheda scelta resta la stessa aprendo un altro piano, finché non si cambia. Fra le schede ci si sposta anche con le frecce ← →. <strong>In stampa</strong> le schede escono tutte, una dopo l'altra.</p>
 <p><strong>Da produrre</strong> — quello che si chiede al piano. Pulsante <strong>+ Aggiungi al piano</strong>; colonne Codice, Articolo, U.M., <strong>Q.tà</strong>, <strong>Serve per</strong> (la data), <strong>Fattibile</strong>, <strong>Margine</strong>, elimina. Fattibile e margine sono spiegati sotto, in <em>La data fattibile</em>.</p>
-<p><strong>Programma</strong> — l'agenda del piano: tutto ciò che deve succedere, in ordine di data (sotto, <em>Il programma</em>).</p>
 <p><strong>I KPI</strong> — Totale acquisti · Articoli da comprare · Fornitori coinvolti · Parti da fabbricare · Conto lavoro.</p>
+<p><strong>Programma</strong> — l'agenda del piano: tutto ciò che deve succedere, in ordine di data (sotto, <em>Il programma</em>).</p>
 <p><strong>Da acquistare</strong> — la lista consolidata, con due interruttori:</p>
 <ul><li><strong>☑ Fabbisogno netto</strong> — toglie quello che c'è già (vedi sotto);</li><li><strong>☑ Raggruppa per fornitore</strong> — riordina la lista per chi la deve vendere.</li></ul>
 <p>Gli <strong>indicatori di riga</strong>:</p>
@@ -1006,7 +1010,7 @@ node test/bench.js    # benchmark del motore di costificazione</code></pre>
 <ul><li><strong>Un archivio per browser.</strong> Niente concorrenza, niente sincronizzazione, niente storico condiviso. Ci si allinea con i backup JSON.</li><li><strong>Il controllo dei permessi è sul client.</strong> Chi apre gli strumenti di sviluppo lo aggira.</li><li><strong>La dimensione dell'archivio è limitata</strong> da quanto il browser concede al sito: con IndexedDB (dalla 0.87.0) di solito gigabyte, senza qualche megabyte. <em>Gestione → Backup</em> mostra la dimensione corrente e lo spazio disponibile.</li></ul>
 <p>La direzione presa per superarli è un backend con autenticazione e permessi sul server; <code>cloud-map.js</code> e <code>docs/cloud-schema.md</code> sono la preparazione a quel passaggio, e <strong>non</strong> contengono codice di rete. Il <a href="#31-quando-larchivio-è-condiviso-supabase">cap. 31</a> racconta la stessa cosa dal lato di chi userà l'app; qui sotto, cosa esiste già nel codice per arrivarci: gli id sono UUID e non contatori locali, ogni record porta <code>createdAt</code>/<code>updatedAt</code> e <code>createdBy</code>/<code>updatedBy</code>, il registro dello schema dichiara per ogni collezione come andrà fusa, e il punto in cui si sostituisce la destinazione dei dati è uno solo.</p>
     </article>
-    <p class="colophon">Manuale di Bomtrack — aggiornato alla versione 0.91.0. Le funzioni descritte qui corrispondono a quella revisione; il changelog dell'app elenca le differenze rispetto alle versioni successive.</p>
+    <p class="colophon">Manuale di Bomtrack — aggiornato alla versione 0.92.0. Le funzioni descritte qui corrispondono a quella revisione; il changelog dell'app elenca le differenze rispetto alle versioni successive.</p>
   </main>
 </div>
 
