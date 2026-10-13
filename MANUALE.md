@@ -1,6 +1,6 @@
 # Bomtrack — Manuale d'uso
 
-**Versione dell'app documentata: 0.88.0**
+**Versione dell'app documentata: 0.89.0**
 
 📖 **[Leggilo come pagina web](https://claude.ai/code/artifact/726a0963-2db0-4947-999b-d7b5beb91a0b)** — stesso testo, con indice laterale, filtro dei capitoli e tema chiaro/scuro. Comodo da tenere aperto di fianco all'app.
 
@@ -161,7 +161,7 @@ la sessione aperta fino a **Esci**; quanto duri lo decide l'amministratore in
 
 ### La versione
 
-Il numero di versione si legge **accanto al logo, in alto a sinistra** (es. `v0.88.0`).
+Il numero di versione si legge **accanto al logo, in alto a sinistra** (es. `v0.89.0`).
 Corrisponde alla voce in cima al changelog: serve quando si segnala un problema.
 
 ### Dove sta questo manuale
@@ -543,6 +543,11 @@ rivedere i prezzi in uso.
 
 **Da sapere.** Il Riepilogo è **derivato**: non c'è niente da compilare e niente da spuntare. Un
 segnale sparisce quando sparisce la sua causa.
+
+**Il calendario delle scadenze** mette in fila le date di tutti i documenti aperti: consegne delle
+commesse, articoli da ordinare, consegne attese da fornitori e terzisti, fine produzione,
+promemoria. Dalla 0.89.0 ci sono anche gli **invii al terzista** e i **lanci in produzione** dei
+piani aperti, presi dal loro *Programma* (→ [cap. 19](#19-fabbisogno-materiali)).
 
 ### Il cruscotto
 
@@ -1288,7 +1293,11 @@ I badge di riga dicono `aperto` o `chiuso`.
 ### Le sezioni
 
 **Da produrre** — quello che si chiede al piano. Pulsante **+ Aggiungi al piano**; colonne Codice,
-Articolo, U.M., **Q.tà**, **Serve per** (la data), elimina.
+Articolo, U.M., **Q.tà**, **Serve per** (la data), **Fattibile**, **Margine**, elimina. Fattibile e
+margine sono spiegati sotto, in *La data fattibile*.
+
+**Programma** — l'agenda del piano: tutto ciò che deve succedere, in ordine di data (sotto, *Il
+programma*).
 
 **I KPI** — Totale acquisti · Articoli da comprare · Fornitori coinvolti · Parti da fabbricare ·
 Conto lavoro.
@@ -1382,6 +1391,46 @@ rientro del 12 — non più la consegna del gruppo.
 non se il reparto ce la fa: quello lo dice il *Carico centri*
 (→ [cap. 24](#24-carico-dei-centri-di-lavoro)), che dalla 0.88.0 mette le ore nella settimana in
 cui la fase **comincia**.
+
+### La data fattibile
+
+La programmazione a ritroso dice **entro quando** deve succedere ogni cosa perché la consegna
+richiesta regga. La data fattibile risponde all'altra domanda: **se comincio oggi, quando sono
+pronto davvero?** È lo stesso albero, percorso in avanti con le stesse durate:
+
+- un materiale o un commerciale è pronto **oggi** se la giacenza libera (esistente meno quanto
+  impegnano gli altri piani aperti) basta per tutto il piano; **all'arrivo** dell'ordine che lo
+  copre, se basta con l'in arrivo (data confermata, o quella chiesta); altrimenti fra i **giorni
+  del listino** a partire da oggi;
+- una parte comincia quando è pronto il suo materiale, poi le fasi in fila;
+- un assieme comincia quando sono pronti tutti i componenti, più il montaggio.
+
+Il **margine** è in giorni lavorativi fra la data fattibile e quella richiesta: positivo è tempo
+in avanzo, **negativo** (in arancio, con ⚠) vuol dire che la consegna non si regge. Cliccando la data
+fattibile si apre il **percorso critico**: la catena — gruppo, perno, tondo — che arriva per
+ultima, con le date di ciascun passo. Per anticipare la consegna è uno di quei passi che va
+accorciato.
+
+**Limiti, detti.** Le parti prodotte non si guardano a magazzino (come nel resto del fabbisogno);
+un ordine di produzione già avviato non accorcia il conto; la capacità è infinita; la scorta
+minima non trattiene niente, perché in un ritardo si usa.
+
+### Il programma
+
+La sezione **Programma** mette in fila tutte le date del piano, giorno per giorno:
+
+| Voce | Data | Quando è «fatto» |
+|---|---|---|
+| **Ordinare** | ordinare entro | c'è un ordine a fornitore emesso dal piano (una sola richiesta d'offerta lo segna «richiesto») |
+| **Inviare al terzista** | invio della tratta | c'è un ordine di lavoro o un ordine di produzione |
+| **Lanciare in produzione** | inizio della prima fase | c'è un ordine di produzione |
+| **Rientro dal terzista** · **Fase interna** · **Montaggio** · **Consegna** | la loro data | non hanno un documento: sono «previsti» |
+
+Una voce oltre la sua data e non fatta è **in ritardo**. **☐ Solo da fare** lascia le voci ancora
+da emettere. Esporta in Excel e PDF, una riga per voce.
+
+Invii e lanci ancora da fare compaiono anche nel **calendario del Riepilogo**, accanto agli ordini
+da emettere e ai rientri degli ordini di lavoro.
 
 ### Il fabbisogno netto
 
@@ -2576,6 +2625,6 @@ fusa, e il punto in cui si sostituisce la destinazione dei dati è uno solo.
 
 ---
 
-*Manuale di Bomtrack — aggiornato alla versione 0.88.0.*
+*Manuale di Bomtrack — aggiornato alla versione 0.89.0.*
 *Le funzioni descritte qui corrispondono a quella revisione; il changelog dell'app elenca le
 differenze rispetto alle versioni successive.*

@@ -21,6 +21,10 @@ const SEED = () => {
   db.rfqs.push(doc('RFQ-2026-001', { status: 'inviata' }));
   db.orders.push(doc('ODA-2026-001'));
   db.jobs.push(stampNew({ id: newId(), number: 'COM-2026-001', customer: 'Costruzioni Meccaniche Rossi & Figli S.n.c.', title: 'Linea di imballaggio automatica', customerRef: 'Ord. 4512/AB', status: 'aperta', date: '2026-09-01', dueDate: '2026-12-15', notes: '', active: true }));
+  // Un piano su due assiemi: la scheda porta Programma, fattibile e carico.
+  db.plans.push(stampNew({ id: newId(), number: 'FAB-2026-001', title: 'Lotto di prova', date: '2026-10-01', dueDate: '2026-12-15',
+    notes: '', active: true, jobId: null, lines: db.items.filter(i => isAssembly(i.type)).slice(0, 2)
+      .map(x => ({ id: newId(), itemId: x.id, qty: 2, dueDate: '2026-12-15' })) }));
   saveDB();
   return u.id;
 };
@@ -28,6 +32,7 @@ const VISTE = [
   ['home', "setView('home')"], ['dash', "setView('dash')"], ['buy', "setView('buy')"], ['rfq', "setView('rfq')"],
   ['orders-edit', "setView('orders'); openOrderEdit(db.orders[0].id)"],
   ['jobs-edit', "setView('jobs'); openJobEdit(db.jobs[0].id)"],
+  ['plan-edit', "setView('mrp'); openPlanEdit(db.plans[0].id)"],
   ['bom-confronto', "setView('bom'); const as = db.items.filter(i => isAssembly(i.type)); _bomConfronto.soloDiff = false; bomCompareModal(as[0].id, as[1].id)"],
 ];
 const LARGHEZZE = [1920, 1440, 1366, 1280, 1024, 820, 390];

@@ -240,3 +240,113 @@ describe('Programmazione: le schede', () => {
     assert.deepEqual(r, [[1, 2, 3, 4, 5], 0, 0, 2]);
   });
 });
+
+// ─── 0.89.0: l'albero, la data fattibile, l'agenda ───
+// «Oggi» si ferma con oggiISO(): è la sola lettura dell'orologio che il
+// programma fa.
+const oggi = (app, iso) => { app.eval(`oggiISO = () => ${JSON.stringify(iso)}; invalidateCaches();`); return app; };
+const fattibile = app => ev(app, `planFeasibility(getPlan('pl1')).map(f => ({ fattibile: f.fattibile, margine: f.margine,
+  critico: f.critico.map(n => n.item.code) }))`)[0];
+
+describe('Programma: l albero di una riga di piano', () => {
+  it('dice le stesse date degli aggregati del fabbisogno', () => {
+    const t = ev(conDb(), `(() => { const t = schedTree('grp', 2, '2026-10-16');
+      return schedFlat(t).map(x => [x.livello, x.node.item.code, x.node.kind, x.node.start, x.node.end]); })()`);
+    assert.deepEqual(t, [
+      [0, 'GRP', 'asm', '2026-10-14', '2026-10-16'],
+      [1, 'PERNO', 'make', '2026-10-05', '2026-10-14'],
+      [2, 'TONDO', 'buy', '2026-09-25', '2026-10-05'],
+    ]);
+  });
+
+  it('le tappe della parte sono in ordine di esecuzione, con la tratta unita', () => {
+    const st = ev(conDb(), `schedTree('perno', 8, '2026-10-14').steps.map(s => [s.from, s.to, s.esterna, s.start, s.end, s.days])`);
+    assert.deepEqual(st, [
+      [0, 0, false, '2026-10-05', '2026-10-06', 1],
+      [1, 2, true, '2026-10-06', '2026-10-12', 6],
+      [3, 3, false, '2026-10-12', '2026-10-14', 2],
+    ]);
+  });
+});
+
+describe('Programma: la data fattibile', () => {
+  it('cominciando per tempo c è margine, e la catena è quella del tondo', () => {
+    // Lun 21/9: tondo arriva gio 1/10, tornitura 1→2, zincatura 2→8,
+    // fresatura 8→12, montaggio 12→14. Richiesto ven 16: due giorni di margine.
+    assert.deepEqual(fattibile(oggi(conDb(), '2026-09-21')),
+      { fattibile: '2026-10-14', margine: 2, critico: ['GRP', 'PERNO', 'TONDO'] });
+  });
+
+  it('cominciando tardi la consegna non regge, e il margine lo dice in giorni lavorativi', () => {
+    // Gio 1/10: il tondo arriva domenica 11, si lavora da lunedì 12 → pronto ven 23.
+    assert.deepEqual(fattibile(oggi(conDb(), '2026-10-01')),
+      { fattibile: '2026-10-23', margine: -5, critico: ['GRP', 'PERNO', 'TONDO'] });
+  });
+
+  it('il materiale a magazzino è pronto oggi, e il percorso si ferma alla parte', () => {
+    const app = oggi(conDb(), '2026-09-21');
+    app.eval("addMovement('tondo', 'rettifica', 16, 'inventario'); invalidateCaches();");
+    assert.deepEqual(fattibile(app), { fattibile: '2026-10-02', margine: 10, critico: ['GRP', 'PERNO'] });
+  });
+
+  it('il materiale già ordinato è pronto alla data confermata', () => {
+    const app = oggi(conDb(), '2026-09-21');
+    app.eval(`db.orders.push({ id: 'o1', number: 'ODA-2026-001', status: 'inviato', supplierId: 'beta', active: true,
+      lines: [{ id: 'ol1', itemId: 'tondo', qty: 16, received: 0, deliveryDate: '2026-09-25', confirmedDate: '2026-09-28' }] });
+      invalidateCaches();`);
+    // Lun 28: tornitura 28→29, zincatura 29/9→5/10, fresatura 5→7, montaggio 7→9.
+    assert.equal(fattibile(app).fattibile, '2026-10-09');
+  });
+
+  it('la tabella del piano mostra fattibile e margine, e il percorso critico si apre', () => {
+    const app = oggi(conDb(), '2026-10-01');
+    app.eval("currentPlanId = 'pl1';");
+    const h = app.eval("renderPlanEdit('pl1')");
+    assert.match(h, /planCriticoModal\('pl1','l1'\)/);
+    assert.match(h, /-5 gg/);
+    app.eval("planCriticoModal('pl1', 'l1')");
+  });
+});
+
+describe('Programma: l agenda del piano', () => {
+  const agenda = app => ev(app, "planAgenda(getPlan('pl1')).map(e => [e.data, e.tipo, e.codice, e.stato])");
+
+  it('mette in fila ordini, lanci, invii, rientri, fasi, montaggio e consegna', () => {
+    assert.deepEqual(agenda(oggi(conDb(), '2026-09-21')), [
+      ['2026-09-25', 'ordina', 'TONDO', 'da fare'],
+      ['2026-10-05', 'lancio', 'PERNO', 'da fare'],
+      ['2026-10-05', 'lavora', 'PERNO', 'previsto'],
+      ['2026-10-06', 'invia', 'PERNO', 'da fare'],
+      ['2026-10-12', 'rientro', 'PERNO', 'previsto'],
+      ['2026-10-12', 'lavora', 'PERNO', 'previsto'],
+      ['2026-10-14', 'montaggio', 'GRP', 'previsto'],
+      ['2026-10-16', 'consegna', 'GRP', 'previsto'],
+    ]);
+  });
+
+  it('un ordine emesso dal piano segna l acquisto come fatto', () => {
+    const app = oggi(conDb(), '2026-09-21');
+    app.eval(`db.orders.push({ id: 'o1', number: 'ODA-2026-001', status: 'bozza', supplierId: 'beta', planId: 'pl1', active: true,
+      lines: [{ id: 'ol1', itemId: 'tondo', qty: 16, received: 0, deliveryDate: '2026-10-05' }] }); invalidateCaches();`);
+    assert.deepEqual(agenda(app)[0], ['2026-09-25', 'ordina', 'TONDO', 'fatto']);
+  });
+
+  it('una data passata senza documento è in ritardo', () => {
+    assert.deepEqual(agenda(oggi(conDb(), '2026-10-01'))[0], ['2026-09-25', 'ordina', 'TONDO', 'ritardo']);
+  });
+
+  it('si esporta in forma lunga e si disegna nella scheda del piano', () => {
+    const app = oggi(conDb(), '2026-09-21');
+    app.eval("currentPlanId = 'pl1';");
+    const spec = ev(app, 'planAgendaExportSpec()');
+    assert.equal(spec.sezioni[0].righe.length, 8);
+    assert.equal(spec.sezioni[0].righe[0][1], 'Ordinare');
+    assert.match(app.eval("renderPlanEdit('pl1')"), /Programma/);
+  });
+
+  it('il Riepilogo riporta invio e lancio ancora da fare', () => {
+    const app = oggi(conDb(), '2026-09-21');
+    const e = ev(app, "homeEventi().filter(x => x.tipo === 'programma').map(x => [x.data, x.testo])");
+    assert.deepEqual(e.sort(), [['2026-10-05', 'Lanciare in produzione PERNO'], ['2026-10-06', 'Inviare al terzista PERNO']]);
+  });
+});

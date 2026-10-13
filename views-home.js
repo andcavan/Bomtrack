@@ -283,6 +283,22 @@ function homeEventi() {
     });
   });
 
+  // Programma dei piani (0.89.0): quando mandare al terzista e quando lanciare
+  // in produzione. Le stesse voci dell'agenda del piano, solo quelle ancora da
+  // emettere: i rientri attesi stanno già qui sotto, con gli ordini di lavoro.
+  (db.plans || []).forEach(p => {
+    if (p.active === false || typeof planAgenda !== 'function') return;
+    planAgenda(p).forEach(e => {
+      if ((e.tipo !== 'invia' && e.tipo !== 'lancio') || e.stato === 'fatto') return;
+      const grav = e.stato === 'ritardo' ? 'alta' : calGravitaData(e.data, oggi);
+      const g = raggruppa('prog|' + e.tipo + '|' + p.id + '|' + e.data, { tipo: 'programma', data: e.data,
+        icona: e.tipo === 'invia' ? 'truck' : 'factory', numero: p.number || '', azione: `homeApri('plan','${p.id}')` }, grav);
+      const cosa = e.tipo === 'invia' ? 'Inviare al terzista' : 'Lanciare in produzione';
+      g.testo = g.n === 1 ? `${cosa} ${e.codice || e.nome || ''}`.trim() : `${cosa} ${g.n} parti`;
+      g.dettaglio = [g.numero, e.tipo === 'invia' ? e.dove : p.title].filter(Boolean).join(' — ');
+    });
+  });
+
   // Piani: quando deve essere pronto
   (db.plans || []).forEach(p => {
     if (p.active === false || !p.dueDate) return;

@@ -1131,6 +1131,8 @@ body.insp-on .row-actions{display:none}
 .load-chart-lbl{font-size:10.5px;fill:var(--text-dim);font-family:var(--mono)}
 /* In stampa il grafico resta: e' la lettura che si porta in riunione. */
 @media print{.load-chart{break-inside:avoid}}
+/* Programma del piano: una riga di separazione dove cambia il giorno */
+tr.agenda-day td{border-top:1px solid var(--hairline)}
 
 /* ─── Bersagli per il dito ───
    Al telefono, e su ogni schermo a sfioramento, nessun comando sotto i 34 px:

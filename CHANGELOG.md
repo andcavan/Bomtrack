@@ -2,6 +2,26 @@
 
 Le revisioni seguono il versionamento semantico `0.MINOR.PATCH`: **MINOR** per nuove funzionalità, **PATCH** per correzioni. La versione in cima è quella in `APP_VERSION` (`core.js`) e mostrata nell'header dell'app.
 
+### 0.89.0 — 2026-10-13
+
+**Quando sono pronto davvero, e cosa fare oggi.** La 0.88.0 diceva *entro quando* deve succedere ogni cosa perché la consegna regga. Ora il piano dice anche se ce la fa, e mette in fila il lavoro.
+
+**Nuovo**
+- **Data fattibile e margine** per ogni riga di *Da produrre*: lo stesso albero percorso in avanti da oggi, con le stesse durate. Il materiale è pronto oggi se la giacenza libera basta, all'arrivo dell'ordine che lo copre se basta con l'in arrivo, altrimenti fra i giorni del listino. Margine in giorni lavorativi; negativo = la consegna non regge.
+- **Percorso critico**: cliccando la data fattibile, la catena che arriva per ultima, passo per passo con le sue date.
+- **Programma** nella scheda piano: ordinare, inviare al terzista, lanciare, rientri, fasi interne, montaggi, consegne, in ordine di data, con lo stato letto dai documenti del piano (fatto, richiesto, da fare, in ritardo, previsto), filtro «solo da fare», export Excel e PDF.
+- **Riepilogo**: invii e lanci ancora da fare entrano nel calendario delle scadenze.
+
+**Sotto il cofano**
+- `schedOps` separa l'aritmetica del ciclo dal ciclo vivo (servirà alle fasi congelate degli ODP); `schedTree` costruisce l'albero di una riga di piano con le **stesse** date degli aggregati, e un test lo tiene fermo.
+- `buySupplierId`/`buyDocRow`/`buyLeadDays` escono da `mrpBuyRow`: fornitore e listino di un acquisto si leggono in un posto solo.
+
+**Da sapere**
+- Le parti prodotte non si guardano a magazzino, un ODP già avviato non accorcia il conto, la capacità resta infinita.
+
+**Verifica**
+- `test/schedulazione.test.js`: albero contro aggregati, tappe della parte, data fattibile con oggi fermato (per tempo, in ritardo, materiale a magazzino, materiale già ordinato), agenda completa, fatto e ritardo, export, Riepilogo. La scheda piano entra nei controlli d'impaginazione in Chromium.
+
 ### 0.88.0 — 2026-10-13
 
 **Le date a ritroso.** Fino a ieri la data di una riga di piano scendeva **invariata** lungo la distinta: se il gruppo serviva il 16, il tondo, i perni e la zincatura dal terzista servivano tutti il 16. Gli unici anticipi erano i giorni del listino sul materiale e quelli di attraversamento su ogni singola fase esterna — ciascuno contato dalla consegna del prodotto, come se montaggio, tornitura e il viaggio dal terzista non esistessero. Ora il fabbisogno **programma a ritroso**: risale montaggi, fasi del ciclo e tratte di conto lavoro, in fila, sul calendario di fabbrica. Analisi e tappe successive in `docs/programmazione-tempi.md`.

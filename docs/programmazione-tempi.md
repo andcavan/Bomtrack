@@ -68,7 +68,7 @@ Regole:
   passare una fase da esterna a interna lascerebbe lì i giorni del terzista come se fossero
   stati scritti apposta.
 
-### 0.89.0 — data fattibile e agenda
+### 0.89.0 — data fattibile e agenda — fatto
 - **Passo in avanti** da oggi sullo stesso albero (`schedForward`): ogni nodo finisce al più
   presto quando i suoi figli sono pronti; un acquisto coperto da giacenza è pronto oggi, uno in
   arrivo alla data dell'ODA. La radice dà la **data fattibile**; il ramo che la determina è il
@@ -77,6 +77,11 @@ Regole:
   inizio fase, montaggio, consegna — con lo stato letto dai documenti generati
   (`planDocumentedKeys`); export Excel/PDF.
 - **Riepilogo**: gli stessi eventi nel calendario (`views-home.js`), accanto a quelli d'ordine.
+- Come è fatto: `schedOps` (il cuore di `schedPart`, riusabile sulle fasi congelate),
+  `schedTree`/`schedFlat` (l'albero di una riga di piano, con le date degli aggregati),
+  `schedDisponibilita`/`schedForward`/`schedCritico`/`planFeasibility` (il passo in avanti),
+  `planAgenda` (l'agenda, dagli stessi aggregati delle tabelle), `buyLeadDays` (estratto da
+  `mrpBuyRow`). `mrpExplode` restituisce anche `asm` e `intOps`, solo date.
 
 ### 0.90.0 — Gantt e date congelate
 - **Gantt** SVG nella scheda piano, una riga per nodo, barre per tipo, linee oggi/consegna,

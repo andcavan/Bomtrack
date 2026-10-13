@@ -195,7 +195,7 @@ a:focus-visible,button:focus-visible,input:focus-visible{outline:2px solid var(-
     <div class="brand">
       <div class="brand-top">
         <span class="brand-name">Bomtrack</span>
-        <span class="chip">v0.88.0</span>
+        <span class="chip">v0.89.0</span>
       </div>
       <div class="brand-sub">Manuale d&rsquo;uso</div>
     </div>
@@ -301,7 +301,7 @@ a:focus-visible,button:focus-visible,input:focus-visible{outline:2px solid var(-
 <h3 id="gli-avvii-successivi">Gli avvii successivi</h3>
 <p>Si entra con <strong>email e password</strong>. La casella <strong>Ricordami su questo PC</strong> conserva l'email e tiene la sessione aperta fino a <strong>Esci</strong>; quanto duri lo decide l'amministratore in <em>Gestione → Impostazioni → Accesso</em> (0 giorni = non scade mai).</p>
 <h3 id="la-versione">La versione</h3>
-<p>Il numero di versione si legge <strong>accanto al logo, in alto a sinistra</strong> (es. <code>v0.88.0</code>). Corrisponde alla voce in cima al changelog: serve quando si segnala un problema.</p>
+<p>Il numero di versione si legge <strong>accanto al logo, in alto a sinistra</strong> (es. <code>v0.89.0</code>). Corrisponde alla voce in cima al changelog: serve quando si segnala un problema.</p>
 <h3 id="dove-sta-questo-manuale">Dove sta questo manuale</h3>
 <p>Il pulsante 📖 <strong>Manuale d'uso</strong> nell'intestazione lo apre in una scheda nuova, da qualunque schermata. È il file <code>manuale.html</code>, che sta nella cartella dell'app accanto a <code>index.html</code>: funziona <strong>senza rete</strong> come tutto il resto, e viaggia con la cartella quando la si copia su un altro PC. Si apre nel tema scelto nell'app, e si stampa con <code>Ctrl+P</code>.</p>
 <p>Nella cartella c'è anche <code>MANUALE.md</code>, lo stesso testo in formato Markdown: è la versione che si legge in un editor o su GitHub.</p>
@@ -431,6 +431,7 @@ a:focus-visible,button:focus-visible,input:focus-visible{outline:2px solid var(-
 <p><strong>Il backup che invecchia.</strong> L'archivio esiste solo in questo browser: il segnale 11 conta i giorni dall'ultimo <em>Esporta JSON</em> fatto <strong>da questo browser</strong>, e porta il pulsante <strong>Esporta ora</strong>. Se non se n'è mai fatto uno, conta dal primo giorno in cui l'app l'ha tenuto d'occhio — una installazione nuova non parte già in allarme. La data non sta nel database: un backup ripristinato su un altro PC non porta con sé la data, perché lì il backup non è mai stato fatto.</p>
 <p><strong>Il risparmio potenziale.</strong> In fondo la pagina calcola quanto si risparmierebbe scegliendo ovunque la quotazione più bassa già presente a listino. Non cambia niente da solo: è un invito a rivedere i prezzi in uso.</p>
 <p><strong>Da sapere.</strong> Il Riepilogo è <strong>derivato</strong>: non c'è niente da compilare e niente da spuntare. Un segnale sparisce quando sparisce la sua causa.</p>
+<p><strong>Il calendario delle scadenze</strong> mette in fila le date di tutti i documenti aperti: consegne delle commesse, articoli da ordinare, consegne attese da fornitori e terzisti, fine produzione, promemoria. Dalla 0.89.0 ci sono anche gli <strong>invii al terzista</strong> e i <strong>lanci in produzione</strong> dei piani aperti, presi dal loro <em>Programma</em> (→ <a href="#19-fabbisogno-materiali">cap. 19</a>).</p>
 <h3 id="il-cruscotto">Il cruscotto</h3>
 <p><strong>Come ci si arriva.</strong> 🏠 <em>Riepilogo → Cruscotto</em> (dalla 0.86.0).</p>
 <p>Il Riepilogo dice cosa c'è da fare adesso; il cruscotto dice <strong>come stanno le cose</strong>. Non calcola niente di nuovo — le cifre sono quelle del magazzino, delle scorte e degli ordini — ma le mette insieme in una pagina sola. È in sola lettura, per tutti i ruoli.</p>
@@ -644,7 +645,8 @@ prezzo vendita = costo totale × (1 + margine %)</code></pre>
 <div class="tw"><table><thead><tr><th>A sinistra</th><th>A destra</th></tr></thead><tbody><tr><td>chiudi · numero del piano · <strong>Aperto — chiudi</strong> / <strong>Chiuso — riapri</strong> · <strong>Duplica</strong> · <strong>Elimina</strong></td><td><strong>Genera richieste (N)</strong> · <strong>Genera ordini (N)</strong> · <strong>Genera ordini di lavoro (N)</strong> · <strong>Esporta Excel</strong> · <strong>Esporta PDF</strong></td></tr></tbody></table></div>
 <p><strong>I campi di testata.</strong> Titolo · Data · <strong>Consegna richiesta</strong> · <strong>Commessa</strong> · Note.</p>
 <h3 id="le-sezioni">Le sezioni</h3>
-<p><strong>Da produrre</strong> — quello che si chiede al piano. Pulsante <strong>+ Aggiungi al piano</strong>; colonne Codice, Articolo, U.M., <strong>Q.tà</strong>, <strong>Serve per</strong> (la data), elimina.</p>
+<p><strong>Da produrre</strong> — quello che si chiede al piano. Pulsante <strong>+ Aggiungi al piano</strong>; colonne Codice, Articolo, U.M., <strong>Q.tà</strong>, <strong>Serve per</strong> (la data), <strong>Fattibile</strong>, <strong>Margine</strong>, elimina. Fattibile e margine sono spiegati sotto, in <em>La data fattibile</em>.</p>
+<p><strong>Programma</strong> — l'agenda del piano: tutto ciò che deve succedere, in ordine di data (sotto, <em>Il programma</em>).</p>
 <p><strong>I KPI</strong> — Totale acquisti · Articoli da comprare · Fornitori coinvolti · Parti da fabbricare · Conto lavoro.</p>
 <p><strong>Da acquistare</strong> — la lista consolidata, con due interruttori:</p>
 <ul><li><strong>☑ Fabbisogno netto</strong> — toglie quello che c'è già (vedi sotto);</li><li><strong>☑ Raggruppa per fornitore</strong> — riordina la lista per chi la deve vendere.</li></ul>
@@ -671,6 +673,16 @@ prezzo vendita = costo totale × (1 + margine %)</code></pre>
 <ul><li>Le date sono «il mattino in cui il pezzo è pronto»: una fase di un giorno che deve finire lunedì comincia venerdì, e la fase prima deve finire venerdì. Nessun buco, nessuna sovrapposizione.</li><li>Il <strong>materiale del ciclo</strong> di una parte serve all'inizio della <strong>prima</strong> fase: è lì che esce.</li><li>Una fase <strong>senza tempi</strong> (zero ore, zero giorni) non sposta niente: senza dati le date restano quelle della consegna, come prima della 0.88.0.</li><li>Lo stesso articolo chiesto da due rami con date diverse tiene <strong>la data più vicina</strong>.</li><li>Un <strong>margine fra livelli</strong> (<em>Gestione → Impostazioni → Calendario di fabbrica</em>) anticipa ancora di qualche giorno lavorativo la data in cui un componente deve essere pronto.</li></ul>
 <p><strong>Dove si vede.</strong> In <em>Da acquistare</em> «Serve per» e «Ordinare entro» sono già scalati; in <em>Da far lavorare fuori</em> «Serve per» è il <strong>rientro</strong> della tratta e «Ordinare entro» l'<strong>invio</strong>; in <em>Da fabbricare</em> sotto «Serve per» compare la data di <strong>lancio</strong>. Le righe dei documenti generati chiedono quelle date: l'ordine al fornitore del tondo chiede il 5, l'ordine di lavoro a Beta il rientro del 12 — non più la consegna del gruppo.</p>
 <p><strong>Capacità infinita.</strong> Le date dicono quando ciascuna cosa deve succedere perché la consegna regga, non se il reparto ce la fa: quello lo dice il <em>Carico centri</em> (→ <a href="#24-carico-dei-centri-di-lavoro">cap. 24</a>), che dalla 0.88.0 mette le ore nella settimana in cui la fase <strong>comincia</strong>.</p>
+<h3 id="la-data-fattibile">La data fattibile</h3>
+<p>La programmazione a ritroso dice <strong>entro quando</strong> deve succedere ogni cosa perché la consegna richiesta regga. La data fattibile risponde all'altra domanda: <strong>se comincio oggi, quando sono pronto davvero?</strong> È lo stesso albero, percorso in avanti con le stesse durate:</p>
+<ul><li>un materiale o un commerciale è pronto <strong>oggi</strong> se la giacenza libera (esistente meno quanto impegnano gli altri piani aperti) basta per tutto il piano; <strong>all'arrivo</strong> dell'ordine che lo copre, se basta con l'in arrivo (data confermata, o quella chiesta); altrimenti fra i <strong>giorni del listino</strong> a partire da oggi;</li><li>una parte comincia quando è pronto il suo materiale, poi le fasi in fila;</li><li>un assieme comincia quando sono pronti tutti i componenti, più il montaggio.</li></ul>
+<p>Il <strong>margine</strong> è in giorni lavorativi fra la data fattibile e quella richiesta: positivo è tempo in avanzo, <strong>negativo</strong> (in arancio, con ⚠) vuol dire che la consegna non si regge. Cliccando la data fattibile si apre il <strong>percorso critico</strong>: la catena — gruppo, perno, tondo — che arriva per ultima, con le date di ciascun passo. Per anticipare la consegna è uno di quei passi che va accorciato.</p>
+<p><strong>Limiti, detti.</strong> Le parti prodotte non si guardano a magazzino (come nel resto del fabbisogno); un ordine di produzione già avviato non accorcia il conto; la capacità è infinita; la scorta minima non trattiene niente, perché in un ritardo si usa.</p>
+<h3 id="il-programma">Il programma</h3>
+<p>La sezione <strong>Programma</strong> mette in fila tutte le date del piano, giorno per giorno:</p>
+<div class="tw"><table><thead><tr><th>Voce</th><th>Data</th><th>Quando è «fatto»</th></tr></thead><tbody><tr><td><strong>Ordinare</strong></td><td>ordinare entro</td><td>c'è un ordine a fornitore emesso dal piano (una sola richiesta d'offerta lo segna «richiesto»)</td></tr><tr><td><strong>Inviare al terzista</strong></td><td>invio della tratta</td><td>c'è un ordine di lavoro o un ordine di produzione</td></tr><tr><td><strong>Lanciare in produzione</strong></td><td>inizio della prima fase</td><td>c'è un ordine di produzione</td></tr><tr><td><strong>Rientro dal terzista</strong> · <strong>Fase interna</strong> · <strong>Montaggio</strong> · <strong>Consegna</strong></td><td>la loro data</td><td>non hanno un documento: sono «previsti»</td></tr></tbody></table></div>
+<p>Una voce oltre la sua data e non fatta è <strong>in ritardo</strong>. <strong>☐ Solo da fare</strong> lascia le voci ancora da emettere. Esporta in Excel e PDF, una riga per voce.</p>
+<p>Invii e lanci ancora da fare compaiono anche nel <strong>calendario del Riepilogo</strong>, accanto agli ordini da emettere e ai rientri degli ordini di lavoro.</p>
 <h3 id="il-fabbisogno-netto">Il fabbisogno netto</h3>
 <pre><code>netto = lordo + scorta minima + impegnato − esistente − in arrivo</code></pre>
 <p>poi arrotondato al <strong>lotto di riordino</strong> dell'articolo, secondo il suo modo (<em>multiplo esatto</em> o <em>quantità minima</em>).</p>
@@ -987,7 +999,7 @@ node test/bench.js    # benchmark del motore di costificazione</code></pre>
 <ul><li><strong>Un archivio per browser.</strong> Niente concorrenza, niente sincronizzazione, niente storico condiviso. Ci si allinea con i backup JSON.</li><li><strong>Il controllo dei permessi è sul client.</strong> Chi apre gli strumenti di sviluppo lo aggira.</li><li><strong>La dimensione dell'archivio è limitata</strong> da quanto il browser concede al sito: con IndexedDB (dalla 0.87.0) di solito gigabyte, senza qualche megabyte. <em>Gestione → Backup</em> mostra la dimensione corrente e lo spazio disponibile.</li></ul>
 <p>La direzione presa per superarli è un backend con autenticazione e permessi sul server; <code>cloud-map.js</code> e <code>docs/cloud-schema.md</code> sono la preparazione a quel passaggio, e <strong>non</strong> contengono codice di rete. Il <a href="#31-quando-larchivio-è-condiviso-supabase">cap. 31</a> racconta la stessa cosa dal lato di chi userà l'app; qui sotto, cosa esiste già nel codice per arrivarci: gli id sono UUID e non contatori locali, ogni record porta <code>createdAt</code>/<code>updatedAt</code> e <code>createdBy</code>/<code>updatedBy</code>, il registro dello schema dichiara per ogni collezione come andrà fusa, e il punto in cui si sostituisce la destinazione dei dati è uno solo.</p>
     </article>
-    <p class="colophon">Manuale di Bomtrack — aggiornato alla versione 0.88.0. Le funzioni descritte qui corrispondono a quella revisione; il changelog dell'app elenca le differenze rispetto alle versioni successive.</p>
+    <p class="colophon">Manuale di Bomtrack — aggiornato alla versione 0.89.0. Le funzioni descritte qui corrispondono a quella revisione; il changelog dell'app elenca le differenze rispetto alle versioni successive.</p>
   </main>
 </div>
 
