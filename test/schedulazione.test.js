@@ -350,3 +350,83 @@ describe('Programma: l agenda del piano', () => {
     assert.deepEqual(e.sort(), [['2026-10-05', 'Lanciare in produzione PERNO'], ['2026-10-06', 'Inviare al terzista PERNO']]);
   });
 });
+
+// ─── 0.90.0: il Gantt e le date congelate sugli ordini di produzione ───
+describe('Programma: il Gantt del piano', () => {
+  it('disegna una riga per nodo, con il percorso critico e le date nel suggerimento', () => {
+    const app = oggi(conDb(), '2026-10-01');
+    app.eval("currentPlanId = 'pl1';");
+    const h = app.eval("planGanttHtml(getPlan('pl1'), planFeasibility(getPlan('pl1')))");
+    assert.match(h, /role="img" aria-label="Gantt di GRP: 3 righe/);
+    assert.match(h, /<title>PERNO — fasi 20-30 CDL zin da Beta: dal 06\/10\/2026 al 12\/10\/2026<\/title>/);
+    assert.match(h, /<title>TONDO — acquisto da Beta \(10 gg\): ordinare entro 25\/09\/2026, serve il 05\/10\/2026<\/title>/);
+    assert.equal((h.match(/class="gantt-lbl gantt-crit"/g) || []).length, 3, 'gruppo, perno e tondo sono critici');
+  });
+
+  it('una distinta enorme si disegna fino al tetto, e lo dice', () => {
+    const app = oggi(conDb(), '2026-09-21');
+    app.eval("getItem('grp').components = Array.from({ length: 70 }, () => ({ itemId: 'tondo', qty: 1, scrapPct: 0 })); invalidateCaches();");
+    const h = app.eval("planGanttHtml(getPlan('pl1'), planFeasibility(getPlan('pl1')))");
+    assert.match(h, /Disegnate le prime 60 righe su 71/);
+  });
+
+  it('senza date di consegna non disegna niente e lo dice', () => {
+    const app = conDb();
+    app.eval("getPlan('pl1').lines[0].dueDate = '';");
+    assert.match(app.eval("planGanttHtml(getPlan('pl1'), planFeasibility(getPlan('pl1')))"), /Nessuna riga di piano con una data/);
+  });
+});
+
+describe('Programma: le date delle fasi di un ordine di produzione', () => {
+  const nuovo = (app, due) => app.eval(`(() => { const o = odpNew(getItem('perno'), 8, ${JSON.stringify(due)}); db.prodOrders.push(o); return o.id; })()`);
+  const date = (app, id) => ev(app, `getOdp(${JSON.stringify(id)}).phases.map(f => [f.seq, f.plannedStart, f.plannedEnd])`);
+
+  it('al momento della creazione ogni fase ha inizio e fine pianificati', () => {
+    const app = conDb();
+    const id = nuovo(app, '2026-10-14');
+    assert.deepEqual(date(app, id), [
+      [10, '2026-10-05', '2026-10-06'],
+      [20, '2026-10-06', '2026-10-12'],
+      [30, '2026-10-06', '2026-10-12'],
+      [40, '2026-10-12', '2026-10-14'],
+    ]);
+  });
+
+  it('in bozza le date seguono la data dell ordine', () => {
+    const app = conDb();
+    const id = nuovo(app, '2026-10-14');
+    app.eval(`odpSetField(${JSON.stringify(id)}, 'dueDate', '2026-10-21')`);
+    assert.deepEqual(date(app, id)[0], [10, '2026-10-12', '2026-10-13']);
+    assert.deepEqual(date(app, id)[3], [40, '2026-10-19', '2026-10-21']);
+  });
+
+  it('l ordine di lavoro nato dall ordine chiede il rientro della tratta, non la fine dell ordine', () => {
+    const app = conDb();
+    const id = nuovo(app, '2026-10-14');
+    const r = ev(app, `(() => { const o = getOdp(${JSON.stringify(id)}); const r = opRunDocRow(o, o.phases[1]); return [r.due, r.orderBy]; })()`);
+    assert.deepEqual(r, ['2026-10-12', '2026-10-06']);
+  });
+
+  it('un ordine di prima, senza date, ragiona ancora sulla data dell ordine', () => {
+    const app = conDb();
+    const id = nuovo(app, '2026-10-14');
+    app.eval(`getOdp(${JSON.stringify(id)}).phases.forEach(f => { f.plannedStart = ''; f.plannedEnd = ''; })`);
+    const r = ev(app, `(() => { const o = getOdp(${JSON.stringify(id)}); return opRunDocRow(o, o.phases[1]).due; })()`);
+    assert.equal(r, '2026-10-14');
+  });
+
+  it('ripianificare ricalcola le fasi aperte', () => {
+    const app = conDb();
+    const id = nuovo(app, '2026-10-14');
+    app.eval(`(() => { const o = getOdp(${JSON.stringify(id)}); o.dueDate = '2026-10-21'; odpPianifica(o, true); })()`);
+    assert.deepEqual(date(app, id)[3], [40, '2026-10-19', '2026-10-21']);
+  });
+
+  it('la tabella delle fasi mostra le date, e il ritardo di una fase non chiusa', () => {
+    const app = oggi(conDb(), '2026-10-13');
+    const id = nuovo(app, '2026-10-14');
+    const h = app.eval(`odpPhaseRows(getOdp(${JSON.stringify(id)}))`);
+    assert.match(h, /05\/10 → 06\/10/);
+    assert.match(h, /Doveva finire il 06\/10\/2026/);
+  });
+});

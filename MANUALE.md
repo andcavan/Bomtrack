@@ -1,6 +1,6 @@
 # Bomtrack — Manuale d'uso
 
-**Versione dell'app documentata: 0.89.0**
+**Versione dell'app documentata: 0.90.0**
 
 📖 **[Leggilo come pagina web](https://claude.ai/code/artifact/726a0963-2db0-4947-999b-d7b5beb91a0b)** — stesso testo, con indice laterale, filtro dei capitoli e tema chiaro/scuro. Comodo da tenere aperto di fianco all'app.
 
@@ -161,7 +161,7 @@ la sessione aperta fino a **Esci**; quanto duri lo decide l'amministratore in
 
 ### La versione
 
-Il numero di versione si legge **accanto al logo, in alto a sinistra** (es. `v0.89.0`).
+Il numero di versione si legge **accanto al logo, in alto a sinistra** (es. `v0.90.0`).
 Corrisponde alla voce in cima al changelog: serve quando si segnala un problema.
 
 ### Dove sta questo manuale
@@ -1429,6 +1429,22 @@ La sezione **Programma** mette in fila tutte le date del piano, giorno per giorn
 Una voce oltre la sua data e non fatta è **in ritardo**. **☐ Solo da fare** lascia le voci ancora
 da emettere. Esporta in Excel e PDF, una riga per voce.
 
+### Il Gantt
+
+Sotto il *Programma*, una riga di piano alla volta (si sceglie dal menu se sono più d'una): un
+nodo dell'albero per riga — assiemi, parti, acquisti — con le barre del programma a ritroso.
+
+| Colore | Barra |
+|---|---|
+| arancio | attesa del fornitore: da *ordinare entro* a *serve per* |
+| blu | fase interna |
+| viola | tratta in conto lavoro, dall'invio al rientro |
+| verde | montaggio |
+
+Il contorno **rosso** e il codice in rosso segnano il **percorso critico**; la linea rossa
+tratteggiata è la consegna richiesta, quella blu oggi. Passando sopra una barra si leggono le date
+esatte. Oltre 60 righe il disegno si ferma e lo dice: l'elenco completo è nel *Programma*.
+
 Invii e lanci ancora da fare compaiono anche nel **calendario del Riepilogo**, accanto agli ordini
 da emettere e ai rientri degli ordini di lavoro.
 
@@ -1590,7 +1606,13 @@ da lì **fasi e materiale si congelano**: il ciclo può cambiare domani, l'ordin
 ### La tabella delle fasi
 
 Si legge dall'alto in basso come si esegue il ciclo. Per ogni fase: numero, lavorazione, **dove**
-(Interna, o il nome del terzista), **da fare / fatti / scarti**, stato e comandi.
+(Interna, o il nome del terzista), **pianificata**, **da fare / fatti / scarti**, stato e comandi.
+
+**Pianificata** (dalla 0.90.0) è l'inizio e la fine della fase, calcolati a ritroso dalla data
+*Serve per* dell'ordine con le stesse regole del fabbisogno (→ [cap. 19](#19-fabbisogno-materiali)),
+sulle fasi **congelate** dell'ordine. In **bozza** le date seguono pezzi e *Serve per*; dopo il
+lancio stanno ferme — una fase che slitta deve vedersi: se non è chiusa e la fine è passata compare
+⚠ — e si ricalcolano solo con **↻ Ripianifica**, che lascia com'erano le fasi già chiuse.
 
 | Stato della fase | Significato |
 |---|---|
@@ -1654,7 +1676,9 @@ residuo zero lo dice.
 
 Su una fase in conto lavoro compare **genera ordine di lavoro**: ne nasce un ODL per quel terzista,
 con la tariffa del ciclo e **i pezzi che ci sono davvero** (i buoni usciti dalla fase precedente,
-non quelli lanciati). Le fasi **consecutive** dello stesso terzista fanno **una riga sola**: sono
+non quelli lanciati). La consegna chiesta sulla riga è il **rientro pianificato della tratta**, non
+la fine dell'ordine (sugli ordini creati prima della 0.90.0, senza date di fase, resta la fine
+dell'ordine). Le fasi **consecutive** dello stesso terzista fanno **una riga sola**: sono
 una lavorazione da commissionare, non due.
 
 > Su quella riga i comandi di conto lavoro dell'ODL diventano un **rimando** all'ordine di
@@ -2625,6 +2649,6 @@ fusa, e il punto in cui si sostituisce la destinazione dei dati è uno solo.
 
 ---
 
-*Manuale di Bomtrack — aggiornato alla versione 0.89.0.*
+*Manuale di Bomtrack — aggiornato alla versione 0.90.0.*
 *Le funzioni descritte qui corrispondono a quella revisione; il changelog dell'app elenca le
 differenze rispetto alle versioni successive.*

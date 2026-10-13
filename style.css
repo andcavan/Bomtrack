@@ -1133,6 +1133,16 @@ body.insp-on .row-actions{display:none}
 @media print{.load-chart{break-inside:avoid}}
 /* Programma del piano: una riga di separazione dove cambia il giorno */
 tr.agenda-day td{border-top:1px solid var(--hairline)}
+/* Gantt del piano */
+.gantt{margin:0;padding:10px 12px;background:var(--card);border:1px solid var(--hairline);border-radius:10px;overflow-x:auto}
+.gantt svg{display:block;width:100%;min-width:560px;height:auto}
+.gantt-lbl{font-size:11px;fill:var(--text);font-family:var(--mono)}
+.gantt-lbl.gantt-crit{fill:var(--red);font-weight:600}
+.gantt-pick{margin-left:auto;min-height:32px;max-width:100%}
+.gantt-legend{display:flex;flex-wrap:wrap;gap:12px;font-size:11.5px;color:var(--text-dim);margin:0 0 6px}
+.gantt-key{display:inline-flex;align-items:center;gap:5px}
+.gantt-key i{display:inline-block;width:12px;height:8px;border-radius:2px}
+@media print{.gantt{break-inside:avoid}}
 
 /* ─── Bersagli per il dito ───
    Al telefono, e su ogni schermo a sfioramento, nessun comando sotto i 34 px:

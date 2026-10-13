@@ -195,7 +195,7 @@ a:focus-visible,button:focus-visible,input:focus-visible{outline:2px solid var(-
     <div class="brand">
       <div class="brand-top">
         <span class="brand-name">Bomtrack</span>
-        <span class="chip">v0.89.0</span>
+        <span class="chip">v0.90.0</span>
       </div>
       <div class="brand-sub">Manuale d&rsquo;uso</div>
     </div>
@@ -301,7 +301,7 @@ a:focus-visible,button:focus-visible,input:focus-visible{outline:2px solid var(-
 <h3 id="gli-avvii-successivi">Gli avvii successivi</h3>
 <p>Si entra con <strong>email e password</strong>. La casella <strong>Ricordami su questo PC</strong> conserva l'email e tiene la sessione aperta fino a <strong>Esci</strong>; quanto duri lo decide l'amministratore in <em>Gestione → Impostazioni → Accesso</em> (0 giorni = non scade mai).</p>
 <h3 id="la-versione">La versione</h3>
-<p>Il numero di versione si legge <strong>accanto al logo, in alto a sinistra</strong> (es. <code>v0.89.0</code>). Corrisponde alla voce in cima al changelog: serve quando si segnala un problema.</p>
+<p>Il numero di versione si legge <strong>accanto al logo, in alto a sinistra</strong> (es. <code>v0.90.0</code>). Corrisponde alla voce in cima al changelog: serve quando si segnala un problema.</p>
 <h3 id="dove-sta-questo-manuale">Dove sta questo manuale</h3>
 <p>Il pulsante 📖 <strong>Manuale d'uso</strong> nell'intestazione lo apre in una scheda nuova, da qualunque schermata. È il file <code>manuale.html</code>, che sta nella cartella dell'app accanto a <code>index.html</code>: funziona <strong>senza rete</strong> come tutto il resto, e viaggia con la cartella quando la si copia su un altro PC. Si apre nel tema scelto nell'app, e si stampa con <code>Ctrl+P</code>.</p>
 <p>Nella cartella c'è anche <code>MANUALE.md</code>, lo stesso testo in formato Markdown: è la versione che si legge in un editor o su GitHub.</p>
@@ -682,6 +682,10 @@ prezzo vendita = costo totale × (1 + margine %)</code></pre>
 <p>La sezione <strong>Programma</strong> mette in fila tutte le date del piano, giorno per giorno:</p>
 <div class="tw"><table><thead><tr><th>Voce</th><th>Data</th><th>Quando è «fatto»</th></tr></thead><tbody><tr><td><strong>Ordinare</strong></td><td>ordinare entro</td><td>c'è un ordine a fornitore emesso dal piano (una sola richiesta d'offerta lo segna «richiesto»)</td></tr><tr><td><strong>Inviare al terzista</strong></td><td>invio della tratta</td><td>c'è un ordine di lavoro o un ordine di produzione</td></tr><tr><td><strong>Lanciare in produzione</strong></td><td>inizio della prima fase</td><td>c'è un ordine di produzione</td></tr><tr><td><strong>Rientro dal terzista</strong> · <strong>Fase interna</strong> · <strong>Montaggio</strong> · <strong>Consegna</strong></td><td>la loro data</td><td>non hanno un documento: sono «previsti»</td></tr></tbody></table></div>
 <p>Una voce oltre la sua data e non fatta è <strong>in ritardo</strong>. <strong>☐ Solo da fare</strong> lascia le voci ancora da emettere. Esporta in Excel e PDF, una riga per voce.</p>
+<h3 id="il-gantt">Il Gantt</h3>
+<p>Sotto il <em>Programma</em>, una riga di piano alla volta (si sceglie dal menu se sono più d'una): un nodo dell'albero per riga — assiemi, parti, acquisti — con le barre del programma a ritroso.</p>
+<div class="tw"><table><thead><tr><th>Colore</th><th>Barra</th></tr></thead><tbody><tr><td>arancio</td><td>attesa del fornitore: da <em>ordinare entro</em> a <em>serve per</em></td></tr><tr><td>blu</td><td>fase interna</td></tr><tr><td>viola</td><td>tratta in conto lavoro, dall'invio al rientro</td></tr><tr><td>verde</td><td>montaggio</td></tr></tbody></table></div>
+<p>Il contorno <strong>rosso</strong> e il codice in rosso segnano il <strong>percorso critico</strong>; la linea rossa tratteggiata è la consegna richiesta, quella blu oggi. Passando sopra una barra si leggono le date esatte. Oltre 60 righe il disegno si ferma e lo dice: l'elenco completo è nel <em>Programma</em>.</p>
 <p>Invii e lanci ancora da fare compaiono anche nel <strong>calendario del Riepilogo</strong>, accanto agli ordini da emettere e ai rientri degli ordini di lavoro.</p>
 <h3 id="il-fabbisogno-netto">Il fabbisogno netto</h3>
 <pre><code>netto = lordo + scorta minima + impegnato − esistente − in arrivo</code></pre>
@@ -731,7 +735,8 @@ prezzo vendita = costo totale × (1 + margine %)</code></pre>
 <p>Nasce in <strong>bozza</strong>: quantità, date e commessa si cambiano ancora. <strong>Lancia</strong> apre la produzione e da lì <strong>fasi e materiale si congelano</strong>: il ciclo può cambiare domani, l'ordine resta quello che è stato promesso.</p>
 <blockquote><p>Ogni fase congelata ha un <strong>id proprio</strong>, non una posizione. Riordinare le fasi del ciclo dopo il lancio <strong>non sposta niente</strong> su un ordine già aperto — che è il motivo per cui si congela.</p></blockquote>
 <h3 id="la-tabella-delle-fasi">La tabella delle fasi</h3>
-<p>Si legge dall'alto in basso come si esegue il ciclo. Per ogni fase: numero, lavorazione, <strong>dove</strong> (Interna, o il nome del terzista), <strong>da fare / fatti / scarti</strong>, stato e comandi.</p>
+<p>Si legge dall'alto in basso come si esegue il ciclo. Per ogni fase: numero, lavorazione, <strong>dove</strong> (Interna, o il nome del terzista), <strong>pianificata</strong>, <strong>da fare / fatti / scarti</strong>, stato e comandi.</p>
+<p><strong>Pianificata</strong> (dalla 0.90.0) è l'inizio e la fine della fase, calcolati a ritroso dalla data <em>Serve per</em> dell'ordine con le stesse regole del fabbisogno (→ <a href="#19-fabbisogno-materiali">cap. 19</a>), sulle fasi <strong>congelate</strong> dell'ordine. In <strong>bozza</strong> le date seguono pezzi e <em>Serve per</em>; dopo il lancio stanno ferme — una fase che slitta deve vedersi: se non è chiusa e la fine è passata compare ⚠ — e si ricalcolano solo con <strong>↻ Ripianifica</strong>, che lascia com'erano le fasi già chiuse.</p>
 <div class="tw"><table><thead><tr><th>Stato della fase</th><th>Significato</th></tr></thead><tbody><tr><td><strong>In attesa</strong></td><td>La precedente non è chiusa. La riga dice <em>quale</em> e con quali numeri</td></tr><tr><td><strong>Avviabile</strong></td><td>È il suo turno</td></tr><tr><td><strong>In corso</strong></td><td>Avviata, si dichiara l'avanzamento</td></tr><tr><td><strong>Chiusa</strong></td><td>I pezzi dichiarati coprono quelli entrati</td></tr></tbody></table></div>
 <p><strong>Comandi:</strong> <em>avvia</em> · <em>dichiara</em> · <em>chiudi</em> · <em>riapri</em> · <em>forza avvio</em> · <em>genera ordine di lavoro</em>. Compaiono <strong>solo dove sono leciti</strong>: una fase in attesa non mostra un pulsante spento, dice perché e da chi.</p>
 <h3 id="la-successione-e-come-si-scavalca">La successione, e come si scavalca</h3>
@@ -748,7 +753,7 @@ prezzo vendita = costo totale × (1 + margine %)</code></pre>
 <p><strong>Dove sono i pezzi, allora.</strong> Lo dice la <strong>fase corrente</strong> dell'ordine — in casa, o presso il terzista di quella fase — e il prospetto <em>Presso terzi</em> del Magazzino legge anche da lì, marcando le righe con la fase. Sono due letture distinte e restano distinte: quella dei movimenti, per gli ordini di lavoro, e quella degli ordini di produzione.</p>
 <p>Il <strong>materiale esce una volta sola</strong>, all'avvio della prima fase, ed è quello scritto nel ciclo — le stesse righe che il fabbisogno ha già fatto comprare. La scheda propone il <strong>residuo</strong>, e a residuo zero lo dice.</p>
 <h3 id="le-lavorazioni-esterne">Le lavorazioni esterne</h3>
-<p>Su una fase in conto lavoro compare <strong>genera ordine di lavoro</strong>: ne nasce un ODL per quel terzista, con la tariffa del ciclo e <strong>i pezzi che ci sono davvero</strong> (i buoni usciti dalla fase precedente, non quelli lanciati). Le fasi <strong>consecutive</strong> dello stesso terzista fanno <strong>una riga sola</strong>: sono una lavorazione da commissionare, non due.</p>
+<p>Su una fase in conto lavoro compare <strong>genera ordine di lavoro</strong>: ne nasce un ODL per quel terzista, con la tariffa del ciclo e <strong>i pezzi che ci sono davvero</strong> (i buoni usciti dalla fase precedente, non quelli lanciati). La consegna chiesta sulla riga è il <strong>rientro pianificato della tratta</strong>, non la fine dell'ordine (sugli ordini creati prima della 0.90.0, senza date di fase, resta la fine dell'ordine). Le fasi <strong>consecutive</strong> dello stesso terzista fanno <strong>una riga sola</strong>: sono una lavorazione da commissionare, non due.</p>
 <blockquote><p>Su quella riga i comandi di conto lavoro dell'ODL diventano un <strong>rimando</strong> all'ordine di produzione. Il magazzino ha <strong>un padrone solo</strong>: due strade per lo stesso gesto sarebbero due registrazioni. Anche i <strong>pezzi rientrati</strong> dell'ODL li scrive la dichiarazione fatta qui.</p></blockquote>
 <h3 id="nel-fabbisogno">Nel fabbisogno</h3>
 <ul><li><em>Da fabbricare</em> dice ora <strong>quando</strong> la parte serve e <strong>se è già stata lanciata</strong>, col numero dell'ordine.</li><li><em>Da far lavorare fuori</em>: una fase coperta da un ordine di produzione porta <strong>«coperta da ODP-…»</strong> ed esce dalla generazione diretta di ordini di lavoro — l'ordine si genera da lì, quando la fase precedente è chiusa. Le fasi <strong>non</strong> coperte restano generabili dal piano come prima.</li></ul>
@@ -999,7 +1004,7 @@ node test/bench.js    # benchmark del motore di costificazione</code></pre>
 <ul><li><strong>Un archivio per browser.</strong> Niente concorrenza, niente sincronizzazione, niente storico condiviso. Ci si allinea con i backup JSON.</li><li><strong>Il controllo dei permessi è sul client.</strong> Chi apre gli strumenti di sviluppo lo aggira.</li><li><strong>La dimensione dell'archivio è limitata</strong> da quanto il browser concede al sito: con IndexedDB (dalla 0.87.0) di solito gigabyte, senza qualche megabyte. <em>Gestione → Backup</em> mostra la dimensione corrente e lo spazio disponibile.</li></ul>
 <p>La direzione presa per superarli è un backend con autenticazione e permessi sul server; <code>cloud-map.js</code> e <code>docs/cloud-schema.md</code> sono la preparazione a quel passaggio, e <strong>non</strong> contengono codice di rete. Il <a href="#31-quando-larchivio-è-condiviso-supabase">cap. 31</a> racconta la stessa cosa dal lato di chi userà l'app; qui sotto, cosa esiste già nel codice per arrivarci: gli id sono UUID e non contatori locali, ogni record porta <code>createdAt</code>/<code>updatedAt</code> e <code>createdBy</code>/<code>updatedBy</code>, il registro dello schema dichiara per ogni collezione come andrà fusa, e il punto in cui si sostituisce la destinazione dei dati è uno solo.</p>
     </article>
-    <p class="colophon">Manuale di Bomtrack — aggiornato alla versione 0.89.0. Le funzioni descritte qui corrispondono a quella revisione; il changelog dell'app elenca le differenze rispetto alle versioni successive.</p>
+    <p class="colophon">Manuale di Bomtrack — aggiornato alla versione 0.90.0. Le funzioni descritte qui corrispondono a quella revisione; il changelog dell'app elenca le differenze rispetto alle versioni successive.</p>
   </main>
 </div>
 

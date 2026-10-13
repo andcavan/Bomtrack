@@ -241,7 +241,7 @@ const CLOUD_TYPES = (() => {
     'unitCost', 'purchasePrice', 'altFactor', 'overheadPctOverride', 'marginPctOverride', 'hourlyRate',
     'capacityHours', 'hoursPerDay', 'queueDays', 'setupHours', 'transitDays', 'assemblyDays', 'received', 'perPezzo', 'scrap', 'lotSize', 'safetyStock', 'size'].forEach(k => { t[k] = 'numeric'; });
   ['pos', 'runFrom', 'runTo', 'seq', 'opIndex', 'passata', 'page', 'incrDigitsN', 'incrDigitsS', 'gCodeLen'].forEach(k => { t[k] = 'int'; });
-  ['date', 'dueDate', 'deliveryDate', 'confirmedDate'].forEach(k => { t[k] = 'date'; });
+  ['date', 'dueDate', 'deliveryDate', 'confirmedDate', 'plannedStart', 'plannedEnd'].forEach(k => { t[k] = 'date'; });
   ['createdAt', 'updatedAt', 'deletedAt', 'doneAt'].forEach(k => { t[k] = 'timestamptz'; });
   ['active', 'favorite', 'obsolete', 'done'].forEach(k => { t[k] = 'bool'; });
   ['snapshot', 'record'].forEach(k => { t[k] = 'jsonb'; });

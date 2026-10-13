@@ -854,6 +854,10 @@ function migrateDB() {
       ['seq', 'opIndex', 'runFrom', 'runTo', 'passata', 'hours', 'days', 'rate', 'cost'].forEach(k => { if (f[k] == null) f[k] = 0; });
       if (!f.costMode) f.costMode = 'fisso';
       if (f.note == null) f.note = '';
+      // Inizio e fine pianificati della fase (0.90.0): vuoti sugli ordini di
+      // prima, che continuano a ragionare sulla data dell'ordine.
+      if (f.plannedStart == null) f.plannedStart = '';
+      if (f.plannedEnd == null) f.plannedEnd = '';
     });
     o.materials.forEach(m => {
       if (!m.id) m.id = newId();

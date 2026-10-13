@@ -83,15 +83,28 @@ Regole:
   `planAgenda` (l'agenda, dagli stessi aggregati delle tabelle), `buyLeadDays` (estratto da
   `mrpBuyRow`). `mrpExplode` restituisce anche `asm` e `intOps`, solo date.
 
-### 0.90.0 — Gantt e date congelate
+### 0.90.0 — Gantt e date congelate — fatto
 - **Gantt** SVG nella scheda piano, una riga per nodo, barre per tipo, linee oggi/consegna,
   percorso critico evidenziato (stessa tecnica di `loadChartOne`).
 - **ODP**: al lancio ogni fase riceve `plannedStart`/`plannedEnd` da `schedPart` sulla consegna
   dell'ODP; ripianificazione solo con un comando esplicito.
 - **ODL da ODP** (`opRunDocRow`): invio e rientro della tratta dalle date congelate, non più la
   consegna dell'ODP.
+- Come è fatto: `planGanttHtml` (views-mrp.js, sull'albero di `planFeasibility`);
+  `odpSchedule`/`odpPianifica`/`odpReplanAsk` (views-prod.js, `schedOps` sulle fasi congelate);
+  `plannedStart`/`plannedEnd` sulle fasi, con migrazione, tipi cloud e colonne SQL. La
+  ripianificazione non scrive nello storico delle dichiarazioni: non è un fatto di produzione.
 
-## 4. Come si verifica
+## 4. Cosa resta fuori, di proposito
+
+- **Capacità finita** e livellamento: le date non guardano il carico. Il Carico centri mostra il
+  sovraccarico nella settimana d'inizio fase; spostare le fasi per risolverlo è un altro strumento.
+- **Netto delle parti prodotte**: il fabbisogno non toglie dal magazzino le parti a produzione
+  interna, e quindi neanche la data fattibile.
+- **Avanzamento per fase nel piano**: un ODP già avviato non accorcia la data fattibile del piano
+  da cui è nato.
+
+## 5. Come si verifica
 
 `test/calendario.test.js` e `test/schedulazione.test.js`: il caso di riferimento sopra con le
 date scritte a mano, e i casi limite (patrono in mezzo, capodanno, due rami, dati mancanti,

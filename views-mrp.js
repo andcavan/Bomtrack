@@ -2062,7 +2062,8 @@ function renderPlanEdit(id) {
   const risparmio = buy.reduce((s, r) => s + r.saving, 0);
   const nImpegnate = buy.filter(r => r.committed > 0).length;
 
-  const fattibili = new Map(planFeasibility(p).map(f => [f.lineId, f]));
+  const feas = planFeasibility(p);
+  const fattibili = new Map(feas.map(f => [f.lineId, f]));
   const planRows = (p.lines || []).map(l => {
     const it = getItem(l.itemId);
     if (!it) return `<tr><td colspan="7" class="empty-text">${ico('warning', 'tinted', '')} articolo mancante</td>
@@ -2142,6 +2143,7 @@ function renderPlanEdit(id) {
     </div>
     ${exp.cycle ? '<div class="empty-text" style="color:var(--red)">' + ico('warning', 'tinted', '') + ' Rilevato riferimento ciclico nelle distinte: il fabbisogno è troncato su quel ramo.</div>' : ''}
     <div class="mrp-section">${planAgendaHtml(p)}</div>
+    <div class="mrp-section">${planGanttHtml(p, feas)}</div>
     ${risparmio > 0 ? `<div class="empty-text" style="text-align:left">↓ Scegliendo ovunque la quotazione più bassa a listino il totale scenderebbe di <strong>${fmtN(risparmio)}</strong>. Il prezzo in uso si cambia dal listino dell'articolo.</div>` : ''}
 
     <div class="mrp-section">
@@ -2308,6 +2310,83 @@ function planAgendaExportSpec() {
       totali: null,
     }],
   };
+}
+
+// ─── Il Gantt ───
+// Una riga di piano alla volta, un nodo dell'albero per riga del disegno:
+// assiemi, parti con le loro tappe, acquisti. Le barre piene sono il programma
+// **a ritroso** (entro quando deve succedere); il contorno rosso segna il
+// percorso critico, cioè ciò che decide la data fattibile. SVG scritto a mano,
+// come il grafico del carico, con gli stessi colori-token dell'app.
+//   acquisto = attesa del fornitore · tratta = conto lavoro · fase interna · montaggio
+// Ogni barra porta la sua <title>: il disegno dice dove guardare, le date
+// esatte stanno nella tabella del Programma e nel suggerimento.
+const GANTT_MAX_RIGHE = 60;
+const GANTT_COLORI = { buy: 'var(--orange)', est: 'var(--purple)', int: 'var(--accent)', asm: 'var(--green)' };
+let ganttRiga = '';
+function ganttSetRiga(id) { ganttRiga = id || ''; renderMrp(); }
+function ganttGiorni(a, b) { return Math.round((Date.parse(b + 'T00:00:00Z') - Date.parse(a + 'T00:00:00Z')) / 86400000); }
+function planGanttHtml(plan, feas) {
+  const conAlbero = (feas || []).filter(f => f.tree && f.richiesta);
+  const testa = `<div class="cycle-section-head"><h3>${ico('chart', 'tinted pill', '')} Gantt</h3>
+    ${conAlbero.length > 1 ? `<select class="gantt-pick" onchange="ganttSetRiga(this.value)" title="Quale riga di piano disegnare">
+      ${conAlbero.map(f => `<option value="${esc(f.lineId)}" ${f.lineId === ganttRiga ? 'selected' : ''}>${esc(f.tree.item.code || '')} — ${esc(fmtDateIt(f.richiesta))}</option>`).join('')}</select>` : ''}</div>`;
+  if (!conAlbero.length) return `${testa}<div class="empty-text">Nessuna riga di piano con una data di consegna.</div>`;
+  const f = conAlbero.find(x => x.lineId === ganttRiga) || conAlbero[0];
+  const critici = new Set(f.critico);
+  const tutte = schedFlat(f.tree);
+  const righe = tutte.slice(0, GANTT_MAX_RIGHE);
+  // L'asse va dalla prima data utile all'ultima, oggi compreso.
+  const date = [oggiISO(), f.richiesta, f.fattibile].filter(Boolean);
+  righe.forEach(({ node: n }) => {
+    [n.start, n.end].forEach(d => { if (d) date.push(d); });
+    n.steps.forEach(st => [st.start, st.end].forEach(d => { if (d) date.push(d); }));
+  });
+  const da = date.reduce((m, d) => d < m ? d : m), al = date.reduce((m, d) => d > m ? d : m);
+  const giorni = Math.max(1, ganttGiorni(da, al) + 1);
+  const L = 230, W = 640, H = 22, top = 24;
+  const x = d => L + (ganttGiorni(da, d) / giorni) * W;
+  const barra = (d1, d2, y, colore, crit, titolo) => {
+    if (!d1 || !d2) return '';
+    const x1 = x(d1), x2 = Math.max(x(d2), x1 + 2);
+    return `<rect x="${x1.toFixed(1)}" y="${y + 5}" width="${(x2 - x1).toFixed(1)}" height="${H - 10}" rx="2" fill="${colore}"
+      ${crit ? 'stroke="var(--red)" stroke-width="1.5"' : ''}><title>${esc(titolo)}</title></rect>`;
+  };
+  // Le tacche: un lunedì per settimana, con la data.
+  let tacche = '';
+  for (let d = inizioSettimana(da); d <= al; d = addDays(d, 7)) {
+    if (d < da) continue;
+    tacche += `<line x1="${x(d).toFixed(1)}" y1="${top - 4}" x2="${x(d).toFixed(1)}" y2="${top + righe.length * H}" stroke="var(--hairline)" stroke-width="1"/>
+      <text x="${(x(d) + 2).toFixed(1)}" y="${top - 8}" class="load-chart-lbl">${esc(fmtDateIt(d).slice(0, 5))}</text>`;
+  }
+  const corpo = righe.map(({ node: n, livello }, i) => {
+    const y = top + i * H;
+    const crit = critici.has(n);
+    const etichetta = `<text x="${4 + livello * 12}" y="${y + H / 2 + 4}" class="gantt-lbl${crit ? ' gantt-crit' : ''}">${esc(n.item.code || '')}</text>`;
+    let barre = '';
+    if (n.kind === 'buy') {
+      barre = barra(n.start, n.end, y, GANTT_COLORI.buy, crit,
+        `${n.item.code} — ${schedNodeLabel(n)}: ordinare entro ${fmtDateIt(n.start)}, serve il ${fmtDateIt(n.end)}`);
+    } else if (n.kind === 'asm') {
+      barre = barra(n.start, n.end, y, GANTT_COLORI.asm, crit, `${n.item.code} — montaggio dal ${fmtDateIt(n.start)} al ${fmtDateIt(n.end)}`);
+    } else {
+      barre = n.steps.map(st => barra(st.start, st.end, y, st.esterna ? GANTT_COLORI.est : GANTT_COLORI.int, crit,
+        `${n.item.code} — ${schedStepLabel(n, st)}: dal ${fmtDateIt(st.start)} al ${fmtDateIt(st.end)}`)).join('');
+    }
+    return `<g>${etichetta}${barre}</g>`;
+  }).join('');
+  const altezza = top + righe.length * H + 6;
+  const linea = (d, colore, testo) => d ? `<line x1="${x(d).toFixed(1)}" y1="${top - 4}" x2="${x(d).toFixed(1)}" y2="${altezza - 4}" stroke="${colore}" stroke-width="1.5" stroke-dasharray="4 3"><title>${esc(testo)}</title></line>` : '';
+  const legenda = [['buy', 'attesa fornitore'], ['int', 'fase interna'], ['est', 'conto lavoro'], ['asm', 'montaggio']]
+    .map(([k, t]) => `<span class="gantt-key"><i style="background:${GANTT_COLORI[k]}"></i>${t}</span>`).join('');
+  const descr = `Gantt di ${f.tree.item.code}: ${righe.length} righe, dal ${fmtDateIt(da)} al ${fmtDateIt(al)}, consegna richiesta ${fmtDateIt(f.richiesta)}, fattibile ${fmtDateIt(f.fattibile)}`;
+  return `${testa}
+    <p class="empty-text" style="text-align:left;padding:0 0 8px">Le barre sono il programma a ritroso: entro quando deve succedere ogni cosa perché la consegna regga. Il contorno <span style="color:var(--red)">rosso</span> segna il percorso critico; la linea rossa è la consegna richiesta, quella blu oggi.</p>
+    <div class="gantt-legend">${legenda}</div>
+    <figure class="gantt"><svg viewBox="0 0 ${L + W + 10} ${altezza}" preserveAspectRatio="xMinYMin meet" role="img" aria-label="${esc(descr)}">
+      ${tacche}${corpo}${linea(oggiISO(), 'var(--accent)', 'Oggi')}${linea(f.richiesta, 'var(--red)', 'Consegna richiesta ' + fmtDateIt(f.richiesta))}
+    </svg></figure>
+    ${tutte.length > righe.length ? `<p class="empty-text" style="text-align:left">${ico('warning', 'tinted', '')} Disegnate le prime ${righe.length} righe su ${tutte.length}: la distinta è più grande di quanto un Gantt leggibile possa mostrare. Il Programma le elenca tutte.</p>` : ''}`;
 }
 
 // ─── Fattibile e margine, nella tabella «Da produrre» ───

@@ -2,6 +2,22 @@
 
 Le revisioni seguono il versionamento semantico `0.MINOR.PATCH`: **MINOR** per nuove funzionalità, **PATCH** per correzioni. La versione in cima è quella in `APP_VERSION` (`core.js`) e mostrata nell'header dell'app.
 
+### 0.90.0 — 2026-10-13
+
+**Il programma si vede, e l'ordine di produzione lo ricorda.** Ultima tappa della programmazione dei tempi (`docs/programmazione-tempi.md`).
+
+**Nuovo**
+- **Gantt** nella scheda piano: una riga di piano alla volta, un nodo per riga — assiemi, parti con le loro fasi e tratte, acquisti — con le barre del programma a ritroso (attesa fornitore, fase interna, conto lavoro, montaggio), il percorso critico in rosso, le linee di oggi e della consegna richiesta, le date esatte nel suggerimento di ogni barra. Oltre 60 righe si ferma e lo dice.
+- **Date pianificate sulle fasi degli ordini di produzione**: inizio e fine di ogni fase, a ritroso da *Serve per* con le stesse regole del fabbisogno, sulle fasi congelate. In bozza seguono pezzi e data; dopo il lancio stanno ferme, la fase oltre la sua fine si segnala, e **Ripianifica** ricalcola le fasi non chiuse.
+- **Ordini di lavoro da un ordine di produzione**: la riga chiede al terzista il rientro pianificato della tratta, ed è da emettere entro il suo invio — non più la fine dell'ordine.
+
+**Le cautele**
+- Gli ordini di produzione creati prima non hanno date di fase: si comportano come prima finché non si ripianificano.
+- Schema SQL: `planned_start`, `planned_end` su `production_order_phases`, con `alter table … add column if not exists`.
+
+**Verifica**
+- `test/schedulazione.test.js`: Gantt (righe, titoli, percorso critico, tetto, piano senza date) e date delle fasi (creazione, bozza che segue la data, ODL dalla tratta, ordini vecchi, ripianifica, fase in ritardo in tabella).
+
 ### 0.89.0 — 2026-10-13
 
 **Quando sono pronto davvero, e cosa fare oggi.** La 0.88.0 diceva *entro quando* deve succedere ogni cosa perché la consegna regga. Ora il piano dice anche se ce la fa, e mette in fila il lavoro.

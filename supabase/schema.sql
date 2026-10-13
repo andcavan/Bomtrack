@@ -313,9 +313,13 @@ create table if not exists public.production_order_phases (
   supplier_id uuid references public.suppliers(id) deferrable initially deferred,
   supplier_name text, run_from int, run_to int, passata int,
   cost_mode text, hours numeric, days numeric, rate numeric, cost numeric, note text,
+  planned_start date, planned_end date,
   pos int, created_at timestamptz, updated_at timestamptz, created_by uuid, updated_by uuid,
   synced_at timestamptz not null default clock_timestamp()
 );
+-- 0.90.0: inizio e fine pianificati di ogni fase, per i database già creati.
+alter table public.production_order_phases add column if not exists planned_start date;
+alter table public.production_order_phases add column if not exists planned_end date;
 
 create table if not exists public.production_order_materials (
   id uuid primary key,
