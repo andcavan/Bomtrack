@@ -2097,14 +2097,6 @@ function renderPlanEdit(id) {
           <button class="export-btn-pdf" onclick="exportMrpPDF('${id}')">${ico('file', 'tinted', '')} Esporta PDF</button>
         </div>
       </div>
-      <!-- I documenti che nascono dal piano: una riga loro, sotto i comandi del
-           piano. Mescolati a quelli andavano a capo a caso, uno per riga. -->
-      <div class="plan-genera">
-        ${planDocButton(p, 'rfq', ico('mail', 'tinted', '') + ' Genera richieste')}
-        ${planDocButton(p, 'order', ico('receipt', 'tinted', '') + ' Genera ordini')}
-        ${planDocButton(p, 'odp', ico('factory', 'tinted', '') + ' Genera ordini di produzione')}
-        ${planDocButton(p, 'odl', ico('wrench', 'tinted', '') + ' Genera ordini di lavoro')}
-      </div>
     </div>
     <div class="modal-grid">
       <div class="modal-field"><label>Titolo</label>
@@ -2142,37 +2134,104 @@ function renderPlanEdit(id) {
       ${planAvanzamentoKpi(id, exp.make)}
     </div>
     ${exp.cycle ? '<div class="empty-text" style="color:var(--red)">' + ico('warning', 'tinted', '') + ' Rilevato riferimento ciclico nelle distinte: il fabbisogno è troncato su quel ramo.</div>' : ''}
-    <div class="mrp-section">${planAgendaHtml(p)}</div>
-    <div class="mrp-section">${planGanttHtml(p, feas)}</div>
-    ${risparmio > 0 ? `<div class="empty-text" style="text-align:left">↓ Scegliendo ovunque la quotazione più bassa a listino il totale scenderebbe di <strong>${fmtN(risparmio)}</strong>. Il prezzo in uso si cambia dal listino dell'articolo.</div>` : ''}
 
-    <div class="mrp-section">
-      <div class="cycle-section-head">
-        <h3>${ico('cart', 'tinted pill', '')} Da acquistare</h3>
-        <button class="btn-outline${mrpNet ? ' active' : ''}" onclick="toggleMrpNet()" title="Toglie dal fabbisogno quello che è già a magazzino, quello già ordinato e quello già impegnato da altri piani aperti">${mrpNet ? '☑' : '☐'} Fabbisogno netto</button>
-        <button class="btn-outline${mrpGrouped ? ' active' : ''}" onclick="toggleMrpGroup()">${mrpGrouped ? '☑' : '☐'} Raggruppa per fornitore</button>
-      </div>
-      ${mrpNet ? `<p class="empty-text" style="text-align:left;padding:0 0 8px">Netto = <strong>lordo + scorta minima + impegnato − esistente − in arrivo</strong>, arrotondato al lotto di riordino. L'esistente è calcolato da ricevimenti e movimenti; l'in arrivo è ciò che è stato ordinato e non è ancora entrato; l'<strong>impegnato</strong> è quanto gli <em>altri piani aperti</em> hanno già promesso — senza toglierlo, due piani sugli stessi articoli si direbbero coperti entrambi con la stessa merce. Il lordo resta in colonna: serve a capire il prodotto, il netto a capire cosa comprare.</p>
-      ${nImpegnate ? `<p class="empty-text" style="text-align:left;padding:0 0 8px">${ico('lock', 'tinted', '')} ${nImpegnate} ${nImpegnate === 1 ? 'riga contende' : 'righe contendono'} materiale con altri piani aperti. Un piano che non serve più si chiude dall'elenco: la sua quota torna libera.</p>` : ''}` : ''}
-      ${mrpBuyTable(buy)}
-    </div>
-
-    <div class="mrp-section">
-      <div class="cycle-section-head"><h3>${ico('wrench', 'tinted pill', '')} Da far lavorare fuori</h3></div>
-      <p class="empty-text" style="text-align:left;padding:0 0 8px">Le fasi del ciclo affidate a un terzista. Entrano nelle richieste e negli ordini come le righe d'acquisto, un documento per fornitore. Le quantità sono <strong>al netto dei pezzi dichiarati fatti</strong> in «Da fabbricare»: una parte finita ha già attraversato tutte le sue fasi, e non va rimandata fuori. Una parte ferma <em>a metà ciclo</em> conta invece ancora per intero — si dichiara la parte finita, non la fase superata — quindi il conto qui è prudente per scelta: si rischia di riproporre una lavorazione già avviata, mai di dimenticarne una da fare. Una fase <strong>coperta da un ordine di produzione</strong> è il caso in cui la fase superata si sa davvero: quella esce da qui, e l'ordine di lavoro si genera da lì.</p>
-      ${mrpPhaseTable(fasi)}
-    </div>
-
-    <div class="mrp-section">
-      <div class="cycle-section-head"><h3>${ico('factory', 'tinted pill', '')} Da fabbricare</h3></div>
-      ${mrpMakeTable(exp.make, id)}
-    </div>
-    <div class="mrp-section">
-      <div class="cycle-section-head"><h3>${ico('wrench', 'tinted pill', '')} Carico dei centri</h3></div>
-      <p class="empty-text" style="text-align:left;padding:0 0 8px">Le ore che <strong>questo piano</strong> chiede ai centri interni, per settimana. Il carico vero è la somma di tutti i piani aperti: si guarda in <em>Pianificazione → Carico centri</em>, perché il centro è condiviso e un piano solo non dice se regge.</p>
-      ${loadTableHtml(mrpLoad(p), id)}
-    </div>
-    ${planDocsList(id)}</div>`;
+    ${planTabsHtml([
+      { id: 'buy', label: 'Da acquistare', n: buy.length, html: `
+        <div class="plan-genera">
+          ${planDocButton(p, 'rfq', ico('mail', 'tinted', '') + ' Genera richieste')}
+          ${planDocButton(p, 'order', ico('receipt', 'tinted', '') + ' Genera ordini')}
+        </div>
+        ${risparmio > 0 ? `<div class="empty-text" style="text-align:left">↓ Scegliendo ovunque la quotazione più bassa a listino il totale scenderebbe di <strong>${fmtN(risparmio)}</strong>. Il prezzo in uso si cambia dal listino dell'articolo.</div>` : ''}
+        <div class="mrp-section">
+          <div class="cycle-section-head">
+            <h3>${ico('cart', 'tinted pill', '')} Da acquistare</h3>
+            <button class="btn-outline${mrpNet ? ' active' : ''}" onclick="toggleMrpNet()" title="Toglie dal fabbisogno quello che è già a magazzino, quello già ordinato e quello già impegnato da altri piani aperti">${mrpNet ? '☑' : '☐'} Fabbisogno netto</button>
+            <button class="btn-outline${mrpGrouped ? ' active' : ''}" onclick="toggleMrpGroup()">${mrpGrouped ? '☑' : '☐'} Raggruppa per fornitore</button>
+          </div>
+          ${mrpNet ? `<p class="empty-text" style="text-align:left;padding:0 0 8px">Netto = <strong>lordo + scorta minima + impegnato − esistente − in arrivo</strong>, arrotondato al lotto di riordino. L'esistente è calcolato da ricevimenti e movimenti; l'in arrivo è ciò che è stato ordinato e non è ancora entrato; l'<strong>impegnato</strong> è quanto gli <em>altri piani aperti</em> hanno già promesso — senza toglierlo, due piani sugli stessi articoli si direbbero coperti entrambi con la stessa merce. Il lordo resta in colonna: serve a capire il prodotto, il netto a capire cosa comprare.</p>
+          ${nImpegnate ? `<p class="empty-text" style="text-align:left;padding:0 0 8px">${ico('lock', 'tinted', '')} ${nImpegnate} ${nImpegnate === 1 ? 'riga contende' : 'righe contendono'} materiale con altri piani aperti. Un piano che non serve più si chiude dall'elenco: la sua quota torna libera.</p>` : ''}` : ''}
+          ${mrpBuyTable(buy)}
+        </div>` },
+      { id: 'cl', label: 'Conto lavoro', n: fasi.length, html: `
+        <div class="plan-genera">
+          ${planDocButton(p, 'rfq', ico('mail', 'tinted', '') + ' Genera richieste')}
+          ${planDocButton(p, 'odl', ico('wrench', 'tinted', '') + ' Genera ordini di lavoro')}
+        </div>
+        <div class="mrp-section">
+          <div class="cycle-section-head"><h3>${ico('wrench', 'tinted pill', '')} Da far lavorare fuori</h3></div>
+          <p class="empty-text" style="text-align:left;padding:0 0 8px">Le fasi del ciclo affidate a un terzista. Entrano nelle richieste e negli ordini come le righe d'acquisto, un documento per fornitore. Le quantità sono <strong>al netto dei pezzi dichiarati fatti</strong> in «Da fabbricare»: una parte finita ha già attraversato tutte le sue fasi, e non va rimandata fuori. Una parte ferma <em>a metà ciclo</em> conta invece ancora per intero — si dichiara la parte finita, non la fase superata — quindi il conto qui è prudente per scelta: si rischia di riproporre una lavorazione già avviata, mai di dimenticarne una da fare. Una fase <strong>coperta da un ordine di produzione</strong> è il caso in cui la fase superata si sa davvero: quella esce da qui, e l'ordine di lavoro si genera da lì.</p>
+          ${mrpPhaseTable(fasi)}
+        </div>` },
+      { id: 'make', label: 'Da fabbricare', n: exp.make.length, html: `
+        <div class="plan-genera">
+          ${planDocButton(p, 'odp', ico('factory', 'tinted', '') + ' Genera ordini di produzione')}
+        </div>
+        <div class="mrp-section">
+          <div class="cycle-section-head"><h3>${ico('factory', 'tinted pill', '')} Da fabbricare</h3></div>
+          ${mrpMakeTable(exp.make, id)}
+        </div>` },
+      { id: 'agenda', label: 'Programma', html: `<div class="mrp-section">${planAgendaHtml(p)}</div>` },
+      { id: 'gantt', label: 'Gantt', html: `<div class="mrp-section">${planGanttHtml(p, feas)}</div>` },
+      { id: 'load', label: 'Carico', html: `
+        <div class="mrp-section">
+          <div class="cycle-section-head"><h3>${ico('wrench', 'tinted pill', '')} Carico dei centri</h3></div>
+          <p class="empty-text" style="text-align:left;padding:0 0 8px">Le ore che <strong>questo piano</strong> chiede ai centri interni, per settimana. Il carico vero è la somma di tutti i piani aperti: si guarda in <em>Pianificazione → Carico centri</em>, perché il centro è condiviso e un piano solo non dice se regge.</p>
+          ${loadTableHtml(mrpLoad(p), id)}
+        </div>` },
+      { id: 'docs', label: 'Documenti', n: planDocsCount(id), html: planDocsList(id) || '<p class="empty-text">Nessun documento generato da questo piano: si creano dai pulsanti «Genera» delle altre schede.</p>' },
+    ])}</div>`;
+}
+// ─── Le schede del piano ───
+// Fino alla 0.91 le sezioni stavano una sotto l'altra — acquisti, conto
+// lavoro, da fabbricare, programma, Gantt, carico, documenti — e la scheda
+// arrivava a quasi tre schermate: per vedere il conto lavoro si scorreva oltre
+// gli acquisti, ogni volta. Ora testata, righe a piano e numeri restano in
+// alto, e il resto sta in schede con il loro conteggio; ogni pulsante «Genera»
+// sta nella scheda delle righe su cui agisce.
+//
+// Le schede si disegnano **tutte**, e quelle non scelte restano nascoste:
+// cambiare scheda non ridisegna niente, la stampa le mostra tutte (vedi
+// style.css), e chi cerca una sezione nel testo della pagina la trova ancora.
+// La scheda scelta vale per tutti i piani e dura quanto la sessione, come la
+// memoria dei gruppi della barra.
+let planTab = 'buy';
+function planDocsCount(planId) {
+  const d = planDocs(planId);
+  return d.rfqs.length + d.orders.length + d.workOrders.length + d.prodOrders.length;
+}
+function planTabsHtml(tabs) {
+  if (!tabs.some(t => t.id === planTab)) planTab = tabs[0].id;
+  const bar = tabs.map(t => {
+    const on = t.id === planTab;
+    return `<button type="button" role="tab" id="plan-tab-${t.id}" class="plan-tab${on ? ' active' : ''}" aria-selected="${on}" aria-controls="plan-panel-${t.id}" tabindex="${on ? 0 : -1}"
+      onclick="planSetTab('${t.id}')" onkeydown="planTabKey(event)">${esc(t.label)}${t.n != null ? ` <span class="plan-tab-n">${t.n}</span>` : ''}</button>`;
+  }).join('');
+  const panels = tabs.map(t => `<div role="tabpanel" id="plan-panel-${t.id}" class="plan-tabpanel" aria-labelledby="plan-tab-${t.id}"${t.id === planTab ? '' : ' hidden'}>${t.html}</div>`).join('');
+  return `<div class="plan-tabs" role="tablist" aria-label="Sezioni del piano">${bar}</div>${panels}`;
+}
+function planSetTab(t) {
+  planTab = t;
+  if (typeof document === 'undefined') return;
+  const tab = document.getElementById('plan-tab-' + t);
+  if (!tab) return;
+  document.querySelectorAll('.plan-tab').forEach(b => {
+    const on = b === tab;
+    b.classList.toggle('active', on);
+    b.setAttribute('aria-selected', String(on));
+    b.setAttribute('tabindex', on ? '0' : '-1');
+  });
+  document.querySelectorAll('.plan-tabpanel').forEach(x => { x.hidden = x.id !== 'plan-panel-' + t; });
+}
+// Frecce sinistra/destra fra le schede, come in ogni elenco di schede.
+function planTabKey(e) {
+  if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
+  const tabs = Array.from(document.querySelectorAll('.plan-tab'));
+  const i = tabs.indexOf(e.currentTarget);
+  const next = tabs[(i + (e.key === 'ArrowRight' ? 1 : tabs.length - 1)) % tabs.length];
+  if (!next) return;
+  e.preventDefault();
+  planSetTab(next.id.replace('plan-tab-', ''));
+  next.focus();
 }
 // ─── Il programma del piano: l'agenda ───
 // Le date ci sono già tutte nelle tabelle sotto — ordinare entro, invio,

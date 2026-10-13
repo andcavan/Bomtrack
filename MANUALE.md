@@ -1,6 +1,6 @@
 # Bomtrack — Manuale d'uso
 
-**Versione dell'app documentata: 0.91.0**
+**Versione dell'app documentata: 0.92.0**
 
 📖 **[Leggilo come pagina web](https://claude.ai/code/artifact/726a0963-2db0-4947-999b-d7b5beb91a0b)** — stesso testo, con indice laterale, filtro dei capitoli e tema chiaro/scuro. Comodo da tenere aperto di fianco all'app.
 
@@ -161,7 +161,7 @@ la sessione aperta fino a **Esci**; quanto duri lo decide l'amministratore in
 
 ### La versione
 
-Il numero di versione si legge **accanto al logo, in alto a sinistra** (es. `v0.91.0`).
+Il numero di versione si legge **accanto al logo, in alto a sinistra** (es. `v0.92.0`).
 Corrisponde alla voce in cima al changelog: serve quando si segnala un problema.
 
 ### Dove sta questo manuale
@@ -1301,21 +1301,40 @@ I badge di riga dicono `aperto` o `chiuso`.
 
 | A sinistra | A destra |
 |---|---|
-| chiudi · numero del piano · **Aperto — chiudi** / **Chiuso — riapri** · **Duplica** · **Elimina** | **Genera richieste (N)** · **Genera ordini (N)** · **Genera ordini di lavoro (N)** · **Esporta Excel** · **Esporta PDF** |
+| chiudi · numero del piano · **Aperto — chiudi** / **Chiuso — riapri** · **Duplica** · **Elimina** | **Esporta Excel** · **Esporta PDF** |
+
+I pulsanti **Genera…** non stanno più nella toolbar (dalla 0.92.0): ciascuno sta nella scheda
+delle righe su cui agisce, vedi sotto.
 
 **I campi di testata.** Titolo · Data · **Consegna richiesta** · **Commessa** · Note.
 
 ### Le sezioni
 
+In alto, sempre visibili, stanno le righe **Da produrre** e i **KPI**. Il resto è diviso in
+**schede** (dalla 0.92.0), ciascuna con il numero delle sue righe:
+
+| Scheda | Cosa contiene | Pulsanti |
+|---|---|---|
+| **Da acquistare (N)** | La lista consolidata del materiale | Genera richieste · Genera ordini |
+| **Conto lavoro (N)** | Le fasi *Da far lavorare fuori* | Genera richieste · Genera ordini di lavoro |
+| **Da fabbricare (N)** | Le parti a produzione interna, con l'avanzamento | Genera ordini di produzione |
+| **Programma** | L'agenda del piano in ordine di data | — |
+| **Gantt** | Il programma disegnato, riga per riga | — |
+| **Carico** | Le ore che questo piano chiede ai centri | — |
+| **Documenti (N)** | Richieste, ordini, ODL e ODP nati dal piano | — |
+
+La scheda scelta resta la stessa aprendo un altro piano, finché non si cambia. Fra le schede ci si
+sposta anche con le frecce ← →. **In stampa** le schede escono tutte, una dopo l'altra.
+
 **Da produrre** — quello che si chiede al piano. Pulsante **+ Aggiungi al piano**; colonne Codice,
 Articolo, U.M., **Q.tà**, **Serve per** (la data), **Fattibile**, **Margine**, elimina. Fattibile e
 margine sono spiegati sotto, in *La data fattibile*.
 
-**Programma** — l'agenda del piano: tutto ciò che deve succedere, in ordine di data (sotto, *Il
-programma*).
-
 **I KPI** — Totale acquisti · Articoli da comprare · Fornitori coinvolti · Parti da fabbricare ·
 Conto lavoro.
+
+**Programma** — l'agenda del piano: tutto ciò che deve succedere, in ordine di data (sotto, *Il
+programma*).
 
 **Da acquistare** — la lista consolidata, con due interruttori:
 
@@ -2664,6 +2683,6 @@ fusa, e il punto in cui si sostituisce la destinazione dei dati è uno solo.
 
 ---
 
-*Manuale di Bomtrack — aggiornato alla versione 0.91.0.*
+*Manuale di Bomtrack — aggiornato alla versione 0.92.0.*
 *Le funzioni descritte qui corrispondono a quella revisione; il changelog dell'app elenca le
 differenze rispetto alle versioni successive.*

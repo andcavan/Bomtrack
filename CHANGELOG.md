@@ -2,6 +2,21 @@
 
 Le revisioni seguono il versionamento semantico `0.MINOR.PATCH`: **MINOR** per nuove funzionalità, **PATCH** per correzioni. La versione in cima è quella in `APP_VERSION` (`core.js`) e mostrata nell'header dell'app.
 
+### 0.92.0 — 2026-10-13
+
+**Il piano a schede.** La scheda di un piano di fabbisogno era lunga quasi tre schermate, con otto sezioni una sotto l'altra: per arrivare al conto lavoro si scorrevano ogni volta gli acquisti.
+
+**Nuovo**
+- Testata, righe **Da produrre** e KPI restano in alto; il resto sta in **schede** con il loro conteggio: *Da acquistare*, *Conto lavoro*, *Da fabbricare*, *Programma*, *Gantt*, *Carico*, *Documenti*.
+- I pulsanti **Genera…** passano dalla toolbar alla scheda delle righe su cui agiscono: richieste e ordini in *Da acquistare*, richieste e ordini di lavoro in *Conto lavoro*, ordini di produzione in *Da fabbricare*.
+- La scheda scelta resta aprendo un altro piano; frecce ← → per spostarsi fra le schede.
+
+**Da sapere**
+- In stampa le schede escono tutte, come prima. Conti, date e documenti non cambiano.
+
+**Verifica**
+- `test/plandocs.test.js`: schede e conteggi, scheda nascosta ma disegnata, memoria della scheda, pulsanti nella scheda giusta.
+
 ### 0.91.0 — 2026-10-13
 
 **La barra segue il lavoro.** I gruppi erano divisi per tipo di dato, e «Documenti» teneva insieme commesse, piani, richieste, ordini, ODP e ODL: la pianificazione, l'ufficio acquisti e l'officina in un cassetto solo. Ora seguono il processo e chi lo fa.
