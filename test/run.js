@@ -3,16 +3,20 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
-const { summary } = require('./tap.js');
+const { summary, attendi } = require('./tap.js');
 
 const files = fs.readdirSync(__dirname)
   .filter(f => f.endsWith('.test.js'))
   .sort();
 
 console.log('Bomtrack — suite di test (' + files.length + ' file)');
-files.forEach(f => {
-  console.log('\n=== ' + f + ' ===');
-  require(path.join(__dirname, f));
-});
-
-process.exitCode = summary() ? 1 : 0;
+// Un file alla volta: i test asincroni di un file si chiudono prima che parta
+// il successivo, così il loro esito resta sotto il titolo giusto.
+(async () => {
+  for (const f of files) {
+    console.log('\n=== ' + f + ' ===');
+    require(path.join(__dirname, f));
+    await attendi();
+  }
+  process.exitCode = summary() ? 1 : 0;
+})();

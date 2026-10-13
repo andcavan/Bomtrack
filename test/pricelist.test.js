@@ -384,3 +384,47 @@ describe('priceListBody — contenuto della finestra', () => {
     assert.ok(app.eval('priceListBody("a")').includes('RFQ-2026-007'));
   });
 });
+
+describe('vista Listino fornitori — tutte le quotazioni in un elenco', () => {
+  function conDue() {
+    const a1 = Object.assign(acq('a', 10), { code: 'A-1', priceListSeeded: true, activePriceId: 'q1',
+      priceList: [quota({ id: 'q1', price: 12 }), quota({ id: 'q2', supplierId: 's2', price: 9, date: '2026-02-01', code: 'BETA-7' })] });
+    const m1 = Object.assign(mat('m', 3), { code: 'M-1', priceListSeeded: true,
+      priceList: [quota({ id: 'q3', supplierId: 's2', price: '' })] });
+    const app = conDb(makeDb({ suppliers: [{ id: 's1', name: 'Alfa' }, { id: 's2', name: 'Beta' }], items: [a1, m1] }));
+    app.eval('Object.assign(_plv, { q: "", sup: "", tipo: "", solo: "" })');
+    return app;
+  }
+  const ids = app => Array.from(app.eval('plvRows().map(x => x.r.id)'));
+
+  it('elenca le quotazioni di ogni articolo, con il prezzo in uso e il più basso', () => {
+    const app = conDue();
+    assert.deepEqual(ids(app), ['q2', 'q1', 'q3'], 'per codice, e dentro l\'articolo la più recente in cima');
+    app.eval('setView("pricelist")');
+    const h = app.html('view-pricelist');
+    assert.match(h, /3 quotazioni/);
+    assert.match(h, /BETA-7/);
+    assert.match(h, /priceListModal\('a'\)/, 'la riga apre il listino del suo articolo');
+  });
+
+  it('si filtra per fornitore, tipo, testo e prezzo in uso o mancante', () => {
+    const app = conDue();
+    app.eval('_plv.sup = "s2"'); assert.deepEqual(ids(app), ['q2', 'q3']);
+    app.eval('_plv.sup = ""; _plv.tipo = "materiale"'); assert.deepEqual(ids(app), ['q3']);
+    app.eval('_plv.tipo = ""; _plv.q = "beta-7"'); assert.deepEqual(ids(app), ['q2']);
+    app.eval('_plv.q = ""; _plv.solo = "uso"'); assert.deepEqual(ids(app), ['q1']);
+    app.eval('_plv.solo = "senza"'); assert.deepEqual(ids(app), ['q3']);
+  });
+
+  it('l\'export porta le righe filtrate e dice quali filtri', () => {
+    const app = conDue();
+    app.eval('_plv.sup = "s2"');
+    const spec = JSON.parse(app.eval('JSON.stringify(plvExportSpec())'));
+    assert.equal(spec.sezioni[0].righe.length, 2);
+    assert.match(app.eval('listFiltersText(plvExportSpec())'), /Fornitore: Beta/);
+  });
+
+  it('sta nel gruppo Acquisti', () => {
+    assert.equal(conDue().eval('groupOfView("pricelist").label'), 'Acquisti');
+  });
+});

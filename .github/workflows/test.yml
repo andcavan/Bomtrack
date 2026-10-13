@@ -12,13 +12,31 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    # Un Postgres vero per test/schema-sql.test.js: carica supabase/schema.sql,
+    # ci spinge dentro un database intero e prova invio, lettura e vincoli.
+    # Senza BOMTRACK_PG quei test si dichiarano saltati e il resto gira uguale.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 2s --health-timeout 5s --health-retries 15
+    env:
+      BOMTRACK_PG: host=localhost port=5432 user=postgres
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
-          node-version: '20'   # il README chiede Node 18+; qui si prova su una versione più recente
+          node-version: '22'   # il README chiede Node 18+; qui si prova su una LTS ancora supportata
+      # Chromium per test/layout.test.js: l'app vera a sette larghezze. Senza,
+      # quei controlli si dichiarano saltati e il resto gira uguale.
+      - name: Chromium per i test d'impaginazione
+        run: npm install -g playwright@1.56.1 && npx playwright install --with-deps chromium
       - name: Suite di test
-        run: node test/run.js
+        run: NODE_PATH="$(npm root -g)" node test/run.js
       - name: Benchmark
         # Non fa fallire la build: è una misura, non un limite. Il numero resta
         # nel log per confrontarlo con quello della versione precedente.

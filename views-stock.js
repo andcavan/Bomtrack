@@ -1072,7 +1072,7 @@ function renderStock() {
     const st = stockState(i);
     if (st.sotto) sotto++;
     if (st.incoming > 0) inArrivo++;
-    valore += st.onHand * itemUnitCost(i);
+    valore += valoreGiacenza(i);
   });
   const clHost = document.getElementById(STOCK_PFX + '-cl-btn');
   if (clHost) clHost.innerHTML = contoLavoroButton();

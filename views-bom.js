@@ -83,7 +83,7 @@ function renderBom() {
   const tree = document.getElementById('bom-tree');
   if (!it) {
     summary.innerHTML = '';
-    tree.innerHTML = '<div class="empty-text">Nessun prodotto. Creane uno in <strong>Anagrafica → Progetto → + Nuovo articolo</strong>.</div>';
+    tree.innerHTML = '<div class="empty-text">Nessun prodotto. Creane uno in <strong>Tecnico → Articoli di progetto → + Nuovo articolo</strong>.</div>';
     refreshBomPanelIfOpen();
     filtMount('bom');
     return;
@@ -249,7 +249,16 @@ function renderOpsBlock(item, editable, padLeft) {
   }).join('');
   if (!ops.length && !editable) return '';
   const label = editable ? 'Lavorazioni' : 'Lavorazioni (' + esc(item.name) + ')';
-  return `<div class="bom-ops" style="padding-left:${pl}px"><strong style="color:var(--text-dim);font-size:11px">${label}:</strong> ${tags || '<span class="empty-text" style="padding:0">nessuna</span>'}</div>`;
+  // I giorni di montaggio: dichiarati, o ricavati dalle ore delle lavorazioni
+  // (assemblyDaysOf in views-mrp.js, per un pezzo). È il tempo che la
+  // programmazione a ritroso toglie dalla consegna per sapere quando i
+  // componenti devono essere pronti.
+  const dich = Number(item.assemblyDays) || 0;
+  const ggTxt = dich > 0 ? `${dich} gg` : 'dalle ore';
+  const gg = editable
+    ? ` <span class="bom-op-tag"><span style="cursor:pointer" ${clickAttrs('editAssemblyDaysModal()', 'Giorni di montaggio')}>${ico('clock', 'tinted')} Montaggio: ${esc(ggTxt)}</span></span>`
+    : (dich > 0 ? ` <span class="bom-op-tag">${ico('clock', 'tinted')} Montaggio: ${esc(ggTxt)}</span>` : '');
+  return `<div class="bom-ops" style="padding-left:${pl}px"><strong style="color:var(--text-dim);font-size:11px">${label}:</strong> ${tags || '<span class="empty-text" style="padding:0">nessuna</span>'}${gg}</div>`;
 }
 
 function toggleBom(key) { if (bomExpanded.has(key)) bomExpanded.delete(key); else bomExpanded.add(key); renderBom(); }
@@ -597,7 +606,7 @@ function renderBomPanelResults() {
   if (!html) {
     html = base.length
       ? `<div class="picker-empty">Nessun articolo trovato</div>`
-      : `<div class="picker-empty">Nessun articolo dei tipi ammessi. Crealo prima in Anagrafica (Acquisti o Progetto).</div>`;
+      : `<div class="picker-empty">Nessun articolo dei tipi ammessi. Crealo prima in Tecnico (Articoli di progetto o d\x27acquisto).</div>`;
   } else if (total > rows.length) html += `<div class="picker-empty">+${total - rows.length} altri — affina la ricerca</div>`;
   box.innerHTML = html;
 }
@@ -740,6 +749,23 @@ function saveOperationEdit(idx) {
   touch(it);
   saveDB(); closeModal(); renderBom(); savedToast('Lavorazione aggiornata');
 }
+function editAssemblyDaysModal() {
+  if (!roleGuard('bom')) return;
+  const it = getItem(currentBomId); if (!it) return;
+  openModal(`<h3>${ico('clock', 'tinted pill', '')} Giorni di montaggio</h3>
+    <div class="modal-field"><label>Giorni lavorativi</label><input type="number" id="asm-days" min="0" max="999" step="1" value="${Number(it.assemblyDays) || 0}"></div>
+    <p class="empty-text" style="text-align:left;padding:4px 0 0">Quanto dura il montaggio di <strong>${esc(it.name || it.code || '')}</strong>: il fabbisogno lo toglie dalla data in cui l'assieme serve per sapere quando devono essere pronti i suoi componenti. <strong>Zero = si ricava dalle ore delle lavorazioni</strong>, sulle ore al giorno di ciascun centro.</p>
+    <div class="modal-actions"><button class="btn-ghost" onclick="closeModal()">Annulla</button>
+      <button class="add-btn-sm" onclick="saveAssemblyDays()">Salva</button></div>`);
+}
+function saveAssemblyDays() {
+  if (!roleGuard('bom')) return;
+  const it = getItem(currentBomId); if (!it) return;
+  if (isNeg('asm-days')) { showToast('I giorni non possono essere negativi', 'error'); return; }
+  it.assemblyDays = Math.round(numVal('asm-days', 0, 999));
+  touch(it);
+  saveDB(); closeModal(); renderBom(); savedToast('Giorni di montaggio aggiornati');
+}
 function delOperation(idx) {
   if (!roleGuard('bom')) return;
   const it = getItem(currentBomId); if (!it) return;
@@ -753,7 +779,7 @@ function editCurrentItemModal() {
   if (!roleGuard('bom')) return;
   const it = getItem(currentBomId); if (!it) return;
   openModal(`<h3>${ico('edit', 'tinted pill', '')} Modifica testata — <span style="color:var(--text-dim);font-weight:500">${typeLabel(it.type)}</span></h3>
-    <p class="empty-text" style="text-align:left;padding:0 0 10px">Codice, descrizione e U.M. si modificano solo in Anagrafica → Progetto.</p>
+    <p class="empty-text" style="text-align:left;padding:0 0 10px">Codice, descrizione e U.M. si modificano solo in Tecnico → Articoli di progetto.</p>
     <div class="modal-grid">
       <div class="modal-field"><label>Codice</label><input value="${esc(it.code)}" disabled style="font-family:var(--mono);font-weight:700"></div>
       <div class="modal-field"><label>U.M.</label><input value="${esc(it.uom || defaultUom())}" disabled></div>

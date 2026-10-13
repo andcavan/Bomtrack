@@ -243,6 +243,17 @@ describe('Azioni di massa', () => {
     assert.equal(a.eval('db.items.length'), 2, 'chi si pente si pente dell\'intero gesto, non di una riga');
   });
 
+  it('salta anche chi non è in una distinta ma è già in un ordine o in magazzino', () => {
+    const a = app([mat('m1', 10), acq('c1', 5), acq('c2', 5)]);
+    a.eval(`db.orders.push({ id: 'o1', number: 'ODA-1', status: 'bozza', active: true, lines: [{ id: 'l1', itemId: 'c1', qty: 1 }] });
+      db.movements = [{ id: 'mv1', itemId: 'm1', kind: 'rettifica', qty: 3 }];`);
+    a.eval('activeView = "buy"');
+    a.eval('bulkDelete(["m1","c1","c2"])');
+    a.eval('confirmYes()');
+    assert.deepEqual(JSON.parse(a.eval('JSON.stringify(db.items.map(i => i.id))')), ['m1', 'c1'],
+      'come delItem: un articolo movimentato o ordinato non si elimina, si segna obsoleto');
+  });
+
   it('se sono tutti usati non si apre nemmeno la conferma', () => {
     const a = app([mat('m1', 10), asm('a1', 'macchina', { components: [comp('m1', 1)] })]);
     a.eval('activeView = "buy"');

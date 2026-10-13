@@ -2,7 +2,7 @@
 
 App per creare e gestire **distinte base (BOM) multi-livello** di macchine meccaniche, ottenere la **costificazione automatica** e gestire il ciclo acquisti (**richieste di offerta** e **ordini a fornitore**).
 
-Costruita con lo stesso stile di TimeTrack: vanilla JavaScript + HTML + CSS, nessun build, tema dark. **Database solo locale** (`localStorage`) — nessun server, nessun Supabase.
+Costruita con lo stesso stile di TimeTrack: vanilla JavaScript + HTML + CSS, nessun build, tema dark. **Database solo locale** (IndexedDB del browser, `localStorage` se manca) — nessun server, nessun Supabase.
 
 ➡️ **[MANUALE D'USO](MANUALE.md)** — il manuale operativo completo: cosa fa ogni schermata, come si compilano i campi, e il **flusso di lavoro** dalla commessa del cliente alla merce a magazzino. Dentro l'app si apre con il pulsante 📖 nell'intestazione (`manuale.html`, offline come tutto il resto); `genera-manuale.py` lo rigenera da `MANUALE.md`, che resta l'unica fonte. Questo README è invece la documentazione funzionale, orientata al perché delle scelte.
 
@@ -16,16 +16,19 @@ La revisione in esecuzione è mostrata accanto al logo, in alto a sinistra (es. 
 
 ## Funzionalità
 
-La barra dei comandi ha **sei gruppi**; le voci del gruppo aperto compaiono su una seconda riga, e ogni gruppo ricorda l'ultima voce usata.
+La barra dei comandi ha **sette gruppi**, ordinati per processo (dalla 0.91.0); le voci del gruppo aperto compaiono su una seconda riga, e ogni gruppo ricorda l'ultima voce usata.
 
 | Gruppo | Voci |
 |---|---|
-| 📇 **Anagrafica** | Acquisti · Progetto |
+| 🏠 **Riepilogo** | Riepilogo · Cruscotto |
+| 🌳 **Tecnico** | Articoli di progetto · Articoli d'acquisto · Gestione DB · Visualizza DB · Cicli di lavorazione |
+| 📋 **Pianificazione** | Commesse · Fabbisogno · Carico centri |
+| 🛒 **Acquisti** | Richieste offerta · Ordini fornitore · Listino fornitori |
+| 🏭 **Produzione** | Ordini di produzione · Ordini di lavoro |
 | 📦 **Magazzino** | — |
-| 🔧 **Cicli di lavorazione** | Cicli di lavorazione · Carico centri |
-| 🌳 **Distinta base** | Gestione DB · Visualizza DB (costificazione) |
-| 📨 **Documenti** | Commesse · Fabbisogno · Ordini di produzione · Richieste offerta · Ordini · Ordini di lavoro |
 | ⚙ **Gestione** | — (solo amministratori) |
+
+Fino alla 0.90 i gruppi seguivano il tipo di dato (Anagrafica, Cicli di lavorazione, Distinta base, Documenti), e «Documenti» teneva insieme pianificazione, acquisti e produzione. Le voci qui sotto citano ancora, in qualche caso, il gruppo di allora.
 
 - **🌳 Distinta base → Gestione DB** — albero multi-livello espandibile della macchina selezionata, con **numerazione di posizione** (1, 1.1, 1.1.1, 1.2, 2…), costo unitario e di riga per ogni componente, lavorazioni interne e card di riepilogo costi. Aggiunta/modifica/eliminazione di componenti e lavorazioni. I sottogruppi possono contenere altri sottogruppi, senza limite di profondità. Una **barra filtri** (testo, livello, macchina di appartenenza) restringe l'elenco delle distinte; la distinta aperta resta sempre raggiungibile anche quando il filtro la escluderebbe.
 - **📇 Anagrafica → Acquisti** — anagrafica di ciò che si compra: **materie prime** (costo unitario per U.M., es. €/kg) e **componenti commerciali**, con flag **preferito ★** (e filtro dedicato) e flag **obsoleto ⛔**. Fornitore e prezzo non si scrivono qui: la scheda li mostra in sola lettura e rimanda al **listino fornitori**.
@@ -218,7 +221,7 @@ Il motivo è lo storico: finché lo stesso dato si poteva scrivere in due posti,
 - `index.html` — struttura, navigazione, barre filtri delle due anagrafiche, caricamento degli script.
 - `vendor/` — le librerie di export (SheetJS per Excel, jsPDF per i PDF), tenute nel repo invece che su un CDN. Versioni, origine e come si aggiornano: `vendor/LEGGIMI.md`.
 - `theme.js` — tema chiaro/scuro/automatico: scrive `data-theme` sull'elemento radice, che è tutto ciò che `style.css` legge. La preferenza sta nel browser di chi lavora, non nel database.
-- `store.js` — layer dati: schema, migrazioni versionate, `Store` (API repository) su localStorage, hashing delle password e autore delle modifiche.
+- `store.js` — layer dati: schema, migrazioni versionate, `Store` (API repository) su IndexedDB o localStorage, hashing delle password e autore delle modifiche.
 - Il codice dell'app, diviso in **classic script caricati in sequenza** da `index.html` (nessun modulo, nessun build: la pagina si apre anche con un doppio click). Lo scope globale è condiviso, quindi restano un solo insieme di funzioni e un solo stato:
 
 | File | Contenuto |
@@ -230,15 +233,17 @@ Il motivo è lo storico: finché lo stesso dato si poteva scrivere in due posti,
 | `core.js` | stato dell'app, utility, ruoli, pannelli e conferme. `APP_VERSION` in cima è la revisione mostrata nell'header |
 | `auth.js` | accesso, sessione, primo amministratore |
 | `costing.js` | motore di costificazione (rollup ricorsivo, modi di calcolo delle parti) |
+| `calendario.js` | calendario di fabbrica: giorni lavorativi, festivi (Pasquetta calcolata), chiusure; conti a ritroso e in avanti per la programmazione del fabbisogno |
 | `shell.js` | ricerca globale, stampa, navigazione tra le viste |
 | `views-bom.js` | distinte base e *Dove è usato* |
 | `views-rev.js` | revisioni della distinta: rilascio, storico e confronto |
 | `views-stock.js` | giacenze, movimenti di magazzino, impegni dei piani aperti, calcolo del fabbisogno netto e vista **Magazzino** |
 | `views-jobs.js` | commesse cliente e tracciabilità commessa → fabbisogno → richiesta → ordine |
 | `views-home.js` | riepilogo: cosa richiede attenzione, con il collegamento a dove si risolve |
+| `views-dash.js` | cruscotto: valore di magazzino, articoli fermi, sotto scorta, consegne scadute per fornitore |
 | `views-catalog.js` | anagrafiche, listino fornitori, scheda articolo, cicli di lavorazione |
 | `views-report.js` | costificazione e report |
-| `views-mrp.js` | fabbisogno materiali |
+| `views-mrp.js` | fabbisogno materiali, programmazione a ritroso delle date (montaggi, fasi, tratte di conto lavoro, acquisti) e carico dei centri |
 | `produzione.js` | avanzamento di produzione: le dichiarazioni di pezzi fatti dentro un piano, e il netto che ne discende sulle lavorazioni |
 | `allegati.js` | allegati degli articoli: i documenti d'archivio e i loro collegamenti ai codici; i byte dei vecchi file in IndexedDB |
 | `archivio.js` | la cartella dei PDF: scelta, permesso, lettura, copia e verifica. Impostazione **locale**, un PC alla volta |
@@ -254,6 +259,7 @@ Il motivo è lo storico: finché lo stesso dato si poteva scrivere in due posti,
 - `icons-preview.html` — galleria delle icone: ogni disegno accanto all’emoji che ha sostituito, alle varie misure e nelle tre varianti di colore. Serve a giudicarle quando se ne aggiunge una; **non serve all’app**, che non la carica.
 - `CHANGELOG.md` — lo storico completo delle versioni.
 - `docs/cloud-schema.md` — contratto per il futuro backend condiviso (mappatura tabelle, adapter).
+- `supabase/schema.sql` — lo schema del database condiviso: tabelle, vincoli, e le funzioni `push_changes`/`pull_changes` da cui passa la sincronizzazione. Si esegue nell'editor SQL di Supabase.
 - `docs/sostenibilita-free-tier.md` — quanto occuperebbero quelle tabelle e quando il piano gratuito Supabase smette di bastare: stime per scenario, modello di calcolo riutilizzabile, e i vincoli che stringono prima dello spazio.
 - `docs/analisi-tecnica.md` — controllo generale del codice: cosa è stato risolto, cosa resta aperto e perché.
 - `test/` — suite di verifica del motore di costo, delle migrazioni, del salvataggio, dell'import Excel e dell'accesso. **Non serve all'app**: `index.html` non la carica, e copiando la cartella su un altro PC si può anche omettere.
@@ -269,6 +275,16 @@ node test/bench.js    # benchmark del motore di costificazione
 
 Richiede solo **Node 18 o superiore** — nessun `npm install`, nessuna dipendenza: la suite usa i moduli core e carica i sorgenti dell'app in un contesto isolato, nella stessa sequenza di `index.html`.
 
+I test di `supabase/schema.sql` su un database vero girano se c'è un Postgres raggiungibile con `psql` (in CI c'è):
+
+```
+BOMTRACK_PG="host=localhost port=5432 user=postgres" node test/run.js
+```
+
+Senza la variabile si dichiarano saltati; quelli che confrontano lo schema con il codice girano comunque.
+
+Allo stesso modo `test/layout.test.js` apre l'app vera in Chromium a sette larghezze se trova [Playwright](https://playwright.dev) (`npm install -g playwright && npx playwright install chromium`, poi `NODE_PATH="$(npm root -g)" node test/run.js`); senza, verifica solo l'algoritmo dell'intestazione e le regole CSS.
+
 ## Changelog
 
 Le revisioni seguono il versionamento semantico `0.MINOR.PATCH`: **MINOR** per nuove funzionalità, **PATCH** per correzioni. La versione in cima è quella in `APP_VERSION` (`core.js`) e mostrata nell'header dell'app.
@@ -281,4 +297,4 @@ I dati risiedono nel browser. Per trasferirli su un altro PC usare **Gestione �
 
 **Una scheda per volta.** L'archivio è uno solo e ogni salvataggio lo riscrive per intero: due finestre di Bomtrack aperte insieme lavorano sulla stessa cartella senza vedersi. Dalla 0.76.0 non è più un problema silenzioso — l'archivio porta un contatore di revisione, e la scheda che sta per salvare sopra il lavoro di un'altra si ferma e lo dice, offrendo di ricaricare o di tenere la propria versione, con l'export del backup a portata di mano. Quello che l'app **non** fa è fondere le due versioni: per farlo servirebbe sapere, riga per riga, quale delle due vale. Se si lavora abitualmente in due finestre, conviene tenerne aperta una sola per le modifiche.
 
-Il layer dati è già **predisposto al cloud** (schema v2): ID UUID, timestamp `createdAt`/`updatedAt` su ogni record, versioning dello schema con migrazioni idempotenti (i backup vecchi si auto-migrano all'import). Il passo successivo — sincronizzazione condivisa per un piccolo team via Supabase o Cloudflare D1 — si aggancia al solo `Store` di `store.js`; il disegno è in `docs/cloud-schema.md` e il conto di quanto costerebbe in `docs/sostenibilita-free-tier.md` (in breve: il piano gratuito regge con margine, ma è l'egress a finire prima del disco). Il frontend è statico e pubblicabile così com'è su GitHub Pages / Cloudflare Pages.
+Il layer dati è già **predisposto al cloud** — ma lo spostamento non è previsto per ora, e l'app è pensata per funzionare in locale (schema v2): ID UUID, timestamp `createdAt`/`updatedAt` su ogni record, versioning dello schema con migrazioni idempotenti (i backup vecchi si auto-migrano all'import). Il passo successivo — sincronizzazione condivisa per un piccolo team via Supabase o Cloudflare D1 — si aggancia al solo `Store` di `store.js`; il disegno è in `docs/cloud-schema.md` e il conto di quanto costerebbe in `docs/sostenibilita-free-tier.md` (in breve: il piano gratuito regge con margine, ma è l'egress a finire prima del disco). Il frontend è statico e pubblicabile così com'è su GitHub Pages / Cloudflare Pages. La contabilità che servirebbe solo alla sincronizzazione (`Store.modoCondiviso`) è **spenta di serie**: in locale non costa né spazio né tempo.

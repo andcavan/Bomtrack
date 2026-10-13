@@ -348,3 +348,48 @@ describe('Righe già finite in un documento del piano', () => {
     assert.ok(html.includes(o.number), 'la domanda «l\'ho già ordinato?» va risposta dove si guarda per primo');
   });
 });
+
+describe('Le schede del piano', () => {
+  const pannello = (h, id) => {
+    const m = h.match(new RegExp(`<div role="tabpanel" id="plan-panel-${id}"[^>]*>`));
+    assert.ok(m, 'manca la scheda ' + id);
+    return m[0];
+  };
+
+  it('ogni sezione ha la sua scheda, con il conteggio dove ha senso', () => {
+    const app = conPiano();
+    app.eval('planTab = "buy"');
+    const h = app.eval("renderPlanEdit('pl1')");
+    ['buy', 'cl', 'make', 'agenda', 'gantt', 'load', 'docs'].forEach(t => pannello(h, t));
+    assert.match(h, /id="plan-tab-buy"[^>]*aria-selected="true"[^>]*>Da acquistare <span class="plan-tab-n">4<\/span>/);
+    assert.match(h, /id="plan-tab-docs"[^>]*>Documenti <span class="plan-tab-n">0<\/span>/);
+  });
+
+  it('si vede solo la scheda scelta, ma tutte stanno nella pagina', () => {
+    const app = conPiano();
+    app.eval('planTab = "buy"');
+    const h = app.eval("renderPlanEdit('pl1')");
+    assert.ok(!/hidden/.test(pannello(h, 'buy')));
+    assert.ok(/hidden/.test(pannello(h, 'gantt')));
+    assert.match(h, /Gantt/, 'le schede nascoste restano disegnate: la stampa le mostra');
+  });
+
+  it('la scheda scelta resta scelta per gli altri piani', () => {
+    const app = conPiano();
+    app.eval('planSetTab("agenda")');
+    const h = app.eval("renderPlanEdit('pl1')");
+    assert.ok(!/hidden/.test(pannello(h, 'agenda')));
+    assert.ok(/hidden/.test(pannello(h, 'buy')));
+    app.eval('planTab = "boh"');
+    assert.ok(!/hidden/.test(pannello(app.eval("renderPlanEdit('pl1')"), 'buy')), 'una scheda sconosciuta torna alla prima');
+  });
+
+  it('i pulsanti «Genera» stanno nella scheda delle righe su cui agiscono', () => {
+    const app = conPiano();
+    const h = app.eval("renderPlanEdit('pl1')");
+    const dentro = id => h.slice(h.indexOf(`id="plan-panel-${id}"`), h.indexOf('</div>', h.indexOf(`id="plan-panel-${id}"`) + 400));
+    assert.match(dentro('buy'), /Genera ordini/);
+    assert.match(dentro('make'), /Genera ordini di produzione/);
+    assert.match(dentro('cl'), /Genera ordini di lavoro/);
+  });
+});

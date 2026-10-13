@@ -1,6 +1,6 @@
 # Bomtrack — Manuale d'uso
 
-**Versione dell'app documentata: 0.73.0**
+**Versione dell'app documentata: 0.92.0**
 
 📖 **[Leggilo come pagina web](https://claude.ai/code/artifact/726a0963-2db0-4947-999b-d7b5beb91a0b)** — stesso testo, con indice laterale, filtro dei capitoli e tema chiaro/scuro. Comodo da tenere aperto di fianco all'app.
 
@@ -28,8 +28,8 @@ ciascuna sua tappa.
 
 **Parte III — Archivi**
 
-6. [Anagrafica → Acquisti](#6-anagrafica--acquisti)
-7. [Anagrafica → Progetto](#7-anagrafica--progetto)
+6. [Tecnico → Articoli d'acquisto](#6-tecnico--articoli-dacquisto)
+7. [Tecnico → Articoli di progetto](#7-tecnico--articoli-di-progetto)
 8. [La scheda articolo, campo per campo](#8-la-scheda-articolo-campo-per-campo)
 9. [I codici automatici](#9-i-codici-automatici)
 10. [Listino fornitori](#10-listino-fornitori)
@@ -38,7 +38,7 @@ ciascuna sua tappa.
 
 **Parte IV — Il prodotto**
 
-13. [Distinta base → Gestione DB](#13-distinta-base--gestione-db)
+13. [Tecnico → Gestione DB](#13-tecnico--gestione-db)
 14. [Cicli di lavorazione](#14-cicli-di-lavorazione)
 15. [Revisioni](#15-revisioni)
 16. [Costificazione — Visualizza DB](#16-costificazione--visualizza-db)
@@ -98,9 +98,11 @@ stesso archivio: la parte che il progettista disegna è la stessa che l'ufficio 
 
 Vale la pena dirlo subito, perché evita di cercare funzioni che non ci sono.
 
-- **Non schedula la produzione.** Il *Carico centri* mostra le ore che i piani chiedono a ciascun
-  centro settimana per settimana, e segnala il sovraccarico. Non lo risolve: non c'è calendario,
-  non c'è data di avvio di una fase, la capacità è **infinita**.
+- **Non schedula a capacità finita.** Dalla 0.88.0 il fabbisogno **programma a ritroso**: dalla
+  consegna risale montaggi, fasi interne e tratte dal terzista sul **calendario di fabbrica**, e
+  dice quando ordinare, quando spedire, quando lanciare (→ [cap. 19](#19-fabbisogno-materiali)).
+  La capacità resta però **infinita**: il *Carico centri* mostra il sovraccarico nella settimana
+  in cui la fase comincia, ma non lo risolve spostando le date.
 - **Non schedula.** L'avanzamento c'è, e da due strade che rispondono a due domande diverse.
   Nella tabella *Da fabbricare* di un piano si dichiara **quanti pezzi sono stati fatti** (dalla
   0.77.0): è una dichiarazione per **parte finita**, non per fase superata — un pezzo fermo a metà
@@ -108,8 +110,7 @@ Vale la pena dirlo subito, perché evita di cercare funzioni che non ci sono.
   fatta. Gli **ordini di produzione** (→ [cap. 22](#22-ordini-di-produzione-odp)) seguono invece una
   parte **fase per fase**: lì si dichiarano pezzi buoni e scarti, e il magazzino si muove ai due
   estremi del ciclo.
-  Quello che continua a mancare è il *quando*: nessuna data di avvio, nessun calendario, nessuna
-  capacità finita. E fuori da un ordine di produzione il magazzino resta com'era — si muove con i
+  Il *quando* lo dà la programmazione a ritroso del fabbisogno, a capacità infinita. E fuori da un ordine di produzione il magazzino resta com'era — si muove con i
   movimenti e con i ricevimenti, perché due strade per la stessa giacenza darebbero due verità.
 - **Non è un gestionale amministrativo.** Niente fatture, niente contabilità, niente DDT.
 - **Non archivia i documenti nel database.** Disegni e schede tecniche si allegano agli articoli
@@ -160,7 +161,7 @@ la sessione aperta fino a **Esci**; quanto duri lo decide l'amministratore in
 
 ### La versione
 
-Il numero di versione si legge **accanto al logo, in alto a sinistra** (es. `v0.73.0`).
+Il numero di versione si legge **accanto al logo, in alto a sinistra** (es. `v0.92.0`).
 Corrisponde alla voce in cima al changelog: serve quando si segnala un problema.
 
 ### Dove sta questo manuale
@@ -194,7 +195,7 @@ In alto, da sinistra a destra:
 |---|---|
 | **Logo e versione** | Identità dell'app e revisione in esecuzione |
 | **Barra di navigazione** | I sette gruppi di funzioni (vedi sotto) |
-| **Badge modifiche non salvate** | Compare quando un documento aperto ha modifiche in sospeso |
+| **Badge modifiche non salvate** | Compare quando un salvataggio non è riuscito, o quando un'altra scheda ha modificato l'archivio (→ [cap. 30](#30-backup-e-manutenzione)) |
 | **Orologio** | Data e ora correnti |
 | **Pillola utente** | Chi è connesso, con il suo colore |
 | 🔎 **Cerca ovunque** | Ricerca globale — `Ctrl+K` |
@@ -204,21 +205,32 @@ In alto, da sinistra a destra:
 | 🔑 **Cambia password** | La propria password |
 | **Esci** | Chiude la sessione |
 
+**Su uno schermo più stretto** l'intestazione resta su una riga sola e fa spazio da sé, un passo
+alla volta, solo quanto serve: prima spariscono il ruolo nella pillola e la data; poi stampa,
+manuale, tema, password ed esci passano sotto il pulsante **⋯** (*Altri comandi*); poi le sezioni
+restano con la sola icona (il nome compare passandoci sopra); per ultimo, sul telefono, le sezioni
+stesse si aprono dal pulsante **☰**. I due menu si chiudono con `Esc`, con un clic fuori o
+scegliendo una voce.
+
 ### La navigazione a due livelli
 
-La barra dei comandi ha **sette gruppi**. Cliccando un gruppo, le sue voci compaiono su una
-seconda riga; il gruppo con una voce sola non mostra la seconda riga. **Ogni gruppo ricorda
-l'ultima voce usata**: tornando su *Documenti* si riapre dove si era rimasti.
+La barra dei comandi ha **sette gruppi**, ordinati come il lavoro scorre: dall'ufficio tecnico
+alla pianificazione, agli acquisti, all'officina, al magazzino. Cliccando un gruppo, le sue voci
+compaiono su una seconda riga; il gruppo con una voce sola non mostra la seconda riga. **Ogni gruppo
+ricorda l'ultima voce usata**: tornando su *Acquisti* si riapre dove si era rimasti.
 
 | Gruppo | Voci |
 |---|---|
-| 🏠 **Riepilogo** | *(voce unica)* |
-| 📇 **Anagrafica** | Acquisti · Progetto |
+| 🏠 **Riepilogo** | Riepilogo · Cruscotto |
+| 🌳 **Tecnico** | Articoli di progetto · Articoli d'acquisto · Gestione DB · Visualizza DB · Cicli di lavorazione |
+| 📋 **Pianificazione** | Commesse · Fabbisogno · Carico centri |
+| 🛒 **Acquisti** | Richieste offerta · Ordini fornitore · Listino fornitori |
+| 🏭 **Produzione** | Ordini di produzione · Ordini di lavoro |
 | 📦 **Magazzino** | *(voce unica)* |
-| 🔧 **Cicli di lavorazione** | Cicli di lavorazione · Carico centri |
-| 🌳 **Distinta base** | Gestione DB · Visualizza DB |
-| 📨 **Documenti** | Commesse · Fabbisogno · Richieste offerta · Ordini · Ordini di lavoro |
 | ⚙️ **Gestione** | *(voce unica — solo amministratori)* |
+
+Fino alla 0.90 i gruppi erano divisi per tipo di dato (*Anagrafica*, *Cicli di lavorazione*,
+*Distinta base*, *Documenti*): le schermate sono le stesse, cambia solo il gruppo in cui stanno.
 
 La vista aperta finisce **nell'indirizzo del browser** (`…index.html#mrp`). Ne segue che i tasti
 *Indietro* e *Avanti* del browser funzionano, e che un indirizzo si può salvare tra i preferiti o
@@ -334,18 +346,18 @@ compilare la successiva:
 
 ### 4.2 Costruire il prodotto
 
-*(→ capitoli [6](#6-anagrafica--acquisti), [7](#7-anagrafica--progetto),
-[14](#14-cicli-di-lavorazione), [13](#13-distinta-base--gestione-db))*
+*(→ capitoli [6](#6-tecnico--articoli-dacquisto), [7](#7-tecnico--articoli-di-progetto),
+[14](#14-cicli-di-lavorazione), [13](#13-tecnico--gestione-db))*
 
 Si costruisce **dal basso verso l'alto**, perché il costo di un assieme è la somma di ciò che
 contiene: finché le foglie non hanno un prezzo, il ramo non ha un costo.
 
-**a) Quello che si compra** — *Anagrafica → Acquisti*. Materie prime (barra d'acciaio a €/kg,
+**a) Quello che si compra** — 🌳 *Tecnico → Articoli d'acquisto*. Materie prime (barra d'acciaio a €/kg,
 lamiera a €/kg) e componenti commerciali (cuscinetti, motori, viteria). Per ognuno, il prezzo si
 inserisce **dal listino fornitori** (→ [cap. 10](#10-listino-fornitori)): è l'unico posto dove
 nasce un prezzo d'acquisto, e il campo nella scheda articolo è di sola lettura apposta.
 
-**b) Le parti** — *Anagrafica → Progetto*, tipo **Parte**. Ogni parte dichiara il suo
+**b) Le parti** — 🌳 *Tecnico → Articoli di progetto*, tipo **Parte**. Ogni parte dichiara il suo
 **approvvigionamento**:
 
 - **Acquisto da fornitore** — la parte si compra già fatta. Il suo costo è il prezzo a listino, e
@@ -359,7 +371,7 @@ nasce un prezzo d'acquisto, e il campo nella scheda articolo è di sola lettura 
 2 ore; zincatura da Beta, 5 giorni). Una fase **senza fornitore** è interna e carica un centro;
 una fase **con fornitore** è conto lavoro e diventerà un ordine di lavoro.
 
-**d) Gli assiemi** — *Distinta base → Gestione DB*. Si apre la macchina e le si appendono i gruppi,
+**d) Gli assiemi** — 🌳 *Tecnico → Gestione DB*. Si apre la macchina e le si appendono i gruppi,
 ai gruppi i sottogruppi, ai sottogruppi le parti e i commerciali. Ogni riga ha una **quantità** e
 una **percentuale di scarto**. Gli assiemi possono avere anche lavorazioni proprie (il montaggio).
 
@@ -367,7 +379,7 @@ una **percentuale di scarto**. Gli assiemi possono avere anche lavorazioni propr
 
 *(→ [cap. 16](#16-costificazione--visualizza-db))*
 
-*Distinta base → **Visualizza DB***: si sceglie la macchina e si legge il costo, diviso per voci
+🌳 *Tecnico → **Visualizza DB***: si sceglie la macchina e si legge il costo, diviso per voci
 (materiale, commerciali, parti, lavorazioni, spese generali) con l'**incidenza** di ciascuna e il
 **prezzo di vendita** che ne segue. Il pulsante **Da dove viene questo costo** apre l'elenco degli
 articoli che pesano di più: è la risposta alla domanda «perché costa così tanto».
@@ -381,12 +393,12 @@ il preventivo.
 
 Fin qui si è descritto **il prodotto**. Da qui in poi si lavora su **un lavoro concreto**.
 
-**a) La commessa** — *Documenti → Commesse → **+ Nuova commessa***. Cliente, descrizione,
+**a) La commessa** — 📋 *Pianificazione → Commesse → **+ Nuova commessa***. Cliente, descrizione,
 riferimento del cliente, data di apertura e **consegna al cliente**. La commessa è il contenitore:
 ci si agganciano i piani, le richieste e gli ordini, e la sua scheda dirà in ogni momento se il
 materiale c'è.
 
-**b) Il piano di fabbisogno** — *Documenti → Fabbisogno → **+ Nuovo piano***. Si mette il piano
+**b) Il piano di fabbisogno** — 📋 *Pianificazione → Fabbisogno → **+ Nuovo piano***. Si mette il piano
 sotto la sua commessa, si dichiara la **consegna richiesta**, e nella sezione **Da produrre** si
 scrive cosa e quanto: *3 × Nastro NT-100*, *2 × Nastro NT-200*.
 
@@ -472,7 +484,7 @@ In ogni momento, il pulsante **Presso terzi** in Magazzino dice cosa sta fuori e
 
 *(→ [cap. 24](#24-carico-dei-centri-di-lavoro))*
 
-*Cicli di lavorazione → **Carico centri***: le ore che i piani aperti chiedono a ciascun centro,
+📋 *Pianificazione → **Carico centri***: le ore che i piani aperti chiedono a ciascun centro,
 settimana per settimana, contro la capacità dichiarata. Il sovraccarico si vede in rosso, con le
 settimane e i centri nominati. Sotto, **i codici da produrre** ordinati per settimana e per ore:
 la risposta a «cosa lancio per primo».
@@ -488,8 +500,13 @@ la risposta a «cosa lancio per primo».
 ### 4.9 Il ciclo quotidiano
 
 Ogni mattina si apre il **🏠 Riepilogo**: commesse in ritardo, righe da ordinare che scadono,
-ordini confermati oltre la data, richieste senza risposta, articoli sotto scorta o senza prezzo.
-Ogni voce è cliccabile e porta esattamente dove si risolve.
+ordini confermati oltre la data, richieste senza risposta, articoli sotto scorta o senza prezzo —
+e, per l'amministratore, da quanti giorni non si fa un backup. Ogni voce è cliccabile e porta
+esattamente dove si risolve.
+
+Ogni tanto — a fine settimana, prima di una riunione — si guarda il **Cruscotto** (*Riepilogo →
+Cruscotto*): quanto vale il magazzino, cosa è fermo a scaffale da mesi, quali fornitori sono in
+ritardo (→ [cap. 5](#il-cruscotto)).
 
 ---
 
@@ -515,6 +532,14 @@ Ogni segnale **nomina i codici e i numeri che lo riguardano** (fino a otto, poi 
 | 8 | Articoli d'acquisto senza prezzo | 🟠 media | alla scheda articolo |
 | 9 | Fasi a costo orario senza ore dichiarate | 🟠 media | al ciclo |
 | 10 | Codici articolo duplicati | 🟠 media | a Gestione |
+| 11 | Giorni dall'ultimo backup (da 7; 🔴 da 30) — *solo amministratori* | 🟠 media | a Gestione → Backup |
+| 12 | Spazio del browser occupato (dal 70%; 🔴 dal 90%) — *solo amministratori*. Con l'archivio in IndexedDB conta lo spazio di tutto il sito, allegati compresi | 🟠 media | a Gestione → Backup |
+
+**Il backup che invecchia.** L'archivio esiste solo in questo browser: il segnale 11 conta i
+giorni dall'ultimo *Esporta JSON* fatto **da questo browser**, e porta il pulsante **Esporta ora**.
+Se non se n'è mai fatto uno, conta dal primo giorno in cui l'app l'ha tenuto d'occhio — una
+installazione nuova non parte già in allarme. La data non sta nel database: un backup ripristinato
+su un altro PC non porta con sé la data, perché lì il backup non è mai stato fatto.
 
 **Il risparmio potenziale.** In fondo la pagina calcola quanto si risparmierebbe scegliendo
 ovunque la quotazione più bassa già presente a listino. Non cambia niente da solo: è un invito a
@@ -522,6 +547,31 @@ rivedere i prezzi in uso.
 
 **Da sapere.** Il Riepilogo è **derivato**: non c'è niente da compilare e niente da spuntare. Un
 segnale sparisce quando sparisce la sua causa.
+
+**Il calendario delle scadenze** mette in fila le date di tutti i documenti aperti: consegne delle
+commesse, articoli da ordinare, consegne attese da fornitori e terzisti, fine produzione,
+promemoria. Dalla 0.89.0 ci sono anche gli **invii al terzista** e i **lanci in produzione** dei
+piani aperti, presi dal loro *Programma* (→ [cap. 19](#19-fabbisogno-materiali)).
+
+### Il cruscotto
+
+**Come ci si arriva.** 🏠 *Riepilogo → Cruscotto* (dalla 0.86.0).
+
+Il Riepilogo dice cosa c'è da fare adesso; il cruscotto dice **come stanno le cose**. Non calcola
+niente di nuovo — le cifre sono quelle del magazzino, delle scorte e degli ordini — ma le mette
+insieme in una pagina sola. È in sola lettura, per tutti i ruoli.
+
+| Sezione | Cosa mostra |
+|---|---|
+| **Tessere** | Valore della giacenza, valore fermo, articoli sotto scorta, righe di consegna scadute |
+| **Valore per tipo / per famiglia** | Esistente × costo unitario, come la tessera del *Magazzino*; solo le giacenze positive |
+| **Articoli fermi** | Con giacenza e nessun movimento da 3, 6 o 12 mesi, dal più costoso: è il denaro immobilizzato a scaffale |
+| **Sotto scorta minima** | Quanto manca alla scorta e quanto è già in arrivo; ✓ se l'arrivo basta |
+| **Consegne scadute per fornitore** | Righe di ODA e ODL non ancora ricevute oltre la data confermata (o richiesta): quante, quanto valgono, il ritardo peggiore e i documenti, cliccabili |
+
+**Da sapere.** I ricevimenti d'ordine non hanno una data propria — il ricevuto è un numero sulla
+riga — quindi per gli *articoli fermi* un ricevimento conta con la **data dell'ordine**. Tutto il
+cruscotto si esporta in Excel o PDF, un foglio per sezione.
 
 ---
 
@@ -531,13 +581,13 @@ I capitoli di questa parte e delle due successive seguono tutti la stessa grigli
 *A cosa serve* → *Come ci si arriva* → *Cosa si vede* → *Comandi* → *Filtri* → *Finestre* →
 *Da sapere*.
 
-## 6. Anagrafica → Acquisti
+## 6. Tecnico → Articoli d'acquisto
 
 **A cosa serve.** L'archivio di **ciò che si compra**: componenti commerciali (cuscinetti, motori,
 viteria) e materie prime (barre, lamiere, profilati). La schermata si intitola
 **«Commerciali & Materie prime»**.
 
-**Come ci si arriva.** 📇 *Anagrafica → Acquisti*.
+**Come ci si arriva.** 🌳 *Tecnico → Articoli d'acquisto*.
 
 **Cosa si vede.** L'elenco degli articoli, **200 per volta** (in fondo, *Mostra altri* e
 *Mostra tutti*: i cataloghi grandi restano scorrevoli).
@@ -572,12 +622,12 @@ le stesse colonne ma si guardano per motivi diversi.
 
 ---
 
-## 7. Anagrafica → Progetto
+## 7. Tecnico → Articoli di progetto
 
 **A cosa serve.** L'archivio di **ciò che si costruisce**. La schermata si intitola
 **«Macchine, Gruppi & Parti»**.
 
-**Come ci si arriva.** 📇 *Anagrafica → Progetto*.
+**Come ci si arriva.** 🌳 *Tecnico → Articoli di progetto*.
 
 **I quattro tipi.**
 
@@ -626,7 +676,7 @@ un costo che non c'è.
 | **Descrizione** | tutti i tipi tranne le parti | Testo libero. |
 | **Concetto** + **Descrizione** | **solo parti** | Il nome di una parte è composto: `ALBERO` + `motore 20×100` → `ALBERO motore 20×100`. Il concetto è **obbligatorio** e si sceglie dall'elenco di *Gestione → Concetti*. Sotto i due campi c'è l'anteprima del nome che ne esce. |
 | **Unità di misura** | sempre | Dall'elenco di *Gestione → Unità di misura*. |
-| **Approvvigionamento** | solo parti | *Produzione interna* / *Acquisto da fornitore* (→ [cap. 7](#7-anagrafica--progetto)). |
+| **Approvvigionamento** | solo parti | *Produzione interna* / *Acquisto da fornitore* (→ [cap. 7](#7-tecnico--articoli-di-progetto)). |
 | **Fornitore e prezzo d'acquisto** | — | **Riquadro in sola lettura.** Mostra la quotazione in uso; il pulsante accanto apre il **listino**. |
 | **Macrofamiglia** / **Sottofamiglia** | consigliato | Servono ai filtri, ai raggruppamenti e ai codici automatici. |
 | **Macchina di appartenenza** / **Gruppo** / **Sigla** | codifica gerarchica | Dicono dove sta l'articolo nella struttura di prodotto, e da lì nasce il suo codice. |
@@ -762,8 +812,19 @@ parti, con 3 cifre.
 nella scheda articolo: si registra una **quotazione** nel listino, e poi si sceglie quale delle
 quotazioni è quella in uso.
 
-**Come ci si arriva.** Dal pulsante nel riquadro *Fornitore e prezzo d'acquisto* della scheda
-articolo, dal pannello laterale (*Listino fornitori*), o dalla scheda di sola lettura.
+**Come ci si arriva.** Il listino di un articolo si apre dal pulsante nel riquadro *Fornitore e
+prezzo d'acquisto* della scheda articolo, dal pannello laterale (*Listino fornitori*), o dalla
+scheda di sola lettura. **Tutte le quotazioni insieme** stanno in 🛒 *Acquisti → Listino
+fornitori* (dalla 0.91.0).
+
+**La vista d'insieme.** Una quotazione per riga, di tutti i commerciali, le materie prime e le
+parti: articolo, fornitore, codice presso il fornitore, prezzo, quantità minima, giorni di
+consegna, data e origine. ✓ segna il prezzo in uso nella costificazione, ↓ la quotazione più bassa
+dell'articolo. Si filtra per **testo** (articolo, fornitore o codice fornitore), **fornitore**,
+**tipo** e per *solo i prezzi in uso* o *senza prezzo*; l'elenco filtrato si esporta in Excel e
+PDF. Serve a rispondere a domande come «cosa mi quota questo fornitore?» o «quali prezzi sono
+vecchi?». Un clic sulla riga apre il listino dell'articolo, che resta **l'unico posto dove una
+quotazione si modifica** e si mette in uso.
 
 **Cosa si vede.** Le quotazioni dell'articolo, una per riga:
 
@@ -860,12 +921,12 @@ Larghezza, apertura e scheda scelta restano fra una sessione e l'altra.
 
 # Parte IV — Il prodotto
 
-## 13. Distinta base → Gestione DB
+## 13. Tecnico → Gestione DB
 
 **A cosa serve.** Costruire l'albero della macchina: cosa contiene, in che quantità, con quali
 lavorazioni. La schermata si intitola **«Distinta Base & Costificazione»**.
 
-**Come ci si arriva.** 🌳 *Distinta base → Gestione DB*.
+**Come ci si arriva.** 🌳 *Tecnico → Gestione DB*.
 
 **Cosa si vede.**
 
@@ -885,6 +946,7 @@ lavorazioni. La schermata si intitola **«Distinta Base & Costificazione»**.
 | **+ Aggiungi componenti** | Apre il pannello laterale ridimensionabile per pescare dagli archivi |
 | **+ Aggiungi lavorazione** | Aggiunge una fase all'assieme (il montaggio) |
 | **⊞ Espandi tutto** / **⊟ Comprimi tutto** | Apre e chiude tutti i rami |
+| **⇄ Confronta con…** *(barra revisioni)* | Mette la distinta a fianco di un'altra qualsiasi, su tutti i livelli (→ [cap. 15](#confrontare-due-distinte-diverse)) |
 
 **Filtri.** Ricerca «Cerca codice o nome distinta…»; **livello** (Tutti i livelli · Macchine ·
 Gruppi · Sottogruppi); **macchina di appartenenza**; il menu della distinta aperta; il contatore.
@@ -896,7 +958,7 @@ Gruppi · Sottogruppi); **macchina di appartenenza**; il menu della distinta ape
 
 | Campo | Note |
 |---|---|
-| Codice · U.M. · Descrizione | **Bloccati**: si modificano in *Anagrafica → Progetto* |
+| Codice · U.M. · Descrizione | **Bloccati**: si modificano in 🌳 *Tecnico → Articoli di progetto* |
 | **Spese generali % (override)** | Sostituisce la percentuale globale, solo per questa macchina |
 | **Margine % (override)** | Idem |
 | Note | Testo libero |
@@ -906,6 +968,9 @@ Gruppi · Sottogruppi); **macchina di appartenenza**; il menu della distinta ape
 - I sottogruppi possono contenere altri sottogruppi, **senza limite di profondità**.
 - La **percentuale di scarto** di una riga aumenta la quantità che serve davvero: 10 pezzi con
   5% di scarto sono 10,5 pezzi di materiale.
+- Accanto alle **Lavorazioni** dell'assieme c'è **Montaggio: … gg**: cliccandolo si dichiarano i
+  giorni lavorativi di montaggio, che la programmazione a ritroso del fabbisogno toglie dalla data
+  in cui l'assieme serve. **Zero = dalle ore** delle lavorazioni.
 - I **riferimenti ciclici** (A contiene B che contiene A) sono rilevati e impediti, sia nella
   distinta sia nel ciclo. Se ne resta uno, un **avviso rosso** nomina l'articolo coinvolto invece
   di far comparire un costo tronco che sembrerebbe buono.
@@ -918,7 +983,7 @@ Gruppi · Sottogruppi); **macchina di appartenenza**; il menu della distinta ape
 È da qui che nasce il costo di una parte a produzione interna, il carico dei centri e gli ordini
 di lavoro ai terzisti.
 
-**Come ci si arriva.** 🔧 *Cicli di lavorazione → Cicli di lavorazione*.
+**Come ci si arriva.** 🌳 *Tecnico → Cicli di lavorazione*.
 
 **Cosa si vede.**
 
@@ -992,12 +1057,37 @@ una lettera che parte da `A`. Ci si lavora liberamente.
 2. **congela** la distinta com'è adesso, con il costo di oggi;
 3. passa alla lettera successiva, che diventa quella in lavorazione.
 
-**Storico revisioni** mostra le revisioni rilasciate, con data, autore e motivo.
-**Confronta revisioni** mette due revisioni a fianco e dice cosa è **aggiunto**, cosa **rimosso** e
-cosa **modificato**.
+**Storico revisioni** mostra le revisioni rilasciate, con data, autore e motivo. **⇄ Confronta**,
+su ogni riga, mette quella revisione a fianco della distinta attuale; dal menu **Confronta la Rev. …
+con** si sceglie invece un'altra revisione (dalla 0.85.0). Il confronto dice cosa è **aggiunto**,
+cosa **rimosso** e cosa ha **cambiato quantità**, con il costo congelato di ciascuna delle due e la
+differenza. Fra due revisioni si legge sempre dalla più vecchia alla più nuova, in qualunque
+ordine le si scelga.
 
-**Da sapere.** Se dall'ultimo rilascio non è cambiato niente, l'app lo dice invece di creare una
-revisione identica alla precedente.
+**Da sapere.**
+- Se dall'ultimo rilascio non è cambiato niente, l'app lo dice invece di creare una revisione
+  identica alla precedente.
+- Il confronto fra revisioni guarda un livello: i componenti diretti. Un sottogruppo che ha
+  cambiato la *sua* distinta lo dicono le revisioni del sottogruppo.
+
+### Confrontare due distinte diverse
+
+**⇄ Confronta con…**, nella barra revisioni di *Gestione DB*, mette la distinta aperta a fianco di
+**un'altra distinta qualsiasi**: la variante per un altro cliente, la macchina nuova nata da una
+vecchia, i due gruppi che dovrebbero essere uguali.
+
+Qui il confronto è **su tutti i livelli**, articolo per articolo, con le quantità **per una
+macchina** — le stesse del fabbisogno: scarti compresi, e lo stesso componente usato in due rami
+contato una volta sola con la somma. Due elenchi, come nel piano:
+
+| Elenco | Cosa contiene | Δ valore |
+|---|---|---|
+| **Da acquistare** | commerciali, materie prime, parti comprate | sì: differenza di quantità × costo unitario |
+| **Da fabbricare** | le parti fatte in casa | no: una parte vale i suoi materiali e le sue ore, già contati nell'elenco sopra |
+
+Di serie si vedono **solo le differenze**; togliendo la spunta compaiono anche gli articoli uguali.
+In alto il costo delle due distinte e la differenza. Il confronto si esporta in Excel o PDF, un
+foglio per elenco.
 
 ---
 
@@ -1006,7 +1096,7 @@ revisione identica alla precedente.
 **A cosa serve.** Leggere quanto costa una macchina e perché. La schermata si intitola
 **«Costificazione & Report»**.
 
-**Come ci si arriva.** 🌳 *Distinta base → Visualizza DB*.
+**Come ci si arriva.** 🌳 *Tecnico → Visualizza DB*.
 
 **Comandi.** Il menu **Macchina / Prodotto** per scegliere cosa costificare; **Esporta Excel** e
 **Esporta PDF**.
@@ -1055,7 +1145,8 @@ non conosce la divisione fra acquisti e progetto. Gli **assiemi restano fuori** 
 non si stoccano.
 
 In testa quattro **KPI**: *Articoli a magazzino* · *Sotto scorta minima* · *Con merce in arrivo* ·
-**Valore giacenza (€)**.
+**Valore giacenza (€)** (esistente × costo unitario). Il valore ripartito per tipo e per famiglia,
+e gli articoli fermi da mesi, stanno nel **Cruscotto** (→ [cap. 5](#il-cruscotto)).
 
 **Le colonne, e come si calcolano.**
 
@@ -1147,7 +1238,7 @@ movimenti. Quando si scrive *ricevuto 50* su una riga d'ordine, quei 50 entrano 
 **A cosa serve.** La commessa è **il cliente e la data a monte del lavoro**. Ci si agganciano
 piani di fabbisogno, richieste e ordini, e la sua scheda dice in ogni momento se il materiale c'è.
 
-**Come ci si arriva.** 📨 *Documenti → Commesse*.
+**Come ci si arriva.** 📋 *Pianificazione → Commesse*.
 
 **Comandi dell'elenco.** **+ Nuova commessa** · **Esporta Excel** · **Esporta PDF**.
 
@@ -1199,7 +1290,7 @@ scheda lo dice, invece di dichiarare tutto coperto.
 **A cosa serve.** Trasformare «tre macchine per il 15 marzo» in una lista d'acquisto, un elenco di
 parti da fare e un elenco di lavorazioni da commissionare.
 
-**Come ci si arriva.** 📨 *Documenti → Fabbisogno*.
+**Come ci si arriva.** 📋 *Pianificazione → Fabbisogno*.
 
 **Comandi dell'elenco.** **+ Nuovo piano** · **Esporta Excel** · **Esporta PDF**.
 I badge di riga dicono `aperto` o `chiuso`.
@@ -1210,17 +1301,40 @@ I badge di riga dicono `aperto` o `chiuso`.
 
 | A sinistra | A destra |
 |---|---|
-| chiudi · numero del piano · **Aperto — chiudi** / **Chiuso — riapri** · **Duplica** · **Elimina** | **Genera richieste (N)** · **Genera ordini (N)** · **Genera ordini di lavoro (N)** · **Esporta Excel** · **Esporta PDF** |
+| chiudi · numero del piano · **Aperto — chiudi** / **Chiuso — riapri** · **Duplica** · **Elimina** | **Esporta Excel** · **Esporta PDF** |
+
+I pulsanti **Genera…** non stanno più nella toolbar (dalla 0.92.0): ciascuno sta nella scheda
+delle righe su cui agisce, vedi sotto.
 
 **I campi di testata.** Titolo · Data · **Consegna richiesta** · **Commessa** · Note.
 
 ### Le sezioni
 
+In alto, sempre visibili, stanno le righe **Da produrre** e i **KPI**. Il resto è diviso in
+**schede** (dalla 0.92.0), ciascuna con il numero delle sue righe:
+
+| Scheda | Cosa contiene | Pulsanti |
+|---|---|---|
+| **Da acquistare (N)** | La lista consolidata del materiale | Genera richieste · Genera ordini |
+| **Conto lavoro (N)** | Le fasi *Da far lavorare fuori* | Genera richieste · Genera ordini di lavoro |
+| **Da fabbricare (N)** | Le parti a produzione interna, con l'avanzamento | Genera ordini di produzione |
+| **Programma** | L'agenda del piano in ordine di data | — |
+| **Gantt** | Il programma disegnato, riga per riga | — |
+| **Carico** | Le ore che questo piano chiede ai centri | — |
+| **Documenti (N)** | Richieste, ordini, ODL e ODP nati dal piano | — |
+
+La scheda scelta resta la stessa aprendo un altro piano, finché non si cambia. Fra le schede ci si
+sposta anche con le frecce ← →. **In stampa** le schede escono tutte, una dopo l'altra.
+
 **Da produrre** — quello che si chiede al piano. Pulsante **+ Aggiungi al piano**; colonne Codice,
-Articolo, U.M., **Q.tà**, **Serve per** (la data), elimina.
+Articolo, U.M., **Q.tà**, **Serve per** (la data), **Fattibile**, **Margine**, elimina. Fattibile e
+margine sono spiegati sotto, in *La data fattibile*.
 
 **I KPI** — Totale acquisti · Articoli da comprare · Fornitori coinvolti · Parti da fabbricare ·
 Conto lavoro.
+
+**Programma** — l'agenda del piano: tutto ciò che deve succedere, in ordine di data (sotto, *Il
+programma*).
 
 **Da acquistare** — la lista consolidata, con due interruttori:
 
@@ -1264,6 +1378,110 @@ a questo piano.
 
 In fondo, l'elenco dei **documenti generati** dal piano.
 
+### Le date: la programmazione a ritroso
+
+Dalla 0.88.0 la data di una riga di piano non scende più **invariata** lungo la distinta: si
+toglie, livello per livello, il tempo di chi sta in mezzo. È la risposta a «se il gruppo deve
+essere pronto il 16, quando devo ordinare il tondo, quando spedire i perni al terzista, quando
+lanciarli in tornitura?».
+
+```
+consegna del gruppo (ven 16)
+ └ montaggio 2 gg ................................ mer 14 → ven 16
+    └ perno, serve mer 14
+        fase 40 fresatura (interna) 16 h → 2 gg .. lun 12 → mer 14
+        fasi 20-30 zincatura da Beta 3+1 gg
+              + 2 gg di trasporto ................ invio mar 6 → rientro lun 12
+        fase 10 tornitura (interna) 8 h → 1 gg ... lun 5 → mar 6      ← lancio dell'ODP
+        tondo, materiale del ciclo: serve lun 5; listino a 10 gg → ordinare entro ven 25/9
+```
+
+**Le regole.**
+
+| Che cosa | Quanto dura | In che giorni |
+|---|---|---|
+| **Montaggio** di un assieme | i *giorni di montaggio* dell'assieme o, a zero, le ore delle sue lavorazioni come fasi interne in fila | lavorativi |
+| **Fase interna** | (attrezzaggio del centro + ore/pz × pezzi) ÷ ore al giorno del centro, arrotondato al giorno, + giorni di coda | lavorativi |
+| **Tratta di conto lavoro** (fasi consecutive dello stesso terzista) | somma dei giorni di attraversamento + giorni di trasporto del terzista | di calendario; l'invio si anticipa al lavorativo precedente |
+| **Acquisto** | giorni di consegna del listino | di calendario; la data d'ordine si anticipa al lavorativo precedente |
+
+- Le date sono «il mattino in cui il pezzo è pronto»: una fase di un giorno che deve finire
+  lunedì comincia venerdì, e la fase prima deve finire venerdì. Nessun buco, nessuna
+  sovrapposizione.
+- Il **materiale del ciclo** di una parte serve all'inizio della **prima** fase: è lì che esce.
+- Una fase **senza tempi** (zero ore, zero giorni) non sposta niente: senza dati le date restano
+  quelle della consegna, come prima della 0.88.0.
+- Lo stesso articolo chiesto da due rami con date diverse tiene **la data più vicina**.
+- Un **margine fra livelli** (*Gestione → Impostazioni → Calendario di fabbrica*) anticipa ancora
+  di qualche giorno lavorativo la data in cui un componente deve essere pronto.
+
+**Dove si vede.** In *Da acquistare* «Serve per» e «Ordinare entro» sono già scalati; in *Da far
+lavorare fuori* «Serve per» è il **rientro** della tratta e «Ordinare entro» l'**invio**; in *Da
+fabbricare* sotto «Serve per» compare la data di **lancio**. Le righe dei documenti generati
+chiedono quelle date: l'ordine al fornitore del tondo chiede il 5, l'ordine di lavoro a Beta il
+rientro del 12 — non più la consegna del gruppo.
+
+**Capacità infinita.** Le date dicono quando ciascuna cosa deve succedere perché la consegna regga,
+non se il reparto ce la fa: quello lo dice il *Carico centri*
+(→ [cap. 24](#24-carico-dei-centri-di-lavoro)), che dalla 0.88.0 mette le ore nella settimana in
+cui la fase **comincia**.
+
+### La data fattibile
+
+La programmazione a ritroso dice **entro quando** deve succedere ogni cosa perché la consegna
+richiesta regga. La data fattibile risponde all'altra domanda: **se comincio oggi, quando sono
+pronto davvero?** È lo stesso albero, percorso in avanti con le stesse durate:
+
+- un materiale o un commerciale è pronto **oggi** se la giacenza libera (esistente meno quanto
+  impegnano gli altri piani aperti) basta per tutto il piano; **all'arrivo** dell'ordine che lo
+  copre, se basta con l'in arrivo (data confermata, o quella chiesta); altrimenti fra i **giorni
+  del listino** a partire da oggi;
+- una parte comincia quando è pronto il suo materiale, poi le fasi in fila;
+- un assieme comincia quando sono pronti tutti i componenti, più il montaggio.
+
+Il **margine** è in giorni lavorativi fra la data fattibile e quella richiesta: positivo è tempo
+in avanzo, **negativo** (in arancio, con ⚠) vuol dire che la consegna non si regge. Cliccando la data
+fattibile si apre il **percorso critico**: la catena — gruppo, perno, tondo — che arriva per
+ultima, con le date di ciascun passo. Per anticipare la consegna è uno di quei passi che va
+accorciato.
+
+**Limiti, detti.** Le parti prodotte non si guardano a magazzino (come nel resto del fabbisogno);
+un ordine di produzione già avviato non accorcia il conto; la capacità è infinita; la scorta
+minima non trattiene niente, perché in un ritardo si usa.
+
+### Il programma
+
+La sezione **Programma** mette in fila tutte le date del piano, giorno per giorno:
+
+| Voce | Data | Quando è «fatto» |
+|---|---|---|
+| **Ordinare** | ordinare entro | c'è un ordine a fornitore emesso dal piano (una sola richiesta d'offerta lo segna «richiesto») |
+| **Inviare al terzista** | invio della tratta | c'è un ordine di lavoro o un ordine di produzione |
+| **Lanciare in produzione** | inizio della prima fase | c'è un ordine di produzione |
+| **Rientro dal terzista** · **Fase interna** · **Montaggio** · **Consegna** | la loro data | non hanno un documento: sono «previsti» |
+
+Una voce oltre la sua data e non fatta è **in ritardo**. **☐ Solo da fare** lascia le voci ancora
+da emettere. Esporta in Excel e PDF, una riga per voce.
+
+### Il Gantt
+
+Sotto il *Programma*, una riga di piano alla volta (si sceglie dal menu se sono più d'una): un
+nodo dell'albero per riga — assiemi, parti, acquisti — con le barre del programma a ritroso.
+
+| Colore | Barra |
+|---|---|
+| arancio | attesa del fornitore: da *ordinare entro* a *serve per* |
+| blu | fase interna |
+| viola | tratta in conto lavoro, dall'invio al rientro |
+| verde | montaggio |
+
+Il contorno **rosso** e il codice in rosso segnano il **percorso critico**; la linea rossa
+tratteggiata è la consegna richiesta, quella blu oggi. Passando sopra una barra si leggono le date
+esatte. Oltre 60 righe il disegno si ferma e lo dice: l'elenco completo è nel *Programma*.
+
+Invii e lanci ancora da fare compaiono anche nel **calendario del Riepilogo**, accanto agli ordini
+da emettere e ai rientri degli ordini di lavoro.
+
 ### Il fabbisogno netto
 
 ```
@@ -1294,7 +1512,7 @@ come netta o lorda secondo l'interruttore attivo. Si spunta cosa includere e si 
 
 **A cosa serve.** Chiedere un prezzo. Numerazione **`RFQ-<anno>-NNN`**.
 
-**Come ci si arriva.** 📨 *Documenti → Richieste offerta*.
+**Come ci si arriva.** 🛒 *Acquisti → Richieste offerta*.
 
 **Comandi dell'elenco.** **+ Nuova richiesta** · **Confronta offerte** · **Esporta Excel** ·
 **Esporta PDF**.
@@ -1353,7 +1571,7 @@ lavorazioni.
 
 **A cosa serve.** Comprare merce. **Gli ODA non contengono lavorazioni**: quelle stanno negli ODL.
 
-**Come ci si arriva.** 📨 *Documenti → Ordini*.
+**Come ci si arriva.** 🛒 *Acquisti → Ordini fornitore*.
 
 **Da dove nasce un ordine.** Da una **richiesta di offerta** (pulsante *Crea ordine*), da un
 **piano di fabbisogno** (*Genera ordini*), oppure **da zero** con **+ Nuovo ordine**.
@@ -1398,7 +1616,7 @@ una parte con il ciclo **tutto interno** non aveva nessun documento: nessuno la 
 materiale non usciva mai dal magazzino e il pezzo finito non entrava mai, se non con un *Carico
 manuale* scritto a mano.
 
-**Come ci si arriva.** 📨 *Documenti → Ordini di produzione*.
+**Come ci si arriva.** 🏭 *Produzione → Ordini di produzione*.
 
 ### Da dove nasce
 
@@ -1422,7 +1640,13 @@ da lì **fasi e materiale si congelano**: il ciclo può cambiare domani, l'ordin
 ### La tabella delle fasi
 
 Si legge dall'alto in basso come si esegue il ciclo. Per ogni fase: numero, lavorazione, **dove**
-(Interna, o il nome del terzista), **da fare / fatti / scarti**, stato e comandi.
+(Interna, o il nome del terzista), **pianificata**, **da fare / fatti / scarti**, stato e comandi.
+
+**Pianificata** (dalla 0.90.0) è l'inizio e la fine della fase, calcolati a ritroso dalla data
+*Serve per* dell'ordine con le stesse regole del fabbisogno (→ [cap. 19](#19-fabbisogno-materiali)),
+sulle fasi **congelate** dell'ordine. In **bozza** le date seguono pezzi e *Serve per*; dopo il
+lancio stanno ferme — una fase che slitta deve vedersi: se non è chiusa e la fine è passata compare
+⚠ — e si ricalcolano solo con **↻ Ripianifica**, che lascia com'erano le fasi già chiuse.
 
 | Stato della fase | Significato |
 |---|---|
@@ -1486,7 +1710,9 @@ residuo zero lo dice.
 
 Su una fase in conto lavoro compare **genera ordine di lavoro**: ne nasce un ODL per quel terzista,
 con la tariffa del ciclo e **i pezzi che ci sono davvero** (i buoni usciti dalla fase precedente,
-non quelli lanciati). Le fasi **consecutive** dello stesso terzista fanno **una riga sola**: sono
+non quelli lanciati). La consegna chiesta sulla riga è il **rientro pianificato della tratta**, non
+la fine dell'ordine (sugli ordini creati prima della 0.90.0, senza date di fase, resta la fine
+dell'ordine). Le fasi **consecutive** dello stesso terzista fanno **una riga sola**: sono
 una lavorazione da commissionare, non due.
 
 > Su quella riga i comandi di conto lavoro dell'ODL diventano un **rimando** all'ordine di
@@ -1523,7 +1749,7 @@ movimento di conto lavoro. Numerazione **`ODL-<anno>-NNN`**.
 ed è denaro che esce come qualunque acquisto. L'ODL è il suo documento: elenco proprio, numerazione
 propria, stampa propria.
 
-**Come ci si arriva.** 📨 *Documenti → Ordini di lavoro*.
+**Come ci si arriva.** 🏭 *Produzione → Ordini di lavoro*.
 
 ### Uno per terzista *e per passata*
 
@@ -1609,7 +1835,7 @@ zero lo dice, invece di riproporre il modulo come se niente fosse.
 **A cosa serve.** Sapere quante ore i piani stanno chiedendo a ciascun centro, settimana per
 settimana, e se il centro regge. La schermata si intitola **«Carico centri di lavoro»**.
 
-**Come ci si arriva.** 🔧 *Cicli di lavorazione → Carico centri*.
+**Come ci si arriva.** 📋 *Pianificazione → Carico centri*.
 La stessa tavola, ristretta a un solo piano, sta anche in fondo alla scheda di ogni piano.
 
 **È un prospetto derivato, in sola lettura.** Non c'è niente da compilare.
@@ -1641,10 +1867,11 @@ piano.
 
 **Da sapere — quattro avvertimenti**, perché il prospetto non prometta più di quel che dà:
 
-1. **La capacità è infinita.** Il sovraccarico **si vede, non si sposta**: non c'è schedulazione,
-   né calendario, né data di avvio di una fase.
-2. **Le ore stanno nella settimana in cui il pezzo serve pronto**, non in quella in cui si lavora.
-   È una lettura della **domanda**, non una programmazione.
+1. **La capacità è infinita.** Il sovraccarico **si vede, non si sposta**: le date vengono dalla
+   programmazione a ritroso (→ [cap. 19](#19-fabbisogno-materiali)), che non guarda il carico.
+2. **Le ore stanno nella settimana in cui la fase comincia**, programmata a ritroso dalla
+   consegna sul calendario di fabbrica (dalla 0.88.0; prima stavano nella settimana in cui il
+   pezzo serviva pronto).
 3. **Le fasi in conto lavoro non caricano nessun centro interno**: quelle si comprano, e stanno nel
    fabbisogno.
 4. **Capacità 0 = «non dichiarata»**, non «nessuna capacità». Un centro senza capacità mostra le
@@ -1678,8 +1905,10 @@ Ragione sociale · Referente · Email · Telefono · P.IVA/C.F. · indirizzo.
 ### 🏭 Fornitori
 
 Nome · Referente · Email · Telefono · P.IVA/C.F. · **Pagamento predefinito** ·
-**Trasporto predefinito** · indirizzo.
+**Trasporto predefinito** · indirizzo · **Trasporto conto lavoro (gg)**.
 I due predefiniti si riproporranno su ogni richiesta e ogni ordine a quel fornitore.
+I giorni di trasporto, andata più ritorno, si sommano all'attraversamento di ogni tratta di conto
+lavoro affidata a quel terzista (→ [cap. 19](#19-fabbisogno-materiali)).
 Si possono **sospendere** (⏸).
 
 ### 📇 Clienti
@@ -1714,6 +1943,9 @@ così i nomi già composti non cambiano da soli.
 | **Nome** | Torni, Fresatura, Saldatura… |
 | **Tariffa (€/h)** | Entra nel costo delle fasi interne a costo orario |
 | **Capacità (h/settimana)** | Il metro del Carico centri. **0 = non dichiarata** |
+| **Ore lavorate al giorno** | Per la durata delle fasi interne. **0 = capacità settimanale ÷ giorni lavorativi**, o 8 |
+| **Attrezzaggio per lotto (h)** | Si aggiunge alle ore di ogni fase su questo centro |
+| **Giorni di coda** | L'attesa prima di ogni fase su questo centro, in giorni lavorativi |
 
 Sotto ogni centro, il sotto-elenco **Fornitori conto lavoro**: fornitore, tariffa, nota — chi sa
 fare quella lavorazione fuori, e a quanto. Si possono sospendere.
@@ -1752,6 +1984,20 @@ nell'import da Excel vengono registrate automaticamente.
 | Campo | Di serie |
 |---|---|
 | Durata della sessione salvata (giorni) | 30 — **0 = non scade mai** |
+
+**Calendario di fabbrica**
+
+| Campo | Di serie |
+|---|---|
+| Giorni lavorativi | lunedì–venerdì |
+| Festivi ricorrenti (GG/MM) | 01/01, 06/01, 25/04, 01/05, 02/06, 15/08, 01/11, 08/12, 25/12, 26/12 |
+| Pasquetta | sì, calcolata ogni anno |
+| Chiusure | nessuna — una per riga: `2026-08-10 2026-08-21 Ferie estive` |
+| Margine fra livelli di distinta (gg) | 0 |
+
+Il calendario serve alla programmazione a ritroso del fabbisogno: fasi interne e montaggi si
+contano in giorni lavorativi; le date d'ordine e d'invio che cadono su un giorno chiuso si
+anticipano al lavorativo precedente. Il santo patrono si scrive fra le chiusure.
 
 ### ⬆️ Import · 💾 Backup
 
@@ -1873,7 +2119,7 @@ Bomtrack ha due famiglie di export, e vale la pena distinguerle.
 
 Hanno i pulsanti **Esporta Excel** ed **Esporta PDF**: Magazzino · Acquisti · Progetto · Cicli ·
 Carico centri · Commesse · Richieste · Ordini · Ordini di lavoro · elenco Piani ·
-Materiale presso terzi.
+Materiale presso terzi · **Cruscotto** · **Confronto distinte**.
 
 **Si esporta quello che si vede**: i filtri attivi sono applicati e le colonne sono le stesse.
 La paginazione a schermo (i 200 articoli per volta) **non taglia niente**.
@@ -1924,15 +2170,22 @@ documento, non l'elenco**.
 
 | Comando | Cosa fa |
 |---|---|
-| *(in testa)* | La **dimensione** dell'archivio |
+| *(in testa)* | La **dimensione** dell'archivio, la **data dell'ultimo backup** e se il browser tiene i dati come **persistenti** |
 | **Esporta JSON** | Scarica l'intero archivio in un file |
 | **Importa JSON** | Carica un file **sovrascrivendo i dati attuali** |
 | **↺ Ripristina dati esempio** | Rimette la macchina dimostrativa |
 
 > ⚠️ **Fai backup regolari.** I dati stanno in questo browser: non esiste una copia da nessun'altra
-> parte. Un backup a fine giornata costa dieci secondi.
+> parte. Un backup a fine giornata costa dieci secondi. Dopo 7 giorni senza, il Riepilogo lo
+> ricorda (→ [cap. 5](#5-riepilogo--richiede-attenzione)).
 >
 > ⚠️ **Il backup contiene gli utenti con i loro hash di password.** È un file riservato.
+
+**Dati persistenti.** Quando il disco si riempie, un browser può cancellare da solo i dati dei
+siti che considera sacrificabili. All'avvio Bomtrack chiede di essere tenuto come
+**persistente**; la scheda Backup dice se il browser l'ha concesso. Chrome di solito lo concede a
+un'app installata (icona nella barra degli indirizzi) o usata spesso; Firefox lo chiede a te. Non
+sostituisce il backup: protegge dal browser, non da un disco che si guasta o da un PC che cambia.
 
 I backup di versioni vecchie si **migrano da soli** all'import: un file esportato mesi fa si
 ricarica senza conversioni.
@@ -2171,6 +2424,10 @@ dentro**: uscendo e rientrando, il documento torna bloccato.
 | **Saturazione** | La percentuale di capacità di un centro occupata in una settimana |
 | **Capacità** | Le ore che un centro può fare in una settimana. **0 = non dichiarata** |
 | **Revisione** | Una fotografia congelata di una distinta, identificata da una lettera |
+| **Cruscotto** | La pagina che dice come stanno le cose: valore di magazzino, articoli fermi, sotto scorta, consegne scadute (→ [cap. 5](#il-cruscotto)) |
+| **Articolo fermo** | Un articolo con giacenza e nessun movimento da 3, 6 o 12 mesi: denaro immobilizzato a scaffale |
+| **Valore giacenza** | Esistente × costo unitario, sommato su tutto il magazzino |
+| **IndexedDB** | Il database interno del browser dove sta l'archivio dalla 0.87.0. Prima stava in `localStorage`, limitato a circa 5 MB |
 | **Archivio condiviso** | Il database unico su cui lavorano tutti i colleghi, al posto di una copia per PC. Progettato, non ancora attivo (→ [cap. 31](#31-quando-larchivio-è-condiviso-supabase)) |
 | **Supabase** | Il servizio scelto per ospitare l'archivio condiviso: database, autenticazione e permessi |
 | **Permessi sul server** | I ruoli applicati dal database invece che dall'app. È la differenza fra separare le responsabilità e proteggere davvero i dati |
@@ -2233,6 +2490,25 @@ stesso profilo? Sono stati puliti i dati del sito? Se hai un backup JSON, *Gesti
 Importa JSON*. Se hai eliminato qualcosa per errore negli ultimi **30 giorni**, guarda nel
 **Cestino** prima di disperare.
 
+**Ho due schede di Bomtrack aperte e una dice «Modificato in un'altra scheda».**
+L'altra scheda ha salvato dopo che questa aveva caricato i dati. L'ultima modifica di questa scheda
+**non è stata salvata**, di proposito: avrebbe cancellato il lavoro dell'altra. Le strade sono tre:
+**Esporta backup** (prima di tutto, se hai dubbi), **Ricarica dall'archivio** (si perde quello che
+questa scheda non ha salvato) o **Tieni questa versione** (si perde quello che l'altra ha fatto).
+Il modo per non trovarsi lì è lavorare in una scheda sola.
+
+**All'avvio compare «Dati non caricati».**
+Il browser non ha lasciato leggere l'archivio. Se il testo dice che **l'archivio sta in
+IndexedDB e il browser non l'ha aperto**, i dati non sono persi: chiudi le altre schede o finestre
+con Bomtrack e ricarica. Finché l'avviso resta, l'app non salva niente. Se invece dice che i dati
+salvati **non si riescono più a leggere**, una copia è stata messa da parte: reimporta l'ultimo
+backup JSON.
+
+**Lo spazio del browser è quasi pieno.**
+Dalla 0.87.0 l'archivio sta in IndexedDB e lo spazio è di solito di gigabyte: l'avviso compare
+solo se il disco stesso è quasi pieno. Su un browser senza IndexedDB il limite resta di circa 5 MB:
+esporta un backup, svuota il cestino e recupera lo spazio degli allegati (*Gestione → Backup*).
+
 **Come lavoriamo in due sullo stesso archivio?**
 Oggi non si può in tempo reale: ogni PC ha la sua copia. Ci si allinea passandosi il **backup
 JSON**. Gli utenti e i ruoli servono a separare le responsabilità su uno stesso PC. L'archivio
@@ -2270,13 +2546,25 @@ Non c'è backend e non c'è database remoto.
 
 ## A.2 Dove risiedono i dati
 
-Tutto sta nel **`localStorage` del browser**, sotto la chiave **`bomtrack_v1`**: un unico documento
-JSON.
+L'archivio è un unico documento JSON. Dalla 0.87.0 sta in **IndexedDB**, il database del browser,
+nel database **`bomtrack_archivio`**: lì il limite è lo spazio che il browser concede al sito
+(di solito gigabyte), non i circa 5 MB di `localStorage` dove stava prima. Il primo avvio della
+0.87 lo trasloca da solo: copia, rilegge la copia e solo se coincide libera `localStorage`. Se il
+browser non ha IndexedDB, l'archivio resta in `localStorage` come prima.
+
+| Dove | Chiave | Contenuto |
+|---|---|---|
+| IndexedDB | `db` | **L'archivio.** Tutto il lavoro sta qui |
+| IndexedDB | `illeggibile` | Dove finisce un archivio che non si riesce più a leggere, invece di essere sovrascritto dai dati di esempio |
+| localStorage | `bomtrack_v1_rev` | Il contatore delle scritture, con cui due schede aperte si accorgono l'una dell'altra |
+| localStorage | `bomtrack_v1_in_indexeddb` | Il segno che l'archivio è traslocato: se un giorno IndexedDB non si apre, l'app non riparte dai dati di esempio |
+| localStorage | `bomtrack_ultimo_backup` | La data dell'ultimo *Esporta JSON* da questo browser |
+
+Senza IndexedDB le prime due stanno in `localStorage`, come `bomtrack_v1` e
+`bomtrack_v1_illeggibile`. Le chiavi qui sotto sono invece sempre in `localStorage`:
 
 | Chiave | Contenuto |
 |---|---|
-| `bomtrack_v1` | **L'archivio.** Tutto il lavoro sta qui |
-| `bomtrack_v1_illeggibile` | Dove finisce un archivio che non si riesce più a leggere, invece di essere sovrascritto dai dati di esempio |
 | `bomtrack_theme` | Il tema scelto |
 | `bomtrack_session` | La sessione aperta |
 | `bomtrack_columns` | Le colonne nascoste, per vista |
@@ -2287,8 +2575,8 @@ Le ultime cinque sono **preferenze personali di questa macchina**, non dati azie
 nel backup e non si condividono. La cartella d'archivio sta fra queste di proposito: ogni PC ha la
 sua, e importarla da un backup imporrebbe a tutti la lettera di unità del primo che l'ha scelta.
 
-**Fuori da `localStorage`** stanno due cose, entrambe fatte di file. In **IndexedDB** i byte degli
-allegati caricati dentro l'app prima della 0.78.0. Nella **cartella d'archivio** i PDF dei
+**Fuori dall'archivio** stanno due cose, entrambe fatte di file. In **IndexedDB**, in un database
+a parte (`bomtrack_allegati`), i byte degli allegati caricati dentro l'app prima della 0.78.0. Nella **cartella d'archivio** i PDF dei
 documenti (→ [cap. 8](#8-la-scheda-articolo-campo-per-campo)): quella cartella non appartiene a
 Bomtrack, che ci guarda dentro e basta.
 
@@ -2349,7 +2637,7 @@ Ogni record porta `id` (UUID), `createdAt` / `updatedAt`, `createdBy` / `updated
 | `views-bom.js` · `views-rev.js` | Distinte e revisioni |
 | `views-stock.js` | Magazzino, movimenti, conto lavoro |
 | `views-catalog.js` | Anagrafiche, listino, scheda articolo, cicli |
-| `views-report.js` · `views-item.js` · `views-home.js` | Costificazione · scheda di sola lettura · Riepilogo |
+| `views-report.js` · `views-item.js` · `views-home.js` · `views-dash.js` | Costificazione · scheda di sola lettura · Riepilogo · Cruscotto |
 | `views-mrp.js` | Fabbisogno e Carico centri |
 | `views-jobs.js` · `views-docs.js` | Commesse · RFQ, ODA, ODL |
 | `views-prod.js` | Ordini di produzione: fasi congelate, avanzamento, movimenti |
@@ -2371,15 +2659,19 @@ node test/run.js      # la suite completa
 node test/bench.js    # benchmark del motore di costificazione
 ```
 
-La suite gira anche in CI a ogni push.
+Due gruppi di test si attivano solo se trovano quello che serve, e altrimenti si dichiarano
+**saltati**: quelli nel browser vero (impaginazione a sette larghezze, IndexedDB) vogliono
+**Playwright** con Chromium; quelli dello schema del database condiviso vogliono un **Postgres**,
+indicato dalla variabile `BOMTRACK_PG`. In CI, a ogni push, ci sono entrambi e gira tutto.
 
 ## A.6 I limiti architetturali
 
 - **Un archivio per browser.** Niente concorrenza, niente sincronizzazione, niente storico
   condiviso. Ci si allinea con i backup JSON.
 - **Il controllo dei permessi è sul client.** Chi apre gli strumenti di sviluppo lo aggira.
-- **La dimensione dell'archivio è limitata** da quanto `localStorage` concede al browser (in genere
-  qualche megabyte). *Gestione → Backup* mostra la dimensione corrente.
+- **La dimensione dell'archivio è limitata** da quanto il browser concede al sito: con IndexedDB
+  (dalla 0.87.0) di solito gigabyte, senza qualche megabyte. *Gestione → Backup* mostra la
+  dimensione corrente e lo spazio disponibile.
 
 La direzione presa per superarli è un backend con autenticazione e permessi sul server;
 `cloud-map.js` e `docs/cloud-schema.md` sono la preparazione a quel passaggio, e **non**
@@ -2391,6 +2683,6 @@ fusa, e il punto in cui si sostituisce la destinazione dei dati è uno solo.
 
 ---
 
-*Manuale di Bomtrack — aggiornato alla versione 0.73.0.*
+*Manuale di Bomtrack — aggiornato alla versione 0.92.0.*
 *Le funzioni descritte qui corrispondono a quella revisione; il changelog dell'app elenca le
 differenze rispetto alle versioni successive.*

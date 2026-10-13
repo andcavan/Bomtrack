@@ -155,10 +155,43 @@ function resolveType(raw) {
   return '';
 }
 // Trova (o crea) un fornitore per nome
+// ─── Fornitori e famiglie per nome, durante un import (B1) ───
+// Erano una ricerca lineare per riga: su un foglio da 5.000 righe con
+// centinaia di fornitori, milioni di confronti. Un indice per nome, con la
+// stessa regola di codeIndex(): vale finché l'array è lo stesso e non ha
+// cambiato lunghezza, e chi crea un record durante l'import ce lo aggiunge a
+// mano — altrimenti ogni creazione lo farebbe ricostruire da capo. Vince il
+// primo, come faceva il `.find()` che sostituisce.
+const _nomeIdx = { arr: null, len: -1, map: null };
+const _famNomeIdx = { arr: null, len: -1, map: null };
+function indiceNomi(cache, arr, chiave) {
+  if (cache.map && cache.arr === arr && cache.len === arr.length) return cache.map;
+  const m = new Map();
+  arr.forEach(x => { const k = chiave(x); if (!m.has(k)) m.set(k, x); });
+  cache.arr = arr; cache.len = arr.length; cache.map = m;
+  return m;
+}
+function aggiungiANomi(cache, arr, chiave, x) {
+  if (!cache.map || cache.arr !== arr) return;
+  const k = chiave(x);
+  if (!cache.map.has(k)) cache.map.set(k, x);
+  cache.len = arr.length;
+}
+// Azzerati da invalidateCaches(), a ogni salvataggio, come gli indici di
+// core.js: un fornitore rinominato in Gestione non cambia la lunghezza
+// dell'elenco, e un indice tenuto da un import all'altro lo cercherebbe ancora
+// col nome vecchio.
+function invalidateNomiImport() { _nomeIdx.map = null; _famNomeIdx.map = null; }
+const chiaveFornitore = x => String((x && x.name) || '').toLowerCase();
+const chiaveFamiglia = x => String((x && x.name) || '').toLowerCase() + '\u0000' + ((x && x.kind) || 'acquistato');
 function findOrCreateSupplier(name, report) {
   const n = String(name).trim(); if (!n) return '';
-  let s = db.suppliers.find(x => x.name.toLowerCase() === n.toLowerCase());
-  if (!s) { s = stampNew({ id: gid(), name: n, referente: '', email: '', active: true }); db.suppliers.push(s); report.createdSuppliers++; }
+  let s = indiceNomi(_nomeIdx, db.suppliers, chiaveFornitore).get(n.toLowerCase());
+  if (!s) {
+    s = stampNew({ id: gid(), name: n, referente: '', email: '', active: true });
+    db.suppliers.push(s); report.createdSuppliers++;
+    aggiungiANomi(_nomeIdx, db.suppliers, chiaveFornitore, s);
+  }
   return s.id;
 }
 // Le sigle già occupate nel campo di gara di chi sta per nascere: l'ambito per
@@ -192,10 +225,12 @@ function findOrCreateFamily(famName, subName, type, report) {
   if (!fn) return result;
   const kind = type;
   const avvisa = report && report.warnings ? (m => report.warnings.push(m)) : null;
-  let f = (db.families || []).find(x => x.name.toLowerCase() === fn.toLowerCase() && (x.kind || 'acquistato') === kind);
+  if (!db.families) db.families = [];
+  let f = indiceNomi(_famNomeIdx, db.families, chiaveFamiglia).get(chiaveFamiglia({ name: fn, kind }));
   if (!f) {
     const sigla = siglaImport(fn, '', sigleFamiglia(kind), avvisa, 'Macrofamiglia');
     f = stampNew({ id: gid(), name: fn, kind, sigla, subs: [] }); db.families.push(f); report.createdFamilies++;
+    aggiungiANomi(_famNomeIdx, db.families, chiaveFamiglia, f);
   }
   result.familyId = f.id;
   const sn = String(subName).trim();
@@ -408,11 +443,11 @@ function settingsSheets() {
       userList().map(u => [u.name || '', u.email || '', u.username || '', roleLabel(u.role), safeColor(u.color), siNo(u.active)])) });
 
   out.push({ key: 'suppliers', name: 'Fornitori',
-    cols: [{ wch: 28 }, { wch: 20 }, { wch: 26 }, { wch: 16 }, { wch: 16 }, { wch: 26 }, { wch: 8 }, { wch: 8 }, { wch: 18 }, { wch: 6 }, { wch: 12 }, { wch: 22 }, { wch: 22 }, { wch: 8 }],
-    aoa: [['Nome', 'Referente', 'Email', 'Telefono', 'P.IVA / C.F.', 'Via / indirizzo', 'Numero civico', 'CAP', 'Città', 'Provincia', 'Stato', 'Pagamento predefinito', 'Trasporto predefinito', 'Attivo']].concat(
+    cols: [{ wch: 28 }, { wch: 20 }, { wch: 26 }, { wch: 16 }, { wch: 16 }, { wch: 26 }, { wch: 8 }, { wch: 8 }, { wch: 18 }, { wch: 6 }, { wch: 12 }, { wch: 22 }, { wch: 22 }, { wch: 8 }, { wch: 14 }],
+    aoa: [['Nome', 'Referente', 'Email', 'Telefono', 'P.IVA / C.F.', 'Via / indirizzo', 'Numero civico', 'CAP', 'Città', 'Provincia', 'Stato', 'Pagamento predefinito', 'Trasporto predefinito', 'Attivo', 'Trasporto CL gg']].concat(
       (db.suppliers || []).map(f => [f.name || '', f.referente || '', f.email || '', f.phone || '', f.vat || '',
         f.street || '', f.streetNumber || '', f.zip || '', f.city || '', f.province || '', f.country || '',
-        f.defaultPayment || '', f.defaultTransport || '', siNo(f.active)])) });
+        f.defaultPayment || '', f.defaultTransport || '', siNo(f.active), Number(f.transitDays) || 0])) });
 
   out.push({ key: 'customers', name: 'Clienti',
     cols: [{ wch: 28 }, { wch: 20 }, { wch: 26 }, { wch: 16 }, { wch: 16 }, { wch: 26 }, { wch: 8 }, { wch: 8 }, { wch: 18 }, { wch: 6 }, { wch: 12 }, { wch: 30 }, { wch: 8 }],
@@ -446,9 +481,12 @@ function settingsSheets() {
 
   // «Attivo» come per Fornitori, Clienti e Utenti: senza, un centro sospeso
   // rinasceva attivo su una postazione nuova, e le sue ore tornavano a costare.
-  out.push({ key: 'workcenters', name: 'Centri di lavoro', cols: [{ wch: 30 }, { wch: 16 }, { wch: 18 }, { wch: 8 }],
-    aoa: [['Nome', 'Tariffa oraria', 'Capacità h/sett', 'Attivo']].concat((db.workCenters || [])
-      .map(w => [w.name || '', Number(w.hourlyRate) || 0, Number(w.capacityHours) || 0, siNo(w.active)])) });
+  // I tempi per la programmazione a ritroso (0.88.0) stanno in coda, prima di
+  // «Attivo» no: un foglio vecchio, senza quelle colonne, li lascia com'erano.
+  out.push({ key: 'workcenters', name: 'Centri di lavoro', cols: [{ wch: 30 }, { wch: 16 }, { wch: 18 }, { wch: 8 }, { wch: 12 }, { wch: 16 }, { wch: 10 }],
+    aoa: [['Nome', 'Tariffa oraria', 'Capacità h/sett', 'Attivo', 'Ore/giorno', 'Attrezzaggio h', 'Coda gg']].concat((db.workCenters || [])
+      .map(w => [w.name || '', Number(w.hourlyRate) || 0, Number(w.capacityHours) || 0, siNo(w.active),
+        Number(w.hoursPerDay) || 0, Number(w.setupHours) || 0, Number(w.queueDays) || 0])) });
 
   out.push({ key: 'uoms', name: 'Unità di misura', cols: [{ wch: 12 }, { wch: 30 }, { wch: 12 }],
     aoa: [['Codice', 'Descrizione', 'Predefinita']].concat(
@@ -686,12 +724,22 @@ function applyWorkCentersSheet(rows, rep) {
       cap = numOr(capRaw, NaN);
       if (isNaN(cap) || cap < 0) { rep.errors.push(`Centri di lavoro, riga ${i + 2}: capacità non valida ("${esc(capRaw)}")`); return; }
     }
+    // I tempi: colonna assente = invariato, come la capacità.
+    const tempi = {};
+    for (const [campo, nomi, etichetta] of [['hoursPerDay', ['Ore/giorno', 'Ore al giorno'], 'ore al giorno'],
+      ['setupHours', ['Attrezzaggio h', 'Attrezzaggio'], 'attrezzaggio'], ['queueDays', ['Coda gg', 'Coda'], 'coda']]) {
+      const raw = cell(row, ...nomi);
+      if (raw === null || raw === '') continue;
+      const n = numOr(raw, NaN);
+      if (isNaN(n) || n < 0) { rep.errors.push(`Centri di lavoro, riga ${i + 2}: ${etichetta} non valida ("${esc(raw)}")`); return; }
+      tempi[campo] = campo === 'queueDays' ? Math.round(n) : n;
+    }
     if (!Array.isArray(db.workCenters)) db.workCenters = [];
     const w = db.workCenters.find(x => (x.name || '').toLowerCase() === name.toLowerCase());
     if (!w) {
       const attNuovo = boolCell(row, 'Attivo', 'Active');
-      db.workCenters.push(stampNew({ id: gid(), name, hourlyRate: rate == null ? 0 : rate,
-        capacityHours: cap == null ? 0 : cap, active: attNuovo !== false }));
+      db.workCenters.push(stampNew(Object.assign({ id: gid(), name, hourlyRate: rate == null ? 0 : rate,
+        capacityHours: cap == null ? 0 : cap, hoursPerDay: 0, setupHours: 0, queueDays: 0, active: attNuovo !== false }, tempi)));
       out.created++;
     } else {
       // La chiave è il nome, quindi il nome non si rinomina da qui (come per i
@@ -700,6 +748,7 @@ function applyWorkCentersSheet(rows, rep) {
       let cambiato = false;
       if (rate != null && Number(w.hourlyRate) !== rate) { w.hourlyRate = rate; cambiato = true; }
       if (cap != null && Number(w.capacityHours) !== cap) { w.capacityHours = cap; cambiato = true; }
+      Object.keys(tempi).forEach(k => { if (Number(w[k]) !== tempi[k]) { w[k] = tempi[k]; cambiato = true; } });
       const att = boolCell(row, 'Attivo', 'Active');
       if (att !== null && w.active !== att) { w.active = att; cambiato = true; }
       if (cambiato) { touch(w); out.updated++; } else out.skipped++;
@@ -788,6 +837,14 @@ function applySuppliersSheet(rows, rep) {
     });
     const att = boolCell(row, 'Attivo', 'Active');
     if (att !== null && s.active !== att) { s.active = att; cambiato = true; }
+    // Giorni di trasporto verso il terzista: colonna assente = invariato.
+    const trRaw = cell(row, 'Trasporto CL gg', 'Trasporto conto lavoro');
+    if (s.transitDays == null) s.transitDays = 0;
+    if (trRaw !== null && trRaw !== '') {
+      const n = numOr(trRaw, NaN);
+      if (isNaN(n) || n < 0) rep.errors.push(`Fornitori, riga ${i + 2}: giorni di trasporto non validi ("${esc(trRaw)}")`);
+      else if (Number(s.transitDays) !== Math.round(n)) { s.transitDays = Math.round(n); cambiato = true; }
+    }
     if (isNew) out.created++;
     else if (cambiato) { touch(s); out.updated++; }
     else out.skipped++;
@@ -948,20 +1005,106 @@ function closeImportReport() {
 
 // Lo spazio di localStorage è circa 5 MB per sito: oltre i 4 conviene saperlo
 // prima di sbatterci contro, non quando il salvataggio comincia a fallire.
+// Il Riepilogo avvisa prima, al 70%: lì è un promemoria, qui un allarme.
+//
+// Con l'archivio in IndexedDB (dalla 0.87.0) il limite è lo spazio che il
+// browser concede al sito, che chiede navigator.storage.estimate(): di solito
+// una frazione del disco, cioè gigabyte. Lì conta l'uso di tutto il sito,
+// allegati compresi, non solo l'archivio.
+const DB_SPAZIO_MB = 5;
 const DB_SIZE_WARN_MB = 4;
+let _stimaSpazio = null;   // { usoMB, quotaMB } da navigator.storage.estimate()
+function aggiornaStimaSpazio() {
+  const st = typeof navigator !== 'undefined' && navigator.storage;
+  if (!st || !st.estimate) return Promise.resolve(null);
+  return st.estimate().then(e => {
+    _stimaSpazio = e && e.quota ? { usoMB: (e.usage || 0) / 1048576, quotaMB: e.quota / 1048576 } : null;
+    return _stimaSpazio;
+  }).catch(() => null);
+}
+const inIndexedDb = () => Store.archivio === 'indexeddb';
+// { usatoMB, limiteMB } — limiteMB null se non si sa.
+function dbSpazio() {
+  if (inIndexedDb()) return _stimaSpazio ? { usatoMB: _stimaSpazio.usoMB, limiteMB: _stimaSpazio.quotaMB } : { usatoMB: Store.sizeInfo().mb, limiteMB: null };
+  return { usatoMB: Store.sizeInfo().mb, limiteMB: DB_SPAZIO_MB };
+}
+function dbSpazioPct() { const s = dbSpazio(); return s.limiteMB ? Math.round(s.usatoMB / s.limiteMB * 100) : 0; }
+function fmtMB(mb) { return mb >= 1024 ? (mb / 1024).toFixed(1).replace('.', ',') + ' GB' : mb.toFixed(2) + ' MB'; }
 function dbSizeLine() {
   const { mb } = Store.sizeInfo();
+  if (inIndexedDb()) {
+    const s = dbSpazio(), pct = dbSpazioPct();
+    return `<p style="margin-top:6px">Spazio occupato dall'archivio: <strong${pct >= 90 ? ' style="color:var(--red)"' : ''}>${mb.toFixed(2)} MB</strong>,
+      nel database del browser (IndexedDB)${s.limiteMB ? ` — il sito usa ${fmtMB(s.usatoMB)} sui ${fmtMB(s.limiteMB)} che il browser gli concede` : ''}.</p>`;
+  }
   const vicino = mb >= DB_SIZE_WARN_MB;
   return `<p style="margin-top:6px">Spazio occupato: <strong${vicino ? ' style="color:var(--red)"' : ''}>${mb.toFixed(2)} MB</strong>
     ${vicino ? '— vicino al limite del browser (circa 5 MB). Esporta un backup e alleggerisci il database.' : 'sui circa 5 MB che il browser riserva a questa app.'}</p>`;
+}
+
+// ─── Quando è stato fatto l'ultimo backup ───
+// L'archivio esiste solo in questo browser, e nessuno si ricorda di esportarlo
+// finché non serve. La data sta in localStorage e non nel database: riguarda
+// questa copia, e dentro il database viaggerebbe col backup stesso, dicendo il
+// falso su ogni PC dove lo si ripristina.
+// Il riferimento (`…_dal`) è il primo giorno in cui l'app ha contato: senza,
+// un'installazione nuova partirebbe già «senza backup da sempre».
+const BACKUP_DATA_KEY = 'bomtrack_ultimo_backup';
+const BACKUP_DAL_KEY = 'bomtrack_ultimo_backup_dal';
+const BACKUP_AVVISO_GG = 7, BACKUP_ALLARME_GG = 30;
+function _lsLeggi(k) { try { return localStorage.getItem(k) || ''; } catch (e) { return ''; } }
+function _lsScrivi(k, v) { try { localStorage.setItem(k, v); return true; } catch (e) { return false; } }
+function ultimoBackup() { return _lsLeggi(BACKUP_DATA_KEY); }
+function registraBackup() { _lsScrivi(BACKUP_DATA_KEY, oggiISO()); }
+// { data, giorni, mai }: `giorni` dall'ultimo backup, o dal primo giorno contato
+// se non ce n'è mai stato uno.
+function statoBackup() {
+  const data = ultimoBackup();
+  let rif = data;
+  if (!rif) {
+    rif = _lsLeggi(BACKUP_DAL_KEY);
+    if (!rif) { rif = oggiISO(); _lsScrivi(BACKUP_DAL_KEY, rif); }
+  }
+  const g = giorniTra(rif.slice(0, 10), oggiISO());
+  return { data, giorni: Math.max(0, g == null ? 0 : g), mai: !data };
+}
+function backupLine() {
+  const s = statoBackup();
+  const vecchio = s.giorni >= BACKUP_AVVISO_GG;
+  const testo = s.mai ? 'Nessun backup esportato da questo browser.'
+    : `Ultimo backup: <strong>${fmtDateIt(s.data)}</strong>${s.giorni ? ` (${s.giorni === 1 ? 'ieri' : s.giorni + ' giorni fa'})` : ' (oggi)'}.`;
+  return `<p style="margin-top:6px"${vecchio ? ' class="backup-vecchio"' : ''}>${testo}</p>`;
+}
+
+// ─── Archiviazione persistente ───
+// Quando il disco si riempie, il browser può cancellare da solo i dati dei
+// siti «non persistenti», partendo dai meno usati. Chiedere la persistenza lo
+// impedisce; Chrome la concede senza domande a un'app installata o usata
+// spesso, Firefox chiede all'utente. L'esito si mostra in Backup.
+let _persistenza = null;   // null = non si sa (API assente o non ancora risposto)
+function richiediPersistenza() {
+  const st = typeof navigator !== 'undefined' && navigator.storage;
+  if (!st || !st.persisted || !st.persist) return Promise.resolve(null);
+  return st.persisted()
+    .then(gia => gia || st.persist())
+    .then(ok => { _persistenza = !!ok; return _persistenza; })
+    .catch(() => null);
+}
+function persistenzaLine() {
+  if (_persistenza === null) return '';
+  return _persistenza
+    ? '<p style="margin-top:6px">Il browser tiene questi dati come <strong>persistenti</strong>: non li cancella da solo quando il disco si riempie.</p>'
+    : '<p style="margin-top:6px">Il browser <strong>può cancellare questi dati da solo</strong> se il disco si riempie: un motivo in più per i backup. Installare l\'app (icona nella barra degli indirizzi) di solito lo evita.</p>';
 }
 function renderBackup() {
   return `<div class="cloud-section">
     <div style="flex:1">
       <strong>${ico('save', 'tinted', '')} Backup locale</strong>
-      <p>I dati sono salvati nel browser (localStorage). Esporta un file JSON per conservare un backup o trasferire i dati su un altro PC. L'import sovrascrive i dati attuali.</p>
+      <p>I dati sono salvati nel browser (${inIndexedDb() ? 'IndexedDB' : 'localStorage'}). Esporta un file JSON per conservare un backup o trasferire i dati su un altro PC. L'import sovrascrive i dati attuali.</p>
       <p><strong>I documenti d'archivio sì, i vecchi file no.</strong> Di un documento d'archivio il backup porta il <em>percorso</em> dentro la cartella, che è un dato come gli altri: ripristinandolo su un PC che ha la sua copia dell'archivio i collegamenti valgono ancora. I file caricati <em>dentro</em> Bomtrack prima della 0.78.0 restano invece fuori dal JSON — sono byte, e nel JSON non ci starebbero — quindi il backup ne porta l'<em>elenco</em> e non il contenuto: si vede che cosa manca invece di trovare una scheda vuota. Prima di trasferirsi su un altro PC vanno riscaricati a mano dalla scheda Allegati di ciascun articolo.</p>
       ${dbSizeLine()}
+      ${backupLine()}
+      ${persistenzaLine()}
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
         <button class="add-btn-sm" onclick="exportBackup()">${ico('download', 'tinted', '')} Esporta JSON</button>
         <button class="btn-outline" onclick="document.getElementById('import-file').click()">${ico('upload', 'tinted', '')} Importa JSON</button>
@@ -997,7 +1140,7 @@ function renderBackup() {
 // pentimento immediato; questo copre quello di domani mattina.
 const TRASH_LABELS = { items: 'Articolo', suppliers: 'Fornitore', customers: 'Cliente', workCenters: 'Centro di lavoro',
   families: 'Macrofamiglia', rfqs: 'Richiesta', orders: 'Ordine', workOrders: 'Ordine di lavoro', plans: 'Piano', users: 'Utente',
-  jobs: 'Commessa', movements: 'Movimento', revisions: 'Revisione',
+  jobs: 'Commessa', movements: 'Movimento', receipts: 'Ricevimento', revisions: 'Revisione',
   prodOrders: 'Ordine di produzione', prodDecls: 'Dichiarazione di produzione', reminders: 'Promemoria' };
 function trashDescr(t) {
   const r = t.record || {};
@@ -1089,6 +1232,7 @@ function exportBackup() {
   const a = document.createElement('a');
   a.href = url; a.download = `bomtrack_backup_${oggiISO()}.json`;
   a.click(); URL.revokeObjectURL(url);
+  registraBackup();
   showToast('Backup esportato');
 }
 function importBackup(ev) {
@@ -1193,7 +1337,11 @@ function resetViewState() {
 // ═══════════════════════════════════════════════════════════
 //  INIT
 // ═══════════════════════════════════════════════════════════
-function init() {
+// Async per un solo motivo: aprire l'archivio in IndexedDB richiede di
+// aspettare. Da lì in poi tutto è sincrono come prima.
+async function init() {
+  await Store.preparaArchivio();
+  if (Store.archivio === 'indexeddb') aggiornaStimaSpazio();
   Store.load();
   const ver = 'v' + APP_VERSION;
   ['app-version', 'app-version-login'].forEach(id => {
@@ -1201,6 +1349,7 @@ function init() {
   });
   // Sessione salvata → si rientra diretti; altrimenti accesso (o setup del primo admin)
   if (!restoreSession()) renderLogin();
+  richiediPersistenza();
 }
 // Nel browser parte da sé; sotto test (Node, nessun DOM) il file si carica
 // senza avviare l'app, così la suite può pilotare Store e il motore di costo.

@@ -33,6 +33,10 @@ let inspTab = {};        // ultima scheda aperta, per vista
 // privato, spazio esaurito — si continua con i valori di serie: una preferenza
 // non deve poter impedire l'avvio.
 function inspPrefsLoad() {
+  // Di serie aperto solo dove c'è spazio: sotto i 1400 px il pannello toglieva
+  // all'elenco 340 px e i codici andavano a capo. Chi lo apre o lo chiude a mano
+  // fa testo, su qualunque schermo: la scelta salvata vince su questa.
+  if (typeof window !== 'undefined' && typeof window.innerWidth === 'number' && window.innerWidth < 1400) inspOpen = false;
   try {
     const p = JSON.parse(localPref(INSP_KEY, INSP_KEY_VECCHIA) || 'null');
     if (!p) return;

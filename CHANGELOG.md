@@ -2,6 +2,271 @@
 
 Le revisioni seguono il versionamento semantico `0.MINOR.PATCH`: **MINOR** per nuove funzionalità, **PATCH** per correzioni. La versione in cima è quella in `APP_VERSION` (`core.js`) e mostrata nell'header dell'app.
 
+### 0.92.0 — 2026-10-13
+
+**Il piano a schede.** La scheda di un piano di fabbisogno era lunga quasi tre schermate, con otto sezioni una sotto l'altra: per arrivare al conto lavoro si scorrevano ogni volta gli acquisti.
+
+**Nuovo**
+- Testata, righe **Da produrre** e KPI restano in alto; il resto sta in **schede** con il loro conteggio: *Da acquistare*, *Conto lavoro*, *Da fabbricare*, *Programma*, *Gantt*, *Carico*, *Documenti*.
+- I pulsanti **Genera…** passano dalla toolbar alla scheda delle righe su cui agiscono: richieste e ordini in *Da acquistare*, richieste e ordini di lavoro in *Conto lavoro*, ordini di produzione in *Da fabbricare*.
+- La scheda scelta resta aprendo un altro piano; frecce ← → per spostarsi fra le schede.
+
+**Da sapere**
+- In stampa le schede escono tutte, come prima. Conti, date e documenti non cambiano.
+
+**Verifica**
+- `test/plandocs.test.js`: schede e conteggi, scheda nascosta ma disegnata, memoria della scheda, pulsanti nella scheda giusta.
+
+### 0.91.0 — 2026-10-13
+
+**La barra segue il lavoro.** I gruppi erano divisi per tipo di dato, e «Documenti» teneva insieme commesse, piani, richieste, ordini, ODP e ODL: la pianificazione, l'ufficio acquisti e l'officina in un cassetto solo. Ora seguono il processo e chi lo fa.
+
+**Nuovo**
+- **Gruppi per processo**: Riepilogo · **Tecnico** (articoli di progetto e d'acquisto, Gestione DB, Visualizza DB, cicli) · **Pianificazione** (commesse, fabbisogno, carico centri) · **Acquisti** (richieste offerta, ordini fornitore, listino) · **Produzione** (ODP, ODL) · Magazzino · Gestione. Le schermate sono le stesse e gli indirizzi (`#mrp`, `#orders`…) non cambiano.
+- **Listino fornitori** come vista sua, in *Acquisti*: tutte le quotazioni di commerciali, materie prime e parti in un elenco, con prezzo in uso ✓ e più basso ↓, filtri per testo, fornitore, tipo, solo in uso o senza prezzo, export Excel e PDF. Un clic sulla riga apre il listino dell'articolo, che resta l'unico posto dove una quotazione si modifica.
+- Il **Carico centri** passa sotto *Pianificazione*: è una domanda di pianificazione, non di ciclo.
+
+**Da sapere**
+- Le voci «Acquisti» e «Progetto» delle anagrafiche si chiamano **Articoli d'acquisto** e **Articoli di progetto**, per non confondersi col gruppo *Acquisti*; «Ordini» diventa **Ordini fornitore**.
+- Permessi e ruoli non cambiano: il listino si modifica con i diritti sull'anagrafica, come prima.
+
+**Verifica**
+- `test/nav.test.js`: gruppi, viste per gruppo, memoria del gruppo, stampa. `test/pricelist.test.js`: la vista d'insieme (ordine, filtri, export, gruppo).
+
+### 0.90.0 — 2026-10-13
+
+**Il programma si vede, e l'ordine di produzione lo ricorda.** Ultima tappa della programmazione dei tempi (`docs/programmazione-tempi.md`).
+
+**Nuovo**
+- **Gantt** nella scheda piano: una riga di piano alla volta, un nodo per riga — assiemi, parti con le loro fasi e tratte, acquisti — con le barre del programma a ritroso (attesa fornitore, fase interna, conto lavoro, montaggio), il percorso critico in rosso, le linee di oggi e della consegna richiesta, le date esatte nel suggerimento di ogni barra. Oltre 60 righe si ferma e lo dice.
+- **Date pianificate sulle fasi degli ordini di produzione**: inizio e fine di ogni fase, a ritroso da *Serve per* con le stesse regole del fabbisogno, sulle fasi congelate. In bozza seguono pezzi e data; dopo il lancio stanno ferme, la fase oltre la sua fine si segnala, e **Ripianifica** ricalcola le fasi non chiuse.
+- **Ordini di lavoro da un ordine di produzione**: la riga chiede al terzista il rientro pianificato della tratta, ed è da emettere entro il suo invio — non più la fine dell'ordine.
+
+**Le cautele**
+- Gli ordini di produzione creati prima non hanno date di fase: si comportano come prima finché non si ripianificano.
+- Schema SQL: `planned_start`, `planned_end` su `production_order_phases`, con `alter table … add column if not exists`.
+
+**Verifica**
+- `test/schedulazione.test.js`: Gantt (righe, titoli, percorso critico, tetto, piano senza date) e date delle fasi (creazione, bozza che segue la data, ODL dalla tratta, ordini vecchi, ripianifica, fase in ritardo in tabella).
+
+### 0.89.0 — 2026-10-13
+
+**Quando sono pronto davvero, e cosa fare oggi.** La 0.88.0 diceva *entro quando* deve succedere ogni cosa perché la consegna regga. Ora il piano dice anche se ce la fa, e mette in fila il lavoro.
+
+**Nuovo**
+- **Data fattibile e margine** per ogni riga di *Da produrre*: lo stesso albero percorso in avanti da oggi, con le stesse durate. Il materiale è pronto oggi se la giacenza libera basta, all'arrivo dell'ordine che lo copre se basta con l'in arrivo, altrimenti fra i giorni del listino. Margine in giorni lavorativi; negativo = la consegna non regge.
+- **Percorso critico**: cliccando la data fattibile, la catena che arriva per ultima, passo per passo con le sue date.
+- **Programma** nella scheda piano: ordinare, inviare al terzista, lanciare, rientri, fasi interne, montaggi, consegne, in ordine di data, con lo stato letto dai documenti del piano (fatto, richiesto, da fare, in ritardo, previsto), filtro «solo da fare», export Excel e PDF.
+- **Riepilogo**: invii e lanci ancora da fare entrano nel calendario delle scadenze.
+
+**Sotto il cofano**
+- `schedOps` separa l'aritmetica del ciclo dal ciclo vivo (servirà alle fasi congelate degli ODP); `schedTree` costruisce l'albero di una riga di piano con le **stesse** date degli aggregati, e un test lo tiene fermo.
+- `buySupplierId`/`buyDocRow`/`buyLeadDays` escono da `mrpBuyRow`: fornitore e listino di un acquisto si leggono in un posto solo.
+
+**Da sapere**
+- Le parti prodotte non si guardano a magazzino, un ODP già avviato non accorcia il conto, la capacità resta infinita.
+
+**Verifica**
+- `test/schedulazione.test.js`: albero contro aggregati, tappe della parte, data fattibile con oggi fermato (per tempo, in ritardo, materiale a magazzino, materiale già ordinato), agenda completa, fatto e ritardo, export, Riepilogo. La scheda piano entra nei controlli d'impaginazione in Chromium.
+
+### 0.88.0 — 2026-10-13
+
+**Le date a ritroso.** Fino a ieri la data di una riga di piano scendeva **invariata** lungo la distinta: se il gruppo serviva il 16, il tondo, i perni e la zincatura dal terzista servivano tutti il 16. Gli unici anticipi erano i giorni del listino sul materiale e quelli di attraversamento su ogni singola fase esterna — ciascuno contato dalla consegna del prodotto, come se montaggio, tornitura e il viaggio dal terzista non esistessero. Ora il fabbisogno **programma a ritroso**: risale montaggi, fasi del ciclo e tratte di conto lavoro, in fila, sul calendario di fabbrica. Analisi e tappe successive in `docs/programmazione-tempi.md`.
+
+**Nuovo**
+- **Calendario di fabbrica** in *Gestione → Impostazioni*: giorni lavorativi (di serie lunedì–venerdì), festivi ricorrenti, Pasquetta calcolata, chiusure (ferie, ponti, patrono) e un **margine fra livelli** di distinta. `calendario.js`: `isWorkDay`, `addWorkDays`, `prevWorkDay`, `nextWorkDay`, `workDaysBetween`, `pasqua`.
+- **I tempi** dove mancavano: sul centro di lavoro **ore al giorno**, **attrezzaggio per lotto** e **giorni di coda**; sul fornitore i **giorni di trasporto** del conto lavoro; sull'assieme i **giorni di montaggio** (in *Gestione DB*, accanto alle lavorazioni). Tutti a zero di serie, e anche nei fogli Excel delle impostazioni.
+- **La catena.** Montaggio = giorni dichiarati o le ore delle sue lavorazioni; fase interna = (attrezzaggio + ore/pz × pezzi) ÷ ore al giorno, al giorno intero, più la coda, in giorni lavorativi; tratta di conto lavoro = attraversamento delle sue fasi più il trasporto, in giorni di calendario. Il materiale del ciclo serve all'inizio della prima fase; i componenti all'inizio del montaggio.
+- **Nel piano**: «Serve per» e «Ordinare entro» degli acquisti sono scalati; in *Da far lavorare fuori* sono **rientro** e **invio** della tratta; in *Da fabbricare* compare la data di **lancio**. Le date d'ordine e d'invio che cadono su un giorno chiuso si anticipano al lavorativo precedente.
+- **Nei documenti**: l'ordine al fornitore chiede la data in cui il materiale serve davvero, l'ordine di lavoro il rientro della tratta.
+- **Carico centri**: le ore stanno nella settimana in cui la fase **comincia**, non in quella in cui il pezzo serve pronto.
+
+**Le cautele**
+- Senza tempi dichiarati una fase non sposta niente: le date restano quelle della consegna. Una fase interna con le sue ore invece sì — 8 ore al giorno di serie, o la capacità settimanale ÷ i giorni lavorativi.
+- Capacità sempre **infinita**: le date dicono quando ciascuna cosa deve succedere, non se il reparto ce la fa. Il sovraccarico resta da leggere nel Carico centri.
+- Netto, impegni e quantità non cambiano: si aggiungono date, non pezzi.
+- Gli ordini di lavoro generati da un ordine di produzione chiedono ancora la consegna dell'ODP: le date congelate per fase arrivano con la 0.90.0.
+
+**Verifica**
+- `test/calendario.test.js` (festivi, Pasqua 2024–2026, chiusure, capodanno, fuso a est di Greenwich) e `test/schedulazione.test.js` (la catena completa con date scritte a mano, attrezzaggio e coda, montaggio dalle ore, margine, patrono in mezzo, due rami, dati mancanti, ODL a mano, Excel, migrazione). `test/carico.test.js` adeguato: le ore seguono la fase.
+- Schema SQL: colonne nuove su `work_centers`, `suppliers`, `items`, con `alter table … add column if not exists` per i database già creati.
+
+### 0.87.0 — 2026-10-12
+
+**L'archivio senza il tetto dei 5 MB.** L'archivio passa da `localStorage` (circa 5 MB per sito, e un archivio con qualche anno di ordini e movimenti ci arriva) a **IndexedDB**, il database del browser, dove il limite è lo spazio che il browser concede al sito: di solito gigabyte.
+
+**Cosa cambia per chi usa l'app**
+- Niente da fare: al primo avvio l'archivio trasloca da solo. L'originale in `localStorage` si cancella solo dopo aver riletto la copia e verificato che coincide; se non coincide, l'archivio resta dov'era.
+- La scheda Backup dice dove stanno i dati e quanto spazio concede il browser; il segnale dello spazio nel Riepilogo si regola su quello.
+- Il backup resta indispensabile: IndexedDB sta nello stesso browser, sullo stesso disco.
+
+**Le cautele**
+- L'app continua a ragionare in modo sincrono: legge l'archivio una volta all'avvio, poi tiene una copia in memoria e scrive in coda, nell'ordine. Chiudere la scheda mentre una scrittura è in viaggio chiede conferma.
+- Due schede aperte si accorgono ancora l'una dell'altra: il contatore delle scritture resta in `localStorage`.
+- Una scheda rimasta aperta con la versione vecchia, che scrive ancora in `localStorage` dopo il trasloco, non perde il lavoro: al caricamento successivo vince la scrittura più recente.
+- Se un giorno IndexedDB non si apre, l'app non riparte dai dati di esempio (salvandoli sopra l'archivio vero al giro dopo): lo dice e non salva finché l'archivio non torna raggiungibile.
+- Una scrittura rifiutata si segnala come prima, e il badge «non salvato» si spegne solo quando una scrittura è davvero arrivata.
+- Senza IndexedDB tutto resta in `localStorage`, come prima.
+
+**Verifica**
+- `test/idb.test.js`: trasloco, verifica fallita, installazione nuova, ordine delle scritture, scheda con l'app vecchia, IndexedDB irraggiungibile, archivio da 8 MB, quota esaurita e ripresa. In Chromium, con IndexedDB vero: archivio da 8 MB salvato e ritrovato, trasloco, due schede.
+- Il runner esegue i file uno alla volta, aspettando i test asincroni di ciascuno.
+
+### 0.86.0 — 2026-10-12
+
+**Il cruscotto.** Una pagina nuova sotto *Riepilogo*: il Riepilogo dice cosa fare adesso, il cruscotto come stanno le cose.
+
+**Nuovo**
+- **Valore di magazzino**, totale e ripartito per tipo e per famiglia.
+- **Articoli fermi** da 3, 6 o 12 mesi, dal più costoso, con il valore immobilizzato.
+- **Sotto scorta minima**, con quanto manca e se quello in arrivo basta.
+- **Consegne scadute per fornitore**: righe, valore da ricevere, ritardo peggiore, documenti cliccabili.
+- Export Excel e PDF di tutto il cruscotto.
+
+**Sotto il cofano**
+- Le righe d'ordine ancora da ricevere hanno una funzione sola (`righeDaRicevere`), usata dal cruscotto e dal calendario del Riepilogo; il valore di una giacenza anche (`valoreGiacenza`), usata dal cruscotto e dalla tessera del magazzino.
+
+**Verifica**
+- `test/dashboard.test.js`; la vista entra nei controlli d'impaginazione in Chromium.
+
+### 0.85.0 — 2026-10-12
+
+**Confrontare distinte e revisioni.**
+
+**Nuovo**
+- **Due revisioni a confronto.** Lo storico confrontava ogni revisione solo con la distinta attuale, mentre il manuale prometteva due revisioni affiancate: ora dal confronto si sceglie l'altra metà — la distinta attuale o un'altra revisione — e si legge sempre dalla più vecchia alla più nuova, con il costo congelato di ciascuna.
+- **⇄ Confronta con…** in *Gestione DB*: la distinta aperta contro un'altra qualsiasi, **su tutti i livelli**, con le quantità per una macchina calcolate come nel fabbisogno (scarti compresi, rami sommati). Due elenchi — da acquistare, con la differenza di valore, e da fabbricare — il costo delle due distinte, solo le differenze di serie, export Excel e PDF.
+
+**Verifica**
+- `test/revisions.test.js`: revisione con revisione in entrambi gli ordini, costi congelati, totali su più livelli con lo stesso componente in due rami, scarti, una distinta con sé stessa. L'impaginazione del confronto entra nei controlli in Chromium.
+
+### 0.84.0 — 2026-10-12
+
+**I dati al sicuro.** L'archivio esiste solo in questo browser, e il backup c'era — ma niente ricordava di farlo, e lo spazio si vedeva solo aprendo *Gestione → Backup*.
+
+**Nuovo**
+- **Il Riepilogo ricorda il backup**: dopo 7 giorni senza un *Esporta JSON* da questo browser avvisa, dopo 30 è un allarme, con **Esporta ora** a portata di clic. Solo per gli amministratori, che sono gli unici a poterlo fare. Un'installazione nuova non parte già in allarme: si conta dal primo giorno.
+- **Il Riepilogo avvisa quando lo spazio si riempie**: dal 70% dei circa 5 MB del browser, allarme dal 90%. Prima lo si scopriva quando i salvataggi cominciavano a fallire.
+- **Archiviazione persistente**: all'avvio l'app chiede al browser di non cancellare i suoi dati quando il disco è pieno, e la scheda Backup dice se l'ha ottenuto.
+- La scheda Backup mostra la data dell'ultimo backup.
+
+**Verifica**
+- `test/sicurezza-dati.test.js`.
+- Il runner dei test aspetta i test asincroni: prima li dava per buoni subito, e un'asserzione fallita dopo un `await` usciva fuori dal conteggio.
+
+### 0.83.2 — 2026-10-12
+
+**Grafica e impaginazione.** L'app è stata guardata in un browser vero a quattro larghezze (desktop, portatile, tablet, telefono) e nei due temi, 168 schermate misurate una per una. I colori erano già a posto — nessun testo sotto il contrasto richiesto, in nessuno dei due temi — ma l'intestazione e il telefono no.
+
+**Corretto**
+- **La barra delle sezioni nascondeva Riepilogo e Gestione** proprio sui portatili più comuni (1366–1440 px), e su tablet e telefono restavano una sezione e mezza, o nessuna. Ora l'intestazione fa spazio da sé, un passo alla volta e solo quanto serve: via il ruolo e la data, poi i comandi di contorno sotto **⋯**, poi i nomi delle sezioni (restano le icone), e sul telefono le sezioni sotto **☰**. A 1440 px le sezioni si leggono di nuovo per nome.
+- **Al telefono ogni pagina scorreva di lato**, fino a 300 px negli ordini e nelle commesse: ora nessuna.
+- **I codici articolo andavano a capo sul trattino** («CMM-» sopra, «100» sotto).
+- **Gli importi si leggono all'italiana**: «€ 1.125,50» e non più «€1125.50», a schermo e nei PDF. Gli Excel restano numeri veri.
+
+**Migliorato**
+- Al telefono e sugli schermi a sfioramento nessun comando sotto i 34 px: linguette, pulsantini di riga, chiusura delle schede.
+- Le etichette di stato e di tipo, prima a 9–10 px, sono un po' più grandi.
+- I pulsanti **Esporta Excel / PDF** sono neutri, col formato detto dall'icona: il verde e il rosso pieni pesavano più del «+ Nuovo» accanto. Quelli che generano il documento di una richiesta o di un ordine restano grandi, col bordo nel colore del formato.
+- «+ Nuovo ordine» non è più un blocco blu alto 62 px.
+- Nel piano di fabbisogno i quattro «Genera…» stanno su una riga loro, e passandoci sopra quando sono spenti dicono perché.
+- Con una scheda aperta la pagina dietro si attenua (torna piena portandoci sopra il mouse) e la scheda ha un'ombra più netta.
+- Il pannello laterale dell'anagrafica si apre di serie solo da 1400 px in su.
+
+**Verifica**
+- `test/layout.test.js`: l'algoritmo dell'intestazione su un DOM simulato, le regole che avevano causato i difetti, e — se c'è Playwright, in CI c'è — l'app vera in Chromium a sette larghezze: nessuna pagina che scorre di lato, ogni sezione raggiungibile, nessun comando sotto i 32 px al telefono. Sulla 0.83.1 fallisce tutto.
+
+### 0.83.1 — 2026-10-12
+
+**Tutto per il locale.** Lo spostamento su un database condiviso non è previsto per ora, e il lavoro delle ultime versioni è stato riletto con un solo criterio: l'app locale funziona almeno come prima? Su due punti no, e sono corretti.
+
+**Corretto**
+- **La preparazione al cloud costava in locale.** Datare ogni riga dei documenti e registrare i ricevimenti come eventi serve solo a chi scrive in due sullo stesso database; in locale gonfiava l'archivio (da 1,43 a 2,01 MB su un archivio di prova, in un salvataggio del browser da ~5 MB) e triplicava il tempo di ogni salvataggio. Ora è spento di serie (`Store.modoCondiviso`): archivio e tempi tornano quelli della 0.80, e accenderlo un giorno non perderà niente.
+- **Un ricevuto poteva azzerarsi da solo** al caricamento, se scritto senza passare dalla funzione dei ricevimenti. In locale il numero che hai visto non cambia mai più da solo.
+- **La data dei documenti nuovi** — richieste, ordini, ODL, piani, ODP — fra mezzanotte e l'una (le due d'estate) era quella di ieri, mentre il numero era già dell'anno nuovo: alle 00:30 di Capodanno nasceva una «RFQ-2027-001» datata 31/12/2026.
+
+**Migliorato**
+- **Import**: fornitori e famiglie si cercano per nome con un indice invece di scorrere l'elenco a ogni riga. Un fornitore rinominato in Gestione fra due import si trova col nome nuovo.
+
+**Verifica**
+- Suite da 1907 a 1922 controlli senza database (1942 con Postgres). Ogni correzione ha un test che fallisce sulla versione precedente.
+
+### 0.83.0 — 2026-10-12
+
+**I permessi stanno nel database.** Finché i dati sono nel browser, chi apre gli strumenti di sviluppo si assegna il ruolo che vuole; con lo schema di questa versione, sul database condiviso non può più. Nessun cambiamento nell'app.
+
+**Aggiunto**
+- In `supabase/schema.sql` la matrice dei ruoli sostituisce la regola provvisoria: admin scrive tutto; acquisti documenti, ricevimenti, produzione, movimenti, commesse e promemoria; progettazione articoli, distinte, revisioni, allegati, movimenti e promemoria; il lettore legge e basta; un utente sospeso non legge più niente, anche con la sessione aperta.
+- Chi scrive cosa è stato **misurato** facendo girare la suite e registrando i permessi controllati a ogni salvataggio, non dedotto dalla documentazione: una regola più stretta dell'app avrebbe fatto fallire invii leciti.
+- Il proprio profilo si aggiorna, il proprio ruolo no.
+
+**Corretto**
+- `push_changes()` controlla i permessi di ogni tabella del lotto prima di toccarne una: una cancellazione non permessa non dava errore e lasciava la lapide senza cancellare la riga.
+- CI: azioni `checkout` e `setup-node` alla v5 (la v4 girava su Node 20, in dismissione), suite su Node 22.
+
+**Verifica**
+- 12 nuovi controlli, eseguiti come utenti veri e non come superutente (suite da 1904 a 1907 senza database, da 1915 a 1927 con Postgres). Con la regola provvisoria rimessa al suo posto ne falliscono sette.
+
+### 0.82.0 — 2026-10-12
+
+**Lo schema del database condiviso esiste, ed è provato su un Postgres vero.** `supabase/schema.sql` si esegue nell'editor SQL di Supabase (anche più volte): tabelle, vincoli, registro delle tabelle sincronizzate, lapidi delle cancellazioni e le due funzioni da cui passa tutta la sincronizzazione.
+
+**Aggiunto**
+- `push_changes()`: un invio è **una transazione** — entra intero o non entra. Vince chi ha scritto dopo, e chi perde torna in un elenco da mostrare all'utente; distinte e cicli si sostituiscono interi solo se l'articolo passa; le cancellazioni lasciano una lapide che cede solo a un ripristino.
+- `pull_changes()`: ciò che è cambiato dopo un istante del server, più le cancellazioni.
+- Chiavi esterne tutte differite: i riferimenti circolari (prezzo in uso ↔ listino) non impongono un ordine. `no action` dove l'app protegge già il record citato, `set null` sui riferimenti di tracciabilità.
+- `test/schema-sql.test.js`: lo schema verificato contro il codice (tabelle, padri, merge, tipo di ogni colonna) e, con un Postgres, il giro completo di un database che tocca tutte le 33 tabelle. La CI ora avvia un Postgres per farlo a ogni push.
+
+**Corretto**
+- **L'eliminazione multipla di articoli** controllava solo le distinte: un articolo già ordinato o movimentato spariva lasciando righe e movimenti orfani. Ora segue la stessa regola dell'eliminazione singola.
+- **Due modifiche nello stesso millisecondo** davano la stessa data, e la seconda era invisibile alla sincronizzazione: la data di modifica ora sale sempre. Un test falliva per questo una volta su otto.
+- La traduzione verso il database trattava come giorno di calendario la `date` di movimenti, dichiarazioni, avanzamenti e revisioni, che è un istante; e gli istanti riletti dal database tornano nella forma che l'app confronta.
+
+**Verifica**
+- Suite da 1893 a 1904 controlli senza database, 1915 con un Postgres (`BOMTRACK_PG`, vedi `test/pg.js`).
+
+### 0.81.1 — 2026-10-12
+
+**Le righe parlano SQL.** Preparazione al database condiviso, nessun cambiamento visibile nell'app. `flattenDB()` produceva i nomi del codice e `''` dove una colonna numerica, di data o uuid vuole NULL: il primo invio sarebbe stato rifiutato per intero.
+
+**Aggiunto**
+- `dbVersoCloud()` / `dbDaCloud()` in `cloud-map.js`: nomi delle colonne in snake_case, la colonna padre di ogni tabella figlia col suo nome (`item_id`, `order_id`…), `child_item_id` in distinta e ciclo, `description` al posto di `desc` (parola riservata), `''` → NULL nelle colonne tipizzate e ritorno esatto.
+- Controllo prima dell'invio: numeri illeggibili, date storte, oggetti fuori posto e id non uuid si elencano tutti insieme, con tabella, riga e campo.
+
+**Corretto**
+- Nelle righe di ciclo i riferimenti vuoti erano a volte `''` e a volte `null`: ora sempre `null`.
+
+**Verifica**
+- 16 nuovi controlli in `test/cloud-colonne.test.js` (suite da 1877 a 1893).
+
+### 0.81.0 — 2026-10-12
+
+**I ricevimenti diventano eventi.** Il ricevuto di una riga d'ordine era un numero riscritto a ogni arrivo, e la giacenza ne è la somma: con il database condiviso, due persone che registrano un arrivo sulla stessa riga si sarebbero sovrascritte, e un carico sarebbe sparito dal magazzino senza un avviso. Ora ogni ricevimento è un evento con la differenza, e il ricevuto ne è la somma. Per chi usa l'app non cambia niente: si digita il totale ricevuto come prima.
+
+**Modificato**
+- Nuova collezione `receipts` (ricevimenti). La compila il campo «ricevuto» delle righe di ODA e ODL e il pulsante «ricevuto tutto»; una correzione all'ingiù è un evento negativo.
+- Al primo avvio i ricevuti già registrati diventano un **saldo d'apertura** per riga: i numeri restano quelli di prima.
+- Le righe di ODL nate da un ordine di produzione non cambiano: i pezzi rientrati li dichiara l'ODP.
+- `flattenDB(db, { stripDerived: true })` toglie il ricevuto dalle righe da inviare: è una lettura, non un dato.
+
+**Verifica**
+- 14 nuovi controlli in `test/ricevimenti.test.js` (suite da 1863 a 1877), fra cui due ricevimenti concorrenti che si sommano invece di sovrascriversi.
+
+### 0.80.1 — 2026-10-12
+
+**Correzioni in vista del database condiviso.** Nessun cambiamento visibile nell'app: sono le cose che il giorno di Supabase avrebbero perso dati o fatto fallire il primo invio, chiuse adesso in locale e con un test. Dettaglio in `docs/analisi-tecnica.md` §33–38.
+
+**Corretto**
+- **Ogni riga figlia ha la propria data.** Righe di documento, quotazioni, sottofamiglie, fasi e materiali degli ODP, fornitori dei centri: la data di modifica la scrive lo Store confrontando il contenuto (`stampChildRows`), non più chi modifica — che se ne dimenticava. Senza, il merge per riga dichiarato nello schema non poteva funzionare: due colleghi su due righe dello stesso ordine si sarebbero cancellati a vicenda.
+- **Rinominare un'unità di misura** cambiava le righe dei documenti senza che risultassero da mandare.
+- **Le righe tolte si contano**: `Store.pendingChanges()` porta `removeChildren` per le righe sparite da un padre che resta.
+- **I fornitori di conto lavoro di un centro** sono dichiarati nello schema (`work_center_suppliers`) e nei riferimenti: prima restavano un array dentro il centro e la migrazione v1 non ne riscriveva il fornitore.
+- **Famiglie predefinite con id non UUID** («fm1», «fp2»…) su archivi già v2: il seed ora nasce con UUID e chi li aveva li ritrova riparati al caricamento, articoli compresi.
+- **`remapIds()`** riscrive anche gli utenti e tutti i campi di audit: è lo strumento per il passaggio all'autenticazione del backend.
+
+**Verifica**
+- 18 nuovi controlli in `test/righe-figlie.test.js` (suite da 1845 a 1863), 13 dei quali falliscono sulla 0.80.0.
+
 ### 0.80.0 — 2026-09-23
 
 **Il Riepilogo ha un calendario.** I segnali dicevano *quante* cose sono in ritardo, non *quando* scadono. Le date c'erano già tutte — consegna della commessa, data entro cui ordinare, consegna confermata dal fornitore — ma ognuna nella sua vista: due scadenze sullo stesso martedì si scoprivano il martedì.

@@ -292,12 +292,20 @@ function docSetLine(k, id, lineId, field, value) {
   const doc = K.get(id); if (!doc) return;
   const l = (doc.lines || []).find(x => x.id === lineId); if (!l) return;
   const before = doc.status;
+  const ricevutoPrima = l.received;
   // Modifica diretta in tabella: niente messaggi, si riporta a 0 (il vincolo è
   // anche sull'input, qui si copre l'incollaggio di testo).
   if (K.numLineFields.includes(field)) {
     l[field] = (value === '' ? (field === 'received' ? 0 : '') : clampNum(parseFloat(value), 0));
   } else l[field] = value;
   if (K.afterSetLine) K.afterSetLine(doc, l, field);
+  // Il ricevuto non si scrive: si registra la differenza come evento. Il
+  // totale digitato resta la cosa che l'utente vede e controlla.
+  if (field === 'received') {
+    const totale = l.received;
+    l.received = ricevutoPrima;
+    registraRicevuto(K.coll, doc, l, totale);
+  }
   K.autoStatus(doc);   // anche cambiare una quantità sposta la soglia di evasione
   touch(doc); docMarkDirty(k);
   if (doc.status !== before) { K.render(); showToast('Stato: ' + (K.STATUS[doc.status] || doc.status)); }
@@ -809,7 +817,7 @@ function rfqListRows() {
 }
 function newRfq() {
   if (!roleGuard('docs')) return;
-  const r = Store.insert('rfqs', { id: gid(), number: nextRfqNumber(), title: '', date: nowISO().slice(0, 10),
+  const r = Store.insert('rfqs', { id: gid(), number: nextRfqNumber(), title: '', date: oggiISO(),
     status: 'bozza', notes: '', notesInternal: '', supplierId: null, planId: null,
     transport: db.settings.transportDefault || '', payment: db.settings.paymentDefault || '',
     lines: [], active: true });
@@ -1354,7 +1362,7 @@ function orderListRows() {
 }
 function newOrder() {
   if (!roleGuard('docs')) return;
-  const o = Store.insert('orders', { id: gid(), number: nextOrderNumber(), title: '', date: nowISO().slice(0, 10),
+  const o = Store.insert('orders', { id: gid(), number: nextOrderNumber(), title: '', date: oggiISO(),
     status: 'bozza', supplierId: null, transport: db.settings.transportDefault || '', payment: db.settings.paymentDefault || '',
     rfqId: null, planId: null, supplierConfirmation: '', notes: '', notesInternal: '', lines: [], active: true });
   docLeave('order'); currentOrderId = o.id; orderView = 'edit'; renderOrders();
@@ -1364,7 +1372,7 @@ function orderFromRfq(rfqId) {
   const r = getRfq(rfqId); if (!r) return;
   const sup = r.supplierId ? getSupplier(r.supplierId) : null;
   const o = stampNew({ id: gid(), number: nextOrderNumber(),
-    title: r.title || ('Da ' + r.number), date: nowISO().slice(0, 10), status: 'bozza',
+    title: r.title || ('Da ' + r.number), date: oggiISO(), status: 'bozza',
     supplierId: r.supplierId || null,
     transport: r.transport || (sup && sup.defaultTransport) || db.settings.transportDefault || '',
     payment: r.payment || (sup && sup.defaultPayment) || db.settings.paymentDefault || '',
@@ -1430,7 +1438,7 @@ function ordDelLine(id, lineId) { docDelLine('order', id, lineId); }
 function ordMarkAllReceived(id) {
   if (!ordGuard(id, 'reception')) return;
   const o = getOrder(id); if (!o) return;
-  (o.lines || []).forEach(l => { l.received = Number(l.qty) || 0; });
+  (o.lines || []).forEach(l => { registraRicevuto('orders', o, l, Number(l.qty) || 0); });
   ordAutoStatus(o); touch(o); orderMarkDirty(); renderOrders();
 }
 
@@ -1734,7 +1742,7 @@ function odlListRows() {
 }
 function newOdl() {
   if (!roleGuard('docs')) return;
-  const o = Store.insert('workOrders', { id: gid(), number: nextOdlNumber(), title: '', date: nowISO().slice(0, 10),
+  const o = Store.insert('workOrders', { id: gid(), number: nextOdlNumber(), title: '', date: oggiISO(),
     status: 'bozza', supplierId: null, transport: db.settings.transportDefault || '', payment: db.settings.paymentDefault || '',
     rfqId: null, planId: null, jobId: null, supplierConfirmation: '', notes: '', notesInternal: '', lines: [], active: true });
   docLeave('odl'); currentOdlId = o.id; odlView = 'edit'; renderOdl();
@@ -1759,7 +1767,7 @@ function odlMarkAllReceived(id) {
   let saltate = 0;
   (o.lines || []).forEach(l => {
     if (odlRigaDaOdp(l)) { saltate++; return; }
-    l.received = Number(l.qty) || 0;
+    registraRicevuto('workOrders', o, l, Number(l.qty) || 0);
   });
   ordAutoStatus(o); touch(o); odlMarkDirty(); renderOdl();
   if (saltate) showToast(`${saltate} ${saltate === 1 ? 'riga viene' : 'righe vengono'} da un ordine di produzione: i pezzi rientrati si dichiarano lì`, 'error');

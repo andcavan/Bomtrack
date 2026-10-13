@@ -21,9 +21,10 @@ const { makeDb, mat, acq, asm, comp } = require('./fixtures.js');
 
 // ── Server finto ──
 // Righe per tabella, con la stessa regola di risoluzione che avrà il backend:
-// vince chi ha `updatedAt` più recente. Le righe figlie non hanno `updatedAt`
-// proprio (in locale non ce l'hanno): per loro vince l'ultimo arrivato, ed è
-// esattamente il motivo per cui il registro dello schema distingue 'row' da
+// vince chi ha `updatedAt` più recente. Dalla 0.80.1 ce l'hanno anche le righe
+// figlie con identità propria (le data lo Store, vedi stampChildRows); quelle
+// senza id — componenti, operazioni, ciclo — non ne hanno uno, e per loro si
+// sostituisce l'insieme: è il motivo per cui il registro distingue 'row' da
 // 'replace'.
 function makeServer() {
   const tabelle = {};

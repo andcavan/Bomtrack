@@ -1,9 +1,18 @@
 # Bomtrack — Schema dati cloud (contratto per il futuro adapter)
 
-Stato attuale: **nessun codice di rete**. I dati vivono in `localStorage` (chiave `bomtrack_v1`)
-come unico blob JSON, gestito da `store.js`. Questo documento definisce il contratto verso cui
-il layer dati è già predisposto: un backend condiviso per un piccolo team (Supabase / Cloudflare D1)
+Stato attuale: **nessun codice di rete, e lo spostamento su un backend non è previsto per
+ora.** I dati vivono in `localStorage` (chiave `bomtrack_v1`) come unico blob JSON, gestito da
+`store.js`, e l'app deve funzionare così. Questo documento definisce il contratto verso cui il
+layer dati è predisposto: un backend condiviso per un piccolo team (Supabase / Cloudflare D1)
 con **tabelle normalizzate**.
+
+> **Predisposto, ma spento (dalla 0.83.1).** La contabilità che serve solo a un backend —
+> date e cancellazioni riga per riga delle tabelle figlie, ricevimenti come eventi — costava
+> in locale spazio (+40% e +45% di archivio, misurati, in un localStorage da ~5 MB) e tempo
+> di salvataggio, senza alcun vantaggio per chi lavora da solo. Sta dietro un interruttore,
+> `Store.modoCondiviso`, **spento di serie**; lo accenderà l'adattatore cloud prima di
+> `Store.load()`, e accenderlo dopo non perde niente. Tutto ciò che questo documento descrive
+> resta vero e testato con l'interruttore acceso; in locale l'app si comporta come prima.
 
 ## Predisposizioni già attive (schema v2, aggiornate alla 0.24.0)
 
@@ -48,24 +57,26 @@ immaginarle.
 | Collezione locale | Tabella | Colonne principali |
 |---|---|---|
 | `users` | `profiles` | id uuid PK → `auth.users(id)`, name, username unique, email, role (`admin`\|`acquisti`\|`progettazione`\|`lettore`), color, active bool |
-| `suppliers` | `suppliers` | id uuid PK, name, referente, email, phone, vat, street, street_number, zip, city, province, country, default_transport, default_payment, active bool, created_at, updated_at |
+| `suppliers` | `suppliers` | id uuid PK, name, referente, email, phone, vat, street, street_number, zip, city, province, country, default_transport, default_payment, transit_days numeric (trasporto andata+ritorno verso il terzista), active bool, created_at, updated_at |
 | `customers` | `customers` | id uuid PK, name **unique** (case-insensitive), referente, email, phone, vat, street, street_number, zip, city, province, country, notes, active bool, created_at, updated_at |
-| `workCenters` | `work_centers` | id uuid PK, name, hourly_rate numeric, capacity_hours numeric (ore a settimana), active, created_at, updated_at. **`suppliers` resta annidato** in un campo, non normalizzato: vedi la nota qui sotto |
+| `workCenters` | `work_centers` | id uuid PK, name, hourly_rate numeric, capacity_hours numeric (ore a settimana), hours_per_day numeric, queue_days numeric, setup_hours numeric (tempi per la programmazione a ritroso), active, created_at, updated_at |
+| `workCenters[].suppliers` | `work_center_suppliers` | id uuid PK, work_center_id uuid FK, supplier_id uuid FK, rate numeric, note, created_at, updated_at — i fornitori di conto lavoro abituali del centro, con la tariffa propria (dalla 0.80.1 in `SCHEMA` e `REFS`) |
 | `families` | `families` | id uuid PK, name, kind ('acquistato'\|'materiale'\|'parte'), sigla, created_at, updated_at |
 | `families[].subs` | `sub_families` | id uuid PK, family_id uuid FK, name, sigla, created_at, updated_at |
-| `items` | `items` | id uuid PK, code, name, type enum, uom, notes, active, favorite, obsolete, unit_cost, purchase_price, supplier_id FK, supplier_code, supplier_desc, active_price_id FK → `item_prices(id)`, sourcing ('make'\|'buy'), family_id FK, sub_family_id FK, machine_item_id FK, group_item_id FK, sigla, overhead_pct_override, margin_pct_override, created_at, updated_at |
+| `items` | `items` | id uuid PK, code, name, type enum, uom, notes, active, favorite, obsolete, unit_cost, purchase_price, supplier_id FK, supplier_code, supplier_desc, active_price_id FK → `item_prices(id)`, sourcing ('make'\|'buy'), family_id FK, sub_family_id FK, machine_item_id FK, group_item_id FK, sigla, overhead_pct_override, margin_pct_override, assembly_days numeric (solo assiemi: giorni di montaggio), created_at, updated_at |
 | `items[].components` | `item_components` | item_id uuid FK, child_item_id uuid FK, qty numeric, scrap_pct numeric |
 | `items[].operations` | `item_operations` | item_id uuid FK, work_center_id uuid FK, hours numeric, note |
-| `items[].cycle` | `item_cycle_rows` | item_id uuid FK, kind ('item'\|'op'), pos int. **Riga articolo** (`kind='item'`): item_id di riferimento, qty, cost_override nullable. **Riga lavorazione** (`kind='op'`): work_center_id FK, supplier_id FK **nullable** (nullo = interna, valorizzato = conto lavoro esterno), cost_mode ('fisso'\|'orario'), hours numeric, days int, rate numeric, cost numeric, note |
-| `items[].priceList` | `item_prices` | id uuid PK, item_id uuid FK, supplier_id FK **nullable** (quotazione inserita a mano), price numeric, min_qty numeric, lead_days int, code, desc, date, rfq_id FK nullable, line_id, note, created_at, updated_at |
+| `items[].cycle` | `item_cycle_rows` | item_id uuid FK, kind ('item'\|'op'), pos int. **Riga articolo** (`kind='item'`): child_item_id (l'articolo citato; `item_id` è il padre), qty, cost_override nullable. **Riga lavorazione** (`kind='op'`): work_center_id FK, supplier_id FK **nullable** (nullo = interna, valorizzato = conto lavoro esterno), cost_mode ('fisso'\|'orario'), hours numeric, days int, rate numeric, cost numeric, note |
+| `items[].priceList` | `item_prices` | id uuid PK, item_id uuid FK, supplier_id FK **nullable** (quotazione inserita a mano), price numeric, min_qty numeric, lead_days int, code, description (in locale `desc`, che in SQL è una parola riservata), date, rfq_id FK nullable, line_id, note, created_at, updated_at |
 | `rfqs` | `rfqs` | id uuid PK, number unique per anno, title, date, status ('bozza'\|'inviata'\|'ricevuta'\|'chiusa'), supplier_id FK, transport, payment, plan_id FK nullable, notes, notes_internal, active, created_at, updated_at |
 | `rfqs[].lines` | `rfq_lines` | id uuid PK, rfq_id uuid FK, item_id FK **nullable** (riga manuale, o riga di conto lavoro), phase_key text **nullable**, phase_keys text **nullable** (tutte le fasi della tratta, separate da virgola), code, description, uom, qty, price nullable, delivery_date, note |
 | `orders` | `orders` | id uuid PK, number unique per anno, title, date, status ('bozza'\|'inviato'\|'confermato'\|'parziale'\|'evaso'\|'annullato'), supplier_id FK, transport, payment, rfq_id FK nullable, plan_id FK nullable, supplier_confirmation, notes, notes_internal, active, created_at, updated_at |
-| `orders[].lines` | `order_lines` | id uuid PK, order_id uuid FK, item_id FK **nullable**, phase_key text **nullable**, phase_keys text **nullable**, code, description, uom, qty, price nullable, delivery_date, received numeric, note |
+| `orders[].lines` | `order_lines` | id uuid PK, order_id uuid FK, item_id FK **nullable**, phase_key text **nullable**, phase_keys text **nullable**, code, description, uom, qty, price nullable, delivery_date, note. **Nessuna colonna `received`**: è la somma di `order_receipts` (vista `order_line_received`) |
 | `workOrders` | `work_orders` | id uuid PK, number unique per anno (**ODL-**), title, date, status (stesso vocabolario di `orders`), supplier_id FK (il **terzista**), transport, payment, rfq_id FK nullable, plan_id FK nullable, job_id FK nullable, supplier_confirmation, notes, notes_internal, odp_id uuid FK **nullable** (l'ordine di produzione che l'ha generato), active, created_at, updated_at |
-| `workOrders[].lines` | `work_order_lines` | id uuid PK, work_order_id uuid FK, **item_id sempre NULL**, phase_key text (la **prima** fase della tratta), phase_keys text (tutte le fasi della tratta), code (della parte), description, uom, qty (pezzi), price (tariffa per pezzo) nullable, delivery_date, confirmed_date, received numeric, note, odp_id uuid FK **nullable**, odp_phase_id uuid FK **nullable** |
+| `workOrders[].lines` | `work_order_lines` | id uuid PK, work_order_id uuid FK, **item_id sempre NULL**, phase_key text (la **prima** fase della tratta), phase_keys text (tutte le fasi della tratta), code (della parte), description, uom, qty (pezzi), price (tariffa per pezzo) nullable, delivery_date, confirmed_date, note, odp_id uuid FK **nullable**, odp_phase_id uuid FK **nullable**. `received` come sopra: somma di `order_receipts`, o — sulle righe con `odp_id` — pezzi buoni dichiarati sull'ultima fase della tratta |
+| `receipts` | `order_receipts` | id uuid PK, coll ('orders'\|'workOrders'), order_id uuid (FK all'una o all'altra tabella secondo `coll`, `on delete cascade`), line_id uuid FK, qty numeric **con segno** (differenza: una correzione all'ingiù è negativa), kind ('apertura'\|'ricevimento'), date, note, created_by, created_at — **append-only**, come `stock_movements` |
 | `prodOrders` | `production_orders` | id uuid PK, number unique per anno (**ODP-**), item_id uuid FK (la **parte**), code, name, uom (congelati), qty numeric (pezzi lanciati), date, due_date, status ('bozza'\|'lanciato'\|'corso'\|'completato'\|'chiuso'\|'annullato'), title, notes, notes_internal, plan_id FK nullable, job_id FK nullable, active, created_at, updated_at |
-| `prodOrders[].phases` | `production_order_phases` | id uuid PK **proprio**, production_order_id uuid FK, seq int (10, 20, 30…), op_index int (posizione d'origine nel ciclo), phase_key text (ponte verso il fabbisogno), work_center_id FK nullable, wc_name (congelato), supplier_id FK **nullable** (nullo = fase interna), supplier_name (congelato), run_from int, run_to int, passata int, cost_mode, hours, days, rate, cost, note — **nessuna colonna di stato** |
+| `prodOrders[].phases` | `production_order_phases` | id uuid PK **proprio**, production_order_id uuid FK, seq int (10, 20, 30…), op_index int (posizione d'origine nel ciclo), phase_key text (ponte verso il fabbisogno), work_center_id FK nullable, wc_name (congelato), supplier_id FK **nullable** (nullo = fase interna), supplier_name (congelato), run_from int, run_to int, passata int, cost_mode, hours, days, rate, cost, note, planned_start date, planned_end date (programmazione della fase, dalla 0.90.0) — **nessuna colonna di stato** |
 | `prodOrders[].materials` | `production_order_materials` | id uuid PK, production_order_id uuid FK, item_id uuid FK, code, name, uom (congelati), per_pezzo numeric, qty numeric |
 | `prodDecls` | `production_declarations` | id uuid PK, odp_id uuid FK, phase_id uuid FK, kind ('avvio'\|'avanzamento'\|'forzatura'\|'chiusura'), date, qty numeric, scrap numeric, note, motivo (solo su `forzatura`), created_by, created_at |
 | `plans` | `production_plans` | id uuid PK, number unique per anno, title, date, notes, active, created_at, updated_at |
@@ -149,14 +160,12 @@ immaginarle.
   carico: un centro senza capacità mostra le ore e non il sovraccarico. Senza
   questa distinzione ogni centro esistente risulterebbe sfondato al primo
   caricamento, e il prospetto nascerebbe già da ignorare.
-- **`workCenters[].suppliers` non è dichiarato in `SCHEMA` né in `REFS`**, ed è
-  un difetto noto e non ancora corretto. Conseguenze: `flattenDB()` lo copia
-  come array dentro una colonna invece di esploderlo in `work_center_suppliers`
-  (il giro completo regge, ma la tabella cloud non è normalizzata), e la
-  rimappatura v1→v2 non riscrive `suppliers[].supplierId`. È la stessa famiglia
-  di `plans.jobId`. La correzione è un child def
-  `{ table: 'work_center_suppliers', rowId: 'id', merge: 'row' }` più una voce
-  in `REFS`, ed è una decisione a sé — scritta qui per non riscoprirla.
+- **`workCenters[].suppliers` è una tabella figlia** (`work_center_suppliers`)
+  dalla 0.80.1: dichiarata in `SCHEMA` con merge per riga e in `REFS` per il
+  `supplierId`. Fino alla 0.80 `flattenDB()` la copiava come array dentro la
+  riga del centro, e la rimappatura v1→v2 non ne riscriveva il fornitore. Il
+  campo resta facoltativo: un centro senza fornitori non ha la chiave, e
+  `child_sets` lo distingue dall'elenco vuoto.
 - `item_prices` esiste solo per `type in ('acquistato','materiale','parte')`.
 - `item_prices (rfq_id, line_id)` è la chiave anti-duplicato usata da
   `rfqRecordPrices()`: registrare due volte la stessa offerta non deve creare due
@@ -212,8 +221,24 @@ immaginarle.
   Le righe di documento (`rfq_lines`, `order_lines`) portano già la propria
   `uom`: è nell'unità del fornitore, e la conversione verso la giacenza si fa
   leggendo quella. Nessuna colonna in più.
+- **Il ricevuto non è una colonna** *(in modo condiviso; in locale resta il numero sulla
+  riga, vedi «Predisposto, ma spento»)*. Dalla 0.81.0 ogni ricevimento è un evento
+  in `order_receipts` con la **differenza** rispetto a prima — chi è davanti
+  alla merce digita il nuovo totale, l'app scrive il delta — e il ricevuto di
+  una riga ne è la somma. Fino alla 0.80 era un numero riscritto sulla riga:
+  due ricevimenti concorrenti sulla stessa riga si sarebbero sovrascritti, e
+  dato che la giacenza ne è la somma, un carico sarebbe sparito dal magazzino
+  senza un avviso. Due eventi invece si sommano, e sono righe diverse: merge per
+  riga, nessun conflitto. In locale `received` resta sulla riga come lettura
+  (la ricalcola `riallineaRicevuti()` a ogni caricamento) ed è dichiarato
+  `derived` in `SCHEMA`: l'adapter lo toglie con `flattenDB(db, { stripDerived: true })`.
+  In cloud è una vista. Il primo caricamento di un archivio precedente
+  trasforma il ricevuto di ogni riga in un evento `apertura`.
+  Il tetto «non più dell'ordinato» resta un controllo dell'interfaccia: con due
+  ricevimenti concorrenti la somma può superarlo, ed è giusto che si veda —
+  è merce arrivata davvero.
 - **La giacenza non è una colonna.** Non esiste `items.on_hand`, e non va aggiunta:
-  l'esistente è `Σ order_lines.received + Σ stock_movements.qty` **dei movimenti
+  l'esistente è `Σ order_receipts.qty` (delle righe con articolo) `+ Σ stock_movements.qty` **dei movimenti
   che toccano il magazzino**, cioè tutti tranne `clStep` (vedi sotto). Un campo
   aggiornato a parte diventerebbe una seconda verità che diverge dalla prima, ed
   è l'errore già corretto una volta con i prezzi. In cloud conviene una **vista**
@@ -349,6 +374,47 @@ non è un array. Le scrive `flattenDB()` e le toglie `nestDB()`.
 | `id` costruito | `item_components`, `item_operations`, `item_cycle_rows` | Quelle righe non hanno un id proprio: in locale la loro identità è la posizione. La chiave si costruisce deterministica (`itemId#array#pos`) — **non è un'identità stabile nel tempo**, e non pretende di esserlo: quelle tre tabelle si sincronizzano sostituendo l'insieme intero, proprio perché un'identità di riga lì non esiste. |
 | `child_sets text` | ogni tabella radice con figli | Distingue un array figlio **vuoto** da uno **assente**, differenza che «nessuna riga» non sa esprimere. Non è una sottigliezza: un assieme con la distinta svuotata a mano ha `components: []`, un commerciale non ha `components` affatto. Se al pull l'assieme si ritrovasse senza il campo, `saveNewComponent()` lancerebbe al primo componente aggiunto. |
 
+## Nomi e tipi: dalla riga locale alla riga del database
+
+`flattenDB()` resta l'inverso esatto del documento locale, e parla la lingua
+del codice. La traduzione verso SQL è un passo a sé, in `cloud-map.js`
+(dalla 0.81.1):
+
+```js
+dbVersoCloud(db)            // flattenDB senza segreti né derivati, poi righeCloud()
+dbDaCloud(tabelle, extra)   // righeLocali(), poi nestDB()
+righeCloud(t, { uuid })     // { tabella: [righe camelCase] } → righe SQL; lancia con l'elenco dei problemi
+righeLocali(t)              // l'inverso
+```
+
+- **Nomi**: camelCase → snake_case, sempre. Le eccezioni stanno in
+  `CLOUD_TABLES`: la colonna padre di ogni tabella figlia (`item_id`,
+  `rfq_id`, `production_order_id`…, al posto del `parentId` generico),
+  `child_item_id` in `item_components` e `item_cycle_rows` (dove `item_id` è
+  già il padre), `description` per `desc` in `item_prices`, e i campi che non
+  hanno colonna (`priceListSeeded`). Un campo non dichiarato passa col nome
+  convertito: se la colonna non esiste il server lo rifiuta ad alta voce, che
+  è meglio di un elenco chiuso che lo butterebbe in silenzio.
+- **Tipi**: `CLOUD_TYPES`, per nome di campo e uguale in tutte le tabelle
+  (`qty`/`price` numeric, `date`/`dueDate` date, `active` bool, `snapshot`/`record`
+  jsonb…); i campi `…Id` sono uuid tranne `conceptId` (i concetti vivono nelle
+  impostazioni, con id leggibili). Le chiavi costruite delle righe senza
+  identità (`item_components`, `item_operations`, `item_cycle_rows`) sono testo.
+- **Vuoto**: `''` diventa NULL in ogni colonna che non è testo — un prezzo non
+  quotato, una data non fissata, una famiglia non assegnata. Al ritorno NULL
+  torna `''` sui campi dove il modello locale scrive `''` (`VUOTO_STRINGA`):
+  senza, ogni record risulterebbe modificato al primo confronto.
+- **Controllo prima dell'invio**: `righeCloud()` si ferma, con tabella, id e
+  campo di ogni problema, su un numero illeggibile, una data non AAAA-MM-GG,
+  un oggetto fuori da una colonna jsonb, un id non uuid. Un invio è
+  tutto-o-niente: meglio saperlo qui, tutto insieme, che dalla prima risposta
+  400.
+
+Una conseguenza da conoscere: una colonna che il record locale non aveva
+torna dal server come `null` esplicito. È innocuo per i lettori (che
+guardano la verità del valore) e per la sincronizzazione (che guarda
+`updated_at`), ma il documento non è identico byte per byte.
+
 ## Politica di merge, per tabella
 
 La decisione centrale della sincronizzazione, e non può essere la stessa per
@@ -356,13 +422,27 @@ tutti. Sta nel registro (`SCHEMA` in `store.js`) ed è verificata in
 `test/sync.test.js`.
 
 **Merge per riga** — `item_prices`, `rfq_lines`, `order_lines`,
-`production_plan_lines`, `sub_families`, `production_order_phases`,
-`production_order_materials`. Righe con identità propria, dove
+`work_order_lines`, `production_plan_lines`, `sub_families`,
+`production_order_phases`, `production_order_materials`,
+`work_center_suppliers`. Righe con identità propria, dove
 l'aggiunta concorrente **è lo scenario normale, non un conflitto**: due colleghi
 che registrano una quotazione sullo stesso articolo hanno due id diversi e
 sopravvivono entrambe. Il conflitto vero è altrove, su `items.active_price_id`:
 è un campo scalare del padre, lì vince l'ultimo che salva e **l'utente va
 avvisato**, perché con il prezzo in uso cambia il costo di ogni distinta a monte.
+
+**Ogni riga di queste tabelle porta il proprio `updated_at`**, ed è ciò che
+rende il merge per riga possibile: senza, l'adapter sa che «l'ordine è
+cambiato» ma non quale riga, rimanda tutte le righe nella propria versione e
+cancella la modifica che un collega ha fatto su un'altra riga dello stesso
+documento. Fino alla 0.80 la data l'avevano solo le righe create da alcuni
+punti del codice, e nessuna riga modificata. Dalla 0.80.1 la scrive lo
+**Store**, non le viste: `stampChildRows()` confronta un'impronta del
+contenuto di ogni riga con quella del passaggio precedente (a ogni `commit()`
+e a ogni `pendingChanges()`), e data la riga che è cambiata. Le righe
+storiche senza data prendono quella del padre al caricamento — non l'adesso,
+che le farebbe vincere a torto. Costo misurato: ~85 ms su 42.000 righe e
+9 MB, cioè oltre la quota di `localStorage`; nella misura reale, la metà.
 
 Le fasi di un ordine di produzione stanno qui e **non** fra le sostituzioni,
 al contrario di `item_cycle_rows` da cui nascono: là l'array è la definizione e
@@ -375,10 +455,12 @@ stessa ragione.
 `item_cycle_rows`. L'array *è* la definizione dell'oggetto: metà distinta di uno
 e metà dell'altro è un prodotto che nessuno ha progettato, e mezzo ciclo di
 lavorazione è un costo sbagliato che nessuno verifica. L'ultimo che salva
-sostituisce l'insieme intero per quel padre, e l'altro riceve un avviso. Da
-implementare come **una RPC transazionale** `save_item(jsonb, expected_updated_at)`
-con controllo ottimistico: è il controllo ottimistico a rendere la sostituzione
-sicura invece che pericolosa.
+sostituisce l'insieme intero per quel padre, e l'altro riceve un avviso. Dalla
+0.82.0 lo fa `push_changes()` (vedi «Lo schema SQL» qui sotto): l'insieme si
+sostituisce **solo se il padre passa** il confronto su `updated_at`, e un padre
+respinto si porta dietro i suoi figli. È quel controllo a rendere la
+sostituzione sicura invece che pericolosa — la `save_item` ipotizzata fino
+alla 0.81 non serve più come funzione a sé.
 
 **Il cestino non è un tombstone**, e i due non vanno confusi: `trash` serve
 all'utente che si è pentito, il tombstone serve al protocollo per far sapere
@@ -398,7 +480,14 @@ utente cancella riappare al pull successivo. È il difetto più insidioso della
 migrazione, perché non somiglia a un errore: somiglia a un collega distratto che
 ha rimesso dentro qualcosa.
 
-Serve `deleted_at` su ogni tabella sincronizzata per riga. Va deciso anche cosa
+Serve `deleted_at` su ogni tabella sincronizzata per riga — **figlie
+comprese**. Una riga tolta da un ordine che resta non è la cancellazione di un
+record radice, e fino alla 0.80 `pendingChanges()` la riportava solo come
+«l'ordine è cambiato»: con il merge per riga, l'adapter non avrebbe saputo
+distinguere «l'ho tolta» da «non ho mai visto quella che un collega ha
+aggiunto». Dalla 0.80.1 il conto porta anche `removeChildren` (vedi
+l'interfaccia qui sotto); le righe di un padre eliminato non ci compaiono, le
+porta via la cancellazione del padre (`on delete cascade`). Va deciso anche cosa
 vince fra cancellazione e modifica concorrente: oggi i test fissano
 **cancellazione**, perché un articolo mezzo cancellato non esiste. Che sia la
 scelta giusta è discutibile; che debba essere una scelta esplicita, e non l'esito
@@ -409,6 +498,13 @@ casuale di chi arriva per primo, no.
 Il modello locale è già quello di destinazione: `db.users` è 1:1 con `profiles`, i ruoli sono
 quelli che le policy dovranno riconoscere e l'app tiene un solo utente di sessione
 (`currentUser`) da cui dipendono nav, guardie e campi di audit.
+
+**Gli id degli utenti cambiano**: `profiles.id` è quello che assegna
+`auth.users`, non l'UUID scritto in locale. Con l'utente cambiano tutti i
+campi di audit del database (`createdBy`, `updatedBy`, `deletedBy`, su ogni
+record e ogni riga figlia), che `REFS` non elenca collezione per collezione:
+stanno in `AUDIT_REFS` (`store.js`), e `remapIds({ user: { vecchio: nuovo } })`
+li riscrive tutti insieme. Il contenuto del cestino resta com'era.
 
 **Cosa non migra**: `passwordHash` e `passwordSalt`. In locale sono SHA-256(salt + password)
 calcolati in `store.js`; le password vere le possiede Supabase Auth (`auth.users`) e questi due
@@ -429,9 +525,9 @@ funzionante è `timetrack-supabase` (`migrations/schema.sql`, `supabase/function
 | `db.users` da `Store.load()` | `select * from profiles` |
 | `canWrite(area)` / `roleGuard(area)` | restano **invariati**, raddoppiati da policy RLS per ruolo |
 
-Schema delle policy: lettura a tutti i profili attivi; scrittura su `items`/`item_*` ai ruoli
-`admin` e `progettazione`, su `rfqs`/`orders` ad `admin` e `acquisti`, su `settings`, anagrafiche
-e `profiles` al solo `admin` — la stessa matrice di `ROLE_WRITE` in `core.js`.
+Schema delle policy: scritto in `supabase/schema.sql` dalla 0.83.0 — vedi
+«Accesso» nella sezione sullo schema SQL. La matrice è quella di `ROLE_WRITE`
+in `core.js`, applicata tabella per tabella.
 
 ## Interfaccia adapter
 
@@ -445,7 +541,9 @@ Store.adapter = unAltroAdapter;              // unico punto da cui passa la dest
 
 Store.takeChanges()       // { changes, mark } — il conto E la fotografia, insieme
 Store.markSynced(mark)    // riallinea a quella fotografia, non all'adesso
-Store.pendingChanges()    // { items: { upsert: [id…], remove: [id…] }, …, settings: true }
+Store.pendingChanges()    // { items: { upsert: [id…], remove: [id…],
+                          //           removeChildren: { priceList: [id…] } }, …, settings: true }
+                          // removeChildren solo se una riga figlia è sparita da un padre che resta
                           // null = fotografia non valida: serve un riallineamento completo
 Store.schema()            // il registro: collezioni, figli, politica di merge
 ```
@@ -482,14 +580,100 @@ lavoriamo in squadra».
    `Store.commit()` resta sincrono — zero `async` nelle viste, nessuno dei
    `saveDB()` cambia. localStorage non viene sostituito: viene **retrocesso a
    specchio locale e coda offline**. Il salvataggio accoda, un flusher con
-   debounce drena. Più tombstone, RPC `save_item` per gli insiemi atomici, e
-   l'indicatore delle modifiche non inviate.
+   debounce drena: ogni lotto di `Store.takeChanges()` diventa **una**
+   chiamata a `push_changes()`, mai spezzata. Più l'indicatore delle
+   modifiche non inviate e l'avviso sulle righe respinte.
 3. **Pull**: polling ogni 20-30 s, al ritorno sulla finestra e dopo ogni invio
    riuscito — prima di Realtime, che aggiunge riconnessione, rinnovo del token e
    ordinamento degli eventi per un vantaggio che in una squadra piccola non si
    percepisce. L'applicazione di un pull va rinviata finché c'è una scheda aperta
    con un form a metà.
 4. **Autenticazione** (vedi sopra).
+
+## Lo schema SQL
+
+Dalla 0.82.0 lo schema è scritto: `supabase/schema.sql`, da eseguire nell'editor
+SQL di Supabase (si può rieseguire: è idempotente). Contiene le tabelle, i
+vincoli, il registro `sync_tables`, le lapidi e le due funzioni da cui passa
+tutta la sincronizzazione. `test/schema-sql.test.js` lo tiene allineato al
+codice — tabelle, padri, politiche di merge e tipo di ogni colonna — e, con un
+Postgres a disposizione (`BOMTRACK_PG`, in CI c'è), lo carica e ci fa passare un
+database che tocca tutte le tabelle.
+
+**Chiavi esterne differite.** Tutte `deferrable initially deferred`: i
+riferimenti circolari (`items.active_price_id` ↔ `item_prices`, distinte fra
+articoli dello stesso invio) non impongono un ordine di inserimento, e i
+vincoli si controllano insieme alla fine dell'invio. Che cosa può citare che
+cosa lo decide l'app:
+
+| Riferimento | Regola | Perché |
+|---|---|---|
+| fornitori, articoli, famiglie, centri, commesse, documenti d'archivio | `no action` | l'app impedisce di eliminarli finché sono citati (`supplierUses`, `isItemUsedAnywhere`, `delJob`…): una violazione è un difetto dell'app, e il commit la rifiuta |
+| `rfq_id`, `plan_id`, `odp_id`, `odp_phase_id`, `decl_id`, `active_price_id`, `job_id` di ODP e promemoria | `set null` | tracciabilità: l'app elimina liberamente il documento citato, e la lettura locale è già «best effort» |
+| righe figlie → padre | `cascade` | |
+| `order_id`/`line_id` di movimenti e ricevimenti | nessuna chiave | polimorfi: un ODA, un ODL o un ODP |
+
+**`push_changes(payload)`** — l'unica via di scrittura, e una transazione sola:
+
+```json
+{ "upsert": { "tabella": [righe di dbVersoCloud] },
+  "remove": { "tabella": [id] },
+  "settings": { "data": {}, "updated_at": "…", "updated_by": "…" } }
+```
+
+- radici e figlie per riga: last-write-wins su `updated_at`; chi perde torna in
+  `rejected` e l'app lo deve dire;
+- figlie `replace`: per ogni padre accettato l'insieme si sostituisce con
+  quello inviato, vuoto compreso — il client manda sempre l'insieme intero;
+- `remove`: cancella e lascia una lapide in `sync_tombstones`; la lapide cede
+  solo a un `updated_at` più recente (il ripristino dal cestino);
+- una colonna o una tabella sconosciuta ferma l'invio: `jsonb_populate_recordset`
+  la ignorerebbe in silenzio.
+
+**Atomicità (D4).** Una dichiarazione di produzione e i movimenti che genera, il
+lancio di un ODP con l'ODL e le uscite, l'eliminazione di un ODP con le sue
+dichiarazioni: in locale sono un `commit()`, e finiscono nello stesso lotto di
+`takeChanges()`. Il lotto è un invio, l'invio è una transazione: entra intero o
+non entra. Per questo non servono RPC per operazione (`declare_progress`,
+`launch_odp`): basta che l'adapter **non spezzi mai un lotto**.
+
+**`pull_changes(since)`** — ciò che è cambiato sul server dopo `since`, più le
+lapidi. Il confronto è su `synced_at`, l'ora del **server** scritta da un
+trigger, non su `updated_at`, che è l'ora del client: un client con l'orologio
+indietro scrive date vecchie, ma le sue righe vanno comunque a chi legge dopo.
+Le figlie `replace` tornano per padre, intere. `now` va ripassato come `since`
+al giro successivo **meno un margine**: una transazione lunga può scrivere un
+`synced_at` più vecchio di un pull già fatto, e rileggere una riga non costa
+niente.
+
+**Accesso (dalla 0.83.0).** RLS attiva su ogni tabella, con la matrice
+dell'app scritta dove non si può aggirare. Due registri, e le policy si
+generano da quelli:
+
+- `role_areas` — ruolo → aree che scrive: è `ROLE_WRITE` di `core.js`, e il test
+  lo verifica riga per riga;
+- `table_areas` — tabella → aree che la scrivono. **Misurata, non dedotta**: la
+  suite è stata fatta girare registrando quali aree `roleGuard` lasciava
+  passare a ogni salvataggio e quali collezioni cambiavano. Una tabella scritta
+  da più gesti accetta tutte le loro aree (i movimenti: magazzino *e*
+  dichiarazioni di produzione), perché una policy più stretta dell'app
+  rifiuterebbe un invio che l'app considera lecito, e con lui l'intero lotto.
+
+| Chi | Legge | Scrive |
+|---|---|---|
+| admin | tutto | tutto |
+| acquisti | tutto | documenti, ricevimenti, ODP e dichiarazioni, movimenti, commesse, promemoria |
+| progettazione | tutto | articoli e loro righe, revisioni, allegati, richieste d'offerta (dal listino), movimenti, promemoria |
+| lettore | tutto | niente |
+| profilo sospeso | niente | niente |
+
+Più due regole: il proprio profilo si aggiorna (nome, colore) ma non il proprio
+ruolo né il proprio stato (trigger `profiles_guardia`); cestino e lapidi li
+scrive chiunque elimini qualcosa. `push_changes()` controlla i permessi di
+**ogni** tabella del lotto prima di toccarne una, e si ferma dicendo quale: RLS
+da sola non basta, perché una `DELETE` non permessa non dà errore — tocca zero
+righe — e la lapide resterebbe, facendo cancellare la riga agli altri client.
+La chiave di servizio (migrazione, primo amministratore) non ha RLS e passa.
 
 ## Deploy
 

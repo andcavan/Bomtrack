@@ -310,3 +310,54 @@ describe('catDateOf — le date come le scrive un fornitore', () => {
     assert.equal(d('31/13/2026'), '2026-13-31', 'il mese assurdo si vede, non si inventa');
   });
 });
+
+// ─── B1: fornitori e famiglie per nome, senza ricerca lineare ───
+describe('Import: fornitori e famiglie si trovano per nome con un indice', () => {
+  const { loadApp } = require('./harness.js');
+  const { makeDb } = require('./fixtures.js');
+  const nuova = () => { const a = loadApp({ silent: true }); a.setDb(makeDb({})); a.asRole('admin'); return a; };
+
+  it('lo stesso fornitore, con maiuscole diverse, si crea una volta sola', () => {
+    const a = nuova();
+    a.eval('globalThis.__r = { createdSuppliers: 0 }');
+    const id1 = a.eval('findOrCreateSupplier("SKF Italia", __r)');
+    const id2 = a.eval('findOrCreateSupplier("skf italia", __r)');
+    assert.equal(id1, id2);
+    assert.equal(a.eval('__r.createdSuppliers'), 1);
+  });
+
+  it('vince il primo, come faceva la ricerca lineare', () => {
+    const a = nuova();
+    a.eval(`db.suppliers.push({ id: 'a', name: 'Beta' }, { id: 'b', name: 'BETA' })`);
+    assert.equal(a.eval('findOrCreateSupplier("beta", { createdSuppliers: 0 })'), 'a');
+  });
+
+  it('un fornitore rinominato fra due import si trova col nome nuovo', () => {
+    const a = nuova();
+    a.eval(`db.suppliers.push({ id: 'a', name: 'Vecchio' })`);
+    a.eval('findOrCreateSupplier("Vecchio", { createdSuppliers: 0 })');   // l'indice è costruito
+    a.eval(`db.suppliers[0].name = 'Nuovo'; saveDB();`);                 // come una rinomina in Gestione
+    assert.equal(a.eval('findOrCreateSupplier("Nuovo", { createdSuppliers: 0 })'), 'a',
+      'un indice non azzerato avrebbe creato un doppione di un fornitore esistente');
+  });
+
+  it('le famiglie distinguono il tipo: «Acciaio» commerciale e «Acciaio» materia prima sono due', () => {
+    const a = nuova();
+    a.eval('globalThis.__r = { createdFamilies: 0, warnings: [] }');
+    const f1 = JSON.parse(a.eval('JSON.stringify(findOrCreateFamily("Acciaio", "", "acquistato", __r))'));
+    const f2 = JSON.parse(a.eval('JSON.stringify(findOrCreateFamily("acciaio", "", "materiale", __r))'));
+    const f3 = JSON.parse(a.eval('JSON.stringify(findOrCreateFamily("ACCIAIO", "", "acquistato", __r))'));
+    assert.notEqual(f1.familyId, f2.familyId);
+    assert.equal(f1.familyId, f3.familyId);
+  });
+
+  it('5.000 righe su 500 fornitori restano veloci', () => {
+    const a = nuova();
+    const t = Date.now();
+    a.eval(`const __r = { createdSuppliers: 0 };
+      for (let i = 0; i < 5000; i++) findOrCreateSupplier('Fornitore ' + (i % 500), __r);`);
+    const ms = Date.now() - t;
+    assert.equal(a.eval('db.suppliers.length'), 500);
+    assert.ok(ms < 1000, `${ms} ms: l'indice non funziona`);
+  });
+});

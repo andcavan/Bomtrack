@@ -206,17 +206,14 @@ const DA_SCRIVERCI = [
   });
 });
 
-describe('Contrasti — i colori dei formati di export', () => {
-  it('il bianco regge sul rosso Acrobat e sul verde Excel', () => {
-    // Non sono colori del tema e non cambiano col fondo: restano gli stessi,
-    // ma la scritta sopra deve leggersi lo stesso.
-    [['export-btn-pdf', /\.export-btn-pdf\{background:(#[0-9A-Fa-f]{6})/],
-     ['export-btn-xls', /\.export-btn-xls\{background:(#[0-9A-Fa-f]{6})/]].forEach(([nome, re]) => {
-      const m = CSS.match(re);
-      assert.ok(m, 'colore non trovato per ' + nome);
-      const v = contrasto('#FFFFFF', m[1]);
-      assert.ok(v >= SOGLIA, `${nome} ${m[1]}: ${v.toFixed(2)}:1, sotto ${SOGLIA}`);
-    });
+describe('I pulsanti di export seguono il tema', () => {
+  // Dalla 0.83.2 sono neutri e il formato lo dice l'icona: un fondo pieno
+  // scritto a mano non cambia col tema, e la scritta sopra va verificata a
+  // parte. Qui si verifica che nessuno lo reintroduca.
+  it('nessun colore scritto a mano: fondo, bordo e testo sono token', () => {
+    const regole = CSS.match(/\.export-btn-(?:pdf|xls)[^{]*\{[^}]*\}/g) || [];
+    assert.ok(regole.length >= 2);
+    regole.forEach(r => assert.doesNotMatch(r, /#[0-9A-Fa-f]{3,6}\b/, r));
   });
 });
 

@@ -499,59 +499,350 @@ usando l'app.
 
 ---
 
+## Risolto nella 0.80.1
+
+Controllo fatto con un solo criterio: **cosa si rompe il giorno in cui arriva
+Supabase**. Le voci qui sotto sono quelle che si potevano chiudere in locale,
+con un test, prima di scrivere una riga di codice di rete — tutte in
+`store.js`, coperte da `test/righe-figlie.test.js` (18 controlli, 13 dei quali
+falliscono sul codice della 0.80.0). Le altre trovate nello stesso giro sono
+in fondo alla sezione «Aperto», sotto **D**.
+
+### 33. Il merge «per riga» non aveva le date delle righe
+`SCHEMA` dichiarava `merge: 'row'` per righe di documento, quotazioni, fasi
+degli ODP, ma le righe non avevano un `updatedAt` proprio: `docSetLine`
+toccava il documento, non la riga. In cloud due colleghi su due righe diverse
+dello stesso ordine si sarebbero cancellati a vicenda — l'adapter sapeva che
+l'ordine era cambiato, non quale riga.
+
+Non si è chiesto ai mutatori di ricordarsene: era l'invariante affidata alla
+disciplina, ed era già rotta (§34). `stampChildRows()` confronta un'impronta
+del contenuto di ogni riga con quella del passaggio precedente, a ogni
+`commit()` e `pendingChanges()`, e data quella che è cambiata. Le righe
+storiche prendono la data del padre al caricamento. Costo: ~85 ms su 42.000
+righe (9 MB, oltre la quota di `localStorage`).
+
+### 34. `renameUom` cambiava le righe dei documenti senza segnalarlo
+Le righe di RFQ, ODA e ODL passavano al nuovo codice senza `touch()`, e dopo
+la rinomina `pendingChanges()` contava **zero** documenti da mandare. Chiuso
+da §33, senza toccare la funzione: è il motivo per cui la soluzione sta nello
+Store.
+
+### 35. Le righe figlie cancellate non si contavano
+Un invio di soli upsert non esprime una cancellazione, e il conto delle
+modifiche lo sapeva per i record radice ma non per le righe: una riga tolta da
+un ordine risultava solo «ordine cambiato». Ora `pendingChanges()` porta
+`removeChildren: { lines: [id…] }`, e la fotografia di `takeChanges()` ricorda
+anche gli id delle righe.
+
+### 36. A9 — `workCenters[].suppliers` in `SCHEMA` e `REFS`
+Era «una riga di `SCHEMA`, e dopo sarebbe una migrazione». Ora è una tabella
+figlia `work_center_suppliers` con merge per riga, `REFS` ne riscrive il
+fornitore, e le righe senza id lo ricevono al caricamento.
+
+### 37. Id «fm1», «fp2» su archivi già v2
+I seed una-tantum delle famiglie materie prime e parti copiavano il database
+demo con i suoi id. Su un archivio ancora v1 `migrateV2()` li trasformava in
+UUID subito dopo; su uno già v2 restavano — **43** id non UUID, su cui il
+primo invio a colonne `uuid` sarebbe fallito. Il seed ora nasce con UUID, e
+`riparaIdSeminati()` ripara chi li ha già, riconoscendoli da id **e** nome
+della famiglia demo e riscrivendo gli articoli che le citano.
+
+### 38. I riferimenti agli utenti non erano rimappabili
+Con Supabase Auth l'id di un profilo cambia, e con lui ogni `createdBy`,
+`updatedBy`, `deletedBy` del database — che `REFS` non elencava. La
+riscrittura di `migrateV2()` è diventata `remapIds(maps)`, che accetta anche il
+tipo `'user'` e lo applica ai campi di `AUDIT_REFS` su ogni record e riga
+figlia. È lo strumento della migrazione utenti; oggi nessuno la chiama.
+
+---
+
+## Risolto nella 0.81.0
+
+### 39. D1 — i ricevimenti sono eventi
+Il ricevuto di una riga d'ordine era un numero riscritto a ogni arrivo, e la
+giacenza ne è la somma: in cloud due ricevimenti concorrenti sulla stessa riga
+si sarebbero sovrascritti e un carico sarebbe sparito dal magazzino, senza
+errore. Era l'ultimo saldo scrivibile rimasto in un modello che per la
+giacenza, il conto lavoro e l'avanzamento aveva già scelto gli eventi.
+
+Nuova collezione `receipts` (`order_receipts`): ogni ricevimento è un evento
+con la **differenza** rispetto a prima, e `received` resta sulla riga come
+lettura ricavata (`riallineaRicevuti()` a ogni caricamento). L'interfaccia non
+cambia: si digita il totale, `registraRicevuto()` scrive il delta. I lettori di
+`received` — giacenza, stato dell'ordine, fabbisogno, export — non sono stati
+toccati. Il campo è dichiarato `derived` in `SCHEMA` e `flattenDB()` lo toglie
+con `stripDerived`, perché inviarlo farebbe vincere di nuovo l'ultimo arrivato.
+
+Scelte da conoscere:
+- il primo caricamento trasforma ogni ricevuto esistente in un evento
+  `apertura`, una volta sola (la riconosce dall'assenza della collezione);
+- le righe di ODL nate da un ordine di produzione restano fuori: i loro pezzi
+  rientrati li dichiara l'ODP, che è già fatto di eventi;
+- gli eventi di un documento nel cestino restano, per il ripristino; quelli di
+  righe che non esistono più si potano al caricamento;
+- correggere all'ingiù è un evento negativo: la storia resta leggibile.
+
+Coperto da `test/ricevimenti.test.js` (14 controlli), compreso lo scenario che
+motivava la voce: due ricevimenti concorrenti, 3 + 2, danno 5.
+
+Da tenere d'occhio: la collezione **cresce** come i movimenti — un evento per
+ogni modifica del campo, più uno d'apertura per riga ricevuta. Va contata nella
+stima di `sostenibilita-free-tier.md` insieme a `production_declarations`.
+
+---
+
+## Risolto nella 0.81.1
+
+### 40. D2 — dalla riga locale alla riga del database
+`flattenDB()` produceva i nomi del codice (`unitCost`, un `parentId`
+generico), flag locali (`priceListSeeded`) e `''` dove una colonna `numeric`,
+`date` o `uuid` vuole NULL: il primo invio sarebbe stato rifiutato per intero.
+Prima di scrivere la traduzione si è misurato invece di indovinare: la suite
+intera è stata fatta girare registrando, a ogni salvataggio, nome e tipo di
+ogni campo di ogni tabella. L'inventario ha trovato quello che a mano non si
+vedeva — riferimenti uuid a `''` negli articoli (`familyId`, `groupItemId`…)
+e nei promemoria, `''` e `null` mescolati nei riferimenti delle righe di
+ciclo, `desc` come nome di colonna (parola riservata in SQL).
+
+`cloud-map.js` ha ora `righeCloud()` / `righeLocali()` e i due percorsi
+completi `dbVersoCloud()` / `dbDaCloud()`. La regola è una (camelCase →
+snake_case, `''` → NULL nelle colonne tipizzate) e le eccezioni sono un
+registro (`CLOUD_TABLES`, `CLOUD_TYPES`). Prima di inviare si controlla
+tutto, e si dice tutto insieme. I riferimenti vuoti del ciclo sono
+normalizzati a `null` in `migrateDB()`. `flattenDB()` non è stato toccato: resta
+l'inverso esatto del documento locale.
+
+Coperto da `test/cloud-colonne.test.js` (16 controlli), incluso il giro
+completo righe locali → SQL → righe locali.
+
+---
+
+## Risolto nella 0.82.0
+
+Lo schema SQL esiste, ed è provato su un Postgres vero: `supabase/schema.sql`,
+verificato da `test/schema-sql.test.js` (18 controlli; i 12 che richiedono il
+database girano in CI con un servizio Postgres, e in locale con `BOMTRACK_PG`).
+
+### 41. D3 — chiavi circolari: differite, e un invio solo
+Tutte le chiavi esterne sono `deferrable initially deferred` e si scrive solo
+attraverso `push_changes()`: l'ordine degli inserimenti non conta più, i
+vincoli si controllano insieme alla fine. Il test spinge in un invio solo un
+database che tocca tutte le 33 tabelle — `active_price_id` circolare
+compreso — e lo rilegge identico con `pull_changes()` e `dbDaCloud()`.
+Le regole delle chiavi seguono le protezioni che l'app ha già: `no action` dove
+l'app impedisce di eliminare un record citato, `set null` sui riferimenti di
+sola tracciabilità, nessuna chiave sui polimorfi. In `docs/cloud-schema.md`
+c'è la tabella.
+
+### 42. D4 — atomicità senza RPC per operazione
+La voce chiedeva `declare_progress`, `launch_odp`. Leggendo il codice la
+risposta è più semplice: ogni operazione composta è già **un `commit()`**, e
+quindi un lotto di `takeChanges()`. Se il lotto è una transazione, l'operazione
+lo è. Il test lo prova sul caso che motivava la voce: una dichiarazione con un
+movimento che non può entrare — e la dichiarazione non resta. La regola che ne
+discende per l'adapter: **un lotto non si spezza mai**.
+
+### 43. L'eliminazione multipla lasciava riferimenti orfani
+`bulkDelete` controllava solo le distinte, mentre `delItem` controlla anche
+documenti, cicli, piani e magazzino (`isItemUsedAnywhere`). Un articolo già
+ordinato o movimentato spariva con l'eliminazione in blocco, lasciando righe e
+movimenti che puntavano al nulla — e con le chiavi esterne l'invio intero
+sarebbe stato rifiutato. Trovato scrivendo le regole delle chiavi: ogni
+`no action` presuppone una protezione nell'app, e questa mancava.
+
+### 44. Due modifiche nello stesso millisecondo erano una sola
+`touch()` scriveva l'ora corrente: due scritture nello stesso millisecondo
+davano lo stesso `updatedAt`, e per la sincronizzazione — che riconosce una
+modifica dal cambio di data — la seconda non esisteva. Un test di
+`sync.test.js` falliva una volta su otto, e il riepilogo della suite lo
+nascondeva sotto la riga «0 fallito» di un giro precedente. Ora `istanteDopo()`
+garantisce che la data salga sempre, anche su un record datato nel futuro da
+un orologio avanti: chi modifica una versione deve vincere su di essa.
+
+### Trovato e corretto nello stesso giro
+`date` sui **movimenti, dichiarazioni, avanzamenti e revisioni** è un istante
+(`nowISO()`), non un giorno: la mappatura della 0.81.1 l'avrebbe rifiutato come
+«data non AAAA-MM-GG». Lì il tipo è `timestamptz` (`CLOUD_TABLES[…].types`). E i
+timestamp tornano da Postgres in un'altra forma («+00:00», microsecondi):
+`righeLocali()` li riporta a quella di `toISOString()`, perché l'app li confronta
+come stringhe.
+
+---
+
+## Risolto nella 0.83.0
+
+### 45. D6 — i permessi nel database
+La policy provvisoria («chiunque sia autenticato scrive tutto») è sostituita
+dalla matrice dell'app: `role_areas` (che è `ROLE_WRITE`) e `table_areas`, da
+cui `schema.sql` genera le policy di ogni tabella. La seconda **non è stata
+dedotta dalla documentazione** — che copriva metà delle tabelle — ma misurata:
+la suite intera è stata fatta girare registrando, a ogni salvataggio, le aree
+lasciate passare da `roleGuard` e le collezioni cambiate. Ne sono usciti casi
+che a leggerla non si vedevano: i movimenti scritti anche da `docs` (le
+dichiarazioni di produzione), le richieste d'offerta anche da `catalog`
+(registrare i prezzi di un'offerta nel listino), le commesse anche da `manage`
+(rinominare un cliente).
+
+Scrivendola è emerso un difetto di `push_changes()` che con la policy
+provvisoria non si poteva vedere: sotto RLS una `DELETE` non permessa non dà
+errore, tocca zero righe. La riga restava e la lapide veniva scritta — al pull
+gli altri client l'avrebbero cancellata. Ora i permessi si controllano per
+tabella, su tutto il lotto, prima di toccare qualcosa.
+
+Coperto da 12 controlli nuovi in `test/schema-sql.test.js`, che girano come
+utenti veri (ruolo `authenticated` e il loro id): fatti dal superutente, che
+ignora RLS, non avrebbero provato niente. Con la policy provvisoria rimessa al
+suo posto ne falliscono sette.
+
+---
+
+## Risolto nella 0.83.1 — tutto deve funzionare in locale
+
+Lo spostamento su Supabase **non è previsto per ora**. Con questo criterio si è
+riletto il lavoro delle versioni 0.80.1–0.83.0, fatto per prepararlo, chiedendo
+una cosa sola: l'app locale funziona almeno come prima? Su due punti no.
+
+### 46. La preparazione al cloud costava in locale, e non dava niente
+Misurato su un archivio realistico (400 ordini da 8 righe, 1.500 articoli con
+listino), salvato da una versione precedente e riaperto:
+
+| | archivio dopo il primo salvataggio | salvataggio medio |
+|---|---|---|
+| 0.80.0 | 1,29 → 1,43 MB | 10,5 ms |
+| 0.83.0 | 1,29 → 2,01 MB | 28,6 ms |
+| 0.83.1 | 1,29 → 1,43 MB | 7,8 ms |
+
+Due fonti, entrambe utili solo a chi scrive in due sullo stesso database: la
+timbratura delle righe figlie (§33), che al primo caricamento datava ogni riga
+esistente e a ogni salvataggio rifaceva le impronte, e i ricevimenti come eventi
+(§39), ~290 byte per evento. In un `localStorage` da ~5 MB è spazio che manca
+proprio quando serve. Ora stanno dietro `Store.modoCondiviso`, **spento di
+serie**: in locale l'app si comporta come la 0.80, e lo spegnimento non perde
+niente — accendendolo, le righe prendono la data del documento e ogni ricevuto
+diventa un evento d'apertura. I test del modo condiviso lo accendono; tre test
+nuovi verificano che spento non scriva niente.
+
+### 47. Un ricevuto poteva azzerarsi in silenzio al caricamento
+`riallineaRicevuti()` (§39) riscriveva il ricevuto di ogni riga con la somma dei
+suoi eventi. Se un percorso qualunque scriveva il campo senza passare da
+`registraRicevuto()` — oggi nessuno, domani chissà — il numero che l'utente
+aveva visto tornava alla somma al caricamento successivo, senza un avviso; in
+un archivio con la collezione già presente ma senza eventi, a **zero**.
+Trovato misurando §46. La regola ora è che in locale **il numero visto non
+cambia mai da solo**: una differenza diventa un evento di allineamento. Solo una
+riga *senza* il campo — come arriva da un backend, dove non viaggia — lo
+ricava dagli eventi.
+
+### 48. D9 — la data dei documenti nuovi era il giorno UTC
+Richieste, ordini, ODL, piani e ODP nascevano con `nowISO().slice(0, 10)`: in
+Italia, fra mezzanotte e l'una (le due d'estate), con la data di ieri. E il
+numero del documento prende l'anno **locale**: alle 00:30 di Capodanno nasceva
+una «RFQ-2027-001» datata 31/12/2026. Ora `oggiISO()`, che esisteva già. I
+calcoli di `views-mrp.js` (`addDays`, le settimane ISO) restano in UTC, ed è
+giusto: lì sono UTC da capo a fondo. Il test simula le 00:30 a Roma, con e senza
+ora legale, e fallisce sulla versione precedente.
+
+### 49. B1 — fornitori e famiglie per nome, con un indice
+`findOrCreateSupplier` e `findOrCreateFamily` cercavano per nome scorrendo
+l'elenco a ogni riga d'import. Ora un indice con le regole di `codeIndex()`
+(vince il primo; chi crea un record lo aggiunge a mano), azzerato da
+`invalidateCaches()` a ogni salvataggio — senza, un fornitore rinominato in
+Gestione fra due import sarebbe stato cercato col nome vecchio, e duplicato.
+5.000 righe su 500 fornitori: sotto il secondo, con una rete nei test.
+
+---
+
+## Risolto nella 0.83.2 — grafica e impaginazione
+
+L'app è stata aperta in Chromium con dati realistici (nomi lunghi, documenti
+con dodici righe) a 1440, 1280, 820 e 390 px, nei due temi: 15 viste e 6
+editor, 168 schermate, ciascuna misurata — scorrimento laterale, elementi fuori
+schermo, testo tagliato, corpo sotto 11 px, contrasto WCAG, bersagli sotto i 32
+px al telefono — e poi guardata. Il contrasto era già a posto ovunque.
+
+### 50. La barra delle sezioni nascondeva sezioni intere
+`.nav` era centrata con `justify-content:center` **e** scorrevole: quando non ci
+stava, la parte in eccesso finiva oltre il bordo sinistro, dove nessuno
+scorrimento arriva. E le etichette si spegnevano con una media query a 1330 px,
+mentre ci stavano solo da ~1700: a 1366–1440 px Riepilogo e Gestione erano
+invisibili, a 820 restava un'icona e mezza, a 390 la barra era larga zero.
+Ora la centratura la fanno i margini automatici, e i gradi di degradazione
+(`h-l1`…`h-l4`) li sceglie `adattaHeader()` **misurando**, perché lo spazio
+dipende dal nome nella pill e dalle sezioni del ruolo, che una soglia fissa non
+conosce. Due menu a tendina nuovi: ⋯ per i comandi di contorno, ☰ per le
+sezioni.
+
+### 51. Al telefono ogni pagina scorreva di lato
+Due cause: l'intestazione (risolta da §50) e `.wl{grid-template-columns:1fr}`
+sotto i 1100 px — una colonna `1fr` non scende sotto la larghezza minima del
+contenuto, e la barra del documento la allargava di 160–300 px. Ora
+`minmax(0,1fr)`, come già la versione a due colonne.
+
+### 52. Il resto, in breve
+- Codici articolo che andavano a capo sul trattino: `.code-link` è `nowrap`.
+- Importi all'italiana (`numIt()` in `core.js`, scritto a mano: non deve
+  dipendere dai dati di lingua del browser). Le quantità restano col punto:
+  `fmtQty` finisce anche nei campi numerici e in testi che rientrano in Excel, e
+  cambiarla in 120 punti non valeva il rischio — vedi C5.
+- Bersagli da almeno 34 px su schermi stretti o a sfioramento; etichette di
+  stato e tipo da 9–10 a 10,5 px (maiuscole: a quel corpo si leggono come 12).
+- Export neutri (il formato lo dice l'icona); riga dei comandi della lista;
+  barra del piano in due righe, con il perché sui «Genera…» spenti — un
+  pulsante `disabled` non mostra il suggerimento, lo porta l'involucro; schede
+  più staccate dalla pagina; pannello laterale chiuso di serie sotto i 1400 px.
+
+Coperto da `test/layout.test.js`, che in CI apre l'app vera a sette larghezze.
+
+---
+
 ## Aperto
+
+> **Lettura per la situazione attuale (0.83.1).** Il backend non è previsto per
+> ora. Le voci contrassegnate *[solo con backend]* — e tutta la sezione D —
+> descrivono cosa servirà il giorno in cui arriverà, e non hanno effetto su
+> come l'app funziona oggi: in locale sono già coperte (un utente solo, e due
+> schede protette dal contatore di revisione, §24). Le altre valgono adesso.
 
 ### A. Sicurezza
 
-**A2 — `hashPassword` è uno SHA-256 a singolo giro** (`store.js`), senza KDF
+**A2 — `hashPassword` è uno SHA-256 a singolo giro** *[solo con backend]* (`store.js`), senza KDF
 né iterazioni, e il backup JSON esporta gli hash. Il limite è documentato
 onestamente (`store.js:161-166`, `README.md`) e l'app è locale e monoutente. Non
 ha senso risolverlo in locale: si chiude passando a Supabase Auth, dove
 `passwordHash`/`passwordSalt` vanno **cancellati** in migrazione.
 
 **A10 — gli allegati sono fuori da `Store`, e il backup lo dice ma non lo
-risolve.** Vedi la sezione 0.77.0 qui sopra. Non è un difetto da correggere in
+risolve.** *[il rimedio vero è col backend; in locale il backup lo dichiara]* Vedi la sezione 0.77.0 qui sopra. Non è un difetto da correggere in
 locale — è una conseguenza inevitabile del tenere dei file su un browser — ma è
 il primo punto in cui «esporta un backup JSON» non basta più a mettersi al
 sicuro, e va chiuso insieme al backend, non dopo.
 
-**A6 residuo — il vincolo `unique` su `items.code` va scritto in SQL.** Il lato
+**A6 residuo — il vincolo `unique` su `items.code` va scritto in SQL.** *[solo con backend]* Il lato
 applicativo è chiuso (§12), ma finché il vincolo non è nel database due client
 possono ancora assegnare lo stesso codice in concorrenza: nessuno dei due vede
 l'altro. Prerequisito: la bonifica dei duplicati storici, che ora ha lo
 strumento per essere fatta.
 
-**A7 — numerazione documenti a `Math.max(...) + 1` su scansione**
+**A7 — numerazione documenti a `Math.max(...) + 1` su scansione** *[solo con backend]*
 (`nextRfqNumber`, `nextOrderNumber`, `nextPlanNumber`). In multiutente due
 persone che creano una richiesta nello stesso minuto ottengono lo stesso numero,
 garantito. Serve un contatore atomico lato server. Attenuante accertata: tutte le
 FK usano l'`id` UUID, **mai il numero** — quindi una rinumerazione al push non
 rompe nessun riferimento.
 
-**A8 residuo — i cicli in distinta restano impediti solo lato client.** Il lato
+**A8 residuo — i cicli in distinta restano impediti solo lato client.** *[solo con backend: in locale il client è uno, e basta]* Il lato
 applicativo è chiuso e ora copre anche la distinta parte (§15), ma `createsCycle()`
 protegge dentro **un solo** client. In cloud due utenti possono creare
 congiuntamente un anello che nessuno dei due vede, e `costOf` ricorre **per
 tutti**: è l'unico vincolo la cui violazione rende l'app inutilizzabile a tutto
 il team. Serve un trigger ricorsivo su `item_components`, e non è opzionale.
 
-**A9 — `workCenters[].suppliers` non è dichiarato in `SCHEMA`.** Il difetto è
-ammesso in `docs/cloud-schema.md`, non era registrato qui. `SCHEMA.workCenters`
-non ha `children`, ma l'array annidato esiste ed è vivo (`views-manage.js`,
-`costing.js`, `views-bom.js`): i fornitori di conto lavoro di un centro. Oggi
-innocuo — nessun codice di rete esiste — ma al primo push `flattenDB()` lo
-lascerebbe dentro la riga padre invece di esplodere una tabella figlia. Va
-chiuso **prima** del backend, non dopo: è una riga di `SCHEMA`, e dopo sarebbe
-una migrazione. Il riferimento `suppliers[].supplierId` è invece già coperto dal
-lato applicativo (`supplierUses()`).
+*(A9 — `workCenters[].suppliers` fuori da `SCHEMA` — chiusa nella 0.80.1, §36.)*
 
 ### B. Prestazioni
 
-**B1 residuo — `findOrCreateSupplier` e `findOrCreateFamily` restano lineari per
-riga.** La parte pesante è risolta (§13): erano gli articoli, che sono migliaia.
-Fornitori e famiglie sono decine, quindi il prodotto resta piccolo — ma su un
-foglio da 5.000 righe con centinaia di fornitori si farebbe sentire, e la
-soluzione è la stessa già scritta. *Non urgente.*
+*(B1 residuo — fornitori e famiglie lineari nell'import — chiuso nella 0.83.1, §49.)*
 
 **B2 — `mrpDescend` non memoizza.** Su una distinta con sottoassiemi molto
 condivisi lo stesso ramo si riesplode per ogni percorso. Meno grave di quanto
@@ -575,6 +866,12 @@ code identiche di richiesta, ordine e ODL.)*
 Restano scoperti `printView` (`shell.js`) e le anagrafiche di servizio minori di
 `views-manage.js`.
 
+**C5 — le quantità a schermo sono ancora col punto decimale** *(0.83.2)*. Gli
+importi sono all'italiana, le quantità no («1.5 kg»): `fmtQty` finisce anche in
+campi numerici e in testi che rientrano in Excel. Si chiude con una funzione per
+la sola lettura (`fmtQtyIt` esiste già, usata nella nota delle fasi) applicata
+vista per vista, non cambiando `fmtQty`.
+
 **C4 — file lunghi con scope globale piatto:** `views-docs.js` ~1990 righe,
 `views-catalog.js` ~1970, `views-mrp.js` ~1880, `core.js` ~1430, `store.js` ~1240,
 `views-manage.js` ~940. Senza moduli, ogni nome è globale e una collisione non dà
@@ -588,6 +885,44 @@ sono **1291** e le collisioni **zero**, e `test/scripts.test.js` ora fallisce se
 qualcuno ne introduce una, nominandola. Il prezzo che questa voce dava per
 obbligato non c'era: per non farsi male non serviva rinunciare a niente, serviva
 contare.
+
+### D. Verso il database condiviso *(censite nella 0.80.1 — tutte [solo con backend])*
+
+Trovate nello stesso giro di §33–38, e non chiudibili in locale: vanno
+nell'adapter o nello schema SQL.
+
+*(D1 — il ricevuto come contatore sovrascritto — chiusa nella 0.81.0, §39.)*
+
+*(D2 — nomi e tipi delle colonne — chiusa nella 0.81.1, §40.)*
+
+*(D3 e D4 — chiavi circolari e scritture atomiche — chiuse nella 0.82.0, §41–42.)*
+
+*(D9 — la data dei documenti nuovi in UTC — chiusa nella 0.83.1, §48: valeva anche in locale.)*
+
+**D5 — `localStorage` non regge lo specchio locale.** Il piano lo retrocede a
+specchio e coda offline, ma la quota è ~5 MB e lo scenario A di
+`sostenibilita-free-tier.md` è decine di MB. Specchio e coda in IndexedDB, che
+l'app usa già per gli allegati.
+
+*(D6 — la matrice dei permessi nel database — chiusa nella 0.83.0, §45.)*
+
+**D7 — il cestino si pota sul client.** `migrateDB()` toglie le voci oltre
+`TRASH_DAYS`; in cloud ogni client cancellerebbe righe condivise. Va su
+`pg_cron`.
+
+**D8 — avvio e primo amministratore.** Oggi prima i dati e poi il login,
+perché gli utenti stanno nel blob; con RLS l'ordine si rovescia. Il setup del
+primo admin a database vuoto non deve esistere lato client. *(Dalla 0.83.0 lo
+schema lo rende obbligatorio: senza un profilo attivo non si legge niente.
+Il primo profilo si crea dall'editor SQL o con la chiave di servizio, che non
+ha RLS; resta da scrivere la procedura, e la edge function d'invito.)*
+
+**D10 — un ruolo per l'officina.** Chi dichiara l'avanzamento in produzione
+oggi deve essere «acquisti» (`roleGuard('docs')`), che però scrive anche
+ordini e richieste. Con la matrice ora nel database, un ruolo
+produzione/magazzino è una riga in `ROLE_WRITE`, una in `role_areas` e una
+nuova area sulle tabelle di dichiarazioni, movimenti e ricevimenti — ma è una
+decisione di come lavora l'azienda, non del codice.
 
 ---
 

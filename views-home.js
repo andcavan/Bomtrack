@@ -162,6 +162,22 @@ function homeSegnali() {
   agg(dup.map(g => voce(g.code, `${g.items.length} articoli con questo codice: ${g.items.map(i => i.name || '(senza nome)').join(', ')}`, '')),
     'codice articolo duplicato', 'codici articolo duplicati', isAdmin() ? 'manage' : 'buy', 'media');
 
+  // La sicurezza dell'archivio: l'unica copia sta in questo browser. Solo per
+  // chi può esportare — a un lettore direbbe di fare una cosa che non può fare.
+  // Qui il numero non conta voci ma giorni (o percentuale): `apri` porta dritto
+  // alla scheda Backup invece che all'ultima scheda aperta della Gestione.
+  if (isAdmin()) {
+    const b = statoBackup();
+    if (b.giorni >= BACKUP_AVVISO_GG) out.push({ n: b.giorni,
+      testo: b.mai ? 'giorni senza un backup: non ne è mai stato esportato uno da questo browser' : 'giorni dall\'ultimo backup',
+      vista: 'manage', apri: "homeApri('backup')", gravita: b.giorni >= BACKUP_ALLARME_GG ? 'alta' : 'media',
+      voci: [voce('Esporta ora', 'Scarica il backup JSON dell\'intero archivio', 'exportBackup();renderHome()')] });
+    const pct = dbSpazioPct();
+    if (pct >= 70) out.push({ n: pct, testo: '% dello spazio del browser occupato dall\'archivio',
+      vista: 'manage', apri: "homeApri('backup')", gravita: pct >= 90 ? 'alta' : 'media',
+      voci: [voce(fmtMB(dbSpazio().usatoMB) + ' su ' + fmtMB(dbSpazio().limiteMB), 'Oltre il limite i salvataggi falliscono: esporta un backup e alleggerisci l\'archivio', '')] });
+  }
+
   return out;
 }
 // Aprire ciò che l'avviso nomina. Stessa strada della ricerca globale: prima la
@@ -175,6 +191,7 @@ function homeApri(tipo, id) {
   else if (tipo === 'odl') { setView('odl'); openOdlEdit(id); }
   else if (tipo === 'odp') { setView('odp'); openOdpEdit(id); }
   else if (tipo === 'cycle') { setView('cycles'); openCycleFor(id); }
+  else if (tipo === 'backup') { setView('manage'); setMgmtTab('backup'); }
 }
 // Quante voci si scrivono per esteso. Oltre, l'elenco smetterebbe di essere un
 // dettaglio e diventerebbe la vista che si apre cliccando la riga.
@@ -266,6 +283,22 @@ function homeEventi() {
     });
   });
 
+  // Programma dei piani (0.89.0): quando mandare al terzista e quando lanciare
+  // in produzione. Le stesse voci dell'agenda del piano, solo quelle ancora da
+  // emettere: i rientri attesi stanno già qui sotto, con gli ordini di lavoro.
+  (db.plans || []).forEach(p => {
+    if (p.active === false || typeof planAgenda !== 'function') return;
+    planAgenda(p).forEach(e => {
+      if ((e.tipo !== 'invia' && e.tipo !== 'lancio') || e.stato === 'fatto') return;
+      const grav = e.stato === 'ritardo' ? 'alta' : calGravitaData(e.data, oggi);
+      const g = raggruppa('prog|' + e.tipo + '|' + p.id + '|' + e.data, { tipo: 'programma', data: e.data,
+        icona: e.tipo === 'invia' ? 'truck' : 'factory', numero: p.number || '', azione: `homeApri('plan','${p.id}')` }, grav);
+      const cosa = e.tipo === 'invia' ? 'Inviare al terzista' : 'Lanciare in produzione';
+      g.testo = g.n === 1 ? `${cosa} ${e.codice || e.nome || ''}`.trim() : `${cosa} ${g.n} parti`;
+      g.dettaglio = [g.numero, e.tipo === 'invia' ? e.dove : p.title].filter(Boolean).join(' — ');
+    });
+  });
+
   // Piani: quando deve essere pronto
   (db.plans || []).forEach(p => {
     if (p.active === false || !p.dueDate) return;
@@ -277,20 +310,17 @@ function homeEventi() {
 
   // Ordini d'acquisto e di lavoro: le consegne ancora da ricevere, alla data
   // confermata se c'è. Insieme, come nei segnali: la domanda è una — cosa arriva.
-  [].concat((db.orders || []).map(o => ({ o, tipo: 'order' })), (db.workOrders || []).map(o => ({ o, tipo: 'odl' }))).forEach(({ o, tipo }) => {
-    if (o.active === false || o.status === 'bozza' || o.status === 'annullato' || o.status === 'evaso') return;
+  // Quali righe aspettano ancora merce lo dice righeDaRicevere() (views-dash.js),
+  // la stessa regola delle consegne scadute del cruscotto.
+  righeDaRicevere().forEach(({ o, tipo, l, data }) => {
     const forn = (db.suppliers || []).find(s => s.id === o.supplierId);
-    (o.lines || []).forEach(l => {
-      const data = l.confirmedDate || l.deliveryDate;
-      if (!data || (Number(l.received) || 0) >= (Number(l.qty) || 0)) return;
-      let grav = data < oggi ? 'alta' : calGravitaData(data, oggi);
-      if (grav === 'info' && (ordLineDelay(l) || 0) > 0) grav = 'media';
-      const g = raggruppa(tipo + '|' + o.id + '|' + data, { tipo: 'ordine', data, icona: tipo === 'odl' ? 'wrench' : 'truck',
-        azione: `homeApri('${tipo}','${o.id}')`,
-        dettaglio: [forn && forn.name, o.title].filter(Boolean).join(' — ') }, grav);
-      g.testo = `${tipo === 'odl' ? 'Rientro ODL' : 'Consegna ordine'} ${o.number || ''}`.trim() + (g.n > 1 ? ` (${g.n} righe)` : '');
-      if ((ordLineDelay(l) || 0) > 0) g.ritardo = true;
-    });
+    let grav = data < oggi ? 'alta' : calGravitaData(data, oggi);
+    if (grav === 'info' && (ordLineDelay(l) || 0) > 0) grav = 'media';
+    const g = raggruppa(tipo + '|' + o.id + '|' + data, { tipo: 'ordine', data, icona: tipo === 'odl' ? 'wrench' : 'truck',
+      azione: `homeApri('${tipo}','${o.id}')`,
+      dettaglio: [forn && forn.name, o.title].filter(Boolean).join(' — ') }, grav);
+    g.testo = `${tipo === 'odl' ? 'Rientro ODL' : 'Consegna ordine'} ${o.number || ''}`.trim() + (g.n > 1 ? ` (${g.n} righe)` : '');
+    if ((ordLineDelay(l) || 0) > 0) g.ritardo = true;
   });
 
   // Ordini di produzione lanciati o in corso: quando il prodotto deve essere finito
@@ -509,7 +539,7 @@ function renderHome() {
   // **fuori** da quel bersaglio, ognuna con il proprio, perché un pulsante
   // dentro un pulsante non si sa più cosa apre — né col mouse né da tastiera.
   const righe = segnali.map(s => `<div class="home-sig">
-      <div class="mgmt-item" ${clickAttrs(`setView('${s.vista}')`, `${s.n} ${s.testo} — vai a ${viewLabel(s.vista)}`)} style="cursor:pointer">
+      <div class="mgmt-item" ${clickAttrs(s.apri || `setView('${s.vista}')`, `${s.n} ${s.testo} — vai a ${viewLabel(s.vista)}`)} style="cursor:pointer">
         <span style="font-family:var(--mono);font-weight:700;width:60px;text-align:right;color:${GRAVITA[s.gravita]}">${s.n}</span>
         <span style="flex:1">${esc(s.testo)}</span>
         <span class="empty-text" style="padding:0">${esc(viewLabel(s.vista))} →</span>

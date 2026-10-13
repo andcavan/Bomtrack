@@ -601,8 +601,10 @@ function odpSetField(id, field, value) {
     o.qty = Math.max(0, Number(value) || 0);
     const part = getItem(o.itemId);
     if (part && o.status === 'bozza') o.materials = opFreezeMaterials(part, o.qty);
+    if (o.status === 'bozza') odpPianifica(o);
   } else {
     o[field] = campoTesto(value) || (field === 'jobId' ? null : '');
+    if (field === 'dueDate' && o.status === 'bozza') odpPianifica(o);
   }
   touch(o); saveDB(); renderOdp();
 }
@@ -689,13 +691,15 @@ function renderOdpEdit(id) {
     </div>
     ${o.status === 'bozza' ? `<div class="rfq-warn">${ico('warning', 'tinted', '')} L'ordine è in <strong>bozza</strong>: quantità, date e fasi si possono ancora cambiare, e non si dichiara niente. <strong>Lancia</strong> per aprire la produzione — da lì fasi e materiale si congelano.</div>` : ''}
     <div class="mrp-section">
-      <div class="cycle-section-head"><h3>${ico('wrench', 'tinted pill', '')} Le fasi, in successione</h3></div>
+      <div class="cycle-section-head"><h3>${ico('wrench', 'tinted pill', '')} Le fasi, in successione</h3>
+        ${o.status !== 'bozza' && o.dueDate ? `<button class="btn-outline" onclick="odpReplanAsk('${id}')" title="Ricalcola inizio e fine pianificati delle fasi non chiuse, a ritroso dalla data in cui l'ordine serve">${ico('refresh', 'tinted', '')} Ripianifica</button>` : ''}</div>
       <p class="empty-text" style="text-align:left;padding:0 0 8px">Una fase non si avvia finché la precedente non è chiusa, e <strong>solo i pezzi buoni proseguono</strong>: uno scarto alla prima fase restringe tutte quelle che seguono. Il magazzino si muove in <strong>due punti soli</strong> — escono i codici del ciclo all'avvio della prima fase, entra il codice della parte sull'ultima. In mezzo non si scrive niente: i pezzi non sono più il materiale e non sono ancora la parte, e <em>dove sono</em> lo dice questa tabella.</p>
       <div class="table-wrap"><table>
         <thead><tr>
           <th scope="col" style="width:60px">Fase</th>
           <th scope="col">Lavorazione</th>
           <th scope="col">Dove</th>
+          <th scope="col" style="width:150px" title="Inizio e fine pianificati, a ritroso dalla data in cui l'ordine serve. Dopo il lancio stanno ferme: si ricalcolano con Ripianifica">Pianificata</th>
           <th scope="col" style="width:90px" title="I pezzi che entrano in questa fase: i buoni usciti dalla precedente">Da fare</th>
           <th scope="col" style="width:90px">Fatti</th>
           <th scope="col" style="width:90px">Scarti</th>
@@ -720,13 +724,20 @@ function odpPhaseRows(o) {
       <td>${f.supplierId
     ? `${ico('factory', 'tinted', '')} ${esc(f.supplierName || supplierName(f.supplierId) || '—')}`
     : '<span class="empty-text" style="padding:0">Interna</span>'}</td>
+      <td style="white-space:nowrap">${odpPlannedCell(f, st)}</td>
       <td class="num">${fmtQty(opDaFare(o, f))}</td>
       <td class="num">${fmtQty(opFatti(o, f))}</td>
       <td class="num">${opScarti(o, f) > 0 ? `<span class="mrp-warn">${fmtQty(opScarti(o, f))}</span>` : '—'}</td>
       <td>${statusBadge(ODP_FASE_LABELS, st)}${forzata ? ` <span class="mrp-warn" title="Avviata forzando la successione: il motivo è nello storico">${ico('warning', 'tinted', '')} forzata</span>` : ''}</td>
       <td>${odpPhaseActions(o, f, st, legame)}</td>
     </tr>`;
-  }).join('') || '<tr><td colspan="8" class="empty-text">Questo ordine non ha fasi: il ciclo della parte è vuoto.</td></tr>';
+  }).join('') || '<tr><td colspan="9" class="empty-text">Questo ordine non ha fasi: il ciclo della parte è vuoto.</td></tr>';
+}
+function odpPlannedCell(f, st) {
+  if (!f.plannedStart && !f.plannedEnd) return '<span class="empty-text" style="padding:0">—</span>';
+  const tardi = st !== 'chiusa' && f.plannedEnd && f.plannedEnd < oggiISO();
+  const da = fmtDateIt(f.plannedStart).slice(0, 5), a = fmtDateIt(f.plannedEnd).slice(0, 5);
+  return `${tardi ? `<span class="mrp-warn" title="Doveva finire il ${esc(fmtDateIt(f.plannedEnd))}">${ico('warning', 'tinted', '')} ` : '<span>'}${esc(da === a ? a : da + ' → ' + a)}</span>`;
 }
 function odpPhaseActions(o, f, st, legame) {
   const id = o.id;
@@ -990,15 +1001,60 @@ function nextOdpNumber() {
 // un ordine scritto a mano non è una seconda specie di ordine.
 function odpNew(part, qty, dueDate, extra) {
   const n = Math.max(0, Number(qty) || 0);
-  return stampNew(Object.assign({
+  return odpPianifica(stampNew(Object.assign({
     id: gid(), number: nextOdpNumber(), itemId: part.id,
     code: part.code || '', name: part.name || '', uom: itemUom(part),
-    qty: n, date: nowISO().slice(0, 10), dueDate: dueDate || '',
+    qty: n, date: oggiISO(), dueDate: dueDate || '',
     status: 'bozza', title: '', notes: '', notesInternal: '',
     planId: null, jobId: null,
     phases: opFreezePhases(part), materials: opFreezeMaterials(part, n),
     active: true,
-  }, extra || {}));
+  }, extra || {})));
+}
+// ─── Le date delle fasi ───
+// Ogni fase porta inizio e fine **pianificati**, calcolati a ritroso dalla data
+// in cui l'ordine serve con la stessa aritmetica del fabbisogno (schedOps in
+// views-mrp.js), ma sulle fasi **congelate**: è l'ordine ad aver promesso quel
+// ciclo, non il ciclo di oggi. In bozza seguono pezzi e data; dopo il lancio
+// stanno ferme — una fase che slitta deve vedersi — e si ricalcolano solo con
+// **Ripianifica**, che lascia com'erano quelle già chiuse.
+function odpSchedule(o) {
+  const ops = o.phases || [];
+  const viste = new Set();
+  const tratte = [];
+  ops.forEach((f, k) => {
+    const from = f.runFrom != null ? Number(f.runFrom) : k;
+    const chiave = from + '|' + (f.supplierId || '');
+    if (viste.has(chiave)) return;
+    viste.add(chiave);
+    tratte.push({ from, to: f.runTo != null ? Number(f.runTo) : k, supplierId: f.supplierId || '', esterna: !!f.supplierId });
+  });
+  // Le tratte congelate parlano di opIndex, schedOps di posizioni: sulle fasi
+  // di un ordine coincidono, perché si congelano tutte e in ordine. Se non
+  // coincidessero (un ordine scritto a mano, dati vecchi) si ripiega su una
+  // tratta per fase, che è il comportamento di prima delle tratte.
+  const coerenti = ops.every((f, k) => Number(f.opIndex) === k) && tratte.every(t => t.from <= t.to && t.to < ops.length);
+  const usa = coerenti ? tratte : ops.map((f, k) => ({ from: k, to: k, supplierId: f.supplierId || '', esterna: !!f.supplierId }));
+  return schedOps(ops, usa, Number(o.qty) || 0, String(o.dueDate || '').slice(0, 10));
+}
+function odpPianifica(o, soloAperte) {
+  if (!o || !(o.phases || []).length || typeof schedOps !== 'function') return o;
+  const prog = odpSchedule(o);
+  o.phases.forEach((f, k) => {
+    if (soloAperte && opChiusa(o, f)) return;
+    const d = prog.fasi[k] || {};
+    f.plannedStart = d.start || '';
+    f.plannedEnd = d.end || '';
+  });
+  return o;
+}
+function odpReplanAsk(id) {
+  if (!opGuard(id, 'ops')) return;
+  const o = getOdp(id); if (!o) return;
+  askConfirm(`Ricalcolare le date pianificate delle fasi non ancora chiuse di ${o.number}, a ritroso dal ${fmtDateIt(o.dueDate) || '—'}?`, () => {
+    odpPianifica(o, true);
+    touch(o); saveDB(); renderOdp(); savedToast('Fasi ripianificate');
+  }, { title: 'Ripianifica', ok: 'Ripianifica' });
 }
 function newOdpModal() {
   if (!roleGuard('docs')) return;
@@ -1125,14 +1181,19 @@ function opRunDocRow(o, fase) {
   const somma = campo => fasi.reduce((s, x) => s + (Number(x[campo]) || 0), 0);
   const prezzo = somma('price');
   const giorni = somma('leadDays');
+  const congelate = opRunFasi(o, fase);
+  const tratta = { invio: (congelate[0] || {}).plannedStart || '', rientro: (congelate[congelate.length - 1] || {}).plannedEnd || '' };
   return Object.assign({}, prima, {
     phaseKey: prima.phaseKey,
     phaseKeys: fasi.map(x => x.phaseKey),
     phaseNos: fasi.map(x => x.phaseNo),
     fasi,
     wcName: Array.from(new Set(fasi.map(x => x.wcName))).join(' + '),
-    due: o.dueDate || '', leadDays: giorni, days: giorni,
-    orderBy: o.dueDate ? addDays(o.dueDate, -giorni) : '',
+    // Con le date pianificate (0.90.0) la riga chiede al terzista il **rientro
+    // della tratta**, e va emessa entro il suo invio; un ordine di prima, senza
+    // date, ragiona ancora sulla data dell'ordine.
+    due: tratta.rientro || o.dueDate || '', leadDays: giorni, days: giorni,
+    orderBy: tratta.invio || (o.dueDate ? addDays(o.dueDate, -giorni) : ''),
     hours: somma('hours'), hoursUnit: somma('hoursUnit'),
     price: prezzo, amount: prezzo * qty, noPrice: !(prezzo > 0),
     qty, qtyOrder: qty,
@@ -1144,7 +1205,7 @@ function opDocHead(o, supplierId) {
   const sup = supplierId ? getSupplier(supplierId) : null;
   return {
     title: `${o.number} — ${(o.code || '')}`.trim(),
-    date: nowISO().slice(0, 10), status: 'bozza', supplierId: supplierId || null,
+    date: oggiISO(), status: 'bozza', supplierId: supplierId || null,
     transport: (sup && sup.defaultTransport) || db.settings.transportDefault || '',
     payment: (sup && sup.defaultPayment) || db.settings.paymentDefault || '',
     rfqId: null, planId: o.planId || null, jobId: o.jobId || null,

@@ -13,6 +13,12 @@ const { makeDb, mat, parte, asm, comp, wc } = require('./fixtures.js');
 
 // Perno con due fasi interne (tornitura 0,5 h, fresatura 0,25 h) e una esterna.
 // Il gruppo ne monta tre e ha una sua operazione di montaggio.
+//
+// Dalla 0.88.0 le ore stanno nella settimana in cui la fase **comincia**, a
+// ritroso dalla consegna (montaggio un giorno, fresatura uno, tornitura uno):
+// la consegna è un venerdì perché tutta la catena resti nella W40, e i casi di
+// questo file continuino a parlare di secchielli e non di programmazione — per
+// quella c'è test/schedulazione.test.js.
 function conDb(over) {
   const app = loadApp({ silent: true });
   app.asRole('admin');
@@ -35,7 +41,7 @@ function conDb(over) {
       asm('grp', 'gruppo', { components: [comp('perno', 3)], operations: [{ workCenterId: 'mon', hours: 2, note: '' }] }),
     ],
     plans: [{ id: 'pl1', number: 'FAB-2026-001', title: 'Lotto', date: '2026-07-01', notes: '',
-      lines: [{ id: 'l1', itemId: 'grp', qty: 2, dueDate: '2026-09-30' }], active: true }],
+      lines: [{ id: 'l1', itemId: 'grp', qty: 2, dueDate: '2026-10-02' }], active: true }],
   }, over || {})));
   return app;
 }
@@ -143,7 +149,7 @@ describe('Carico: da dove vengono le ore', () => {
 describe('Carico: i secchielli settimanali', () => {
   it('righe di piano con date diverse finiscono in settimane diverse', () => {
     const app = conDb();
-    app.eval("getPlan('pl1').lines.push({ id: 'l2', itemId: 'grp', qty: 1, dueDate: '2026-08-03' });");
+    app.eval("getPlan('pl1').lines.push({ id: 'l2', itemId: 'grp', qty: 1, dueDate: '2026-08-07' });");
     const t = tavola(app, "mrpLoad(getPlan('pl1'))");
     assert.deepEqual(t.settimane, ['2026-W32', '2026-W40']);
     approx(cella(t, 'mon', '2026-W32').hours, 2);
@@ -161,7 +167,7 @@ describe('Carico: i secchielli settimanali', () => {
   it('il modo predefinito somma tutti i piani aperti', () => {
     const app = conDb();
     app.eval(`db.plans.push({ id: 'pl2', number: 'FAB-2026-002', title: '', date: '2026-07-01',
-      notes: '', lines: [{ id: 'l9', itemId: 'grp', qty: 1, dueDate: '2026-09-30' }], active: true });`);
+      notes: '', lines: [{ id: 'l9', itemId: 'grp', qty: 1, dueDate: '2026-10-02' }], active: true });`);
     approx(cella(tavola(app, 'mrpLoadAll()'), 'mon', '2026-W40').hours, 6, '4 + 2');
   });
 
@@ -187,9 +193,11 @@ describe('Carico: capacita e sovraccarico', () => {
     assert.equal(c.over, 0);
   });
 
+  // Le ore al giorno sono dichiarate: ricavate da 3 h a settimana sarebbero
+  // 0,6 al giorno, e il montaggio durerebbe sette giorni scivolando nella W39.
   it('sopra capacita: sovraccarico in ore e saturazione oltre il 100%', () => {
     const app = conDb();
-    app.eval("getWorkCenter('mon').capacityHours = 3; invalidateCaches();");
+    app.eval("getWorkCenter('mon').capacityHours = 3; getWorkCenter('mon').hoursPerDay = 8; invalidateCaches();");
     const c = cella(tavola(app, "mrpLoad(getPlan('pl1'))"), 'mon', '2026-W40');
     approx(c.over, 1, '4 h chieste su 3 di capacita');
     approx(c.sat, 4 / 3);
@@ -197,7 +205,7 @@ describe('Carico: capacita e sovraccarico', () => {
 
   it('il riepilogo nomina settimana e centri sfondati', () => {
     const app = conDb();
-    app.eval("getWorkCenter('mon').capacityHours = 3; invalidateCaches();");
+    app.eval("getWorkCenter('mon').capacityHours = 3; getWorkCenter('mon').hoursPerDay = 8; invalidateCaches();");
     const ov = JSON.parse(app.eval(`JSON.stringify(mrpLoadOverload(mrpLoad(getPlan('pl1')))
       .map(o => ({ week: o.week, centri: o.centri.map(c => c.name) })))`));
     assert.deepEqual(ov, [{ week: '2026-W40', centri: ['CDL mon'] }]);
@@ -299,7 +307,7 @@ describe('Carico: i codici da produrre', () => {
   it('due piani sullo stesso codice e settimana sommano i pezzi', () => {
     const app = conDb();
     app.eval(`db.plans.push({ id: 'pl2', number: 'FAB-2026-002', title: '', date: '2026-07-02', notes: '',
-      lines: [{ id: 'l2', itemId: 'grp', qty: 1, dueDate: '2026-09-30' }], active: true, jobId: null });
+      lines: [{ id: 'l2', itemId: 'grp', qty: 1, dueDate: '2026-10-02' }], active: true, jobId: null });
       invalidateCaches();`);
     assert.equal(codici(app).find(x => x.code === 'PERNO').qty, 9, '6 dal primo piano, 3 dal secondo');
   });
@@ -334,7 +342,7 @@ describe('Carico: il grafico dice la stessa cosa della tavola', () => {
   });
 
   it('sopra il 100% la barra e rossa', () => {
-    const h = disegno("getWorkCenter('tor').capacityHours = 1");
+    const h = disegno("getWorkCenter('tor').capacityHours = 1; getWorkCenter('tor').hoursPerDay = 8");
     assert.match(h, /<rect [^>]*fill="var\(--red\)"/);
   });
 
@@ -357,7 +365,7 @@ describe('Carico: il grafico dice la stessa cosa della tavola', () => {
   });
 
   it('l etichetta dice dove sfonda, non solo che sfonda', () => {
-    assert.match(disegno("getWorkCenter('tor').capacityHours = 1"),
+    assert.match(disegno("getWorkCenter('tor').capacityHours = 1; getWorkCenter('tor').hoursPerDay = 8"),
       /aria-label="CDL tor, 1 settimana, sovraccarico in W40"/);
   });
 });
@@ -400,9 +408,9 @@ describe('Carico dentro la scheda di un piano: gli stessi numeri della tavola', 
   function dbDuePiani() {
     return conDb({ plans: [
       { id: 'pl1', number: 'FAB-2026-001', title: 'Lotto', date: '2026-07-01', notes: '',
-        lines: [{ id: 'l1', itemId: 'grp', qty: 2, dueDate: '2026-09-30' }], active: true },
+        lines: [{ id: 'l1', itemId: 'grp', qty: 2, dueDate: '2026-10-02' }], active: true },
       { id: 'pl2', number: 'FAB-2026-002', title: 'Lotto due', date: '2026-07-01', notes: '',
-        lines: [{ id: 'l1', itemId: 'grp', qty: 10, dueDate: '2026-09-30' }], active: true },
+        lines: [{ id: 'l1', itemId: 'grp', qty: 10, dueDate: '2026-10-02' }], active: true },
     ] });
   }
 

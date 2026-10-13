@@ -1,5 +1,5 @@
-// Barra dei comandi a due livelli: cinque gruppi, le voci del gruppo aperto su
-// una seconda riga. Il rischio non è il disegno ma la corrispondenza: una vista
+// Barra dei comandi a due livelli: i gruppi del processo (dalla 0.91.0), le
+// voci del gruppo aperto su una seconda riga. Il rischio non è il disegno ma la corrispondenza: una vista
 // che non sta in nessun gruppo diventa irraggiungibile dalla barra e nessuno se
 // ne accorge finché non serve. Il primo test è lì per quello.
 
@@ -35,7 +35,15 @@ describe('Integrità della barra', () => {
 
   it('i gruppi sono quelli richiesti, nell\'ordine', () => {
     assert.deepEqual(nav(app()).map(g => g.label),
-      ['Riepilogo', 'Anagrafica', 'Magazzino', 'Cicli di lavorazione', 'Distinta base', 'Documenti', 'Gestione']);
+      ['Riepilogo', 'Tecnico', 'Pianificazione', 'Acquisti', 'Produzione', 'Magazzino', 'Gestione']);
+  });
+
+  it('ogni gruppo tiene le viste del suo processo', () => {
+    const g = Object.fromEntries(nav(app()).map(x => [x.id, x.views.map(v => v.id)]));
+    assert.deepEqual(g.tech, ['design', 'buy', 'bom', 'report', 'cycles']);
+    assert.deepEqual(g.plan, ['jobs', 'mrp', 'load']);
+    assert.deepEqual(g.buying, ['rfq', 'orders', 'pricelist']);
+    assert.deepEqual(g.prod, ['odp', 'odl']);
   });
 });
 
@@ -56,9 +64,11 @@ describe('navGroups — cosa vede chi', () => {
 describe('groupOfView e viewLabel', () => {
   it('ogni vista risale al suo gruppo', () => {
     const a = app();
-    assert.equal(a.eval('groupOfView("design").label'), 'Anagrafica');
-    assert.equal(a.eval('groupOfView("report").label'), 'Distinta base');
-    assert.equal(a.eval('groupOfView("orders").label'), 'Documenti');
+    assert.equal(a.eval('groupOfView("design").label'), 'Tecnico');
+    assert.equal(a.eval('groupOfView("report").label'), 'Tecnico');
+    assert.equal(a.eval('groupOfView("orders").label'), 'Acquisti');
+    assert.equal(a.eval('groupOfView("load").label'), 'Pianificazione');
+    assert.equal(a.eval('groupOfView("odl").label'), 'Produzione');
     assert.equal(a.eval('groupOfView("sconosciuta")'), null);
   });
 
@@ -74,21 +84,23 @@ describe('groupOfView e viewLabel', () => {
 describe('Memoria del gruppo', () => {
   it('tornando su un gruppo si riapre l\'ultima voce usata', () => {
     const a = app();
-    a.eval('setView("design")');       // Anagrafica → Progetto
-    a.eval('setView("orders")');       // Documenti → Ordini
-    a.eval('openNavGroup("anag")');
-    assert.equal(a.eval('activeView'), 'design');
-    a.eval('openNavGroup("docs")');
+    a.eval('setView("cycles")');       // Tecnico → Cicli
+    a.eval('setView("orders")');       // Acquisti → Ordini fornitore
+    a.eval('openNavGroup("tech")');
+    assert.equal(a.eval('activeView'), 'cycles');
+    a.eval('openNavGroup("buying")');
     assert.equal(a.eval('activeView'), 'orders');
   });
 
   it('un gruppo mai visitato apre la sua prima voce', () => {
     const a = app();
-    a.eval('openNavGroup("db")');
-    assert.equal(a.eval('activeView'), 'bom');
-    a.eval('openNavGroup("docs")');
+    a.eval('openNavGroup("tech")');
+    assert.equal(a.eval('activeView'), 'design');
+    a.eval('openNavGroup("plan")');
     assert.equal(a.eval('activeView'), 'jobs',
-      'le voci del gruppo seguono la catena: commessa → fabbisogno → richiesta → ordine');
+      'le voci del gruppo seguono la catena: commessa → fabbisogno → carico');
+    a.eval('openNavGroup("buying")');
+    assert.equal(a.eval('activeView'), 'rfq', 'prima si chiede, poi si ordina');
   });
 
   it('un gruppo inesistente non fa nulla', () => {
@@ -101,8 +113,8 @@ describe('Memoria del gruppo', () => {
   it('la memoria segue anche i salti fatti da fuori la barra', () => {
     const a = app();
     a.eval('setView("rfq")');          // come farebbe la ricerca globale
-    a.eval('openNavGroup("db")');
-    a.eval('openNavGroup("docs")');
+    a.eval('openNavGroup("tech")');
+    a.eval('openNavGroup("buying")');
     assert.equal(a.eval('activeView'), 'rfq');
   });
 });
@@ -115,12 +127,11 @@ describe('Disegno della barra', () => {
     assert.ok(sub.includes('Gestione DB') && sub.includes('Visualizza DB'));
     assert.ok(sub.includes('subnav-btn active') && sub.includes('>Visualizza DB<'));
     // il gruppo acceso in barra è quello che contiene la vista
-    assert.ok(a.html('main-nav').includes('Distinta base'));
+    assert.ok(a.html('main-nav').includes('Tecnico'));
   });
 
   it('con una voce sola la seconda riga resta vuota', () => {
-    // Magazzino e Gestione sono i gruppi a voce singola rimasti: i Cicli ne
-    // hanno due dalla 0.68.0 (Cicli di lavorazione e Carico centri).
+    // Magazzino e Gestione sono i gruppi a voce singola.
     const a = app();
     a.eval('setView("stock")');
     assert.equal(a.html('sub-nav'), '');
@@ -134,7 +145,7 @@ describe('Stampa', () => {
     const a = app();
     a.eval('setView("report")');
     a.eval('printHeadFill()');
-    assert.ok(a.html('print-head').includes('Distinta base › Visualizza DB'));
+    assert.ok(a.html('print-head').includes('Tecnico › Visualizza DB'));
   });
 
   it('sui gruppi a voce singola basta il nome del gruppo', () => {
@@ -150,6 +161,6 @@ describe('Stampa', () => {
     const a = app();
     a.eval('setView("load")');
     a.eval('printHeadFill()');
-    assert.ok(a.html('print-head').includes('Cicli di lavorazione › Carico centri'));
+    assert.ok(a.html('print-head').includes('Pianificazione › Carico centri'));
   });
 });

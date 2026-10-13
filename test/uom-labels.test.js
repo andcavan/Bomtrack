@@ -45,7 +45,7 @@ describe('I tre modi di attaccare un\'unità a un numero', () => {
     assert.equal(ev('fmtUom(1.5, "kg")'), '1.5 kg');
   });
   it('fmtPer mette il costo *per* unità, valuta compresa', () => {
-    assert.equal(ev('fmtPer(3.2, "kg")'), '€3.20/kg');
+    assert.equal(ev('fmtPer(3.2, "kg")'), '€ 3,20/kg');
   });
   it('labelUom mette l\'unità fra parentesi nell\'etichetta', () => {
     assert.equal(ev('labelUom("Scorta minima", "kg")'), 'Scorta minima (kg)');
@@ -54,7 +54,7 @@ describe('I tre modi di attaccare un\'unità a un numero', () => {
   // fondo, o "Scorta minima ()", sono peggio del problema che risolvono.
   it('senza unità non si aggiunge niente — né spazi né parentesi vuote', () => {
     assert.equal(ev('fmtUom(15, "")'), '15');
-    assert.equal(ev('fmtPer(3.2, "")'), '€3.20');
+    assert.equal(ev('fmtPer(3.2, "")'), '€ 3,20');
     assert.equal(ev('labelUom("Scorta minima", "")'), 'Scorta minima');
     assert.equal(ev('fmtUom(15, null)'), '15');
   });
@@ -83,7 +83,7 @@ describe('La scheda articolo dice sempre di cosa parla', () => {
     assert.match(h, /10 kg/);  // lotto di riordino
   });
   it('i costi unitari portano il denominatore', () => {
-    assert.match(html(), /€10\.00\/kg/);
+    assert.match(html(), /€ 10,00\/kg/);
   });
   it('la quantità minima del listino è nell\'unità della quotazione', () => {
     assert.match(html(), /20 kg/);
@@ -108,7 +108,26 @@ describe('Il confronto offerte non inventa i pezzi', () => {
     a.eval('rfqCompareSel = ["r1","r2"]');
     const h = a.ctx.renderRfqCompare();
     assert.match(h, /100 kg/);
-    assert.match(h, /€2\.00\/kg/);
+    assert.match(h, /€ 2,00\/kg/);
     assert.doesNotMatch(h, /\bpz\b/);
+  });
+});
+
+describe('Gli importi si leggono all\'italiana', () => {
+  const { loadApp } = require('./harness.js');
+  const a = loadApp({ silent: true });
+  a.eval('db = { settings: { currency: "€" } }');
+  const ev = x => a.eval(x);
+  it('migliaia col punto, decimali con la virgola', () => {
+    assert.equal(ev('fmtN(1125.5)'), '€ 1.125,50');
+    assert.equal(ev('fmtN(1234567.891)'), '€ 1.234.567,89');
+    assert.equal(ev('fmtN(0)'), '€ 0,00');
+  });
+  it('i negativi tengono il segno, e il meno zero non esiste', () => {
+    assert.equal(ev('fmtN(-1500)'), '€ -1.500,00');
+    assert.equal(ev('fmtN(-0.001)'), '€ 0,00');
+  });
+  it('non dipende dalla lingua del browser: nessun toLocaleString', () => {
+    assert.doesNotMatch(String(a.eval('numIt.toString()')), /toLocaleString/);
   });
 });

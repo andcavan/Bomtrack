@@ -13,7 +13,7 @@
 // Revisione in esecuzione, mostrata accanto al logo. Va tenuta allineata alla
 // voce in cima a CHANGELOG.md (l'app si copia a mano tra PC: sapere
 // quale revisione sta girando su una postazione è l'unico modo per capirlo).
-const APP_VERSION = '0.80.0';
+const APP_VERSION = '0.92.0';
 
 let currentUser = null;      // utente della sessione (null = schermata di accesso)
 let currentBomId = null;     // articolo prodotto attualmente aperto nelle Distinte
@@ -46,7 +46,23 @@ let odpDirty = false;        // modifiche non salvate nell'editor ODP
 //  UTILITY
 // ═══════════════════════════════════════════════════════════
 function cur() { return (db.settings && db.settings.currency) || '€'; }
-function fmtN(n) { return cur() + (Number(n) || 0).toFixed(2); }
+// Gli importi si scrivono all'italiana: «€ 1.125,50», non «€1125.50». Su un
+// ordine che parte verso un fornitore il formato inglese si nota subito, e il
+// punto senza separatore delle migliaia si legge male da mille in su.
+// Scritto a mano e non con toLocaleString: il risultato non deve dipendere dai
+// dati di lingua che il browser ha installato — su alcuni manca l'italiano, e
+// lo stesso PDF uscirebbe diverso da un PC all'altro.
+// Vale per ciò che si **legge** (schermo, PDF): gli Excel scrivono numeri veri,
+// e i campi di input vogliono il punto.
+function numIt(n, decimali) {
+  const d = decimali == null ? 2 : decimali;
+  const v = Number(n) || 0;
+  const s = Math.abs(v).toFixed(d);
+  const [intera, fraz] = s.split('.');
+  const gruppi = intera.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+  return (v < 0 && Number(s) !== 0 ? '-' : '') + gruppi + (fraz ? ',' + fraz : '');
+}
+function fmtN(n) { return cur() + ' ' + numIt(n, 2); }
 // ─── L'importo di una riga di documento ───
 // Quantità × prezzo, arrotondato ai centesimi **una volta sola**.
 //
@@ -82,12 +98,16 @@ function esc(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').repla
 //
 //   fmtQty  15        →  "15"          quantità nuda (una colonna U.M. accanto)
 //   fmtUom  15, 'm'   →  "15 m"        quantità con la sua unità
-//   fmtPer  3.2, 'kg' →  "€3.20/kg"    prezzo o costo *per* unità
+//   fmtPer  3.2, 'kg' →  "€ 3,20/kg"   prezzo o costo *per* unità
 //   labelUom('Scorta minima', 'm')     →  "Scorta minima (m)"
 //
 // L'unità vuota non produce niente: un articolo senza U.M. resta un numero
 // nudo, non "15 " con uno spazio in fondo o "15 (—)".
 function fmtQty(n) { n = Number(n) || 0; return Number.isInteger(n) ? String(n) : String(+n.toFixed(3)); }
+// La stessa quantità con la virgola, per il testo che si **legge** accanto a un
+// importo all'italiana («0,25 h/pz × € 32,00/h»). fmtQty resta col punto: finisce
+// anche nei campi numerici, che la virgola non la accettano.
+function fmtQtyIt(n) { return fmtQty(n).replace('.', ','); }
 function uomSuffix(u) { return u ? ' ' + esc(u) : ''; }
 function fmtUom(n, u) { return fmtQty(n) + uomSuffix(u); }
 function fmtPer(n, u) { return fmtN(n) + (u ? '/' + esc(u) : ''); }
@@ -289,9 +309,11 @@ function invalidateCaches() {
   _famIdx = null; _famIdxArr = null; _famIdxLen = -1;
   _cptIdx = null; _cptIdxLen = -1;
   _userIdx = null; _userIdxArr = null; _userIdxLen = -1;
+  if (typeof calInvalidate === 'function') calInvalidate();           // sta in calendario.js, caricato dopo
   if (typeof invalidateStock === 'function') invalidateStock();   // sta in views-stock.js, caricato dopo
   if (typeof invalidateItemDocs === 'function') invalidateItemDocs(); // sta in views-item.js, caricato dopo
   if (typeof invalidateProd === 'function') invalidateProd();       // sta in views-prod.js, caricato dopo
+  if (typeof invalidateNomiImport === 'function') invalidateNomiImport(); // sta in import-export.js, caricato dopo
 }
 // ─── Librerie esterne (PDF ed Excel) ───
 // Stanno in vendor/, dentro il repo: l'app è fatta per aprirsi con un doppio
@@ -420,7 +442,7 @@ function roleGuard(area) {
 // Area di scrittura corrispondente a ciascuna vista (per il banner di sola lettura)
 // `load` (Carico centri) è null come `report`: è un prospetto derivato, in sola
 // lettura, da cui non si scrive niente.
-const VIEW_AREA = { home: null, bom: 'bom', buy: 'catalog', design: 'catalog', stock: 'catalog', cycles: 'catalog', load: null, report: null, jobs: 'docs', mrp: 'docs', rfq: 'docs', orders: 'docs', odl: 'docs', odp: 'docs', manage: 'manage' };
+const VIEW_AREA = { home: null, dash: null, bom: 'bom', buy: 'catalog', design: 'catalog', stock: 'catalog', cycles: 'catalog', load: null, report: null, jobs: 'docs', mrp: 'docs', rfq: 'docs', orders: 'docs', odl: 'docs', odp: 'docs', pricelist: 'catalog', manage: 'manage' };
 
 // Le due viste di anagrafica: ciò che si compra e ciò che si progetta.
 // Ogni vista ha i suoi filtri (prefisso degli id nella pagina) e la creazione
@@ -961,12 +983,17 @@ function onLoadError(info) {
 function showLoadErrorModal(info) {
   const kb = info && info.bytes ? ` (erano circa ${Math.round(info.bytes / 1024)} KB)` : '';
   const dove = info && info.rescued
-    ? `Sono stati messi da parte così com'erano, sotto la voce <span style="font-family:var(--mono)">${esc(DB_KEY_RESCUE)}</span> dell'archivio locale del browser, e restano recuperabili a mano.`
+    ? (Store.archivio === 'indexeddb'
+      ? `Sono stati messi da parte così com'erano, alla voce <span style="font-family:var(--mono)">illeggibile</span> del database <span style="font-family:var(--mono)">${esc(IDB_NOME)}</span> del browser, e restano recuperabili a mano.`
+      : `Sono stati messi da parte così com'erano, sotto la voce <span style="font-family:var(--mono)">${esc(DB_KEY_RESCUE)}</span> dell'archivio locale del browser, e restano recuperabili a mano.`)
     : 'Una copia di scorta era già stata messa da parte in precedenza, e non è stata toccata.';
   const testo = info && info.kind === 'parse'
     ? `<p>I dati salvati su questo computer non si riescono più a leggere${kb}: il contenuto risulta interrotto o alterato.</p>
        <p><strong>Non sono stati cancellati.</strong> ${dove}</p>
        <p>Quello che vedi adesso è un database di esempio, e <strong>non è ancora stato salvato</strong>: finché non modifichi qualcosa, l'originale resta dov'è. Prima di lavorare, reimporta l'ultimo backup JSON — o fai vedere questa schermata a chi segue l'app.</p>`
+    : Store.archivio === 'irraggiungibile'
+    ? `<p>L'archivio sta nel database del browser (IndexedDB), e questa volta il browser non l'ha aperto. <strong>I dati non sono persi.</strong></p>
+       <p>Chiudi le altre schede o finestre con Bomtrack e ricarica la pagina. Finché l'archivio non torna raggiungibile, l'app non salva niente: quello che vedi è un database di esempio.</p>`
     : `<p>Il browser non consente di leggere l'archivio locale: succede in navigazione privata, o quando i dati dei siti sono bloccati.</p>
        <p>Quello che vedi è un database di esempio. <strong>Non lavorarci sopra</strong>: alla chiusura non resterebbe nulla.</p>`;
   // Chiave propria, come per l'avviso di salvataggio: si affianca a ciò che è
@@ -984,6 +1011,7 @@ function showLoadErrorModal(info) {
 // altro momento: quello lo mostra mentre si lavora, questo lo difende all'uscita.
 function lavoroInSospeso() {
   if (typeof Store !== 'undefined' && Store.isUnsaved && Store.isUnsaved()) return true;
+  if (typeof Store !== 'undefined' && Store.scrittureInVolo && Store.scrittureInVolo() > 0) return true;
   return !!(typeof rfqDirty !== 'undefined' && rfqDirty)
     || !!(typeof orderDirty !== 'undefined' && orderDirty)
     || !!(typeof odlDirty !== 'undefined' && odlDirty);
@@ -1420,7 +1448,7 @@ if (typeof document !== 'undefined') {
   });
   // ── L'app anche senza rete ──
   // Il service worker mette in cache i file del programma (non i dati: quelli
-  // stanno in localStorage e non passano di lì) così l'app si apre offline e si
+  // stanno nel browser, in IndexedDB o localStorage, e non passano di lì) così l'app si apre offline e si
   // può installare sul PC dell'officina.
   //
   // Su file:// non esiste e il browser lo rifiuta: è il modo in cui l'app si

@@ -105,6 +105,15 @@ input,select,button,textarea{font-family:var(--font)}
    titolo e si ridimensionano dall'angolo in basso a destra. */
 .panel{position:fixed;background:var(--card);border:1px solid var(--border);border-radius:14px;padding:28px;width:min(520px,calc(100vw - 24px));max-height:88vh;overflow:auto;resize:both;min-width:300px;min-height:120px;box-shadow:0 18px 48px var(--shadow);animation:fadeIn .15s}
 .panel-wide{width:min(860px,calc(100vw - 24px))}
+/* Le schede non sono modali, per scelta: la pagina dietro resta viva (vedi
+   openModal). Ma a piena luminosità si confondeva con la scheda — il testo del
+   pannello laterale finiva accanto al form come se ne facesse parte. Un'ombra
+   più profonda col contorno netto la stacca; la pagina dietro si attenua, e
+   torna piena appena ci si porta sopra per lavorarci. */
+.panel{box-shadow:0 0 0 1px var(--border),0 24px 64px var(--shadow),0 4px 14px var(--shadow-soft)}
+#app-main{transition:opacity .15s}
+body:has(#modal-root > .panel) #app-main:not(:hover){opacity:.82}
+@media print{body:has(#modal-root > .panel) #app-main{opacity:1}}
 /* Solo il titolo del pannello trascina: un h3 dentro al corpo no. */
 .panel > h3{font-size:17px;font-weight:700;margin-bottom:18px;display:flex;align-items:center;gap:8px;padding-right:24px;cursor:move;user-select:none}
 .panel > h3:active{cursor:grabbing}
@@ -146,7 +155,7 @@ input[type=date]::-webkit-calendar-picker-indicator,input[type=datetime-local]::
    che non lo è si assomigliano troppo, e si prova a cliccare quello sbagliato.
    Il font e la dimensione si ereditano di proposito — questo stile si applica
    dentro tabelle, alberi e titoli, e non deve riscriverne la tipografia. */
-.code-link{font-family:inherit;color:inherit;cursor:pointer;border-bottom:1px dotted var(--text-dim);transition:color .12s,border-color .12s}
+.code-link{font-family:inherit;color:inherit;cursor:pointer;white-space:nowrap;border-bottom:1px dotted var(--text-dim);transition:color .12s,border-color .12s}
 .code-link:hover,.code-link:focus{color:var(--accent);border-bottom-color:var(--accent);outline:none}
 .code-link:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:2px}
 
@@ -166,7 +175,7 @@ input[type=date]::-webkit-calendar-picker-indicator,input[type=datetime-local]::
 .picker-row:hover{background:var(--card-hover)}
 .picker-row.is-sel{background:var(--accent-soft-hi)}
 .picker-row b{font-family:var(--mono);font-weight:600}
-.picker-type{display:inline-block;font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:var(--text-dim);background:var(--card);border:1px solid var(--border);border-radius:4px;padding:2px 6px;white-space:nowrap}
+.picker-type{display:inline-block;font-size:10.5px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:var(--text-dim);background:var(--card);border:1px solid var(--border);border-radius:4px;padding:2px 6px;white-space:nowrap}
 .picker-empty{padding:10px 12px;font-size:12px;color:var(--text-dim);text-align:center}
 /* Righe del pannello "Aggiungi componenti": codice e descrizione impilati a
    sinistra, i comandi di quantità (±1, campo, U.M.) allineati a destra. */
@@ -183,17 +192,58 @@ input[type=date]::-webkit-calendar-picker-indicator,input[type=datetime-local]::
 .bpn-uom{font-size:11px;color:var(--text-dim);min-width:18px}
 
 /* Header */
-/* Una riga sola: logo e comandi non si comprimono, il nav sì (scorre se non ci sta) */
+/* Una riga sola, sempre. Quando non ci sta, l'intestazione cede spazio per
+   gradi — e non sono soglie in pixel: le decide adattaHeader() (shell.js)
+   misurando, perché lo spazio dipende dal nome utente, dall'ora e dal numero di
+   sezioni, che nessuna soglia fissa conosce. Fino alla 0.83 erano media query,
+   e sbagliavano: fra 1331 e 1700 px le etichette restavano accese senza starci,
+   e la barra — centrata e scorrevole insieme — nascondeva Riepilogo e Gestione
+   oltre un bordo che lo scorrimento non raggiunge.
+     h-l1  via il ruolo nella pill e la data dell'orologio
+     h-l2  i comandi di contorno (stampa, manuale, tema, password, esci) sotto «⋯»
+     h-l3  via le etichette delle sezioni: restano le icone
+     h-l4  le sezioni sotto «☰», via l'orologio e la revisione */
 #app-header{display:flex;align-items:center;justify-content:space-between;padding:0 16px;height:56px;border-bottom:1px solid var(--border);background:var(--card);position:sticky;top:0;z-index:50;flex-wrap:nowrap;gap:12px}
 #app-header > div:first-child{flex:0 0 auto}
 .logo{font-weight:800;font-size:16px;color:var(--accent);display:flex;align-items:center;gap:6px;letter-spacing:-.02em}
-.app-version{font-family:var(--mono);font-size:10px;font-weight:600;color:var(--text-dim);border:1px solid var(--border);border-radius:4px;padding:1px 5px;align-self:flex-start}
-.nav{display:flex;gap:2px;flex:1 1 auto;min-width:0;overflow-x:auto;justify-content:center;scrollbar-width:none}
+.app-version{font-family:var(--mono);font-size:11px;font-weight:600;color:var(--text-dim);border:1px solid var(--border);border-radius:4px;padding:1px 5px;align-self:flex-start}
+/* Centrata quando ci sta, allineata a sinistra quando no: i margini automatici
+   centrano senza `justify-content:center`, che manderebbe la parte in eccesso
+   oltre il bordo sinistro, dove nessuno scorrimento arriva. */
+.nav{display:flex;gap:2px;flex:1 1 auto;min-width:0;overflow-x:auto;scrollbar-width:none}
+.nav > :first-child{margin-left:auto}
+.nav > :last-child{margin-right:auto}
 .nav::-webkit-scrollbar{display:none}
 .nav-btn{background:transparent;border:none;color:var(--text-dim);padding:7px 10px;white-space:nowrap;border-radius:8px;cursor:pointer;font-size:13px;font-weight:500;display:flex;align-items:center;gap:6px;transition:all .15s}
 .nav-btn:hover{color:var(--text)}
 .nav-btn.active{background:var(--accent-soft);color:var(--accent)}
-.header-right{display:flex;align-items:center;gap:8px;flex:0 0 auto}
+.header-right{display:flex;align-items:center;gap:8px;flex:0 0 auto;position:relative}
+.header-extra{display:flex;align-items:center;gap:8px}
+/* Con l'id davanti: `.btn-icon`, più sotto, li rimetterebbe in riga. */
+#app-header .header-menu-btn{display:none}
+#app-header.h-l1 .user-role,#app-header.h-l1 .clock-date{display:none}
+#app-header.h-l2 #extra-menu-btn{display:inline-flex}
+#app-header.h-l2 .header-extra{display:none}
+#app-header.h-l3 .nav-label{display:none}
+#app-header.h-l3 .nav-btn{padding:7px 9px}
+#app-header.h-l3 .nav-ico{font-size:16px}
+/* Senza etichetta la sezione attiva va marcata di più: la sola tinta non basta */
+#app-header.h-l3 .nav-btn.active{background:var(--accent-soft-hi);box-shadow:inset 0 -2px 0 var(--accent)}
+#app-header.h-l4 #nav-menu-btn{display:inline-flex}
+#app-header.h-l4 .nav{display:none}
+#app-header.h-l4 .header-clock,#app-header.h-l4 .app-version{display:none}
+/* I due menu a tendina: stessa forma, uno sotto ☰ (sezioni) e uno sotto ⋯ (comandi). */
+#app-header.h-l4.menu-nav .nav,#app-header.h-l2.menu-extra .header-extra{display:flex;flex-direction:column;align-items:stretch;gap:2px;
+  position:absolute;top:calc(100% + 6px);background:var(--card);border:1px solid var(--border);border-radius:10px;
+  box-shadow:0 10px 30px var(--shadow);padding:6px;z-index:60;min-width:220px;overflow:visible}
+#app-header.h-l4.menu-nav .nav{left:12px;top:52px}
+#app-header.h-l2.menu-extra .header-extra{right:0}
+#app-header.h-l4.menu-nav .nav > *{margin:0}
+#app-header.h-l4.menu-nav .nav-label{display:inline}
+#app-header.h-l4.menu-nav .nav-btn{padding:10px 12px;box-shadow:none;font-size:14px}
+#app-header.h-l2.menu-extra .header-extra .btn-icon{border:none;justify-content:flex-start;gap:10px;padding:10px 12px;line-height:1.2;font-size:14px;color:var(--text)}
+#app-header.h-l2.menu-extra .header-extra .btn-icon:hover{background:var(--card-hover)}
+#app-header.h-l2.menu-extra .header-extra .btn-icon::after{content:attr(data-etichetta)}
 /* Header compatto: pulsanti a sola icona e orologio con data per esteso */
 .btn-icon{padding:6px 8px;line-height:0;display:inline-flex;align-items:center}
 .btn-icon .ico{width:15px;height:15px}
@@ -237,14 +287,7 @@ input[type=date]::-webkit-calendar-picker-indicator,input[type=datetime-local]::
 .subnav-btn{background:transparent;border:none;color:var(--text-dim);padding:5px 12px;border-radius:6px;cursor:pointer;font-size:12.5px;font-weight:500;white-space:nowrap;transition:all .15s}
 .subnav-btn:hover{color:var(--text);background:var(--card-hover)}
 .subnav-btn.active{color:var(--accent);background:var(--accent-soft-hi);font-weight:600}
-/* Degradazione progressiva: la barra resta su una riga sola cedendo, in ordine,
-   il ruolo nella pill, le etichette del nav e solo per ultima la data. */
-@media(max-width:1420px){.user-role{display:none}}
-/* Senza etichetta la vista attiva va marcata di più: la sola tinta non basta */
-@media(max-width:1330px){.nav-label{display:none}.nav-btn{padding:7px 9px}.nav-ico{font-size:16px}
-  .nav-btn.active{background:var(--accent-soft-hi);box-shadow:inset 0 -2px 0 var(--accent)}}
-@media(max-width:780px){.clock-date{display:none}}
-@media(max-width:620px){.header-clock{display:none}}
+/* La degradazione dell'intestazione non è più qui: vedi «Header» e adattaHeader(). */
 
 /* Main */
 #app-main{max-width:1200px;margin:0 auto;padding:24px 16px}
@@ -334,7 +377,7 @@ input[type=date]::-webkit-calendar-picker-indicator,input[type=datetime-local]::
 .bom-code{flex-shrink:0}
 /* Posizione gerarchica (1, 1.1, 1.1.1…): min-width per allineare i numeri corti a quelli lunghi */
 .bom-pos{font-family:var(--mono);font-size:11px;color:var(--text-dim);flex-shrink:0;min-width:34px}
-.bom-type-tag{font-size:9px;padding:2px 6px;border-radius:8px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;flex-shrink:0}
+.bom-type-tag{font-size:10.5px;padding:2px 6px;border-radius:8px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;flex-shrink:0}
 .tt-materiale{background:var(--orange-soft);color:var(--orange)}
 .tt-acquistato{background:var(--accent-soft-hi);color:var(--accent)}
 .tt-parte{background:var(--purple-soft);color:var(--purple)}
@@ -358,7 +401,7 @@ input[type=date]::-webkit-calendar-picker-indicator,input[type=datetime-local]::
 .cycle-op-time em{font-style:normal;font-size:11px;color:var(--text-dim)}
 .cycle-op-cost{display:flex;flex-direction:column;gap:3px}
 .cycle-row:last-child{border-bottom:none}
-.cycle-head{font-size:10px;font-weight:600;color:var(--text-dim);text-transform:uppercase;letter-spacing:.05em}
+.cycle-head{font-size:10.5px;font-weight:600;color:var(--text-dim);text-transform:uppercase;letter-spacing:.05em}
 .cycle-row .num{font-family:var(--mono);text-align:right}
 /* Fuori dalle schede non c'è .modal-field a vestirli: senza queste regole gli
    input tornano al bianco di serie del browser. */
@@ -391,7 +434,7 @@ input[type=date]::-webkit-calendar-picker-indicator,input[type=datetime-local]::
 .cycle-move .mini-btn{padding:3px 5px}
 /* Quanti allegati ha un articolo, sul pulsante che li apre: si vede dall'elenco
    che il disegno c'è, senza doverlo aprire per scoprirlo. */
-.mini-count{margin-left:3px;font-size:10px;font-weight:700;color:var(--accent)}
+.mini-count{margin-left:3px;font-size:11px;font-weight:700;color:var(--accent)}
 .cycle-move .mini-btn[disabled]{opacity:.3;cursor:default}
 .cycle-move .mini-btn[disabled]:hover{color:var(--text-dim);border-color:var(--border)}
 /* Sola lettura: niente riordino e nessun campo modificabile nelle righe */
@@ -427,7 +470,7 @@ input[type=date]::-webkit-calendar-picker-indicator,input[type=datetime-local]::
 .cal-num{font-family:var(--mono);font-size:12px}
 .cal-dots{display:flex;align-items:center;gap:3px;flex-wrap:wrap}
 .cal-dot{display:inline-block;width:8px;height:8px;border-radius:50%;flex:none}
-.cal-more{font-size:10px;color:var(--text-dim);font-family:var(--mono)}
+.cal-more{font-size:11px;color:var(--text-dim);font-family:var(--mono)}
 .cal-block{margin-top:14px}
 .cal-block h4{font-size:13px;margin:0 0 8px}
 .cal-late h4{color:var(--red)}
@@ -652,19 +695,35 @@ textarea.notes-internal{border-style:dashed}
 .kpi-card,.breakdown-section,.mgmt-panel,.bom-tree,.bom-toolbar{animation:fadeUp .3s ease}
 
 /* Export buttons */
-/* Rosso Acrobat e verde Excel: sono i colori dei due formati, non del tema.
-   Cambiarli col fondo li renderebbe irriconoscibili proprio dove servono a
-   distinguere due pulsanti gemelli. Il bianco sopra regge su entrambi. */
-.export-btn-pdf{background:#E41C1C;border:none;color:#fff;padding:6px 12px;border-radius:7px;cursor:pointer;font-size:12px;font-weight:600;display:inline-flex;align-items:center;gap:5px;transition:opacity .15s}
-.export-btn-pdf:hover{opacity:.85}
-.export-btn-xls{background:#217346;border:none;color:#fff;padding:6px 12px;border-radius:7px;cursor:pointer;font-size:12px;font-weight:600;display:inline-flex;align-items:center;gap:5px;transition:opacity .15s}
-.export-btn-xls:hover{opacity:.85}
+/* Neutri, col formato detto dall'icona: rossa per il PDF, verde per Excel.
+   Fino alla 0.83 avevano il fondo pieno nei colori di Acrobat ed Excel, e
+   impilati accanto a «+ Nuovo» pesavano più dell'azione principale della
+   vista — il rosso, poi, leggeva come «pericolo». Il colore del formato resta,
+   dove distingue senza gridare. */
+.export-btn-pdf,.export-btn-xls{background:var(--card);border:1px solid var(--border);color:var(--text);padding:6px 12px;border-radius:7px;cursor:pointer;font-size:12px;font-weight:600;display:inline-flex;align-items:center;gap:6px;transition:border-color .15s,background .15s}
+.export-btn-pdf:hover{border-color:var(--red);background:var(--red-soft)}
+.export-btn-xls:hover{border-color:var(--green);background:var(--green-soft)}
 /* La coppia Excel/PDF sta impilata, non affiancata: meno larga, e si
    allinea da sola a destra del box che la contiene invece di dipendere
    dall'ordine degli altri pulsanti intorno — anche quando quel box va a
    capo, la coppia resta un blocco solo. */
 .export-pair{display:flex;flex-direction:column;gap:6px;margin-left:auto}
 .export-pair .export-btn-xls,.export-pair .export-btn-pdf{margin-left:0}
+.export-pair-row{flex-direction:row;flex-wrap:wrap}
+.plan-genera{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:14px 0 4px}
+/* Le schede del piano (0.92.0): una riga che scorre di lato se non ci sta,
+   invece di andare a capo e spostare il contenuto sotto a ogni larghezza. */
+.plan-tabs{display:flex;gap:4px;margin:22px 0 0;border-bottom:1px solid var(--border);overflow-x:auto;scrollbar-width:thin}
+.plan-tab{background:transparent;border:none;border-bottom:2px solid transparent;margin-bottom:-1px;color:var(--text-dim);padding:9px 14px;cursor:pointer;font-size:13px;font-weight:500;white-space:nowrap;display:inline-flex;align-items:center;gap:6px;min-height:36px}
+.plan-tab:hover{color:var(--text)}
+.plan-tab.active{color:var(--accent);border-bottom-color:var(--accent);font-weight:600}
+.plan-tab-n{font-family:var(--mono);font-size:11px;padding:1px 7px;border-radius:999px;background:var(--card-hover);color:var(--text-dim)}
+.plan-tab.active .plan-tab-n{background:var(--accent-soft-hi);color:var(--accent)}
+.plan-tabpanel > .mrp-section:first-child{margin-top:14px}
+/* Sul foglio stampato le schede non si possono cliccare: escono tutte, una dopo l'altra. */
+@media print{.plan-tabs,.plan-genera{display:none!important}.plan-tabpanel[hidden]{display:block!important}}
+.plan-gen-off{display:inline-flex;cursor:help}
+.plan-gen-off > button{pointer-events:none}
 
 /* Richieste di offerta (RFQ) */
 .rfq-head{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px 16px;margin:0;display:flex;flex-direction:column;gap:10px}
@@ -682,10 +741,10 @@ textarea.notes-internal{border-style:dashed}
 .rfq-sup-chk{display:flex;align-items:center;gap:8px;background:var(--card);border:1px solid var(--border);border-radius:8px;padding:9px 12px;font-size:13px;cursor:pointer}
 .rfq-sup-chk:hover{border-color:var(--text-dim)}
 .rfq-sup-email{color:var(--text-dim);font-size:11px;font-family:var(--mono)}
-.rfq-manual-tag{display:inline-block;font-size:10px;font-weight:600;text-transform:uppercase;color:var(--orange);border:1px solid var(--orange);border-radius:4px;padding:1px 5px;margin-left:4px}
-.rfq-clavoro-tag{display:inline-block;font-size:10px;font-weight:600;text-transform:uppercase;color:var(--green);border:1px solid var(--green);border-radius:4px;padding:1px 5px;margin-left:4px}
+.rfq-manual-tag{display:inline-block;font-size:10.5px;font-weight:600;text-transform:uppercase;color:var(--orange);border:1px solid var(--orange);border-radius:4px;padding:1px 5px;margin-left:4px}
+.rfq-clavoro-tag{display:inline-block;font-size:10.5px;font-weight:600;text-transform:uppercase;color:var(--green);border:1px solid var(--green);border-radius:4px;padding:1px 5px;margin-left:4px}
 /* Badge di stato documento (RFQ / ODA) */
-.doc-badge{display:inline-block;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;border-radius:5px;padding:3px 8px;white-space:nowrap;border:1px solid currentColor}
+.doc-badge{display:inline-block;font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;border-radius:5px;padding:3px 8px;white-space:nowrap;border:1px solid currentColor}
 .doc-badge.st-bozza{color:var(--text-dim)}
 .doc-badge.st-inviata,.doc-badge.st-inviato{color:var(--accent)}
 .doc-badge.st-ricevuta,.doc-badge.st-confermato{color:var(--purple)}
@@ -738,7 +797,7 @@ button:disabled{opacity:.4;cursor:not-allowed}
 .rfq-save-btn.dirty:hover{background:var(--orange-h)}
 .rfq-export-btn:disabled{opacity:.4;cursor:not-allowed}
 .rfq-dirty-hint{font-size:12px;color:var(--orange)}
-.terms-default{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:var(--green);border:1px solid var(--green);border-radius:4px;padding:1px 5px;margin-left:6px}
+.terms-default{font-size:10.5px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:var(--green);border:1px solid var(--green);border-radius:4px;padding:1px 5px;margin-left:6px}
 /* Ordini */
 .ord-ref{font-size:13px;color:var(--text-dim);margin:10px 0}
 /* ─── Righe di documento a due piani ───
@@ -772,7 +831,9 @@ button:disabled{opacity:.4;cursor:not-allowed}
 /* I due generatori di documento (PDF/Excel) sono il gesto che chiude una
    richiesta, un ordine o un ordine di lavoro: più grandi degli altri pulsanti
    della barra, per essere il primo bersaglio dell'occhio. */
-.rfq-export-bar .export-btn-pdf,.rfq-export-bar .export-btn-xls{padding:14px 26px;font-size:15px;gap:8px;border-radius:10px}
+.rfq-export-bar .export-btn-pdf,.rfq-export-bar .export-btn-xls{padding:14px 26px;font-size:15px;gap:8px;border-radius:10px;border-width:2px}
+.rfq-export-bar .export-btn-pdf{border-color:var(--red)}
+.rfq-export-bar .export-btn-xls{border-color:var(--green)}
 .rfq-export-bar select{background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:9px 12px;color:var(--text);font-size:13px;outline:none}
 .rfq-pick-filters{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
 .rfq-pick-filters .search{flex:1 1 160px;min-width:140px}
@@ -781,7 +842,7 @@ button:disabled{opacity:.4;cursor:not-allowed}
 .rfq-pick-list{max-height:340px;overflow-y:auto;border:1px solid var(--border);border-radius:8px;background:var(--bg);margin-top:8px}
 .rfq-pick-row{display:flex;align-items:center;gap:8px;padding:8px 12px;font-size:13px;cursor:pointer;border-bottom:1px solid var(--border)}
 .rfq-pick-row:hover{background:var(--card-hover)}
-.rfq-pick-type{display:inline-block;margin-left:auto;font-size:10px;font-weight:600;text-transform:uppercase;color:var(--text-dim);background:var(--card);border:1px solid var(--border);border-radius:4px;padding:2px 6px;white-space:nowrap}
+.rfq-pick-type{display:inline-block;margin-left:auto;font-size:10.5px;font-weight:600;text-transform:uppercase;color:var(--text-dim);background:var(--card);border:1px solid var(--border);border-radius:4px;padding:2px 6px;white-space:nowrap}
 /* Tabella confronto offerte */
 .rfq-cmp-table td{text-align:center}
 .rfq-cmp-table td:first-child,.rfq-cmp-table th:first-child{text-align:left}
@@ -1011,7 +1072,11 @@ body.insp-on .row-actions{display:none}
   background:var(--card);border:1px solid var(--border);border-radius:14px;padding:16px}
 .wl-side-head{display:flex;align-items:center;gap:8px}
 .wl-side-title{font-size:15px;font-weight:700;margin:0;display:flex;align-items:center;gap:8px;letter-spacing:-.01em}
-.wl-cmds{display:flex;flex-wrap:wrap;gap:8px}
+.wl-cmds{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+/* Nella colonna dell'elenco i due export stanno in riga, accanto a «+ Nuovo»:
+   impilati costringevano il pulsante principale ad allungarsi fino a 62 px
+   per pareggiarne l'altezza — un blocco blu più alto che largo. */
+.wl-cmds .export-pair{flex-direction:row;flex-wrap:wrap}
 .wl-cmds button{font-size:12px}
 /* I filtri stanno in colonna: in 360px tre menu affiancati diventerebbero tre
    fessure illeggibili. Il conteggio chiude il gruppo, come una didascalia. */
@@ -1046,13 +1111,19 @@ body.insp-on .row-actions{display:none}
 .wl-empty p{font-size:13px;line-height:1.65;max-width:52ch;margin:0 auto}
 .wl-empty-cmds{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin-top:18px}
 @media(max-width:1100px){
-  .wl{grid-template-columns:1fr}
+  /* minmax(0,…) e non 1fr: una colonna 1fr non scende sotto la larghezza minima
+     del suo contenuto, e al telefono la barra del documento la allargava di
+     160-300 px oltre lo schermo — tutta la pagina scorreva di lato. */
+  .wl{grid-template-columns:minmax(0,1fr)}
   .wl-side{position:static;max-height:none;order:-1}
   .wl-list{max-height:320px}
   .wl-filters{flex-direction:row;flex-wrap:wrap}
   .wl-filters input,.wl-filters select{width:auto;flex:1;min-width:180px}
   .wl-filter-dates{flex:1.4;min-width:280px}
   .wl-filters .wl-filter-dates input{min-width:0}
+}
+@media(max-width:640px){
+  .wl-filters input,.wl-filters select,.wl-filter-dates{min-width:0;flex:1 1 100%}
 }
 /* In stampa esce il documento, non lo strumento per sceglierlo. */
 @media print{.wl{display:block}.wl-side{display:none!important}}
@@ -1068,6 +1139,49 @@ body.insp-on .row-actions{display:none}
 .load-chart figcaption{font-size:12px;font-weight:600;color:var(--text);margin:0 0 6px;
   display:flex;align-items:baseline;gap:8px}
 .load-chart svg{display:block;width:100%;height:130px;overflow:visible}
-.load-chart-lbl{font-size:9px;fill:var(--text-dim);font-family:var(--mono)}
+.load-chart-lbl{font-size:10.5px;fill:var(--text-dim);font-family:var(--mono)}
 /* In stampa il grafico resta: e' la lettura che si porta in riunione. */
 @media print{.load-chart{break-inside:avoid}}
+/* Programma del piano: una riga di separazione dove cambia il giorno */
+tr.agenda-day td{border-top:1px solid var(--hairline)}
+/* Gantt del piano */
+.gantt{margin:0;padding:10px 12px;background:var(--card);border:1px solid var(--hairline);border-radius:10px;overflow-x:auto}
+.gantt svg{display:block;width:100%;min-width:560px;height:auto}
+.gantt-lbl{font-size:11px;fill:var(--text);font-family:var(--mono)}
+.gantt-lbl.gantt-crit{fill:var(--red);font-weight:600}
+.gantt-pick{margin-left:auto;min-height:32px;max-width:100%}
+.gantt-legend{display:flex;flex-wrap:wrap;gap:12px;font-size:11.5px;color:var(--text-dim);margin:0 0 6px}
+.gantt-key{display:inline-flex;align-items:center;gap:5px}
+.gantt-key i{display:inline-block;width:12px;height:8px;border-radius:2px}
+@media print{.gantt{break-inside:avoid}}
+
+/* ─── Bersagli per il dito ───
+   Al telefono, e su ogni schermo a sfioramento, nessun comando sotto i 34 px:
+   linguette alte 26 px e pulsantini di riga da 29×21 si mancano col pollice, e
+   il comando accanto — spesso «Elimina» — si prende al posto suo. */
+@media (max-width:640px),(pointer:coarse){
+  .subnav-btn{padding:9px 14px;min-height:38px}
+  .mini-btn{min-width:34px;min-height:34px;justify-content:center}
+  .export-btn-pdf,.export-btn-xls{min-height:38px}
+  .panel-x{min-width:36px;min-height:36px}
+  .insp-rail-btn{min-width:36px;min-height:36px}
+  .home-chip{min-height:34px;display:inline-flex;align-items:center}
+  .btn-icon{min-width:38px;min-height:38px;justify-content:center}
+  .rfq-qty-input,.rfq-price-input{min-height:38px}
+}
+.backup-vecchio{color:var(--orange)}
+/* Confronto fra due distinte */
+.bom-compare th,.bom-compare td{padding:7px 8px}
+.bom-compare .num{font-family:var(--mono);text-align:right;white-space:nowrap}
+/* Cruscotto */
+#view-dash{display:none;flex-direction:column;gap:14px}
+#view-dash.active{display:flex}
+.dash-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,420px),1fr));gap:14px}
+.dash-card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:14px 16px;min-width:0}
+.dash-card > .settings-group-title{margin-top:0}
+.dash-head{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+.dash-head .settings-group-title{margin:0}
+.dash-nota{color:var(--text-dim);font-size:12px;margin:6px 0 0}
+.dash-table th,.dash-table td{padding:7px 8px}
+.dash-table .num{font-family:var(--mono);text-align:right;white-space:nowrap}
+#view-dash > .bom-toolbar,#view-dash > .cost-summary{margin:0}
