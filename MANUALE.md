@@ -1,6 +1,6 @@
 # Bomtrack — Manuale d'uso
 
-**Versione dell'app documentata: 0.92.0**
+**Versione dell'app documentata: 0.93.0**
 
 📖 **[Leggilo come pagina web](https://claude.ai/code/artifact/726a0963-2db0-4947-999b-d7b5beb91a0b)** — stesso testo, con indice laterale, filtro dei capitoli e tema chiaro/scuro. Comodo da tenere aperto di fianco all'app.
 
@@ -161,7 +161,7 @@ la sessione aperta fino a **Esci**; quanto duri lo decide l'amministratore in
 
 ### La versione
 
-Il numero di versione si legge **accanto al logo, in alto a sinistra** (es. `v0.92.0`).
+Il numero di versione si legge **accanto al logo, in alto a sinistra** (es. `v0.93.0`).
 Corrisponde alla voce in cima al changelog: serve quando si segnala un problema.
 
 ### Dove sta questo manuale
@@ -235,6 +235,31 @@ Fino alla 0.90 i gruppi erano divisi per tipo di dato (*Anagrafica*, *Cicli di l
 La vista aperta finisce **nell'indirizzo del browser** (`…index.html#mrp`). Ne segue che i tasti
 *Indietro* e *Avanti* del browser funzionano, e che un indirizzo si può salvare tra i preferiti o
 mandare a un collega che ha la stessa app.
+
+### A che punto è un documento
+
+Richieste di offerta, ordini a fornitore, ordini di lavoro, ordini di produzione e commesse hanno
+in testa (dalla 0.93.0) una **barra dei passi**: gli stati del documento in fila, con quelli
+superati spuntati e quello attuale acceso.
+
+| Documento | Passi |
+|---|---|
+| Richiesta di offerta | Bozza → Inviata → Offerta ricevuta → Chiusa |
+| Ordine a fornitore, ordine di lavoro | Bozza → Inviato → Confermato → Parziale → Evaso |
+| Ordine di produzione | Bozza → Lanciato → In corso → Completato → Chiuso |
+| Commessa | Aperta → In produzione → Chiusa |
+
+A destra c'è **il passo successivo**. Quando l'app sa farlo da sé è un pulsante: *Segna come
+inviata/o*, *Crea ordine*, *Segna tutto ricevuto*, *Lancia*, *Chiudi l'ordine*, *Metti in
+produzione*, *Chiudi la commessa*. Il pulsante fa esattamente quello che farebbe il menu
+**Stato**, e salva subito. Quando invece il passo lo fa una persona (scrivere i prezzi
+dell'offerta, il numero di conferma del fornitore, i pezzi sulle fasi), la barra dice cosa manca.
+Un documento **annullato** è *fuori dal giro* e non propone niente. Il menu *Stato* resta dov'era.
+
+Sotto la barra, la riga **Collegati** elenca i documenti legati, ciascuno cliccabile: la commessa
+e il piano da cui viene, la richiesta da cui è nato un ordine, l'ordine di produzione di un ordine
+di lavoro; e nell'altro verso gli ordini nati da una richiesta e gli ordini di lavoro nati da un
+ordine di produzione.
 
 ### Le due forme di schermata
 
@@ -2683,6 +2708,6 @@ fusa, e il punto in cui si sostituisce la destinazione dei dati è uno solo.
 
 ---
 
-*Manuale di Bomtrack — aggiornato alla versione 0.92.0.*
+*Manuale di Bomtrack — aggiornato alla versione 0.93.0.*
 *Le funzioni descritte qui corrispondono a quella revisione; il changelog dell'app elenca le
 differenze rispetto alle versioni successive.*

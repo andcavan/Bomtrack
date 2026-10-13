@@ -637,16 +637,12 @@ function renderOdpEdit(id) {
   const scarti = fasi.reduce((s, f) => s + opScarti(o, f), 0);
   const esterno = fasi.reduce((s, f) => s + (f.supplierId ? (f.costMode === 'orario' ? f.hours * f.rate : f.cost) * (Number(o.qty) || 0) : 0), 0);
   const lockBanner = docLockBanner(mode, 'Ordine di produzione ' + (ODP_STATUS[o.status] || o.status).toLowerCase(), 'odp', id);
-  const piano = o.planId && (db.plans || []).find(p => p.id === o.planId);
   return `<div class="manage-wrap">
     <div class="bom-toolbar">
       <div class="bom-toolbar-left">
         ${worklistCloseBtn('odpBackToList()', "l'ordine di produzione")}
         <h2 class="section-title" style="font-family:var(--mono)">${esc(o.number)}</h2>
         ${statusBadge(ODP_STATUS, o.status)}
-        ${o.status === 'bozza'
-    ? `<button class="add-btn-sm" onclick="odpLancia('${id}')" title="Congela fasi e materiale, e apre la produzione">${ico('factory', 'tinted', '')} Lancia</button>`
-    : ''}
         ${ODP_APERTI.includes(o.status) || o.status === 'completato'
     ? `<button class="btn-outline" onclick="odpChiudi('${id}')" title="Chiude l'ordine: non si dichiara più niente">${ico('lock', 'tinted', '')} Chiudi</button>` : ''}
         ${o.status !== 'annullato' ? `<button class="btn-outline" onclick="odpAnnulla('${id}')" title="Annulla l'ordine">${ico('close', 'tinted', '')} Annulla</button>` : ''}
@@ -659,7 +655,7 @@ function renderOdpEdit(id) {
         </div>
       </div>
     </div>
-    ${piano ? `<div class="empty-text" style="text-align:left">${ico('list', 'tinted', '')} Generato dal piano <strong>${esc(piano.number)}</strong></div>` : ''}
+    ${docStepperHtml('odp', o)}${docLinksHtml('odp', o)}
     ${lockBanner}
     <div class="modal-grid">
       <div class="modal-field"><label>Parte</label>

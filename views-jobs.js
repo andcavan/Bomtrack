@@ -380,6 +380,7 @@ function renderJobEdit(id) {
         <button class="btn-outline" style="color:var(--red);border-color:var(--red)" onclick="delJob('${id}')">${ico('trash', 'tinted', '')} Elimina</button>
       </div>
     </div>
+    ${docStepperHtml('job', j)}
     <div class="modal-grid">
       <div class="modal-field"><label>Cliente</label>
         <input list="job-customer-opts" value="${esc(j.customer || '')}" onchange="jobSetField('${id}','customer',this.value)">

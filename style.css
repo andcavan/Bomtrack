@@ -800,6 +800,26 @@ button:disabled{opacity:.4;cursor:not-allowed}
 .terms-default{font-size:10.5px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:var(--green);border:1px solid var(--green);border-radius:4px;padding:1px 5px;margin-left:6px}
 /* Ordini */
 .ord-ref{font-size:13px;color:var(--text-dim);margin:10px 0}
+/* A che punto è il documento, e cosa gli è legato (0.93.0) */
+.doc-flow{display:flex;flex-wrap:wrap;align-items:center;gap:10px 18px;margin:12px 0;padding:10px 14px;border:1px solid var(--border);border-radius:10px;background:var(--card)}
+.doc-steps{display:flex;flex-wrap:wrap;align-items:center;gap:4px 0;list-style:none;margin:0;padding:0;flex:1 1 auto}
+.doc-step{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;color:var(--text-dim);white-space:nowrap}
+.doc-step + .doc-step::before{content:'';display:inline-block;width:22px;height:1px;background:var(--border);margin:0 8px}
+.doc-step-dot{display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:50%;border:1px solid var(--border);font-size:11px;font-family:var(--mono)}
+.doc-step.done{color:var(--text)}
+.doc-step.done .doc-step-dot{background:var(--green-solid);border-color:var(--green-solid);color:#fff}
+.doc-step.now{color:var(--accent);font-weight:600}
+.doc-step.now .doc-step-dot{background:var(--accent);border-color:var(--accent);color:#fff}
+.doc-step.off{opacity:.55}
+.doc-step-next-wrap{flex:0 1 auto;display:flex;align-items:center}
+.doc-step-note{font-size:12.5px;color:var(--text-dim)}
+.doc-links{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:0 0 12px}
+.doc-links-label{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--text-dim);margin-right:4px}
+.doc-link{display:inline-flex;align-items:center;gap:5px;background:var(--card);border:1px solid var(--border);border-radius:999px;padding:4px 10px;font-size:12.5px;color:var(--text);cursor:pointer;min-height:28px}
+.doc-link:hover{border-color:var(--accent);color:var(--accent)}
+.doc-link-role{color:var(--text-dim)}
+.doc-link-num{font-family:var(--mono)}
+@media print{.doc-step-next-wrap{display:none}.doc-link{border:none;padding:0 6px 0 0}}
 /* ─── Righe di documento a due piani ───
    Sopra il dato che si compila, sotto quello che lo spiega o ne consegue:
    codice/descrizione, q.tà/U.M., prezzo/importo, richiesta/confermata,

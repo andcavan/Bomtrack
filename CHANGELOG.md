@@ -2,6 +2,21 @@
 
 Le revisioni seguono il versionamento semantico `0.MINOR.PATCH`: **MINOR** per nuove funzionalità, **PATCH** per correzioni. La versione in cima è quella in `APP_VERSION` (`core.js`) e mostrata nell'header dell'app.
 
+### 0.93.0 — 2026-10-13
+
+**A che punto è, e da dove viene.** Il giro commessa → piano → richiesta → ordine → ricevimento era scritto nel manuale e in un menu «Stato»: il documento diceva in che stato era, non quale fosse il passo dopo, né a cosa fosse legato.
+
+**Nuovo**
+- **Barra dei passi** in testa a richieste, ordini, ordini di lavoro, ordini di produzione e commesse: gli stati in fila, quello attuale acceso, e il **passo successivo** come pulsante (*Segna come inviata*, *Crea ordine*, *Segna tutto ricevuto*, *Lancia*, *Metti in produzione*…) o, quando lo fa una persona, una riga che dice cosa manca. Il pulsante fa quello che fa il menu *Stato*, e salva subito.
+- **Collegati**: commessa, piano, richiesta, ordine di produzione da cui viene il documento, e gli ordini che ne sono nati, ciascuno cliccabile. Sostituisce le righe «Generato dalla richiesta…» / «Dal fabbisogno…».
+
+**Da sapere**
+- Il menu *Stato* resta: la barra è una scorciatoia. «Metti in produzione» passa dalla stessa domanda sul materiale mancante del menu.
+- Sull'ordine di produzione il pulsante *Lancia* si sposta dalla toolbar alla barra dei passi.
+
+**Verifica**
+- `test/docflow.test.js`: passo attuale, pulsante che cambia stato e salva, giro completato, annullato fuori dal giro, commessa, collegamenti nei due versi.
+
 ### 0.92.0 — 2026-10-13
 
 **Il piano a schede.** La scheda di un piano di fabbisogno era lunga quasi tre schermate, con otto sezioni una sotto l'altra: per arrivare al conto lavoro si scorrevano ogni volta gli acquisti.

@@ -195,7 +195,7 @@ a:focus-visible,button:focus-visible,input:focus-visible{outline:2px solid var(-
     <div class="brand">
       <div class="brand-top">
         <span class="brand-name">Bomtrack</span>
-        <span class="chip">v0.92.0</span>
+        <span class="chip">v0.93.0</span>
       </div>
       <div class="brand-sub">Manuale d&rsquo;uso</div>
     </div>
@@ -301,7 +301,7 @@ a:focus-visible,button:focus-visible,input:focus-visible{outline:2px solid var(-
 <h3 id="gli-avvii-successivi">Gli avvii successivi</h3>
 <p>Si entra con <strong>email e password</strong>. La casella <strong>Ricordami su questo PC</strong> conserva l'email e tiene la sessione aperta fino a <strong>Esci</strong>; quanto duri lo decide l'amministratore in <em>Gestione → Impostazioni → Accesso</em> (0 giorni = non scade mai).</p>
 <h3 id="la-versione">La versione</h3>
-<p>Il numero di versione si legge <strong>accanto al logo, in alto a sinistra</strong> (es. <code>v0.92.0</code>). Corrisponde alla voce in cima al changelog: serve quando si segnala un problema.</p>
+<p>Il numero di versione si legge <strong>accanto al logo, in alto a sinistra</strong> (es. <code>v0.93.0</code>). Corrisponde alla voce in cima al changelog: serve quando si segnala un problema.</p>
 <h3 id="dove-sta-questo-manuale">Dove sta questo manuale</h3>
 <p>Il pulsante 📖 <strong>Manuale d'uso</strong> nell'intestazione lo apre in una scheda nuova, da qualunque schermata. È il file <code>manuale.html</code>, che sta nella cartella dell'app accanto a <code>index.html</code>: funziona <strong>senza rete</strong> come tutto il resto, e viaggia con la cartella quando la si copia su un altro PC. Si apre nel tema scelto nell'app, e si stampa con <code>Ctrl+P</code>.</p>
 <p>Nella cartella c'è anche <code>MANUALE.md</code>, lo stesso testo in formato Markdown: è la versione che si legge in un editor o su GitHub.</p>
@@ -319,6 +319,11 @@ a:focus-visible,button:focus-visible,input:focus-visible{outline:2px solid var(-
 <div class="tw"><table><thead><tr><th>Gruppo</th><th>Voci</th></tr></thead><tbody><tr><td>🏠 <strong>Riepilogo</strong></td><td>Riepilogo · Cruscotto</td></tr><tr><td>🌳 <strong>Tecnico</strong></td><td>Articoli di progetto · Articoli d'acquisto · Gestione DB · Visualizza DB · Cicli di lavorazione</td></tr><tr><td>📋 <strong>Pianificazione</strong></td><td>Commesse · Fabbisogno · Carico centri</td></tr><tr><td>🛒 <strong>Acquisti</strong></td><td>Richieste offerta · Ordini fornitore · Listino fornitori</td></tr><tr><td>🏭 <strong>Produzione</strong></td><td>Ordini di produzione · Ordini di lavoro</td></tr><tr><td>📦 <strong>Magazzino</strong></td><td><em>(voce unica)</em></td></tr><tr><td>⚙️ <strong>Gestione</strong></td><td><em>(voce unica — solo amministratori)</em></td></tr></tbody></table></div>
 <p>Fino alla 0.90 i gruppi erano divisi per tipo di dato (<em>Anagrafica</em>, <em>Cicli di lavorazione</em>, <em>Distinta base</em>, <em>Documenti</em>): le schermate sono le stesse, cambia solo il gruppo in cui stanno.</p>
 <p>La vista aperta finisce <strong>nell'indirizzo del browser</strong> (<code>…index.html#mrp</code>). Ne segue che i tasti <em>Indietro</em> e <em>Avanti</em> del browser funzionano, e che un indirizzo si può salvare tra i preferiti o mandare a un collega che ha la stessa app.</p>
+<h3 id="a-che-punto-è-un-documento">A che punto è un documento</h3>
+<p>Richieste di offerta, ordini a fornitore, ordini di lavoro, ordini di produzione e commesse hanno in testa (dalla 0.93.0) una <strong>barra dei passi</strong>: gli stati del documento in fila, con quelli superati spuntati e quello attuale acceso.</p>
+<div class="tw"><table><thead><tr><th>Documento</th><th>Passi</th></tr></thead><tbody><tr><td>Richiesta di offerta</td><td>Bozza → Inviata → Offerta ricevuta → Chiusa</td></tr><tr><td>Ordine a fornitore, ordine di lavoro</td><td>Bozza → Inviato → Confermato → Parziale → Evaso</td></tr><tr><td>Ordine di produzione</td><td>Bozza → Lanciato → In corso → Completato → Chiuso</td></tr><tr><td>Commessa</td><td>Aperta → In produzione → Chiusa</td></tr></tbody></table></div>
+<p>A destra c'è <strong>il passo successivo</strong>. Quando l'app sa farlo da sé è un pulsante: <em>Segna come inviata/o</em>, <em>Crea ordine</em>, <em>Segna tutto ricevuto</em>, <em>Lancia</em>, <em>Chiudi l'ordine</em>, <em>Metti in produzione</em>, <em>Chiudi la commessa</em>. Il pulsante fa esattamente quello che farebbe il menu <strong>Stato</strong>, e salva subito. Quando invece il passo lo fa una persona (scrivere i prezzi dell'offerta, il numero di conferma del fornitore, i pezzi sulle fasi), la barra dice cosa manca. Un documento <strong>annullato</strong> è <em>fuori dal giro</em> e non propone niente. Il menu <em>Stato</em> resta dov'era.</p>
+<p>Sotto la barra, la riga <strong>Collegati</strong> elenca i documenti legati, ciascuno cliccabile: la commessa e il piano da cui viene, la richiesta da cui è nato un ordine, l'ordine di produzione di un ordine di lavoro; e nell'altro verso gli ordini nati da una richiesta e gli ordini di lavoro nati da un ordine di produzione.</p>
 <h3 id="le-due-forme-di-schermata">Le due forme di schermata</h3>
 <p>Bomtrack usa due impaginazioni, e riconoscerle aiuta a orientarsi.</p>
 <p><strong>Elenco a tutta pagina</strong> — Anagrafiche, Magazzino, Cicli, Distinta base, Carico centri. Toolbar in alto, barra dei filtri sotto, elenco al centro. A destra si può aprire il <strong>pannello laterale</strong> (<code>Ctrl+I</code>, → <a href="#12-pannello-laterale-e-selezione-multipla">cap. 12</a>).</p>
@@ -1010,7 +1015,7 @@ node test/bench.js    # benchmark del motore di costificazione</code></pre>
 <ul><li><strong>Un archivio per browser.</strong> Niente concorrenza, niente sincronizzazione, niente storico condiviso. Ci si allinea con i backup JSON.</li><li><strong>Il controllo dei permessi è sul client.</strong> Chi apre gli strumenti di sviluppo lo aggira.</li><li><strong>La dimensione dell'archivio è limitata</strong> da quanto il browser concede al sito: con IndexedDB (dalla 0.87.0) di solito gigabyte, senza qualche megabyte. <em>Gestione → Backup</em> mostra la dimensione corrente e lo spazio disponibile.</li></ul>
 <p>La direzione presa per superarli è un backend con autenticazione e permessi sul server; <code>cloud-map.js</code> e <code>docs/cloud-schema.md</code> sono la preparazione a quel passaggio, e <strong>non</strong> contengono codice di rete. Il <a href="#31-quando-larchivio-è-condiviso-supabase">cap. 31</a> racconta la stessa cosa dal lato di chi userà l'app; qui sotto, cosa esiste già nel codice per arrivarci: gli id sono UUID e non contatori locali, ogni record porta <code>createdAt</code>/<code>updatedAt</code> e <code>createdBy</code>/<code>updatedBy</code>, il registro dello schema dichiara per ogni collezione come andrà fusa, e il punto in cui si sostituisce la destinazione dei dati è uno solo.</p>
     </article>
-    <p class="colophon">Manuale di Bomtrack — aggiornato alla versione 0.92.0. Le funzioni descritte qui corrispondono a quella revisione; il changelog dell'app elenca le differenze rispetto alle versioni successive.</p>
+    <p class="colophon">Manuale di Bomtrack — aggiornato alla versione 0.93.0. Le funzioni descritte qui corrispondono a quella revisione; il changelog dell'app elenca le differenze rispetto alle versioni successive.</p>
   </main>
 </div>
 

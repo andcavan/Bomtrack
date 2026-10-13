@@ -630,14 +630,118 @@ function lineOriginTag(l) {
   return ' <span class="rfq-manual-tag">manuale</span>';
 }
 function lineDescDoc(l) { return l.note ? (l.description || '') + '\n' + l.note : (l.description || ''); }
-// Da dove arriva un documento: da una richiesta di offerta o da un piano di
-// fabbisogno. Serve a ritrovare il perché di un ordine mesi dopo averlo fatto.
-function docOriginRef(d) {
-  const parti = [];
-  if (d.rfqId && getRfq(d.rfqId)) parti.push(`${ico('mail', 'tinted', '')} Generato dalla richiesta <strong>${esc(getRfq(d.rfqId).number)}</strong>`);
-  const p = d.planId && (db.plans || []).find(x => x.id === d.planId);
-  if (p) parti.push(`${ico('list', 'tinted', '')} Dal fabbisogno <strong>${esc(p.number)}</strong>`);
-  return parti.length ? `<div class="ord-ref">${parti.join(' · ')}</div>` : '';
+
+// ═══════════════════════════════════════════════════════════
+//  A CHE PUNTO È, E DA DOVE VIENE (0.93.0)
+// ═══════════════════════════════════════════════════════════
+// Il giro commessa → piano → richiesta → ordine → ricevimento stava scritto nel
+// manuale e in un menu «Stato»: il documento diceva in che stato era, non quale
+// fosse il passo dopo, né a quali altri documenti fosse legato. Qui due pezzi,
+// uguali per ogni documento:
+//   - la **barra di stato**: i passi in fila, quello attuale acceso, e il passo
+//     successivo come pulsante quando l'app sa farlo da sé (altrimenti una riga
+//     che dice cosa manca);
+//   - la riga **Collegati**: da dove viene il documento e cosa ne è nato, ogni
+//     voce cliccabile.
+// Il menu «Stato» resta dov'era: la barra è una scorciatoia, non l'unica strada.
+//
+// I passi di ciascun documento. `fuori` sono gli stati che escono dal giro
+// (annullato): la barra li dichiara invece di accendere un passo a caso.
+const DOC_FLOW = {
+  rfq: { passi: ['bozza', 'inviata', 'ricevuta', 'chiusa'], fuori: [] },
+  order: { passi: ['bozza', 'inviato', 'confermato', 'parziale', 'evaso'], fuori: ['annullato'] },
+  odl: { passi: ['bozza', 'inviato', 'confermato', 'parziale', 'evaso'], fuori: ['annullato'] },
+  odp: { passi: ['bozza', 'lanciato', 'corso', 'completato', 'chiuso'], fuori: ['annullato'] },
+  job: { passi: ['aperta', 'produzione', 'chiusa'], fuori: ['annullata'] },
+};
+function docFlowStatusMap(k) {
+  return { rfq: RFQ_STATUS, order: ORDER_STATUS, odl: ORDER_STATUS,
+    odp: typeof ODP_STATUS !== 'undefined' ? ODP_STATUS : {}, job: typeof JOB_STATUS !== 'undefined' ? JOB_STATUS : {} }[k] || {};
+}
+// Il passo successivo: { azione, etichetta } quando c'è un comando che lo fa,
+// { suggerimento } quando lo fa una persona altrove (registrare l'offerta,
+// dichiarare i pezzi), null quando il giro è finito.
+function docNextStep(k, d) {
+  const id = d.id, st = d.status;
+  if (k === 'rfq') {
+    if (st === 'bozza') return { azione: `docAdvance('rfq','${id}','inviata')`, etichetta: 'Segna come inviata', icona: 'mail' };
+    if (st === 'inviata') return { suggerimento: 'Quando arriva l’offerta, scrivi i prezzi nelle righe: la richiesta passa da sola a «Offerta ricevuta».' };
+    if (st === 'ricevuta') return { azione: `orderFromRfq('${id}')`, etichetta: 'Crea ordine', icona: 'receipt' };
+    return null;
+  }
+  if (k === 'order' || k === 'odl') {
+    if (st === 'bozza') return { azione: `docAdvance('${k}','${id}','inviato')`, etichetta: 'Segna come inviato', icona: 'mail' };
+    if (st === 'inviato') return { suggerimento: 'Quando il fornitore conferma, scrivi il n° di conferma d’ordine: lo stato passa da solo a «Confermato».' };
+    if (st === 'confermato' || st === 'parziale') {
+      if (k === 'odl' && (d.lines || []).some(odlRigaDaOdp)) return { suggerimento: 'I pezzi rientrati si dichiarano sull’ordine di produzione collegato.' };
+      return { azione: k === 'odl' ? `odlMarkAllReceived('${id}')` : `ordMarkAllReceived('${id}')`, etichetta: 'Segna tutto ricevuto', icona: 'check' };
+    }
+    return null;
+  }
+  if (k === 'odp') {
+    if (st === 'bozza') return { azione: `odpLancia('${id}')`, etichetta: 'Lancia', icona: 'factory' };
+    if (st === 'lanciato' || st === 'corso') return { suggerimento: 'Dichiara pezzi buoni e scarti sulle fasi, nella tabella qui sotto.' };
+    if (st === 'completato') return { azione: `odpChiudi('${id}')`, etichetta: 'Chiudi l’ordine', icona: 'lock' };
+    return null;
+  }
+  if (k === 'job') {
+    if (st === 'aperta') return { azione: `jobSetField('${id}','status','produzione')`, etichetta: 'Metti in produzione', icona: 'factory' };
+    if (st === 'produzione') return { azione: `jobSetField('${id}','status','chiusa')`, etichetta: 'Chiudi la commessa', icona: 'lock' };
+    return null;
+  }
+  return null;
+}
+// Un passo si fa come dal menu «Stato», e si salva subito: è un gesto
+// deliberato, non un ritocco da confermare con «Salva».
+function docAdvance(k, id, status) {
+  const K = docKind(k);
+  const d = K.get(id); if (!d) return;
+  const prima = d.status;
+  docSetField(k, id, 'status', status);
+  if (d.status !== prima) docSave(k, id);
+}
+function docStepperHtml(k, d) {
+  const flow = DOC_FLOW[k]; if (!flow || !d) return '';
+  const map = docFlowStatusMap(k);
+  const fuori = flow.fuori.includes(d.status);
+  const at = flow.passi.indexOf(d.status);
+  const passi = flow.passi.map((s, i) => {
+    const cls = fuori ? 'off' : (i < at ? 'done' : (i === at ? 'now' : ''));
+    return `<li class="doc-step ${cls}"${i === at && !fuori ? ' aria-current="step"' : ''}><span class="doc-step-dot" aria-hidden="true">${i < at && !fuori ? '✓' : i + 1}</span>${esc(map[s] || s)}</li>`;
+  }).join('');
+  const next = fuori ? null : docNextStep(k, d);
+  const coda = fuori
+    ? `<span class="doc-step-note">${ico('blocked', 'tinted', '')} ${esc(map[d.status] || d.status)}: fuori dal giro.</span>`
+    : !next ? `<span class="doc-step-note">${ico('check', 'tinted', '')} Giro completato.</span>`
+      : next.azione ? `<button class="add-btn-sm doc-step-next" onclick="${next.azione}">${ico(next.icona || 'check', 'tinted', '')} ${esc(next.etichetta)}</button>`
+        : `<span class="doc-step-note">${esc(next.suggerimento)}</span>`;
+  return `<div class="doc-flow"><ol class="doc-steps" aria-label="Avanzamento">${passi}</ol><div class="doc-step-next-wrap">${coda}</div></div>`;
+}
+// ─── I documenti collegati ───
+// Una voce = { tipo, id, numero, ruolo }. Il tipo è quello di homeApri, che sa
+// già aprire ogni documento nella sua vista.
+function docLinks(k, d) {
+  const v = [];
+  const add = (tipo, x, ruolo) => { if (x) v.push({ tipo, id: x.id, numero: x.number || '', ruolo }); };
+  const job = d.jobId && typeof getJob === 'function' ? getJob(d.jobId) : null;
+  const plan = d.planId ? (db.plans || []).find(p => p.id === d.planId) : null;
+  if (k !== 'job') add('job', job, 'commessa');
+  add('plan', plan, 'piano');
+  if (k === 'order' || k === 'odl') add('rfq', d.rfqId ? getRfq(d.rfqId) : null, 'richiesta');
+  if (k === 'odl' && d.odpId && typeof getOdp === 'function') add('odp', getOdp(d.odpId), 'ordine di produzione');
+  if (k === 'rfq') {
+    (db.orders || []).filter(o => o.rfqId === d.id).forEach(o => add('order', o, 'ordine'));
+    (db.workOrders || []).filter(o => o.rfqId === d.id).forEach(o => add('odl', o, 'ordine di lavoro'));
+  }
+  if (k === 'odp') (db.workOrders || []).filter(o => o.odpId === d.id).forEach(o => add('odl', o, 'ordine di lavoro'));
+  return v;
+}
+function docLinksHtml(k, d) {
+  const v = docLinks(k, d);
+  if (!v.length) return '';
+  const icona = { job: 'clipboard', plan: 'list', rfq: 'mail', order: 'receipt', odl: 'wrench', odp: 'factory' };
+  return `<div class="doc-links"><span class="doc-links-label">Collegati</span>${v.map(x =>
+    `<button type="button" class="doc-link" onclick="homeApri('${x.tipo}','${x.id}')" title="Apri ${esc(x.ruolo)} ${esc(x.numero)}">${ico(icona[x.tipo] || 'file', 'tinted', '')} <span class="doc-link-role">${esc(x.ruolo)}</span> <span class="doc-link-num">${esc(x.numero)}</span></button>`).join('')}</div>`;
 }
 
 // ─── Filtri degli elenchi documenti (condivisi tra richieste e ordini) ───
@@ -1035,7 +1139,8 @@ function renderRfqEdit(id) {
         <button class="btn-outline" onclick="orderFromRfq('${id}')" title="Crea un ordine a fornitore da questa richiesta">${ico('receipt', 'tinted', '')} Crea ordine</button>
       </div>
     </div>
-    ${coWarn}${lockBanner}${docOriginRef(r)}${stampLine(r)}
+    ${docStepperHtml('rfq', r)}${docLinksHtml('rfq', r)}
+    ${coWarn}${lockBanner}${stampLine(r)}
     <div class="rfq-head">
       <div class="modal-field"><label>Titolo / oggetto</label><input class="lock-contract" value="${esc(r.title || '')}" onchange="rfqSetField('${id}','title',this.value)"></div>
       <div class="rfq-head-row">
@@ -1511,7 +1616,6 @@ function renderOrderEdit(id) {
   const ritardo = orderWorstDelay(o);
   const co = db.settings.company || {};
   const coWarn = co.name ? '' : `<div class="rfq-warn">${ico('warning', 'tinted', '')} Dati azienda non impostati: compilali in <strong>Gestione › Dati azienda</strong> per stamparli sul documento.</div>`;
-  const rfqRef = docOriginRef(o);
   const dis = orderDirty ? 'disabled title="Salva l\'ordine prima di generare il documento"' : '';
   const mode = ordMode(o);
   const lockBanner = docLockBanner(mode, 'Ordine ' + (ORDER_STATUS[o.status] || o.status).toLowerCase(), 'order', id);
@@ -1525,7 +1629,8 @@ function renderOrderEdit(id) {
         <button class="btn-outline" style="color:var(--red);border-color:var(--red)" onclick="delOrder('${id}')" title="Elimina l'ordine">${ico('trash', 'tinted', '')} Elimina</button>
       </div>
     </div>
-    ${coWarn}${rfqRef}${lockBanner}${stampLine(o)}
+    ${docStepperHtml('order', o)}${docLinksHtml('order', o)}
+    ${coWarn}${lockBanner}${stampLine(o)}
     <div class="rfq-head">
       <div class="modal-field"><label>Titolo / oggetto</label><input class="lock-contract" value="${esc(o.title || '')}" onchange="ordSetField('${id}','title',this.value)"></div>
       <div class="rfq-head-row">
@@ -1907,7 +2012,6 @@ function renderOdlEdit(id) {
   const ritardo = orderWorstDelay(o);
   const co = db.settings.company || {};
   const coWarn = co.name ? '' : `<div class="rfq-warn">${ico('warning', 'tinted', '')} Dati azienda non impostati: compilali in <strong>Gestione › Dati azienda</strong> per stamparli sul documento.</div>`;
-  const rfqRef = docOriginRef(o);
   const dis = odlDirty ? 'disabled title="Salva l\'ordine di lavoro prima di generare il documento"' : '';
   const lockBanner = docLockBanner(odlMode(o), 'Ordine di lavoro ' + (ORDER_STATUS[o.status] || o.status).toLowerCase(), 'odl', id);
   return `<div class="manage-wrap">
@@ -1920,7 +2024,8 @@ function renderOdlEdit(id) {
         <button class="btn-outline" style="color:var(--red);border-color:var(--red)" onclick="delOdl('${id}')" title="Elimina l'ordine di lavoro">${ico('trash', 'tinted', '')} Elimina</button>
       </div>
     </div>
-    ${coWarn}${rfqRef}${odlOdpRef(o)}${lockBanner}${stampLine(o)}
+    ${docStepperHtml('odl', o)}${docLinksHtml('odl', o)}
+    ${coWarn}${odlOdpRef(o)}${lockBanner}${stampLine(o)}
     <div class="rfq-head">
       <div class="modal-field"><label>Titolo / oggetto</label><input class="lock-contract" value="${esc(o.title || '')}" onchange="odlSetField('${id}','title',this.value)"></div>
       <div class="rfq-head-row">
