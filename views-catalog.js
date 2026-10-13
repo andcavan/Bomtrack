@@ -153,6 +153,133 @@ function priceListBody(id) {
       <tbody>${corpo || vuoto}</tbody></table></div>
     <div style="margin-top:10px"><button class="add-btn-sm" onclick="priceAddRow()">+ Aggiungi quotazione</button></div>`;
 }
+// ═══════════════════════════════════════════════════════════
+//  LISTINO FORNITORI — la vista d'insieme
+// ═══════════════════════════════════════════════════════════
+// Fino alla 0.90 il listino si apriva solo dalla scheda di un articolo, e a
+// domande come «cosa mi quota Bonfiglioli?» o «quali prezzi hanno più di un
+// anno?» non rispondeva nessuna schermata. Qui ci sono tutte le quotazioni,
+// una per riga; per modificarne una si apre il listino del suo articolo, che
+// resta l'unico posto dove un prezzo si scrive e si mette in uso.
+const _plv = { q: '', sup: '', tipo: '', solo: '' };
+function plvRows() {
+  const q = _plv.q.trim().toLowerCase();
+  const out = [];
+  (db.items || []).forEach(it => {
+    if (!hasPriceList(it) || it.active === false) return;
+    if (_plv.tipo && it.type !== _plv.tipo) return;
+    const inUso = activePriceRow(it);
+    const migliore = bestPriceRow(it);
+    const righe = priceRows(it);
+    righe.forEach(r => {
+      if (_plv.sup && (r.supplierId || '') !== _plv.sup) return;
+      const attiva = !!inUso && r.id === inUso.id;
+      if (_plv.solo === 'uso' && !attiva) return;
+      if (_plv.solo === 'senza' && r.price !== '' && r.price != null) return;
+      const sup = getSupplier(r.supplierId);
+      if (q) {
+        const testo = [it.code, it.name, sup && sup.name, r.code, r.desc].join(' ').toLowerCase();
+        if (!testo.includes(q)) return;
+      }
+      out.push({ it, r, sup, attiva, best: !!migliore && r.id === migliore.id && righe.length > 1 });
+    });
+  });
+  // Per codice articolo, e dentro l'articolo le quotazioni più recenti in cima:
+  // lo stesso ordine della scheda.
+  return out.sort((a, b) => (a.it.code || '').localeCompare(b.it.code || '', 'it', { numeric: true })
+    || (b.r.date || '').localeCompare(a.r.date || ''));
+}
+function plvSet(campo, valore) { _plv[campo] = valore; renderPriceListView(); }
+function plvSearchInput(v) {
+  _plv.q = v;
+  const host = document.getElementById('plv-body');
+  if (host) host.innerHTML = plvBody(plvRows());
+}
+function plvPrezzo(x) {
+  if (x.r.price === '' || x.r.price == null) return '<span style="color:var(--text-dim)">—</span>';
+  const u = priceUomOf(x.it, x.r);
+  return `<span style="font-family:var(--mono)">${fmtPer(Number(x.r.price) || 0, u)}</span>`;
+}
+function plvBody(righe) {
+  if (!righe.length) {
+    const nulla = !(db.items || []).some(it => hasPriceList(it) && priceRows(it).length);
+    return `<p class="empty-text">${nulla
+      ? 'Nessuna quotazione registrata. Si aggiungono dal listino di un articolo, oppure tornano con i prezzi di una richiesta di offerta.'
+      : 'Nessuna quotazione corrisponde ai filtri.'}</p>`;
+  }
+  return `<div class="table-wrap"><table class="price-table plv-table">
+    <thead><tr><th scope="col"></th><th scope="col">Articolo</th><th scope="col">Descrizione</th><th scope="col">Fornitore</th>
+      <th scope="col">Cod. fornitore</th><th scope="col" class="num">Prezzo</th><th scope="col" class="num">Q.tà min</th>
+      <th scope="col" class="num" title="Giorni di consegna">GG</th><th scope="col">Data</th><th scope="col">Origine</th></tr></thead>
+    <tbody>${righe.map(x => `<tr class="${x.attiva ? 'price-active' : ''}" style="cursor:pointer" tabindex="0" onclick="priceListModal('${x.it.id}')" onkeydown="if(event.key==='Enter')priceListModal('${x.it.id}')" title="Apri il listino di ${esc(x.it.code)}">
+      <td class="pl-flag">${x.attiva ? '<span title="Prezzo in uso nella costificazione">✓</span>' : ''}${x.best ? '<span class="price-best" title="Quotazione più bassa">↓</span>' : ''}</td>
+      <td><span class="code">${esc(x.it.code)}</span></td>
+      <td>${esc(x.it.name)} <span style="color:var(--text-dim)">· ${esc(typeLabel(x.it.type))}</span></td>
+      <td>${x.sup ? esc(x.sup.name) : '<span style="color:var(--text-dim)">—</span>'}</td>
+      <td>${esc(x.r.code || '')}</td>
+      <td class="num">${plvPrezzo(x)}</td>
+      <td class="num">${x.r.minQty === '' || x.r.minQty == null ? '—' : esc(fmtQty(x.r.minQty))}</td>
+      <td class="num">${x.r.leadDays === '' || x.r.leadDays == null ? '—' : esc(String(x.r.leadDays))}</td>
+      <td>${x.r.date ? esc(fmtDateIt(x.r.date)) : '—'}</td>
+      <td>${esc(priceRowOrigin(x.r))}</td></tr>`).join('')}</tbody></table></div>`;
+}
+function renderPriceListView() {
+  const host = document.getElementById('view-pricelist'); if (!host) return;
+  invalidateCaches();
+  if (_plv.sup && !getSupplier(_plv.sup)) _plv.sup = '';
+  const righe = plvRows();
+  const tipi = ['acquistato', 'materiale', 'parte'];
+  host.innerHTML = `<div class="manage-wrap">
+    <div class="bom-toolbar">
+      <div class="bom-toolbar-left">
+        <h2 class="section-title">${ico('euro', 'tinted pill', '')} Listino fornitori</h2>
+      </div>
+      <div class="bom-toolbar-right">${listExportButtons('plvExportSpec')}</div>
+    </div>
+    <div class="catalog-filters">
+      <input type="text" class="search" id="plv-search" placeholder="Cerca articolo, fornitore o codice fornitore..." value="${esc(_plv.q)}" oninput="plvSearchInput(this.value)">
+      <select id="plv-sup" onchange="plvSet('sup', this.value)" title="Fornitore">
+        <option value="">Tutti i fornitori</option>
+        ${(db.suppliers || []).map(s => `<option value="${esc(s.id)}" ${s.id === _plv.sup ? 'selected' : ''}>${esc(s.name)}</option>`).join('')}
+      </select>
+      <select id="plv-tipo" onchange="plvSet('tipo', this.value)" title="Tipo di articolo">
+        <option value="">Tutti i tipi</option>
+        ${tipi.map(t => `<option value="${t}" ${t === _plv.tipo ? 'selected' : ''}>${esc(typeLabel(t))}</option>`).join('')}
+      </select>
+      <select id="plv-solo" onchange="plvSet('solo', this.value)" title="Quali quotazioni">
+        <option value="">Tutte le quotazioni</option>
+        <option value="uso" ${_plv.solo === 'uso' ? 'selected' : ''}>Solo i prezzi in uso</option>
+        <option value="senza" ${_plv.solo === 'senza' ? 'selected' : ''}>Senza prezzo</option>
+      </select>
+      <span class="doc-filter-count">${righe.length} ${righe.length === 1 ? 'quotazione' : 'quotazioni'}</span>
+    </div>
+    <p class="empty-text" style="text-align:left;padding:0 0 8px">Tutte le quotazioni di commerciali, materie prime e parti. ✓ è il prezzo in uso nella costificazione, ↓ la quotazione più bassa dell'articolo. Un clic sulla riga apre il listino dell'articolo, dove si modifica e si sceglie il prezzo in uso.</p>
+    <div id="plv-body">${plvBody(righe)}</div>
+  </div>`;
+}
+function plvExportSpec() {
+  const righe = plvRows();
+  const solo = { uso: 'Solo i prezzi in uso', senza: 'Senza prezzo' }[_plv.solo] || '';
+  return {
+    titolo: 'Listino fornitori',
+    slug: 'listino_fornitori',
+    filtri: [['Testo', _plv.q.trim()], ['Fornitore', _plv.sup ? ((getSupplier(_plv.sup) || {}).name || '') : ''],
+      ['Tipo', _plv.tipo ? typeLabel(_plv.tipo) : ''], ['Quotazioni', solo]],
+    sezioni: [{
+      nome: 'Quotazioni',
+      colonne: [
+        { h: 'Codice', w: 14 }, { h: 'Descrizione', w: 30 }, { h: 'Tipo', w: 14 }, { h: 'Fornitore', w: 24 },
+        { h: 'Cod. fornitore', w: 14 }, { h: 'Prezzo', w: 12, num: true }, { h: 'U.M.', w: 6 },
+        { h: 'Q.tà min', w: 9, num: true }, { h: 'GG', w: 6, num: true }, { h: 'Data', w: 11, data: true },
+        { h: 'In uso', w: 7 }, { h: 'Origine', w: 14 }],
+      righe: righe.map(x => [x.it.code || '', x.it.name || '', typeLabel(x.it.type), x.sup ? x.sup.name : '',
+        x.r.code || '', x.r.price === '' || x.r.price == null ? '' : Number(x.r.price) || 0, priceUomOf(x.it, x.r),
+        x.r.minQty === '' || x.r.minQty == null ? '' : Number(x.r.minQty) || 0,
+        x.r.leadDays === '' || x.r.leadDays == null ? '' : Number(x.r.leadDays) || 0,
+        x.r.date || '', x.attiva ? 'sì' : '', priceRowOrigin(x.r)]),
+    }],
+  };
+}
 function priceRowOrigin(r) {
   if (!r.rfqId) return 'a mano';
   const q = db.rfqs.find(x => x.id === r.rfqId);
@@ -409,6 +536,8 @@ function renderCatalogs() {
   // Il Magazzino elenca gli stessi articoli: una rettifica di giacenza registrata
   // da lì deve aggiornare la riga senza far cambiare pagina a chi la sta facendo.
   else if (activeView === 'stock') renderStock();
+  // Il listino in elenco legge le stesse quotazioni che la scheda modifica.
+  else if (activeView === 'pricelist') renderPriceListView();
 }
 // Allinea i filtri famiglia/sottofamiglia al tipo selezionato, preservando le selezioni compatibili
 function updateCatFamilyFilters(scope) {
@@ -1201,7 +1330,7 @@ function renderCycles() {
     document.getElementById('cyc-summary').innerHTML = '';
     body.innerHTML = `<div class="empty-text">${partItems().length
       ? 'Nessuna parte con questi filtri.'
-      : `Nessuna parte a catalogo. Creane una in <strong>${ico('contacts', 'tinted')} Anagrafica → Progetto → + Nuovo articolo</strong>.`}</div>`;
+      : `Nessuna parte a catalogo. Creane una in <strong>${ico('tree', 'tinted')} Tecnico → Articoli di progetto → + Nuovo articolo</strong>.`}</div>`;
     filtMount('cycles');
     return;
   }

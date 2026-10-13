@@ -2169,7 +2169,7 @@ function renderPlanEdit(id) {
     </div>
     <div class="mrp-section">
       <div class="cycle-section-head"><h3>${ico('wrench', 'tinted pill', '')} Carico dei centri</h3></div>
-      <p class="empty-text" style="text-align:left;padding:0 0 8px">Le ore che <strong>questo piano</strong> chiede ai centri interni, per settimana. Il carico vero è la somma di tutti i piani aperti: si guarda in <em>Cicli di lavorazione → Carico centri</em>, perché il centro è condiviso e un piano solo non dice se regge.</p>
+      <p class="empty-text" style="text-align:left;padding:0 0 8px">Le ore che <strong>questo piano</strong> chiede ai centri interni, per settimana. Il carico vero è la somma di tutti i piani aperti: si guarda in <em>Pianificazione → Carico centri</em>, perché il centro è condiviso e un piano solo non dice se regge.</p>
       ${loadTableHtml(mrpLoad(p), id)}
     </div>
     ${planDocsList(id)}</div>`;

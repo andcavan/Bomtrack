@@ -112,7 +112,7 @@ function printSubtitle() {
 function printHeadFill() {
   const el = document.getElementById('print-head'); if (!el) return;
   const g = groupOfView(activeView);
-  // "Distinta base › Visualizza DB": sul foglio stampato deve leggersi da dove viene
+  // "Tecnico › Visualizza DB": sul foglio stampato deve leggersi da dove viene
   const sezione = g ? g.label + (g.views.length > 1 ? ' › ' + viewLabel(activeView) : '') : '';
   const co = (db.settings && db.settings.company && db.settings.company.name) || 'Bomtrack';
   const sub = printSubtitle();
@@ -135,10 +135,15 @@ function openManual() {
 // ═══════════════════════════════════════════════════════════
 //  NAVIGAZIONE
 // ═══════════════════════════════════════════════════════════
-// Due livelli: cinque gruppi in barra, le loro voci su una seconda riga che
-// compare solo dove serve. Nove pulsanti affiancati non raccontavano più come
-// si lavora — Gestione DB e Visualizza DB sono la stessa distinta vista in due
-// modi, Acquisti e Progetto lo stesso archivio diviso per competenza.
+// Due livelli: i gruppi in barra, le loro voci su una seconda riga che
+// compare solo dove serve.
+// Dalla 0.91.0 i gruppi seguono il **processo** e chi lo fa, non il tipo di
+// dato: fino alla 0.90 «Documenti» teneva insieme commesse, piani, richieste,
+// ordini, ODP e ODL — la pianificazione, l'ufficio acquisti e l'officina in un
+// cassetto solo — e il Carico centri stava sotto i Cicli, dove nessuno lo
+// cercava. Ora l'ufficio tecnico vive in «Tecnico», chi pianifica in
+// «Pianificazione», chi compra in «Acquisti» (con il listino, che fino alla 0.90
+// si apriva solo dalla scheda di un articolo), l'officina in «Produzione».
 // Icona ed etichetta restano separate: su schermi stretti l'etichetta del
 // gruppo sparisce e la barra resta su una riga sola (vedi .nav-label).
 const NAV = [
@@ -147,34 +152,39 @@ const NAV = [
     // Il Riepilogo dice cosa fare adesso, il cruscotto come stanno le cose:
     // due domande, la stessa porta d'ingresso.
     { id: 'dash', label: 'Cruscotto' }] },
-  { id: 'anag', icon: 'contacts', label: 'Anagrafica', views: [
-    { id: 'buy', label: 'Acquisti' },
-    { id: 'design', label: 'Progetto' }] },
-  // Il magazzino sta accanto alle anagrafiche perché elenca gli stessi articoli,
-  // ma è un gruppo suo: non conosce la divisione fra acquisti e progetto —
-  // commerciali, materie prime e parti stanno sullo stesso scaffale.
-  { id: 'stock', icon: 'package', label: 'Magazzino', views: [
-    { id: 'stock', label: 'Magazzino' }] },
-  { id: 'cicli', icon: 'wrench', label: 'Cicli di lavorazione', views: [
-    { id: 'cycles', label: 'Cicli di lavorazione' },
-    // Il carico aggregato non appartiene a nessun piano: infilarlo dentro un
-    // piano lo farebbe cercare nel posto sbagliato. Il carico del singolo piano
-    // resta comunque in fondo alla sua scheda.
-    { id: 'load', label: 'Carico centri' }] },
-  { id: 'db', icon: 'tree', label: 'Distinta base', views: [
+  // Quello che l'ufficio tecnico definisce: gli articoli, come si compongono e
+  // come si lavorano. Acquisti e Progetto restano due elenchi — lo stesso
+  // archivio diviso per competenza — ma sotto un nome che non si confonde col
+  // gruppo «Acquisti» dei documenti.
+  { id: 'tech', icon: 'tree', label: 'Tecnico', views: [
+    { id: 'design', label: 'Articoli di progetto' },
+    { id: 'buy', label: 'Articoli d\'acquisto' },
     { id: 'bom', label: 'Gestione DB' },
-    { id: 'report', label: 'Visualizza DB' }] },
-  { id: 'docs', icon: 'mail', label: 'Documenti', views: [
+    { id: 'report', label: 'Visualizza DB' },
+    { id: 'cycles', label: 'Cicli di lavorazione' }] },
+  // Dalla commessa a cosa serve e quando: il fabbisogno esplode le distinte, il
+  // carico dice se i centri reggono. Il carico aggregato non appartiene a nessun
+  // piano, ma è una domanda di pianificazione, non di ciclo.
+  { id: 'plan', icon: 'clipboard', label: 'Pianificazione', views: [
     { id: 'jobs', label: 'Commesse' },
     { id: 'mrp', label: 'Fabbisogno' },
-    // L'ordine di produzione sta prima dell'ordine di lavoro perché è lui a
-    // generarlo: la fase esterna si commissiona da lì.
-    { id: 'odp', label: 'Ordini di produzione' },
+    { id: 'load', label: 'Carico centri' }] },
+  // Il lavoro di chi compra, nell'ordine in cui lo fa: chiedere, ordinare, e il
+  // listino dove i prezzi restano.
+  { id: 'buying', icon: 'cart', label: 'Acquisti', views: [
     { id: 'rfq', label: 'Richieste offerta' },
-    { id: 'orders', label: 'Ordini' },
-    // ODA e ODL sono due documenti diversi e stanno in due elenchi: uno compra
-    // merce, l'altro manda pezzi a lavorare.
+    { id: 'orders', label: 'Ordini fornitore' },
+    { id: 'pricelist', label: 'Listino fornitori' }] },
+  // L'officina: l'ordine di produzione sta prima dell'ordine di lavoro perché
+  // è lui a generarlo — la fase esterna si commissiona da lì. ODA e ODL restano
+  // due elenchi: uno compra merce, l'altro manda pezzi a lavorare.
+  { id: 'prod', icon: 'factory', label: 'Produzione', views: [
+    { id: 'odp', label: 'Ordini di produzione' },
     { id: 'odl', label: 'Ordini di lavoro' }] },
+  // Il magazzino non conosce la divisione fra acquisti e progetto: commerciali,
+  // materie prime e parti stanno sullo stesso scaffale.
+  { id: 'stock', icon: 'package', label: 'Magazzino', views: [
+    { id: 'stock', label: 'Magazzino' }] },
   { id: 'manage', icon: 'settings', label: 'Gestione', views: [
     { id: 'manage', label: 'Gestione' }] },
 ];
@@ -337,6 +347,7 @@ function setView(v) {
   else if (v === 'odl') renderOdl();
   else if (v === 'odp') renderOdp();
   else if (v === 'load') renderLoad();
+  else if (v === 'pricelist') renderPriceListView();
   else if (v === 'manage') renderManage();
   showReadOnlyBanner(panel, area);
   a11yFields(panel);   // etichette ai campi e nomi ai pulsanti-icona della vista appena disegnata

@@ -292,7 +292,7 @@ describe('renderCycles — disegno delle due sezioni', () => {
   it('senza parti a catalogo spiega dove crearne una', () => {
     const app = conDb(makeDb({ items: [] }));
     app.eval('renderCycles()');
-    assert.ok(app.html('cyc-body').includes('Progetto'));
+    assert.ok(app.html('cyc-body').includes('Articoli di progetto'));
   });
 
   it('cycleCountLabel riassume le due sezioni', () => {

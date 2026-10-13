@@ -157,7 +157,7 @@ describe('Il disegno', () => {
     a.eval('renderHome()');
     const h = a.html('view-home');
     assert.equal((h.match(/home-chip/g) || []).length, 8, 'oltre otto l\'elenco smetterebbe di essere un dettaglio');
-    assert.match(h, /\+4 altri in Acquisti/);
+    assert.match(h, /\+4 altri in Articoli d(&#39;|')acquisto/);
   });
 
   it('senza niente in sospeso non si disegnano voci', () => {

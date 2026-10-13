@@ -83,7 +83,7 @@ function renderBom() {
   const tree = document.getElementById('bom-tree');
   if (!it) {
     summary.innerHTML = '';
-    tree.innerHTML = '<div class="empty-text">Nessun prodotto. Creane uno in <strong>Anagrafica → Progetto → + Nuovo articolo</strong>.</div>';
+    tree.innerHTML = '<div class="empty-text">Nessun prodotto. Creane uno in <strong>Tecnico → Articoli di progetto → + Nuovo articolo</strong>.</div>';
     refreshBomPanelIfOpen();
     filtMount('bom');
     return;
@@ -606,7 +606,7 @@ function renderBomPanelResults() {
   if (!html) {
     html = base.length
       ? `<div class="picker-empty">Nessun articolo trovato</div>`
-      : `<div class="picker-empty">Nessun articolo dei tipi ammessi. Crealo prima in Anagrafica (Acquisti o Progetto).</div>`;
+      : `<div class="picker-empty">Nessun articolo dei tipi ammessi. Crealo prima in Tecnico (Articoli di progetto o d\x27acquisto).</div>`;
   } else if (total > rows.length) html += `<div class="picker-empty">+${total - rows.length} altri — affina la ricerca</div>`;
   box.innerHTML = html;
 }
@@ -779,7 +779,7 @@ function editCurrentItemModal() {
   if (!roleGuard('bom')) return;
   const it = getItem(currentBomId); if (!it) return;
   openModal(`<h3>${ico('edit', 'tinted pill', '')} Modifica testata — <span style="color:var(--text-dim);font-weight:500">${typeLabel(it.type)}</span></h3>
-    <p class="empty-text" style="text-align:left;padding:0 0 10px">Codice, descrizione e U.M. si modificano solo in Anagrafica → Progetto.</p>
+    <p class="empty-text" style="text-align:left;padding:0 0 10px">Codice, descrizione e U.M. si modificano solo in Tecnico → Articoli di progetto.</p>
     <div class="modal-grid">
       <div class="modal-field"><label>Codice</label><input value="${esc(it.code)}" disabled style="font-family:var(--mono);font-weight:700"></div>
       <div class="modal-field"><label>U.M.</label><input value="${esc(it.uom || defaultUom())}" disabled></div>

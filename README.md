@@ -16,16 +16,19 @@ La revisione in esecuzione è mostrata accanto al logo, in alto a sinistra (es. 
 
 ## Funzionalità
 
-La barra dei comandi ha **sei gruppi**; le voci del gruppo aperto compaiono su una seconda riga, e ogni gruppo ricorda l'ultima voce usata.
+La barra dei comandi ha **sette gruppi**, ordinati per processo (dalla 0.91.0); le voci del gruppo aperto compaiono su una seconda riga, e ogni gruppo ricorda l'ultima voce usata.
 
 | Gruppo | Voci |
 |---|---|
-| 📇 **Anagrafica** | Acquisti · Progetto |
+| 🏠 **Riepilogo** | Riepilogo · Cruscotto |
+| 🌳 **Tecnico** | Articoli di progetto · Articoli d'acquisto · Gestione DB · Visualizza DB · Cicli di lavorazione |
+| 📋 **Pianificazione** | Commesse · Fabbisogno · Carico centri |
+| 🛒 **Acquisti** | Richieste offerta · Ordini fornitore · Listino fornitori |
+| 🏭 **Produzione** | Ordini di produzione · Ordini di lavoro |
 | 📦 **Magazzino** | — |
-| 🔧 **Cicli di lavorazione** | Cicli di lavorazione · Carico centri |
-| 🌳 **Distinta base** | Gestione DB · Visualizza DB (costificazione) |
-| 📨 **Documenti** | Commesse · Fabbisogno · Ordini di produzione · Richieste offerta · Ordini · Ordini di lavoro |
 | ⚙ **Gestione** | — (solo amministratori) |
+
+Fino alla 0.90 i gruppi seguivano il tipo di dato (Anagrafica, Cicli di lavorazione, Distinta base, Documenti), e «Documenti» teneva insieme pianificazione, acquisti e produzione. Le voci qui sotto citano ancora, in qualche caso, il gruppo di allora.
 
 - **🌳 Distinta base → Gestione DB** — albero multi-livello espandibile della macchina selezionata, con **numerazione di posizione** (1, 1.1, 1.1.1, 1.2, 2…), costo unitario e di riga per ogni componente, lavorazioni interne e card di riepilogo costi. Aggiunta/modifica/eliminazione di componenti e lavorazioni. I sottogruppi possono contenere altri sottogruppi, senza limite di profondità. Una **barra filtri** (testo, livello, macchina di appartenenza) restringe l'elenco delle distinte; la distinta aperta resta sempre raggiungibile anche quando il filtro la escluderebbe.
 - **📇 Anagrafica → Acquisti** — anagrafica di ciò che si compra: **materie prime** (costo unitario per U.M., es. €/kg) e **componenti commerciali**, con flag **preferito ★** (e filtro dedicato) e flag **obsoleto ⛔**. Fornitore e prezzo non si scrivono qui: la scheda li mostra in sola lettura e rimanda al **listino fornitori**.

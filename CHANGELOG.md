@@ -2,6 +2,22 @@
 
 Le revisioni seguono il versionamento semantico `0.MINOR.PATCH`: **MINOR** per nuove funzionalità, **PATCH** per correzioni. La versione in cima è quella in `APP_VERSION` (`core.js`) e mostrata nell'header dell'app.
 
+### 0.91.0 — 2026-10-13
+
+**La barra segue il lavoro.** I gruppi erano divisi per tipo di dato, e «Documenti» teneva insieme commesse, piani, richieste, ordini, ODP e ODL: la pianificazione, l'ufficio acquisti e l'officina in un cassetto solo. Ora seguono il processo e chi lo fa.
+
+**Nuovo**
+- **Gruppi per processo**: Riepilogo · **Tecnico** (articoli di progetto e d'acquisto, Gestione DB, Visualizza DB, cicli) · **Pianificazione** (commesse, fabbisogno, carico centri) · **Acquisti** (richieste offerta, ordini fornitore, listino) · **Produzione** (ODP, ODL) · Magazzino · Gestione. Le schermate sono le stesse e gli indirizzi (`#mrp`, `#orders`…) non cambiano.
+- **Listino fornitori** come vista sua, in *Acquisti*: tutte le quotazioni di commerciali, materie prime e parti in un elenco, con prezzo in uso ✓ e più basso ↓, filtri per testo, fornitore, tipo, solo in uso o senza prezzo, export Excel e PDF. Un clic sulla riga apre il listino dell'articolo, che resta l'unico posto dove una quotazione si modifica.
+- Il **Carico centri** passa sotto *Pianificazione*: è una domanda di pianificazione, non di ciclo.
+
+**Da sapere**
+- Le voci «Acquisti» e «Progetto» delle anagrafiche si chiamano **Articoli d'acquisto** e **Articoli di progetto**, per non confondersi col gruppo *Acquisti*; «Ordini» diventa **Ordini fornitore**.
+- Permessi e ruoli non cambiano: il listino si modifica con i diritti sull'anagrafica, come prima.
+
+**Verifica**
+- `test/nav.test.js`: gruppi, viste per gruppo, memoria del gruppo, stampa. `test/pricelist.test.js`: la vista d'insieme (ordine, filtri, export, gruppo).
+
 ### 0.90.0 — 2026-10-13
 
 **Il programma si vede, e l'ordine di produzione lo ricorda.** Ultima tappa della programmazione dei tempi (`docs/programmazione-tempi.md`).

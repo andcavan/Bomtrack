@@ -1,6 +1,6 @@
 # Bomtrack — Manuale d'uso
 
-**Versione dell'app documentata: 0.90.0**
+**Versione dell'app documentata: 0.91.0**
 
 📖 **[Leggilo come pagina web](https://claude.ai/code/artifact/726a0963-2db0-4947-999b-d7b5beb91a0b)** — stesso testo, con indice laterale, filtro dei capitoli e tema chiaro/scuro. Comodo da tenere aperto di fianco all'app.
 
@@ -28,8 +28,8 @@ ciascuna sua tappa.
 
 **Parte III — Archivi**
 
-6. [Anagrafica → Acquisti](#6-anagrafica--acquisti)
-7. [Anagrafica → Progetto](#7-anagrafica--progetto)
+6. [Tecnico → Articoli d'acquisto](#6-tecnico--articoli-dacquisto)
+7. [Tecnico → Articoli di progetto](#7-tecnico--articoli-di-progetto)
 8. [La scheda articolo, campo per campo](#8-la-scheda-articolo-campo-per-campo)
 9. [I codici automatici](#9-i-codici-automatici)
 10. [Listino fornitori](#10-listino-fornitori)
@@ -38,7 +38,7 @@ ciascuna sua tappa.
 
 **Parte IV — Il prodotto**
 
-13. [Distinta base → Gestione DB](#13-distinta-base--gestione-db)
+13. [Tecnico → Gestione DB](#13-tecnico--gestione-db)
 14. [Cicli di lavorazione](#14-cicli-di-lavorazione)
 15. [Revisioni](#15-revisioni)
 16. [Costificazione — Visualizza DB](#16-costificazione--visualizza-db)
@@ -161,7 +161,7 @@ la sessione aperta fino a **Esci**; quanto duri lo decide l'amministratore in
 
 ### La versione
 
-Il numero di versione si legge **accanto al logo, in alto a sinistra** (es. `v0.90.0`).
+Il numero di versione si legge **accanto al logo, in alto a sinistra** (es. `v0.91.0`).
 Corrisponde alla voce in cima al changelog: serve quando si segnala un problema.
 
 ### Dove sta questo manuale
@@ -214,19 +214,23 @@ scegliendo una voce.
 
 ### La navigazione a due livelli
 
-La barra dei comandi ha **sette gruppi**. Cliccando un gruppo, le sue voci compaiono su una
-seconda riga; il gruppo con una voce sola non mostra la seconda riga. **Ogni gruppo ricorda
-l'ultima voce usata**: tornando su *Documenti* si riapre dove si era rimasti.
+La barra dei comandi ha **sette gruppi**, ordinati come il lavoro scorre: dall'ufficio tecnico
+alla pianificazione, agli acquisti, all'officina, al magazzino. Cliccando un gruppo, le sue voci
+compaiono su una seconda riga; il gruppo con una voce sola non mostra la seconda riga. **Ogni gruppo
+ricorda l'ultima voce usata**: tornando su *Acquisti* si riapre dove si era rimasti.
 
 | Gruppo | Voci |
 |---|---|
 | 🏠 **Riepilogo** | Riepilogo · Cruscotto |
-| 📇 **Anagrafica** | Acquisti · Progetto |
+| 🌳 **Tecnico** | Articoli di progetto · Articoli d'acquisto · Gestione DB · Visualizza DB · Cicli di lavorazione |
+| 📋 **Pianificazione** | Commesse · Fabbisogno · Carico centri |
+| 🛒 **Acquisti** | Richieste offerta · Ordini fornitore · Listino fornitori |
+| 🏭 **Produzione** | Ordini di produzione · Ordini di lavoro |
 | 📦 **Magazzino** | *(voce unica)* |
-| 🔧 **Cicli di lavorazione** | Cicli di lavorazione · Carico centri |
-| 🌳 **Distinta base** | Gestione DB · Visualizza DB |
-| 📨 **Documenti** | Commesse · Fabbisogno · Ordini di produzione · Richieste offerta · Ordini · Ordini di lavoro |
 | ⚙️ **Gestione** | *(voce unica — solo amministratori)* |
+
+Fino alla 0.90 i gruppi erano divisi per tipo di dato (*Anagrafica*, *Cicli di lavorazione*,
+*Distinta base*, *Documenti*): le schermate sono le stesse, cambia solo il gruppo in cui stanno.
 
 La vista aperta finisce **nell'indirizzo del browser** (`…index.html#mrp`). Ne segue che i tasti
 *Indietro* e *Avanti* del browser funzionano, e che un indirizzo si può salvare tra i preferiti o
@@ -342,18 +346,18 @@ compilare la successiva:
 
 ### 4.2 Costruire il prodotto
 
-*(→ capitoli [6](#6-anagrafica--acquisti), [7](#7-anagrafica--progetto),
-[14](#14-cicli-di-lavorazione), [13](#13-distinta-base--gestione-db))*
+*(→ capitoli [6](#6-tecnico--articoli-dacquisto), [7](#7-tecnico--articoli-di-progetto),
+[14](#14-cicli-di-lavorazione), [13](#13-tecnico--gestione-db))*
 
 Si costruisce **dal basso verso l'alto**, perché il costo di un assieme è la somma di ciò che
 contiene: finché le foglie non hanno un prezzo, il ramo non ha un costo.
 
-**a) Quello che si compra** — *Anagrafica → Acquisti*. Materie prime (barra d'acciaio a €/kg,
+**a) Quello che si compra** — 🌳 *Tecnico → Articoli d'acquisto*. Materie prime (barra d'acciaio a €/kg,
 lamiera a €/kg) e componenti commerciali (cuscinetti, motori, viteria). Per ognuno, il prezzo si
 inserisce **dal listino fornitori** (→ [cap. 10](#10-listino-fornitori)): è l'unico posto dove
 nasce un prezzo d'acquisto, e il campo nella scheda articolo è di sola lettura apposta.
 
-**b) Le parti** — *Anagrafica → Progetto*, tipo **Parte**. Ogni parte dichiara il suo
+**b) Le parti** — 🌳 *Tecnico → Articoli di progetto*, tipo **Parte**. Ogni parte dichiara il suo
 **approvvigionamento**:
 
 - **Acquisto da fornitore** — la parte si compra già fatta. Il suo costo è il prezzo a listino, e
@@ -367,7 +371,7 @@ nasce un prezzo d'acquisto, e il campo nella scheda articolo è di sola lettura 
 2 ore; zincatura da Beta, 5 giorni). Una fase **senza fornitore** è interna e carica un centro;
 una fase **con fornitore** è conto lavoro e diventerà un ordine di lavoro.
 
-**d) Gli assiemi** — *Distinta base → Gestione DB*. Si apre la macchina e le si appendono i gruppi,
+**d) Gli assiemi** — 🌳 *Tecnico → Gestione DB*. Si apre la macchina e le si appendono i gruppi,
 ai gruppi i sottogruppi, ai sottogruppi le parti e i commerciali. Ogni riga ha una **quantità** e
 una **percentuale di scarto**. Gli assiemi possono avere anche lavorazioni proprie (il montaggio).
 
@@ -375,7 +379,7 @@ una **percentuale di scarto**. Gli assiemi possono avere anche lavorazioni propr
 
 *(→ [cap. 16](#16-costificazione--visualizza-db))*
 
-*Distinta base → **Visualizza DB***: si sceglie la macchina e si legge il costo, diviso per voci
+🌳 *Tecnico → **Visualizza DB***: si sceglie la macchina e si legge il costo, diviso per voci
 (materiale, commerciali, parti, lavorazioni, spese generali) con l'**incidenza** di ciascuna e il
 **prezzo di vendita** che ne segue. Il pulsante **Da dove viene questo costo** apre l'elenco degli
 articoli che pesano di più: è la risposta alla domanda «perché costa così tanto».
@@ -389,12 +393,12 @@ il preventivo.
 
 Fin qui si è descritto **il prodotto**. Da qui in poi si lavora su **un lavoro concreto**.
 
-**a) La commessa** — *Documenti → Commesse → **+ Nuova commessa***. Cliente, descrizione,
+**a) La commessa** — 📋 *Pianificazione → Commesse → **+ Nuova commessa***. Cliente, descrizione,
 riferimento del cliente, data di apertura e **consegna al cliente**. La commessa è il contenitore:
 ci si agganciano i piani, le richieste e gli ordini, e la sua scheda dirà in ogni momento se il
 materiale c'è.
 
-**b) Il piano di fabbisogno** — *Documenti → Fabbisogno → **+ Nuovo piano***. Si mette il piano
+**b) Il piano di fabbisogno** — 📋 *Pianificazione → Fabbisogno → **+ Nuovo piano***. Si mette il piano
 sotto la sua commessa, si dichiara la **consegna richiesta**, e nella sezione **Da produrre** si
 scrive cosa e quanto: *3 × Nastro NT-100*, *2 × Nastro NT-200*.
 
@@ -480,7 +484,7 @@ In ogni momento, il pulsante **Presso terzi** in Magazzino dice cosa sta fuori e
 
 *(→ [cap. 24](#24-carico-dei-centri-di-lavoro))*
 
-*Cicli di lavorazione → **Carico centri***: le ore che i piani aperti chiedono a ciascun centro,
+📋 *Pianificazione → **Carico centri***: le ore che i piani aperti chiedono a ciascun centro,
 settimana per settimana, contro la capacità dichiarata. Il sovraccarico si vede in rosso, con le
 settimane e i centri nominati. Sotto, **i codici da produrre** ordinati per settimana e per ore:
 la risposta a «cosa lancio per primo».
@@ -577,13 +581,13 @@ I capitoli di questa parte e delle due successive seguono tutti la stessa grigli
 *A cosa serve* → *Come ci si arriva* → *Cosa si vede* → *Comandi* → *Filtri* → *Finestre* →
 *Da sapere*.
 
-## 6. Anagrafica → Acquisti
+## 6. Tecnico → Articoli d'acquisto
 
 **A cosa serve.** L'archivio di **ciò che si compra**: componenti commerciali (cuscinetti, motori,
 viteria) e materie prime (barre, lamiere, profilati). La schermata si intitola
 **«Commerciali & Materie prime»**.
 
-**Come ci si arriva.** 📇 *Anagrafica → Acquisti*.
+**Come ci si arriva.** 🌳 *Tecnico → Articoli d'acquisto*.
 
 **Cosa si vede.** L'elenco degli articoli, **200 per volta** (in fondo, *Mostra altri* e
 *Mostra tutti*: i cataloghi grandi restano scorrevoli).
@@ -618,12 +622,12 @@ le stesse colonne ma si guardano per motivi diversi.
 
 ---
 
-## 7. Anagrafica → Progetto
+## 7. Tecnico → Articoli di progetto
 
 **A cosa serve.** L'archivio di **ciò che si costruisce**. La schermata si intitola
 **«Macchine, Gruppi & Parti»**.
 
-**Come ci si arriva.** 📇 *Anagrafica → Progetto*.
+**Come ci si arriva.** 🌳 *Tecnico → Articoli di progetto*.
 
 **I quattro tipi.**
 
@@ -672,7 +676,7 @@ un costo che non c'è.
 | **Descrizione** | tutti i tipi tranne le parti | Testo libero. |
 | **Concetto** + **Descrizione** | **solo parti** | Il nome di una parte è composto: `ALBERO` + `motore 20×100` → `ALBERO motore 20×100`. Il concetto è **obbligatorio** e si sceglie dall'elenco di *Gestione → Concetti*. Sotto i due campi c'è l'anteprima del nome che ne esce. |
 | **Unità di misura** | sempre | Dall'elenco di *Gestione → Unità di misura*. |
-| **Approvvigionamento** | solo parti | *Produzione interna* / *Acquisto da fornitore* (→ [cap. 7](#7-anagrafica--progetto)). |
+| **Approvvigionamento** | solo parti | *Produzione interna* / *Acquisto da fornitore* (→ [cap. 7](#7-tecnico--articoli-di-progetto)). |
 | **Fornitore e prezzo d'acquisto** | — | **Riquadro in sola lettura.** Mostra la quotazione in uso; il pulsante accanto apre il **listino**. |
 | **Macrofamiglia** / **Sottofamiglia** | consigliato | Servono ai filtri, ai raggruppamenti e ai codici automatici. |
 | **Macchina di appartenenza** / **Gruppo** / **Sigla** | codifica gerarchica | Dicono dove sta l'articolo nella struttura di prodotto, e da lì nasce il suo codice. |
@@ -808,8 +812,19 @@ parti, con 3 cifre.
 nella scheda articolo: si registra una **quotazione** nel listino, e poi si sceglie quale delle
 quotazioni è quella in uso.
 
-**Come ci si arriva.** Dal pulsante nel riquadro *Fornitore e prezzo d'acquisto* della scheda
-articolo, dal pannello laterale (*Listino fornitori*), o dalla scheda di sola lettura.
+**Come ci si arriva.** Il listino di un articolo si apre dal pulsante nel riquadro *Fornitore e
+prezzo d'acquisto* della scheda articolo, dal pannello laterale (*Listino fornitori*), o dalla
+scheda di sola lettura. **Tutte le quotazioni insieme** stanno in 🛒 *Acquisti → Listino
+fornitori* (dalla 0.91.0).
+
+**La vista d'insieme.** Una quotazione per riga, di tutti i commerciali, le materie prime e le
+parti: articolo, fornitore, codice presso il fornitore, prezzo, quantità minima, giorni di
+consegna, data e origine. ✓ segna il prezzo in uso nella costificazione, ↓ la quotazione più bassa
+dell'articolo. Si filtra per **testo** (articolo, fornitore o codice fornitore), **fornitore**,
+**tipo** e per *solo i prezzi in uso* o *senza prezzo*; l'elenco filtrato si esporta in Excel e
+PDF. Serve a rispondere a domande come «cosa mi quota questo fornitore?» o «quali prezzi sono
+vecchi?». Un clic sulla riga apre il listino dell'articolo, che resta **l'unico posto dove una
+quotazione si modifica** e si mette in uso.
 
 **Cosa si vede.** Le quotazioni dell'articolo, una per riga:
 
@@ -906,12 +921,12 @@ Larghezza, apertura e scheda scelta restano fra una sessione e l'altra.
 
 # Parte IV — Il prodotto
 
-## 13. Distinta base → Gestione DB
+## 13. Tecnico → Gestione DB
 
 **A cosa serve.** Costruire l'albero della macchina: cosa contiene, in che quantità, con quali
 lavorazioni. La schermata si intitola **«Distinta Base & Costificazione»**.
 
-**Come ci si arriva.** 🌳 *Distinta base → Gestione DB*.
+**Come ci si arriva.** 🌳 *Tecnico → Gestione DB*.
 
 **Cosa si vede.**
 
@@ -943,7 +958,7 @@ Gruppi · Sottogruppi); **macchina di appartenenza**; il menu della distinta ape
 
 | Campo | Note |
 |---|---|
-| Codice · U.M. · Descrizione | **Bloccati**: si modificano in *Anagrafica → Progetto* |
+| Codice · U.M. · Descrizione | **Bloccati**: si modificano in 🌳 *Tecnico → Articoli di progetto* |
 | **Spese generali % (override)** | Sostituisce la percentuale globale, solo per questa macchina |
 | **Margine % (override)** | Idem |
 | Note | Testo libero |
@@ -968,7 +983,7 @@ Gruppi · Sottogruppi); **macchina di appartenenza**; il menu della distinta ape
 È da qui che nasce il costo di una parte a produzione interna, il carico dei centri e gli ordini
 di lavoro ai terzisti.
 
-**Come ci si arriva.** 🔧 *Cicli di lavorazione → Cicli di lavorazione*.
+**Come ci si arriva.** 🌳 *Tecnico → Cicli di lavorazione*.
 
 **Cosa si vede.**
 
@@ -1081,7 +1096,7 @@ foglio per elenco.
 **A cosa serve.** Leggere quanto costa una macchina e perché. La schermata si intitola
 **«Costificazione & Report»**.
 
-**Come ci si arriva.** 🌳 *Distinta base → Visualizza DB*.
+**Come ci si arriva.** 🌳 *Tecnico → Visualizza DB*.
 
 **Comandi.** Il menu **Macchina / Prodotto** per scegliere cosa costificare; **Esporta Excel** e
 **Esporta PDF**.
@@ -1223,7 +1238,7 @@ movimenti. Quando si scrive *ricevuto 50* su una riga d'ordine, quei 50 entrano 
 **A cosa serve.** La commessa è **il cliente e la data a monte del lavoro**. Ci si agganciano
 piani di fabbisogno, richieste e ordini, e la sua scheda dice in ogni momento se il materiale c'è.
 
-**Come ci si arriva.** 📨 *Documenti → Commesse*.
+**Come ci si arriva.** 📋 *Pianificazione → Commesse*.
 
 **Comandi dell'elenco.** **+ Nuova commessa** · **Esporta Excel** · **Esporta PDF**.
 
@@ -1275,7 +1290,7 @@ scheda lo dice, invece di dichiarare tutto coperto.
 **A cosa serve.** Trasformare «tre macchine per il 15 marzo» in una lista d'acquisto, un elenco di
 parti da fare e un elenco di lavorazioni da commissionare.
 
-**Come ci si arriva.** 📨 *Documenti → Fabbisogno*.
+**Come ci si arriva.** 📋 *Pianificazione → Fabbisogno*.
 
 **Comandi dell'elenco.** **+ Nuovo piano** · **Esporta Excel** · **Esporta PDF**.
 I badge di riga dicono `aperto` o `chiuso`.
@@ -1478,7 +1493,7 @@ come netta o lorda secondo l'interruttore attivo. Si spunta cosa includere e si 
 
 **A cosa serve.** Chiedere un prezzo. Numerazione **`RFQ-<anno>-NNN`**.
 
-**Come ci si arriva.** 📨 *Documenti → Richieste offerta*.
+**Come ci si arriva.** 🛒 *Acquisti → Richieste offerta*.
 
 **Comandi dell'elenco.** **+ Nuova richiesta** · **Confronta offerte** · **Esporta Excel** ·
 **Esporta PDF**.
@@ -1537,7 +1552,7 @@ lavorazioni.
 
 **A cosa serve.** Comprare merce. **Gli ODA non contengono lavorazioni**: quelle stanno negli ODL.
 
-**Come ci si arriva.** 📨 *Documenti → Ordini*.
+**Come ci si arriva.** 🛒 *Acquisti → Ordini fornitore*.
 
 **Da dove nasce un ordine.** Da una **richiesta di offerta** (pulsante *Crea ordine*), da un
 **piano di fabbisogno** (*Genera ordini*), oppure **da zero** con **+ Nuovo ordine**.
@@ -1582,7 +1597,7 @@ una parte con il ciclo **tutto interno** non aveva nessun documento: nessuno la 
 materiale non usciva mai dal magazzino e il pezzo finito non entrava mai, se non con un *Carico
 manuale* scritto a mano.
 
-**Come ci si arriva.** 📨 *Documenti → Ordini di produzione*.
+**Come ci si arriva.** 🏭 *Produzione → Ordini di produzione*.
 
 ### Da dove nasce
 
@@ -1715,7 +1730,7 @@ movimento di conto lavoro. Numerazione **`ODL-<anno>-NNN`**.
 ed è denaro che esce come qualunque acquisto. L'ODL è il suo documento: elenco proprio, numerazione
 propria, stampa propria.
 
-**Come ci si arriva.** 📨 *Documenti → Ordini di lavoro*.
+**Come ci si arriva.** 🏭 *Produzione → Ordini di lavoro*.
 
 ### Uno per terzista *e per passata*
 
@@ -1801,7 +1816,7 @@ zero lo dice, invece di riproporre il modulo come se niente fosse.
 **A cosa serve.** Sapere quante ore i piani stanno chiedendo a ciascun centro, settimana per
 settimana, e se il centro regge. La schermata si intitola **«Carico centri di lavoro»**.
 
-**Come ci si arriva.** 🔧 *Cicli di lavorazione → Carico centri*.
+**Come ci si arriva.** 📋 *Pianificazione → Carico centri*.
 La stessa tavola, ristretta a un solo piano, sta anche in fondo alla scheda di ogni piano.
 
 **È un prospetto derivato, in sola lettura.** Non c'è niente da compilare.
@@ -2649,6 +2664,6 @@ fusa, e il punto in cui si sostituisce la destinazione dei dati è uno solo.
 
 ---
 
-*Manuale di Bomtrack — aggiornato alla versione 0.90.0.*
+*Manuale di Bomtrack — aggiornato alla versione 0.91.0.*
 *Le funzioni descritte qui corrispondono a quella revisione; il changelog dell'app elenca le
 differenze rispetto alle versioni successive.*
