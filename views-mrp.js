@@ -27,9 +27,13 @@
 // solo non finiscono a scaffale). Le fasi **interne** restano fuori di qui: non
 // si comprano, si fanno, e la domanda che pongono è la capacità.
 //
-// La data scende insieme alla quantità: se una macchina serve per il 30
-// settembre, i suoi componenti servono per il 30 settembre. Quando lo stesso
-// articolo arriva da più righe di piano con date diverse si tiene **la più
+// La data scende insieme alla quantità, **scalata dei tempi di chi sta in
+// mezzo** (dalla 0.88.0): se una macchina serve per il 30 settembre e il suo
+// montaggio dura tre giorni, i componenti servono per il 25; se una parte ha
+// la tornitura dopo la zincatura dal terzista, la zincatura deve rientrare
+// prima che la tornitura cominci, e il materiale della parte serve il giorno in
+// cui parte la prima fase. Vedi «Programmazione a ritroso» qui sotto. Quando lo
+// stesso articolo arriva da più rami con date diverse si tiene **la più
 // vicina**: è la scelta conservativa — ordinare per la data più stretta copre
 // anche le altre.
 //
@@ -73,10 +77,14 @@ function primaData(a, b) {
   if (!b) return a;
   return a < b ? a : b;
 }
-function mrpAdd(map, it, qty, due) {
+// `start` è la data in cui il lavoro su quell'articolo comincia: il lancio di
+// una parte, l'inizio del montaggio di un assieme. Su un acquisto coincide con
+// la data in cui serve — l'anticipo d'ordine lo aggiunge mrpBuyRow, che sa
+// quale listino si userà.
+function mrpAdd(map, it, qty, due, start) {
   const e = map.get(it.id);
-  if (e) { e.qty += qty; e.due = primaData(e.due, due); }
-  else map.set(it.id, { item: it, qty, due: due || '' });
+  if (e) { e.qty += qty; e.due = primaData(e.due, due); e.start = primaData(e.start, start || due); }
+  else map.set(it.id, { item: it, qty, due: due || '', start: start || due || '' });
 }
 // L'identità di una fase, e il suo limite dichiarato.
 // L'indice conta **fra le sole lavorazioni**, non nell'array `cycle` intero:
@@ -88,12 +96,14 @@ function mrpAdd(map, it, qty, due) {
 function mrpPhaseKey(itemId, opIndex, workCenterId) {
   return String(itemId) + '#' + opIndex + '#' + String(workCenterId || '');
 }
-function mrpAddPhase(map, it, row, opIndex, qty, due) {
+// Su una fase di conto lavoro `due` è il **rientro** della sua tratta e `start`
+// l'**invio** al terzista: le due date della programmazione a ritroso.
+function mrpAddPhase(map, it, row, opIndex, qty, due, start) {
   const k = mrpPhaseKey(it.id, opIndex, row.workCenterId);
   const e = map.get(k);
-  if (e) { e.qty += qty; e.due = primaData(e.due, due); return; }
+  if (e) { e.qty += qty; e.due = primaData(e.due, due); e.start = primaData(e.start, start); return; }
   map.set(k, { item: it, row, opIndex, phaseKey: k, phaseNo: cyclePhaseNumber(opIndex),
-    workCenterId: row.workCenterId || '', supplierId: row.supplierId || '', qty, due: due || '' });
+    workCenterId: row.workCenterId || '', supplierId: row.supplierId || '', qty, due: due || '', start: start || '' });
 }
 function mrpDescend(itemId, qty, ancestors, acc, due) {
   const it = getItem(itemId);
@@ -107,35 +117,156 @@ function mrpDescend(itemId, qty, ancestors, acc, due) {
     // commerciale. Il ciclo resta salvato, ma non si scende — quel materiale
     // e quelle lavorazioni li mette il fornitore, non noi.
     if (partSourcing(it) === 'buy') { mrpAdd(acc.buy, it, qty, due); return; }
-    mrpAdd(acc.make, it, qty, due);
+    // Il ciclo si programma a ritroso dalla data in cui la parte serve: ogni
+    // fase ha il suo inizio e la sua fine, e il materiale serve all'inizio
+    // della prima. Le ore di una fase interna stanno nella settimana in cui la
+    // fase **comincia**, non in quella in cui il pezzo serve.
+    const prog = schedPart(it, qty, due);
+    mrpAdd(acc.make, it, qty, due, prog.start);
     // Le righe di ciclo non hanno scarto e il fattore resta la quantità secca —
     // asimmetria rispetto agli assiemi qui sotto, e **voluta**: introdurlo
     // cambierebbe anche il costo, ed è un'altra discussione.
+    const perFigli = schedChildDue(prog.start);
     let opIndex = 0;
     (it.cycle || []).forEach(r => {
       if (r.kind === 'op') {
         const k = opIndex++;
+        const f = prog.fasi[k] || { start: due, end: due };
         // Con un fornitore la fase si compra; senza, si fa in casa — e allora
         // non è un acquisto, è un'ora di macchina da qualche parte.
-        if (r.supplierId) mrpAddPhase(acc.phases, it, r, k, qty, due);
-        else mrpAddLoad(acc.load, r.workCenterId, due, Number(r.hours) || 0, qty, it, cyclePhaseNumber(k));
+        if (r.supplierId) mrpAddPhase(acc.phases, it, r, k, qty, f.end, f.start);
+        else mrpAddLoad(acc.load, r.workCenterId, f.start, Number(r.hours) || 0, qty, it, cyclePhaseNumber(k));
         return;
       }
-      mrpDescend(r.itemId, qty * (Number(r.qty) || 0), next, acc, due);
+      mrpDescend(r.itemId, qty * (Number(r.qty) || 0), next, acc, perFigli);
     });
     return;
   }
-  // assieme: le sue lavorazioni caricano i centri come le fasi interne di una
-  // parte. Vanno raccolte qui e non a posteriori: `make` contiene solo parti, e
-  // le quantità esplose degli assiemi non le conserva nessuno.
+  // assieme: il montaggio finisce quando l'assieme serve e comincia prima dei
+  // suoi giorni; i componenti servono all'inizio del montaggio.
+  const prog = schedAssembly(it, qty, due);
+  // le sue lavorazioni caricano i centri come le fasi interne di una parte.
+  // Vanno raccolte qui e non a posteriori: `make` contiene solo parti, e le
+  // quantità esplose degli assiemi non le conserva nessuno.
   (it.operations || []).forEach(o => {
-    mrpAddLoad(acc.load, o.workCenterId, due, Number(o.hours) || 0, qty, it, '');
+    mrpAddLoad(acc.load, o.workCenterId, prog.start, Number(o.hours) || 0, qty, it, '');
   });
+  const perFigli = schedChildDue(prog.start);
   // la quantità di riga porta con sé lo scarto, come nel rollup
   (it.components || []).forEach(c => {
     const f = (Number(c.qty) || 0) * (1 + (Number(c.scrapPct) || 0) / 100);
-    mrpDescend(c.itemId, qty * f, next, acc, due);
+    mrpDescend(c.itemId, qty * f, next, acc, perFigli);
   });
+}
+
+// ─── Programmazione a ritroso ───
+// Da «serve pronto il giorno X» a «quando comincia ciascuna cosa». Capacità
+// **infinita**, come il carico dei centri: si calcola quando le cose devono
+// succedere perché la consegna regga, non se il reparto ce la fa — quello lo
+// dice il Carico centri, che ora mette le ore nella settimana giusta.
+//
+// Le date sono «il mattino in cui il pezzo è pronto»: una fase di un giorno che
+// deve finire lunedì comincia venerdì, e la fase prima deve finire venerdì.
+// Nessun buco e nessuna sovrapposizione fra una fase e l'altra.
+//
+// I tempi vengono da tre posti, e senza dati valgono zero — una fase senza ore
+// e senza giorni non sposta niente, come prima:
+//   - fase **interna**: (attrezzaggio + ore/pz × pezzi) / ore al giorno del
+//     centro, arrotondato al giorno intero, più i giorni di coda del centro;
+//     in giorni **lavorativi** (calendario.js);
+//   - tratta **di conto lavoro** (fasi consecutive dello stesso terzista): la
+//     somma dei giorni di attraversamento più il trasporto del terzista, in
+//     giorni **di calendario** come li dichiara lui, con l'invio spostato al
+//     lavorativo precedente;
+//   - **montaggio** di un assieme: i giorni dichiarati sull'assieme o, senza,
+//     le ore delle sue lavorazioni come fasi interne in sequenza.
+// Ore lavorate in un giorno da un centro: dichiarate, o ricavate dalla
+// capacità settimanale sui giorni lavorativi del calendario, o otto.
+const SCHED_ORE_GIORNO = 8;
+function wcHoursPerDay(wc) {
+  const h = wc ? Number(wc.hoursPerDay) || 0 : 0;
+  if (h > 0) return h;
+  const cap = wc ? Number(wc.capacityHours) || 0 : 0;
+  const gg = typeof workDaysPerWeek === 'function' ? workDaysPerWeek() : 5;
+  return cap > 0 && gg > 0 ? cap / gg : SCHED_ORE_GIORNO;
+}
+// Giorni lavorativi di una fase interna per `pezzi` pezzi.
+function internalOpDays(wc, oreUnit, pezzi) {
+  const ore = (wc ? Number(wc.setupHours) || 0 : 0) + (Number(oreUnit) || 0) * (Number(pezzi) || 0);
+  const coda = wc ? Math.max(0, Math.round(Number(wc.queueDays) || 0)) : 0;
+  // Il millesimo toglie l'errore del float: 16 ore a 8 al giorno sono due
+  // giorni, non tre.
+  return (ore > 0 ? Math.ceil(ore / wcHoursPerDay(wc) - 1e-9) : 0) + coda;
+}
+// Il trasporto da e verso un terzista, andata più ritorno.
+function supplierTransitDays(supplierId) {
+  const s = supplierId ? getSupplier(supplierId) : null;
+  return s ? Math.max(0, Number(s.transitDays) || 0) : 0;
+}
+// Giorni di calendario di una tratta: attraversamento delle sue fasi più il
+// trasporto, una volta sola — il pezzo va e torna una volta per tratta.
+function runLeadDays(fasiDays, supplierId) {
+  return fasiDays.reduce((s, g) => s + Math.max(0, Number(g) || 0), 0) + supplierTransitDays(supplierId);
+}
+// L'invio di una tratta che deve rientrare il giorno `rientro`.
+function runSendDate(rientro, giorni) {
+  if (!rientro) return '';
+  const d = addDays(rientro, -(Number(giorni) || 0));
+  return typeof prevWorkDay === 'function' ? prevWorkDay(d) : d;
+}
+// Indietro di `n` giorni lavorativi (calendario.js); senza calendario caricato
+// si ricade sui giorni di calendario, che è il comportamento di prima.
+function schedBack(iso, n) {
+  if (!iso || !(n > 0)) return iso || '';
+  return typeof addWorkDays === 'function' ? addWorkDays(iso, -n) : addDays(iso, -n);
+}
+// La data in cui un componente serve, dato l'inizio del lavoro sul padre: il
+// margine fra livelli, se dichiarato, la anticipa ancora.
+function schedChildDue(start) {
+  const m = Math.max(0, Math.round(Number(((typeof db !== 'undefined' && db && db.settings) || {}).scheduleBufferDays) || 0));
+  return schedBack(start, m);
+}
+// Il programma del ciclo di una parte: per ogni fase (per indice fra le sole
+// lavorazioni, come mrpPhaseKey) l'inizio e la fine, e l'inizio della prima.
+// A ritroso dall'ultima: la fine di una fase è l'inizio di quella che segue.
+function schedPart(it, qty, due) {
+  const ops = ((it && it.cycle) || []).filter(r => r.kind === 'op');
+  const fasi = new Array(ops.length);
+  if (!due) {
+    ops.forEach((r, k) => { fasi[k] = { start: '', end: '', days: 0, esterna: !!r.supplierId }; });
+    return { start: '', end: '', fasi };
+  }
+  const tratte = typeof clCycleRuns === 'function' ? clCycleRuns(it)
+    : ops.map((r, k) => ({ from: k, to: k, supplierId: r.supplierId || '', esterna: !!r.supplierId }));
+  let fine = due;
+  for (let t = tratte.length - 1; t >= 0; t--) {
+    const run = tratte[t];
+    if (run.esterna) {
+      const gg = runLeadDays(ops.slice(run.from, run.to + 1).map(r => r.days), run.supplierId);
+      const invio = runSendDate(fine, gg);
+      for (let k = run.from; k <= run.to; k++) fasi[k] = { start: invio, end: fine, days: gg, esterna: true, run };
+      fine = invio;
+      continue;
+    }
+    for (let k = run.to; k >= run.from; k--) {
+      const gg = internalOpDays(getWorkCenter(ops[k].workCenterId), ops[k].hours, qty);
+      const inizio = schedBack(fine, gg);
+      fasi[k] = { start: inizio, end: fine, days: gg, esterna: false, run };
+      fine = inizio;
+    }
+  }
+  return { start: fine, end: due, fasi };
+}
+// Il montaggio di un assieme: i giorni dichiarati, o le sue lavorazioni in fila.
+function assemblyDaysOf(it, qty) {
+  const dich = Math.max(0, Math.round(Number(it && it.assemblyDays) || 0));
+  if (dich > 0) return dich;
+  return ((it && it.operations) || []).reduce((s, o) =>
+    s + internalOpDays(getWorkCenter(o.workCenterId), o.hours, qty), 0);
+}
+function schedAssembly(it, qty, due) {
+  const gg = due ? assemblyDaysOf(it, qty) : 0;
+  return { start: schedBack(due, gg), end: due || '', days: gg };
 }
 // Un'ora di lavoro dentro il suo secchiello: centro di lavoro × settimana.
 // Il dettaglio (chi ha portato quelle ore) si accumula accanto al totale, e non
@@ -185,8 +316,21 @@ function addDays(iso, giorni) {
 // che contiene il primo giovedì. Ne segue che i primi giorni di gennaio possono
 // appartenere alla settimana 52 o 53 dell'anno prima, ed è il caso limite che
 // una implementazione ingenua sbaglia in silenzio una volta l'anno.
+// Funzione pura di una stringa: si ricorda il risultato, perché un piano grande
+// chiede migliaia di volte la settimana delle stesse poche date.
+const _settimaneNote = new Map();
 function settimanaISO(iso) {
   if (!iso) return '';
+  const k = String(iso);
+  let v = _settimaneNote.get(k);
+  if (v === undefined) {
+    v = settimanaISOCalcola(k);
+    if (_settimaneNote.size > 5000) _settimaneNote.clear();
+    _settimaneNote.set(k, v);
+  }
+  return v;
+}
+function settimanaISOCalcola(iso) {
   const d = new Date(String(iso).slice(0, 10) + 'T00:00:00Z');
   if (isNaN(d)) return '';
   // Ci si sposta al giovedì della stessa settimana: da lì l'anno è per
@@ -281,8 +425,10 @@ function mrpBuyRow(entry, netMode, planId) {
 
   // Data in cui serve, giorni di consegna di quel listino, data entro cui ordinare.
   const due = entry.due || '';
+  // Giorni del fornitore, di calendario; la data d'ordine cade su un giorno in
+  // cui l'ufficio è aperto (vedi calendario.js).
   const leadDays = leadDaysOfRow(doc);
-  const orderBy = due ? addDays(due, -leadDays) : '';
+  const orderBy = due ? runSendDate(due, leadDays) : '';
   return {
     item: it, qty: entry.qty, uom: itemUom(it),
     due, leadDays, orderBy, urgenza: urgenzaOrdine(orderBy),
@@ -438,7 +584,7 @@ function renderLoad() {
         ${tab.righe.map(r => `<option value="${esc(r.workCenterId)}" ${r.workCenterId === loadSoloCentro ? 'selected' : ''}>${esc(r.name)}</option>`).join('')}
       </select>
     </div>
-    <p class="empty-text" style="text-align:left;padding:0 0 8px">Le ore che i piani chiedono a ciascun centro, settimana per settimana, contro la capacità dichiarata in <em>Gestione → Centri di lavoro</em>. Le ore stanno nella settimana in cui <strong>il pezzo serve pronto</strong>, non in quella in cui si lavora: è una lettura della domanda, <strong>non una programmazione</strong>, e non dice quando ciascuna fase vada avviata. La capacità è <strong>infinita</strong>: il sovraccarico si vede, non si sposta.</p>
+    <p class="empty-text" style="text-align:left;padding:0 0 8px">Le ore che i piani chiedono a ciascun centro, settimana per settimana, contro la capacità dichiarata in <em>Gestione → Centri di lavoro</em>. Le ore stanno nella settimana in cui <strong>la fase comincia</strong>, programmata a ritroso dalla consegna sul calendario di fabbrica (montaggi, fasi interne e tratte di conto lavoro in sequenza). La capacità è <strong>infinita</strong>: le date dicono quando ciascuna fase deve partire perché la consegna regga, il sovraccarico si vede ma non si sposta.</p>
     ${senzaCap ? `<p class="empty-text" style="text-align:left;padding:0 0 8px">${ico('warning', 'tinted', '')} ${senzaCap} ${senzaCap === 1 ? 'centro non ha' : 'centri non hanno'} una capacità dichiarata: le ore si vedono, il sovraccarico no. Si imposta in <em>Gestione → Centri di lavoro</em>.</p>` : ''}
     ${loadOverloadHtml(tab)}
     ${loadChartHtml(tab)}
@@ -719,9 +865,13 @@ function mrpPhaseRow(entry) {
   // non wcRateFor(): quella è una proposta iniziale, e ripescarla adesso
   // cambierebbe da sé il prezzo di una fase che qualcuno aveva deciso.
   const price = orario ? hoursUnit * rate : (Number(r.cost) || 0);
+  // `due` è il rientro richiesto della tratta, `start` l'invio che la
+  // programmazione a ritroso ha già calcolato (mrpDescend). Una riga costruita
+  // fuori dal fabbisogno — un ordine di lavoro scritto a mano, uno nato da un
+  // ODP — non ha `start`, e l'invio si ricava dai giorni della fase.
   const due = entry.due || '';
   const leadDays = Math.max(0, Number(r.days) || 0);
-  const orderBy = due ? addDays(due, -leadDays) : '';
+  const orderBy = entry.start || (due ? runSendDate(due, leadDays) : '');
   return {
     phaseKey: entry.phaseKey, item: entry.item, row: r, opIndex: entry.opIndex, phaseNo: entry.phaseNo,
     workCenterId: entry.workCenterId, wcName: wc ? wc.name : '(centro mancante)',
@@ -736,7 +886,7 @@ function mrpPhaseRow(entry) {
     // l'ordine di lavoro deve uscire entro il 25. È la stessa aritmetica dei
     // giorni di consegna a listino per il materiale, e la stessa risposta quando
     // il dato manca: nessun anticipo, non un anticipo inventato.
-    due, leadDays, orderBy, urgenza: urgenzaOrdine(orderBy),
+    due, start: entry.start || '', leadDays, orderBy, urgenza: urgenzaOrdine(orderBy),
     days: leadDays,
     costMode: orario ? 'orario' : 'fisso', hoursUnit, hours: hoursUnit * entry.qty, rate,
     price, amount: price * entry.qty,
@@ -808,8 +958,10 @@ function mrpPhaseRuns(rows) {
     const prima = fasi[0];
     const somma = f => fasi.reduce((s, x) => s + (Number(x[f]) || 0), 0);
     const due = fasi.reduce((d, x) => primaData(d, x.due), '');
-    const leadDays = somma('leadDays');
-    const orderBy = due ? addDays(due, -leadDays) : '';
+    // I giorni della tratta comprendono il trasporto del terzista, una volta.
+    const leadDays = runLeadDays(fasi.map(x => x.leadDays), prima.supplierId);
+    const programmato = fasi.reduce((d, x) => primaData(d, x.start), '');
+    const orderBy = programmato || (due ? runSendDate(due, leadDays) : '');
     const price = somma('price');
     return Object.assign({}, prima, {
       // L'identità della tratta è la **prima** fase: è quella che gli ancoraggi
@@ -819,7 +971,7 @@ function mrpPhaseRuns(rows) {
       phaseNos: fasi.map(x => x.phaseNo),
       fasi, passata: g.passata,
       wcName: Array.from(new Set(fasi.map(x => x.wcName))).join(' + '),
-      due, leadDays, orderBy, urgenza: urgenzaOrdine(orderBy), days: leadDays,
+      due, start: orderBy, leadDays, orderBy, urgenza: urgenzaOrdine(orderBy), days: leadDays,
       hours: somma('hours'), hoursUnit: somma('hoursUnit'),
       price, amount: price * prima.qty, noPrice: !(price > 0),
     });
@@ -878,7 +1030,11 @@ function mrpMakeRow(entry, planId) {
   return {
     item: it, isMake: true, makeKey: 'make#' + it.id,
     qty: entry.qty, qtyOrder: resta, uom: itemUom(it),
-    due: entry.due || '', orderBy: entry.due || '', urgenza: urgenzaOrdine(entry.due || ''),
+    // Entro quando lanciarla: l'inizio della prima fase del ciclo, che la
+    // programmazione a ritroso ha calcolato. Senza ciclo coincide con la data
+    // in cui serve, come prima.
+    due: entry.due || '', start: entry.start || entry.due || '',
+    orderBy: entry.start || entry.due || '', urgenza: urgenzaOrdine(entry.start || entry.due || ''),
     supplierId: '', price: costOf(it.id).total, amount: costOf(it.id).total * entry.qty,
     nFasi, nEsterne: tratte.filter(t => t.esterna).length,
     senzaCiclo: !nFasi,
@@ -1911,7 +2067,7 @@ function mrpPhaseTable(rows) {
   return `<div class="table-wrap"><table>
     <thead><tr><th scope="col">Fase</th><th scope="col">Lavorazione</th><th scope="col">Codice</th>
       <th scope="col">Parte</th><th scope="col">Terzista</th><th scope="col">Serve per</th>
-      <th scope="col" title="Data in cui serve meno i giorni di attraversamento della fase">Ordinare entro</th>
+      <th scope="col" title="Invio al terzista: a ritroso dal rientro, che è l'inizio della fase dopo (o la data in cui la parte serve), meno i giorni di attraversamento e di trasporto">Ordinare entro</th>
       <th scope="col" style="text-align:right">Q.tà</th>
       <th scope="col" style="text-align:right" title="Ore totali della fase: ore per pezzo x pezzi. Non entrano nel costo se la fase e a costo fisso">Ore tot.</th>
       <th scope="col" style="text-align:right">Prezzo/pz (${esc(cur())})</th>
@@ -1964,7 +2120,7 @@ function mrpMakeTable(make, planId) {
       <td>${esc(e.item.name)} ${seg.join(' ')}</td>
       <td>${esc(e.item.uom || '')}</td>
       <td style="font-family:var(--mono);text-align:right">${fmtQty(e.qty)}</td>
-      <td>${e.due ? fmtDateIt(e.due) : '—'}</td>
+      <td>${e.due ? fmtDateIt(e.due) : '—'}${e.start && e.due && e.start < e.due ? `<div class="empty-text" style="padding:0" title="Inizio della prima fase del ciclo, a ritroso dalla data in cui serve: entro questa data va lanciato l'ordine di produzione">lancio ${esc(fmtDateIt(e.start))}</div>` : ''}</td>
       <td style="font-family:var(--mono);text-align:right">${statoFatti}</td>
       <td style="font-family:var(--mono);text-align:right">${planId ? (resta > 0 ? fmtQty(resta) : '<span class="price-best">finita</span>') : ''}</td>
       <td style="font-family:var(--mono);text-align:right">${fmtN(c)}</td>
@@ -1974,7 +2130,7 @@ function mrpMakeTable(make, planId) {
   return `<div class="table-wrap"><table>
     <thead><tr><th scope="col">Codice</th><th scope="col">Parte</th><th scope="col">U.M.</th>
       <th scope="col" style="text-align:right">Q.tà</th>
-      <th scope="col" title="Data in cui questa parte deve essere pronta">Serve per</th>
+      <th scope="col" title="Data in cui questa parte deve essere pronta; sotto, entro quando lanciarla">Serve per</th>
       <th scope="col" style="text-align:right" title="Pezzi dichiarati fatti su questo piano">Fatti</th>
       <th scope="col" style="text-align:right" title="Quanti ne restano da fare">Restano</th>
       <th scope="col" style="text-align:right">Costo un. (${esc(cur())}/U.M.)</th>

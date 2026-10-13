@@ -321,6 +321,8 @@ function editSupplierModal(id) {
         <input id="es-dtransport" list="sup-transport-opts" value="${esc(s.defaultTransport || '')}" placeholder="es. Porto franco">
         <datalist id="sup-transport-opts">${(db.settings.transportOptions || []).map(o => `<option value="${esc(o)}"></option>`).join('')}</datalist></div>
       ${addressFieldsHtml('es', s)}
+      <div class="modal-field"><label>Trasporto conto lavoro (gg)</label><input id="es-transit" type="number" min="0" max="99" step="1" value="${Number(s.transitDays) || 0}"
+        title="Giorni di trasporto verso e dal terzista, andata più ritorno: si sommano all'attraversamento di ogni tratta di conto lavoro affidata a questo fornitore"></div>
     </div>
     <div class="modal-actions"><button class="btn-ghost" onclick="closeModal()">Annulla</button>
       <button class="add-btn-sm" onclick="saveSupplier('${id}')">Salva</button></div>`, true);
@@ -332,6 +334,8 @@ function saveSupplier(id) {
   s.name = nome; s.referente = val('es-ref'); s.email = val('es-email');
   s.phone = val('es-phone'); s.vat = val('es-vat');
   s.defaultPayment = val('es-dpayment'); s.defaultTransport = val('es-dtransport');
+  if (isNeg('es-transit')) { showToast('I giorni di trasporto non possono essere negativi', 'error'); return; }
+  s.transitDays = Math.round(numVal('es-transit', 0, 99));
   Object.assign(s, readAddressFields('es'));
   touch(s);
   saveDB(); closeModal(); renderManage(); savedToast('Aggiornato');
@@ -637,7 +641,7 @@ function delSubFamily(familyId, subId) {
 function renderWorkCenters() {
   const list = db.workCenters.map(w => `<div class="mgmt-item">
     <span class="mgmt-item-name">${esc(w.name)}</span>
-    <span class="mgmt-item-meta">${fmtN(w.hourlyRate)}/h${Number(w.capacityHours) > 0 ? ' · ' + fmtQty(w.capacityHours) + ' h/sett' : ''}${(w.suppliers || []).length ? ' · ' + (w.suppliers || []).length + ((w.suppliers || []).length === 1 ? ' fornitore conto lavoro' : ' fornitori conto lavoro') : ''}</span>
+    <span class="mgmt-item-meta">${fmtN(w.hourlyRate)}/h${Number(w.capacityHours) > 0 ? ' · ' + fmtQty(w.capacityHours) + ' h/sett' : ''}${Number(w.hoursPerDay) > 0 ? ' · ' + fmtQty(w.hoursPerDay) + ' h/gg' : ''}${Number(w.queueDays) > 0 ? ' · coda ' + fmtQty(w.queueDays) + ' gg' : ''}${(w.suppliers || []).length ? ' · ' + (w.suppliers || []).length + ((w.suppliers || []).length === 1 ? ' fornitore conto lavoro' : ' fornitori conto lavoro') : ''}</span>
     ${activeBadge(w)}
     <div class="mgmt-item-actions">
       ${activeBtn('workCenters', w, 'Centro di lavoro')}
@@ -669,6 +673,13 @@ function editWcModal(id) {
     <div class="modal-field"><label>Capacità (h/settimana)</label>
       <input id="ew-cap" type="number" min="0" step="1" value="${Number(w.capacityHours) || 0}">
       <p class="empty-text" style="text-align:left;padding:4px 0 0">Ore disponibili a settimana, per il <strong>Carico centri</strong>. <strong>Zero significa «non dichiarata»</strong>, non «nessuna capacità»: il carico si vede lo stesso, ma nessun sovraccarico viene segnalato — altrimenti ogni centro risulterebbe sfondato dal primo giorno.</p></div>
+    <div class="settings-group-title">${ico('clock', 'tinted', '')} Tempi per la programmazione</div>
+    <div class="modal-grid">
+      <div class="modal-field"><label>Ore lavorate al giorno</label><input id="ew-hpd" type="number" min="0" max="24" step="0.5" value="${Number(w.hoursPerDay) || 0}"></div>
+      <div class="modal-field"><label>Attrezzaggio per lotto (h)</label><input id="ew-setup" type="number" min="0" step="0.25" value="${Number(w.setupHours) || 0}"></div>
+      <div class="modal-field"><label>Giorni di coda</label><input id="ew-queue" type="number" min="0" max="99" step="1" value="${Number(w.queueDays) || 0}"></div>
+    </div>
+    <p class="empty-text" style="text-align:left;padding:4px 0 0">Da qui il fabbisogno ricava quanti <strong>giorni lavorativi</strong> dura una fase interna: (attrezzaggio + ore/pz × pezzi) ÷ ore al giorno, arrotondato al giorno, più i giorni di coda (il tempo in cui il pezzo aspetta il suo turno). <strong>Ore al giorno a zero</strong> = ricavate dalla capacità settimanale sui giorni lavorativi del calendario, o 8 se anche quella non è dichiarata.</p>
     <div class="modal-actions"><button class="btn-ghost" onclick="closeModal()">Annulla</button>
       <button class="add-btn-sm" onclick="saveWc('${id}')">Salva</button></div>
     <div class="settings-group-title">${ico('factory', 'tinted', '')} Fornitori conto lavoro</div>
@@ -682,7 +693,10 @@ function saveWc(id) {
   const nome = requireVal('ew-name', 'Nome richiesto'); if (!nome) return;
   if (isNeg('ew-rate')) { showToast('La tariffa non può essere negativa', 'error'); return; }
   if (isNeg('ew-cap')) { showToast('La capacità non può essere negativa', 'error'); return; }
+  if (isNeg('ew-hpd') || isNeg('ew-setup') || isNeg('ew-queue')) { showToast('I tempi non possono essere negativi', 'error'); return; }
   w.name = nome; w.hourlyRate = numVal('ew-rate', 0); w.capacityHours = numVal('ew-cap', 0);
+  w.hoursPerDay = numVal('ew-hpd', 0, 24); w.setupHours = numVal('ew-setup', 0);
+  w.queueDays = Math.round(numVal('ew-queue', 0, 99));
   touch(w);
   saveDB(); renderManage(); savedToast('Aggiornato');
 }
@@ -942,7 +956,57 @@ function renderSettings() {
     </div>
     <p class="empty-text" style="text-align:left;padding:4px 0 12px">Passati questi giorni dall'ultimo accesso, "Ricordami su questo PC" smette di valere e va reinserita la password. <strong>0 = la sessione non scade mai</strong> (com'era fino alla 0.21.0): comodo su un PC personale, meno su una postazione condivisa in officina.</p>
 
+    ${renderCalendarSettings()}
+
     <button class="add-btn-sm" onclick="saveSettings()">Salva impostazioni</button></div>`;
+}
+// ─── Calendario di fabbrica ───
+// I giorni in cui si lavora, per la programmazione a ritroso del fabbisogno
+// (calendario.js). I festivi ricorrenti si scrivono come GG/MM; le chiusure —
+// ferie, ponti, santo patrono — come intervalli con la data intera, una per
+// riga: «2026-08-10 2026-08-21 Ferie estive».
+const CAL_GIORNI = [[1, 'Lun'], [2, 'Mar'], [3, 'Mer'], [4, 'Gio'], [5, 'Ven'], [6, 'Sab'], [0, 'Dom']];
+function renderCalendarSettings() {
+  const c = calSettings();
+  const lav = new Set((c.workDays || []).map(Number));
+  const festivi = (c.holidays || []).map(h => { const [m, g] = String(h).split('-'); return g + '/' + m; }).join(', ');
+  const chiusure = (c.closures || []).map(x => [x.from, x.to && x.to !== x.from ? x.to : '', x.note || ''].filter(Boolean).join(' ')).join('\n');
+  return `<h3 class="settings-group-title">${ico('clock', 'tinted', '')} Calendario di fabbrica</h3>
+    <div class="modal-field"><label>Giorni lavorativi</label><div style="display:flex;gap:12px;flex-wrap:wrap">
+      ${CAL_GIORNI.map(([n, nome]) => `<label style="display:flex;gap:4px;align-items:center"><input type="checkbox" class="set-cal-day" value="${n}" ${lav.has(n) ? 'checked' : ''}> ${nome}</label>`).join('')}
+    </div></div>
+    <div class="modal-grid">
+      <div class="modal-field"><label>Festivi ricorrenti (GG/MM)</label><input id="set-cal-hol" value="${esc(festivi)}" placeholder="01/01, 25/04, 01/05…"></div>
+      <div class="modal-field"><label>Margine fra livelli di distinta (gg)</label><input type="number" id="set-sched-buf" min="0" max="99" step="1" value="${Number(db.settings.scheduleBufferDays) || 0}"></div>
+    </div>
+    <label style="display:flex;gap:6px;align-items:center;margin:4px 0 8px"><input type="checkbox" id="set-cal-easter" ${c.easter !== false ? 'checked' : ''}> Pasquetta (calcolata ogni anno)</label>
+    <div class="modal-field"><label>Chiusure (una per riga: dal [al] [nota], date AAAA-MM-GG)</label>
+      <textarea id="set-cal-clo" rows="3" placeholder="2026-08-10 2026-08-21 Ferie estive">${esc(chiusure)}</textarea></div>
+    <p class="empty-text" style="text-align:left;padding:4px 0 12px">Il fabbisogno programma <strong>a ritroso</strong> dalla consegna: le fasi interne e i montaggi si contano in giorni <strong>lavorativi</strong> di questo calendario; i giorni dei fornitori (consegna a listino, attraversamento del terzista) restano di calendario, e la data d'ordine o d'invio che ne esce, se cade su un giorno di chiusura, si anticipa al lavorativo precedente. Il <strong>margine</strong> anticipa ancora di qualche giorno la data in cui un componente deve essere pronto rispetto all'inizio del lavoro sul padre.</p>`;
+}
+// Legge il calendario dal modulo. Le righe che non si capiscono si scartano e
+// si dicono: un festivo scritto male e taciuto è un giorno di lavoro in più
+// che nessuno ha deciso.
+function readCalendarSettings() {
+  const giorni = Array.from(document.querySelectorAll('.set-cal-day') || []).filter(x => x.checked).map(x => Number(x.value));
+  const scartati = [];
+  const holidays = [];
+  String(val('set-cal-hol') || '').split(/[,;\s]+/).filter(Boolean).forEach(t => {
+    const m = /^(\d{1,2})[\/.-](\d{1,2})$/.exec(t);
+    const g = m ? Number(m[1]) : 0, mm = m ? Number(m[2]) : 0;
+    if (!m || g < 1 || g > 31 || mm < 1 || mm > 12) { scartati.push(t); return; }
+    holidays.push(String(mm).padStart(2, '0') + '-' + String(g).padStart(2, '0'));
+  });
+  const closures = [];
+  const testo = (document.getElementById('set-cal-clo') || {}).value || '';
+  String(testo).split('\n').map(r => r.trim()).filter(Boolean).forEach(r => {
+    const m = /^(\d{4}-\d{2}-\d{2})(?:\s+(\d{4}-\d{2}-\d{2}))?\s*(.*)$/.exec(r);
+    if (!m) { scartati.push(r); return; }
+    const from = m[1], to = m[2] && m[2] >= m[1] ? m[2] : m[1];
+    closures.push({ from, to, note: m[3] || '' });
+  });
+  const easterEl = document.getElementById('set-cal-easter');
+  return { cal: { workDays: giorni, holidays: Array.from(new Set(holidays)).sort(), easter: easterEl ? !!easterEl.checked : true, closures }, scartati };
 }
 function saveSettings() {
   if (!roleGuard('manage')) return;
@@ -958,5 +1022,20 @@ function saveSettings() {
   db.settings.codePrefixMateriale = (val('set-pfx-mat') || 'MAT').toUpperCase();
   db.settings.codePrefixParte = (val('set-pfx-prt') || 'PRT').toUpperCase();
   db.settings.sessionDays = numVal('set-session', 0, 365);
-  saveDB(); renderManage(); savedToast('Impostazioni salvate');
+  // Il calendario si sostituisce intero: calendario.js riconosce il cambio
+  // dalla firma, e un oggetto nuovo non lascia dietro di sé pezzi del vecchio.
+  let scartati = [];
+  if (document.getElementById('set-cal-hol')) {
+    const letto = readCalendarSettings();
+    if (!letto.cal.workDays.length) { showToast('Serve almeno un giorno lavorativo', 'error'); return; }
+    db.settings.calendar = letto.cal;
+    db.settings.scheduleBufferDays = Math.round(numVal('set-sched-buf', 0, 99));
+    if (typeof calInvalidate === 'function') calInvalidate();
+    scartati = letto.scartati;
+  }
+  saveDB(); renderManage();
+  // Il resto è salvato; quello che non si è capito si dice dopo, o il toast
+  // del salvataggio lo coprirebbe.
+  if (scartati.length) showToast('Salvate, ma nel calendario non ho capito: ' + scartati.join(', '), 'error');
+  else savedToast('Impostazioni salvate');
 }

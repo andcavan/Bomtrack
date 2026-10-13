@@ -57,13 +57,13 @@ immaginarle.
 | Collezione locale | Tabella | Colonne principali |
 |---|---|---|
 | `users` | `profiles` | id uuid PK → `auth.users(id)`, name, username unique, email, role (`admin`\|`acquisti`\|`progettazione`\|`lettore`), color, active bool |
-| `suppliers` | `suppliers` | id uuid PK, name, referente, email, phone, vat, street, street_number, zip, city, province, country, default_transport, default_payment, active bool, created_at, updated_at |
+| `suppliers` | `suppliers` | id uuid PK, name, referente, email, phone, vat, street, street_number, zip, city, province, country, default_transport, default_payment, transit_days numeric (trasporto andata+ritorno verso il terzista), active bool, created_at, updated_at |
 | `customers` | `customers` | id uuid PK, name **unique** (case-insensitive), referente, email, phone, vat, street, street_number, zip, city, province, country, notes, active bool, created_at, updated_at |
-| `workCenters` | `work_centers` | id uuid PK, name, hourly_rate numeric, capacity_hours numeric (ore a settimana), active, created_at, updated_at |
+| `workCenters` | `work_centers` | id uuid PK, name, hourly_rate numeric, capacity_hours numeric (ore a settimana), hours_per_day numeric, queue_days numeric, setup_hours numeric (tempi per la programmazione a ritroso), active, created_at, updated_at |
 | `workCenters[].suppliers` | `work_center_suppliers` | id uuid PK, work_center_id uuid FK, supplier_id uuid FK, rate numeric, note, created_at, updated_at — i fornitori di conto lavoro abituali del centro, con la tariffa propria (dalla 0.80.1 in `SCHEMA` e `REFS`) |
 | `families` | `families` | id uuid PK, name, kind ('acquistato'\|'materiale'\|'parte'), sigla, created_at, updated_at |
 | `families[].subs` | `sub_families` | id uuid PK, family_id uuid FK, name, sigla, created_at, updated_at |
-| `items` | `items` | id uuid PK, code, name, type enum, uom, notes, active, favorite, obsolete, unit_cost, purchase_price, supplier_id FK, supplier_code, supplier_desc, active_price_id FK → `item_prices(id)`, sourcing ('make'\|'buy'), family_id FK, sub_family_id FK, machine_item_id FK, group_item_id FK, sigla, overhead_pct_override, margin_pct_override, created_at, updated_at |
+| `items` | `items` | id uuid PK, code, name, type enum, uom, notes, active, favorite, obsolete, unit_cost, purchase_price, supplier_id FK, supplier_code, supplier_desc, active_price_id FK → `item_prices(id)`, sourcing ('make'\|'buy'), family_id FK, sub_family_id FK, machine_item_id FK, group_item_id FK, sigla, overhead_pct_override, margin_pct_override, assembly_days numeric (solo assiemi: giorni di montaggio), created_at, updated_at |
 | `items[].components` | `item_components` | item_id uuid FK, child_item_id uuid FK, qty numeric, scrap_pct numeric |
 | `items[].operations` | `item_operations` | item_id uuid FK, work_center_id uuid FK, hours numeric, note |
 | `items[].cycle` | `item_cycle_rows` | item_id uuid FK, kind ('item'\|'op'), pos int. **Riga articolo** (`kind='item'`): child_item_id (l'articolo citato; `item_id` è il padre), qty, cost_override nullable. **Riga lavorazione** (`kind='op'`): work_center_id FK, supplier_id FK **nullable** (nullo = interna, valorizzato = conto lavoro esterno), cost_mode ('fisso'\|'orario'), hours numeric, days int, rate numeric, cost numeric, note |

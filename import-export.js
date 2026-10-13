@@ -443,11 +443,11 @@ function settingsSheets() {
       userList().map(u => [u.name || '', u.email || '', u.username || '', roleLabel(u.role), safeColor(u.color), siNo(u.active)])) });
 
   out.push({ key: 'suppliers', name: 'Fornitori',
-    cols: [{ wch: 28 }, { wch: 20 }, { wch: 26 }, { wch: 16 }, { wch: 16 }, { wch: 26 }, { wch: 8 }, { wch: 8 }, { wch: 18 }, { wch: 6 }, { wch: 12 }, { wch: 22 }, { wch: 22 }, { wch: 8 }],
-    aoa: [['Nome', 'Referente', 'Email', 'Telefono', 'P.IVA / C.F.', 'Via / indirizzo', 'Numero civico', 'CAP', 'Città', 'Provincia', 'Stato', 'Pagamento predefinito', 'Trasporto predefinito', 'Attivo']].concat(
+    cols: [{ wch: 28 }, { wch: 20 }, { wch: 26 }, { wch: 16 }, { wch: 16 }, { wch: 26 }, { wch: 8 }, { wch: 8 }, { wch: 18 }, { wch: 6 }, { wch: 12 }, { wch: 22 }, { wch: 22 }, { wch: 8 }, { wch: 14 }],
+    aoa: [['Nome', 'Referente', 'Email', 'Telefono', 'P.IVA / C.F.', 'Via / indirizzo', 'Numero civico', 'CAP', 'Città', 'Provincia', 'Stato', 'Pagamento predefinito', 'Trasporto predefinito', 'Attivo', 'Trasporto CL gg']].concat(
       (db.suppliers || []).map(f => [f.name || '', f.referente || '', f.email || '', f.phone || '', f.vat || '',
         f.street || '', f.streetNumber || '', f.zip || '', f.city || '', f.province || '', f.country || '',
-        f.defaultPayment || '', f.defaultTransport || '', siNo(f.active)])) });
+        f.defaultPayment || '', f.defaultTransport || '', siNo(f.active), Number(f.transitDays) || 0])) });
 
   out.push({ key: 'customers', name: 'Clienti',
     cols: [{ wch: 28 }, { wch: 20 }, { wch: 26 }, { wch: 16 }, { wch: 16 }, { wch: 26 }, { wch: 8 }, { wch: 8 }, { wch: 18 }, { wch: 6 }, { wch: 12 }, { wch: 30 }, { wch: 8 }],
@@ -481,9 +481,12 @@ function settingsSheets() {
 
   // «Attivo» come per Fornitori, Clienti e Utenti: senza, un centro sospeso
   // rinasceva attivo su una postazione nuova, e le sue ore tornavano a costare.
-  out.push({ key: 'workcenters', name: 'Centri di lavoro', cols: [{ wch: 30 }, { wch: 16 }, { wch: 18 }, { wch: 8 }],
-    aoa: [['Nome', 'Tariffa oraria', 'Capacità h/sett', 'Attivo']].concat((db.workCenters || [])
-      .map(w => [w.name || '', Number(w.hourlyRate) || 0, Number(w.capacityHours) || 0, siNo(w.active)])) });
+  // I tempi per la programmazione a ritroso (0.88.0) stanno in coda, prima di
+  // «Attivo» no: un foglio vecchio, senza quelle colonne, li lascia com'erano.
+  out.push({ key: 'workcenters', name: 'Centri di lavoro', cols: [{ wch: 30 }, { wch: 16 }, { wch: 18 }, { wch: 8 }, { wch: 12 }, { wch: 16 }, { wch: 10 }],
+    aoa: [['Nome', 'Tariffa oraria', 'Capacità h/sett', 'Attivo', 'Ore/giorno', 'Attrezzaggio h', 'Coda gg']].concat((db.workCenters || [])
+      .map(w => [w.name || '', Number(w.hourlyRate) || 0, Number(w.capacityHours) || 0, siNo(w.active),
+        Number(w.hoursPerDay) || 0, Number(w.setupHours) || 0, Number(w.queueDays) || 0])) });
 
   out.push({ key: 'uoms', name: 'Unità di misura', cols: [{ wch: 12 }, { wch: 30 }, { wch: 12 }],
     aoa: [['Codice', 'Descrizione', 'Predefinita']].concat(
@@ -721,12 +724,22 @@ function applyWorkCentersSheet(rows, rep) {
       cap = numOr(capRaw, NaN);
       if (isNaN(cap) || cap < 0) { rep.errors.push(`Centri di lavoro, riga ${i + 2}: capacità non valida ("${esc(capRaw)}")`); return; }
     }
+    // I tempi: colonna assente = invariato, come la capacità.
+    const tempi = {};
+    for (const [campo, nomi, etichetta] of [['hoursPerDay', ['Ore/giorno', 'Ore al giorno'], 'ore al giorno'],
+      ['setupHours', ['Attrezzaggio h', 'Attrezzaggio'], 'attrezzaggio'], ['queueDays', ['Coda gg', 'Coda'], 'coda']]) {
+      const raw = cell(row, ...nomi);
+      if (raw === null || raw === '') continue;
+      const n = numOr(raw, NaN);
+      if (isNaN(n) || n < 0) { rep.errors.push(`Centri di lavoro, riga ${i + 2}: ${etichetta} non valida ("${esc(raw)}")`); return; }
+      tempi[campo] = campo === 'queueDays' ? Math.round(n) : n;
+    }
     if (!Array.isArray(db.workCenters)) db.workCenters = [];
     const w = db.workCenters.find(x => (x.name || '').toLowerCase() === name.toLowerCase());
     if (!w) {
       const attNuovo = boolCell(row, 'Attivo', 'Active');
-      db.workCenters.push(stampNew({ id: gid(), name, hourlyRate: rate == null ? 0 : rate,
-        capacityHours: cap == null ? 0 : cap, active: attNuovo !== false }));
+      db.workCenters.push(stampNew(Object.assign({ id: gid(), name, hourlyRate: rate == null ? 0 : rate,
+        capacityHours: cap == null ? 0 : cap, hoursPerDay: 0, setupHours: 0, queueDays: 0, active: attNuovo !== false }, tempi)));
       out.created++;
     } else {
       // La chiave è il nome, quindi il nome non si rinomina da qui (come per i
@@ -735,6 +748,7 @@ function applyWorkCentersSheet(rows, rep) {
       let cambiato = false;
       if (rate != null && Number(w.hourlyRate) !== rate) { w.hourlyRate = rate; cambiato = true; }
       if (cap != null && Number(w.capacityHours) !== cap) { w.capacityHours = cap; cambiato = true; }
+      Object.keys(tempi).forEach(k => { if (Number(w[k]) !== tempi[k]) { w[k] = tempi[k]; cambiato = true; } });
       const att = boolCell(row, 'Attivo', 'Active');
       if (att !== null && w.active !== att) { w.active = att; cambiato = true; }
       if (cambiato) { touch(w); out.updated++; } else out.skipped++;
@@ -823,6 +837,14 @@ function applySuppliersSheet(rows, rep) {
     });
     const att = boolCell(row, 'Attivo', 'Active');
     if (att !== null && s.active !== att) { s.active = att; cambiato = true; }
+    // Giorni di trasporto verso il terzista: colonna assente = invariato.
+    const trRaw = cell(row, 'Trasporto CL gg', 'Trasporto conto lavoro');
+    if (s.transitDays == null) s.transitDays = 0;
+    if (trRaw !== null && trRaw !== '') {
+      const n = numOr(trRaw, NaN);
+      if (isNaN(n) || n < 0) rep.errors.push(`Fornitori, riga ${i + 2}: giorni di trasporto non validi ("${esc(trRaw)}")`);
+      else if (Number(s.transitDays) !== Math.round(n)) { s.transitDays = Math.round(n); cambiato = true; }
+    }
     if (isNew) out.created++;
     else if (cambiato) { touch(s); out.updated++; }
     else out.skipped++;

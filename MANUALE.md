@@ -1,6 +1,6 @@
 # Bomtrack — Manuale d'uso
 
-**Versione dell'app documentata: 0.87.0**
+**Versione dell'app documentata: 0.88.0**
 
 📖 **[Leggilo come pagina web](https://claude.ai/code/artifact/726a0963-2db0-4947-999b-d7b5beb91a0b)** — stesso testo, con indice laterale, filtro dei capitoli e tema chiaro/scuro. Comodo da tenere aperto di fianco all'app.
 
@@ -98,9 +98,11 @@ stesso archivio: la parte che il progettista disegna è la stessa che l'ufficio 
 
 Vale la pena dirlo subito, perché evita di cercare funzioni che non ci sono.
 
-- **Non schedula la produzione.** Il *Carico centri* mostra le ore che i piani chiedono a ciascun
-  centro settimana per settimana, e segnala il sovraccarico. Non lo risolve: non c'è calendario,
-  non c'è data di avvio di una fase, la capacità è **infinita**.
+- **Non schedula a capacità finita.** Dalla 0.88.0 il fabbisogno **programma a ritroso**: dalla
+  consegna risale montaggi, fasi interne e tratte dal terzista sul **calendario di fabbrica**, e
+  dice quando ordinare, quando spedire, quando lanciare (→ [cap. 19](#19-fabbisogno-materiali)).
+  La capacità resta però **infinita**: il *Carico centri* mostra il sovraccarico nella settimana
+  in cui la fase comincia, ma non lo risolve spostando le date.
 - **Non schedula.** L'avanzamento c'è, e da due strade che rispondono a due domande diverse.
   Nella tabella *Da fabbricare* di un piano si dichiara **quanti pezzi sono stati fatti** (dalla
   0.77.0): è una dichiarazione per **parte finita**, non per fase superata — un pezzo fermo a metà
@@ -108,8 +110,7 @@ Vale la pena dirlo subito, perché evita di cercare funzioni che non ci sono.
   fatta. Gli **ordini di produzione** (→ [cap. 22](#22-ordini-di-produzione-odp)) seguono invece una
   parte **fase per fase**: lì si dichiarano pezzi buoni e scarti, e il magazzino si muove ai due
   estremi del ciclo.
-  Quello che continua a mancare è il *quando*: nessuna data di avvio, nessun calendario, nessuna
-  capacità finita. E fuori da un ordine di produzione il magazzino resta com'era — si muove con i
+  Il *quando* lo dà la programmazione a ritroso del fabbisogno, a capacità infinita. E fuori da un ordine di produzione il magazzino resta com'era — si muove con i
   movimenti e con i ricevimenti, perché due strade per la stessa giacenza darebbero due verità.
 - **Non è un gestionale amministrativo.** Niente fatture, niente contabilità, niente DDT.
 - **Non archivia i documenti nel database.** Disegni e schede tecniche si allegano agli articoli
@@ -160,7 +161,7 @@ la sessione aperta fino a **Esci**; quanto duri lo decide l'amministratore in
 
 ### La versione
 
-Il numero di versione si legge **accanto al logo, in alto a sinistra** (es. `v0.87.0`).
+Il numero di versione si legge **accanto al logo, in alto a sinistra** (es. `v0.88.0`).
 Corrisponde alla voce in cima al changelog: serve quando si segnala un problema.
 
 ### Dove sta questo manuale
@@ -947,6 +948,9 @@ Gruppi · Sottogruppi); **macchina di appartenenza**; il menu della distinta ape
 - I sottogruppi possono contenere altri sottogruppi, **senza limite di profondità**.
 - La **percentuale di scarto** di una riga aumenta la quantità che serve davvero: 10 pezzi con
   5% di scarto sono 10,5 pezzi di materiale.
+- Accanto alle **Lavorazioni** dell'assieme c'è **Montaggio: … gg**: cliccandolo si dichiarano i
+  giorni lavorativi di montaggio, che la programmazione a ritroso del fabbisogno toglie dalla data
+  in cui l'assieme serve. **Zero = dalle ore** delle lavorazioni.
 - I **riferimenti ciclici** (A contiene B che contiene A) sono rilevati e impediti, sia nella
   distinta sia nel ciclo. Se ne resta uno, un **avviso rosso** nomina l'articolo coinvolto invece
   di far comparire un costo tronco che sembrerebbe buono.
@@ -1331,6 +1335,54 @@ a questo piano.
 
 In fondo, l'elenco dei **documenti generati** dal piano.
 
+### Le date: la programmazione a ritroso
+
+Dalla 0.88.0 la data di una riga di piano non scende più **invariata** lungo la distinta: si
+toglie, livello per livello, il tempo di chi sta in mezzo. È la risposta a «se il gruppo deve
+essere pronto il 16, quando devo ordinare il tondo, quando spedire i perni al terzista, quando
+lanciarli in tornitura?».
+
+```
+consegna del gruppo (ven 16)
+ └ montaggio 2 gg ................................ mer 14 → ven 16
+    └ perno, serve mer 14
+        fase 40 fresatura (interna) 16 h → 2 gg .. lun 12 → mer 14
+        fasi 20-30 zincatura da Beta 3+1 gg
+              + 2 gg di trasporto ................ invio mar 6 → rientro lun 12
+        fase 10 tornitura (interna) 8 h → 1 gg ... lun 5 → mar 6      ← lancio dell'ODP
+        tondo, materiale del ciclo: serve lun 5; listino a 10 gg → ordinare entro ven 25/9
+```
+
+**Le regole.**
+
+| Che cosa | Quanto dura | In che giorni |
+|---|---|---|
+| **Montaggio** di un assieme | i *giorni di montaggio* dell'assieme o, a zero, le ore delle sue lavorazioni come fasi interne in fila | lavorativi |
+| **Fase interna** | (attrezzaggio del centro + ore/pz × pezzi) ÷ ore al giorno del centro, arrotondato al giorno, + giorni di coda | lavorativi |
+| **Tratta di conto lavoro** (fasi consecutive dello stesso terzista) | somma dei giorni di attraversamento + giorni di trasporto del terzista | di calendario; l'invio si anticipa al lavorativo precedente |
+| **Acquisto** | giorni di consegna del listino | di calendario; la data d'ordine si anticipa al lavorativo precedente |
+
+- Le date sono «il mattino in cui il pezzo è pronto»: una fase di un giorno che deve finire
+  lunedì comincia venerdì, e la fase prima deve finire venerdì. Nessun buco, nessuna
+  sovrapposizione.
+- Il **materiale del ciclo** di una parte serve all'inizio della **prima** fase: è lì che esce.
+- Una fase **senza tempi** (zero ore, zero giorni) non sposta niente: senza dati le date restano
+  quelle della consegna, come prima della 0.88.0.
+- Lo stesso articolo chiesto da due rami con date diverse tiene **la data più vicina**.
+- Un **margine fra livelli** (*Gestione → Impostazioni → Calendario di fabbrica*) anticipa ancora
+  di qualche giorno lavorativo la data in cui un componente deve essere pronto.
+
+**Dove si vede.** In *Da acquistare* «Serve per» e «Ordinare entro» sono già scalati; in *Da far
+lavorare fuori* «Serve per» è il **rientro** della tratta e «Ordinare entro» l'**invio**; in *Da
+fabbricare* sotto «Serve per» compare la data di **lancio**. Le righe dei documenti generati
+chiedono quelle date: l'ordine al fornitore del tondo chiede il 5, l'ordine di lavoro a Beta il
+rientro del 12 — non più la consegna del gruppo.
+
+**Capacità infinita.** Le date dicono quando ciascuna cosa deve succedere perché la consegna regga,
+non se il reparto ce la fa: quello lo dice il *Carico centri*
+(→ [cap. 24](#24-carico-dei-centri-di-lavoro)), che dalla 0.88.0 mette le ore nella settimana in
+cui la fase **comincia**.
+
 ### Il fabbisogno netto
 
 ```
@@ -1708,10 +1760,11 @@ piano.
 
 **Da sapere — quattro avvertimenti**, perché il prospetto non prometta più di quel che dà:
 
-1. **La capacità è infinita.** Il sovraccarico **si vede, non si sposta**: non c'è schedulazione,
-   né calendario, né data di avvio di una fase.
-2. **Le ore stanno nella settimana in cui il pezzo serve pronto**, non in quella in cui si lavora.
-   È una lettura della **domanda**, non una programmazione.
+1. **La capacità è infinita.** Il sovraccarico **si vede, non si sposta**: le date vengono dalla
+   programmazione a ritroso (→ [cap. 19](#19-fabbisogno-materiali)), che non guarda il carico.
+2. **Le ore stanno nella settimana in cui la fase comincia**, programmata a ritroso dalla
+   consegna sul calendario di fabbrica (dalla 0.88.0; prima stavano nella settimana in cui il
+   pezzo serviva pronto).
 3. **Le fasi in conto lavoro non caricano nessun centro interno**: quelle si comprano, e stanno nel
    fabbisogno.
 4. **Capacità 0 = «non dichiarata»**, non «nessuna capacità». Un centro senza capacità mostra le
@@ -1745,8 +1798,10 @@ Ragione sociale · Referente · Email · Telefono · P.IVA/C.F. · indirizzo.
 ### 🏭 Fornitori
 
 Nome · Referente · Email · Telefono · P.IVA/C.F. · **Pagamento predefinito** ·
-**Trasporto predefinito** · indirizzo.
+**Trasporto predefinito** · indirizzo · **Trasporto conto lavoro (gg)**.
 I due predefiniti si riproporranno su ogni richiesta e ogni ordine a quel fornitore.
+I giorni di trasporto, andata più ritorno, si sommano all'attraversamento di ogni tratta di conto
+lavoro affidata a quel terzista (→ [cap. 19](#19-fabbisogno-materiali)).
 Si possono **sospendere** (⏸).
 
 ### 📇 Clienti
@@ -1781,6 +1836,9 @@ così i nomi già composti non cambiano da soli.
 | **Nome** | Torni, Fresatura, Saldatura… |
 | **Tariffa (€/h)** | Entra nel costo delle fasi interne a costo orario |
 | **Capacità (h/settimana)** | Il metro del Carico centri. **0 = non dichiarata** |
+| **Ore lavorate al giorno** | Per la durata delle fasi interne. **0 = capacità settimanale ÷ giorni lavorativi**, o 8 |
+| **Attrezzaggio per lotto (h)** | Si aggiunge alle ore di ogni fase su questo centro |
+| **Giorni di coda** | L'attesa prima di ogni fase su questo centro, in giorni lavorativi |
 
 Sotto ogni centro, il sotto-elenco **Fornitori conto lavoro**: fornitore, tariffa, nota — chi sa
 fare quella lavorazione fuori, e a quanto. Si possono sospendere.
@@ -1819,6 +1877,20 @@ nell'import da Excel vengono registrate automaticamente.
 | Campo | Di serie |
 |---|---|
 | Durata della sessione salvata (giorni) | 30 — **0 = non scade mai** |
+
+**Calendario di fabbrica**
+
+| Campo | Di serie |
+|---|---|
+| Giorni lavorativi | lunedì–venerdì |
+| Festivi ricorrenti (GG/MM) | 01/01, 06/01, 25/04, 01/05, 02/06, 15/08, 01/11, 08/12, 25/12, 26/12 |
+| Pasquetta | sì, calcolata ogni anno |
+| Chiusure | nessuna — una per riga: `2026-08-10 2026-08-21 Ferie estive` |
+| Margine fra livelli di distinta (gg) | 0 |
+
+Il calendario serve alla programmazione a ritroso del fabbisogno: fasi interne e montaggi si
+contano in giorni lavorativi; le date d'ordine e d'invio che cadono su un giorno chiuso si
+anticipano al lavorativo precedente. Il santo patrono si scrive fra le chiusure.
 
 ### ⬆️ Import · 💾 Backup
 
@@ -2504,6 +2576,6 @@ fusa, e il punto in cui si sostituisce la destinazione dei dati è uno solo.
 
 ---
 
-*Manuale di Bomtrack — aggiornato alla versione 0.87.0.*
+*Manuale di Bomtrack — aggiornato alla versione 0.88.0.*
 *Le funzioni descritte qui corrispondono a quella revisione; il changelog dell'app elenca le
 differenze rispetto alle versioni successive.*

@@ -85,7 +85,7 @@ create table if not exists public.suppliers (
   id uuid primary key,
   name text, referente text, email text, phone text, vat text,
   street text, street_number text, zip text, city text, province text, country text,
-  default_transport text, default_payment text, notes text, active boolean,
+  default_transport text, default_payment text, transit_days numeric, notes text, active boolean,
   pos int, created_at timestamptz, updated_at timestamptz, created_by uuid, updated_by uuid,
   synced_at timestamptz not null default clock_timestamp()
 );
@@ -101,7 +101,8 @@ create table if not exists public.customers (
 
 create table if not exists public.work_centers (
   id uuid primary key,
-  name text, hourly_rate numeric, capacity_hours numeric, active boolean, child_sets text,
+  name text, hourly_rate numeric, capacity_hours numeric, hours_per_day numeric, queue_days numeric, setup_hours numeric,
+  active boolean, child_sets text,
   pos int, created_at timestamptz, updated_at timestamptz, created_by uuid, updated_by uuid,
   synced_at timestamptz not null default clock_timestamp()
 );
@@ -155,11 +156,18 @@ create table if not exists public.items (
   sigla text, overhead_pct_override numeric, margin_pct_override numeric,
   alt_uom text, alt_factor numeric,
   concept_id text, name_free text, g_code_len int, g_code_type text, incr_digits_n int, incr_digits_s int,
-  rev text, lot_size numeric, lot_mode text, safety_stock numeric,
+  rev text, lot_size numeric, lot_mode text, safety_stock numeric, assembly_days numeric,
   child_sets text,
   pos int, created_at timestamptz, updated_at timestamptz, created_by uuid, updated_by uuid,
   synced_at timestamptz not null default clock_timestamp()
 );
+-- Colonne aggiunte dopo la prima stesura (0.88.0, programmazione a ritroso):
+-- su un database già creato `create table if not exists` non le aggiunge.
+alter table public.work_centers add column if not exists hours_per_day numeric;
+alter table public.work_centers add column if not exists queue_days numeric;
+alter table public.work_centers add column if not exists setup_hours numeric;
+alter table public.suppliers add column if not exists transit_days numeric;
+alter table public.items add column if not exists assembly_days numeric;
 -- A6: `unique (code)` va aggiunto dopo la bonifica dei duplicati storici
 -- (Gestione › Backup › codici duplicati). Prima, rifiuterebbe dati veri.
 

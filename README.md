@@ -230,6 +230,7 @@ Il motivo è lo storico: finché lo stesso dato si poteva scrivere in due posti,
 | `core.js` | stato dell'app, utility, ruoli, pannelli e conferme. `APP_VERSION` in cima è la revisione mostrata nell'header |
 | `auth.js` | accesso, sessione, primo amministratore |
 | `costing.js` | motore di costificazione (rollup ricorsivo, modi di calcolo delle parti) |
+| `calendario.js` | calendario di fabbrica: giorni lavorativi, festivi (Pasquetta calcolata), chiusure; conti a ritroso e in avanti per la programmazione del fabbisogno |
 | `shell.js` | ricerca globale, stampa, navigazione tra le viste |
 | `views-bom.js` | distinte base e *Dove è usato* |
 | `views-rev.js` | revisioni della distinta: rilascio, storico e confronto |
@@ -239,7 +240,7 @@ Il motivo è lo storico: finché lo stesso dato si poteva scrivere in due posti,
 | `views-dash.js` | cruscotto: valore di magazzino, articoli fermi, sotto scorta, consegne scadute per fornitore |
 | `views-catalog.js` | anagrafiche, listino fornitori, scheda articolo, cicli di lavorazione |
 | `views-report.js` | costificazione e report |
-| `views-mrp.js` | fabbisogno materiali |
+| `views-mrp.js` | fabbisogno materiali, programmazione a ritroso delle date (montaggi, fasi, tratte di conto lavoro, acquisti) e carico dei centri |
 | `produzione.js` | avanzamento di produzione: le dichiarazioni di pezzi fatti dentro un piano, e il netto che ne discende sulle lavorazioni |
 | `allegati.js` | allegati degli articoli: i documenti d'archivio e i loro collegamenti ai codici; i byte dei vecchi file in IndexedDB |
 | `archivio.js` | la cartella dei PDF: scelta, permesso, lettura, copia e verifica. Impostazione **locale**, un PC alla volta |

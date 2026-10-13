@@ -239,7 +239,7 @@ const CLOUD_TYPES = (() => {
   const t = {};
   ['qty', 'price', 'minQty', 'leadDays', 'scrapPct', 'hours', 'days', 'rate', 'cost', 'costOverride',
     'unitCost', 'purchasePrice', 'altFactor', 'overheadPctOverride', 'marginPctOverride', 'hourlyRate',
-    'capacityHours', 'received', 'perPezzo', 'scrap', 'lotSize', 'safetyStock', 'size'].forEach(k => { t[k] = 'numeric'; });
+    'capacityHours', 'hoursPerDay', 'queueDays', 'setupHours', 'transitDays', 'assemblyDays', 'received', 'perPezzo', 'scrap', 'lotSize', 'safetyStock', 'size'].forEach(k => { t[k] = 'numeric'; });
   ['pos', 'runFrom', 'runTo', 'seq', 'opIndex', 'passata', 'page', 'incrDigitsN', 'incrDigitsS', 'gCodeLen'].forEach(k => { t[k] = 'int'; });
   ['date', 'dueDate', 'deliveryDate', 'confirmedDate'].forEach(k => { t[k] = 'date'; });
   ['createdAt', 'updatedAt', 'deletedAt', 'doneAt'].forEach(k => { t[k] = 'timestamptz'; });

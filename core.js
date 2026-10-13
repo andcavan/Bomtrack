@@ -13,7 +13,7 @@
 // Revisione in esecuzione, mostrata accanto al logo. Va tenuta allineata alla
 // voce in cima a CHANGELOG.md (l'app si copia a mano tra PC: sapere
 // quale revisione sta girando su una postazione è l'unico modo per capirlo).
-const APP_VERSION = '0.87.0';
+const APP_VERSION = '0.88.0';
 
 let currentUser = null;      // utente della sessione (null = schermata di accesso)
 let currentBomId = null;     // articolo prodotto attualmente aperto nelle Distinte
@@ -309,6 +309,7 @@ function invalidateCaches() {
   _famIdx = null; _famIdxArr = null; _famIdxLen = -1;
   _cptIdx = null; _cptIdxLen = -1;
   _userIdx = null; _userIdxArr = null; _userIdxLen = -1;
+  if (typeof calInvalidate === 'function') calInvalidate();           // sta in calendario.js, caricato dopo
   if (typeof invalidateStock === 'function') invalidateStock();   // sta in views-stock.js, caricato dopo
   if (typeof invalidateItemDocs === 'function') invalidateItemDocs(); // sta in views-item.js, caricato dopo
   if (typeof invalidateProd === 'function') invalidateProd();       // sta in views-prod.js, caricato dopo

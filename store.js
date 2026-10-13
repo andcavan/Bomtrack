@@ -575,6 +575,14 @@ function loadDB() {
   markSynced();
   if (dbLoadError && typeof onLoadError === 'function') onLoadError(dbLoadError);
 }
+// Il calendario di fabbrica di serie: lunedì–venerdì e le festività nazionali
+// italiane, ricorrenti. Pasqua e Pasquetta si calcolano (`easter`, vedi
+// calendario.js); santo patrono, ferie d'agosto e ponti stanno in `closures`,
+// intervalli con una data intera, perché cambiano ogni anno.
+const CAL_FESTIVI_IT = ['01-01', '01-06', '04-25', '05-01', '06-02', '08-15', '11-01', '12-08', '12-25', '12-26'];
+function calDefault() {
+  return { workDays: [1, 2, 3, 4, 5], holidays: CAL_FESTIVI_IT.slice(), easter: true, closures: [] };
+}
 function migrateDB() {
   // Normalizzazioni legacy (idempotenti, sempre eseguite)
   if (!db.suppliers) db.suppliers = [];
@@ -612,6 +620,13 @@ function migrateDB() {
   // nascerebbe già da ignorare.
   (db.workCenters || []).forEach(w => {
     if (w.capacityHours == null) w.capacityHours = 0;
+    // Tempi del centro per la programmazione a ritroso: ore lavorate in un
+    // giorno (zero = ricavate dalla capacità settimanale, o 8), giorni di coda
+    // prima di ogni fase e ore di attrezzaggio per lotto. Zero su tutti i
+    // centri esistenti: senza dati la durata di una fase sono le sue ore.
+    if (w.hoursPerDay == null) w.hoursPerDay = 0;
+    if (w.queueDays == null) w.queueDays = 0;
+    if (w.setupHours == null) w.setupHours = 0;
     // Le righe fornitore sono dichiarate in SCHEMA con identità propria: una
     // senza id non si potrebbe nominare né fondere riga per riga.
     if (Array.isArray(w.suppliers)) w.suppliers.forEach(r => { if (r && !r.id) r.id = newId(); });
@@ -661,6 +676,11 @@ function migrateDB() {
   // già scritto al login e non lo leggeva nessuno: una postazione condivisa
   // restava aperta sull'utente di chi l'aveva usata mesi prima.
   if (db.settings.sessionDays == null) db.settings.sessionDays = 30;
+  // Calendario di fabbrica (calendario.js) e margine fra un livello di
+  // distinta e il suo padre, in giorni lavorativi, per la programmazione a
+  // ritroso del fabbisogno.
+  if (!db.settings.calendar || !Array.isArray(db.settings.calendar.workDays)) db.settings.calendar = calDefault();
+  if (db.settings.scheduleBufferDays == null) db.settings.scheduleBufferDays = 0;
   delete db.settings.partCostModeDefault;   // sostituito da partSourcingDefault
   // Unità di misura gestite: seed una-tantum con le predefinite + quelle già
   // presenti nei dati (finora l'U.M. era testo libero, non va persa).
@@ -704,6 +724,9 @@ function migrateDB() {
     if (s.vat == null) s.vat = '';
     if (s.defaultTransport == null) s.defaultTransport = '';
     if (s.defaultPayment == null) s.defaultPayment = '';
+    // Giorni di trasporto verso e dal terzista, andata più ritorno: si sommano
+    // all'attraversamento di ogni tratta di conto lavoro affidata a lui.
+    if (s.transitDays == null) s.transitDays = 0;
     ensureAddr(s);
   });
   // Clienti: stessa anagrafica dei fornitori, senza le condizioni predefinite
@@ -881,6 +904,9 @@ function migrateDB() {
     if (isAssembly(it.type)) {
       if (!it.components) it.components = [];
       if (!it.operations) it.operations = [];
+      // Giorni di montaggio dichiarati. Zero = si ricavano dalle ore delle
+      // lavorazioni dell'assieme, sul calendario dei centri.
+      if (it.assemblyDays == null) it.assemblyDays = 0;
     }
     if (it.type === 'parte' && !it.cycle) it.cycle = [];
     // Listino fornitori: lo stesso articolo può essere quotato da più fornitori,

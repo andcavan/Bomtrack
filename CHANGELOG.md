@@ -2,6 +2,28 @@
 
 Le revisioni seguono il versionamento semantico `0.MINOR.PATCH`: **MINOR** per nuove funzionalità, **PATCH** per correzioni. La versione in cima è quella in `APP_VERSION` (`core.js`) e mostrata nell'header dell'app.
 
+### 0.88.0 — 2026-10-13
+
+**Le date a ritroso.** Fino a ieri la data di una riga di piano scendeva **invariata** lungo la distinta: se il gruppo serviva il 16, il tondo, i perni e la zincatura dal terzista servivano tutti il 16. Gli unici anticipi erano i giorni del listino sul materiale e quelli di attraversamento su ogni singola fase esterna — ciascuno contato dalla consegna del prodotto, come se montaggio, tornitura e il viaggio dal terzista non esistessero. Ora il fabbisogno **programma a ritroso**: risale montaggi, fasi del ciclo e tratte di conto lavoro, in fila, sul calendario di fabbrica. Analisi e tappe successive in `docs/programmazione-tempi.md`.
+
+**Nuovo**
+- **Calendario di fabbrica** in *Gestione → Impostazioni*: giorni lavorativi (di serie lunedì–venerdì), festivi ricorrenti, Pasquetta calcolata, chiusure (ferie, ponti, patrono) e un **margine fra livelli** di distinta. `calendario.js`: `isWorkDay`, `addWorkDays`, `prevWorkDay`, `nextWorkDay`, `workDaysBetween`, `pasqua`.
+- **I tempi** dove mancavano: sul centro di lavoro **ore al giorno**, **attrezzaggio per lotto** e **giorni di coda**; sul fornitore i **giorni di trasporto** del conto lavoro; sull'assieme i **giorni di montaggio** (in *Gestione DB*, accanto alle lavorazioni). Tutti a zero di serie, e anche nei fogli Excel delle impostazioni.
+- **La catena.** Montaggio = giorni dichiarati o le ore delle sue lavorazioni; fase interna = (attrezzaggio + ore/pz × pezzi) ÷ ore al giorno, al giorno intero, più la coda, in giorni lavorativi; tratta di conto lavoro = attraversamento delle sue fasi più il trasporto, in giorni di calendario. Il materiale del ciclo serve all'inizio della prima fase; i componenti all'inizio del montaggio.
+- **Nel piano**: «Serve per» e «Ordinare entro» degli acquisti sono scalati; in *Da far lavorare fuori* sono **rientro** e **invio** della tratta; in *Da fabbricare* compare la data di **lancio**. Le date d'ordine e d'invio che cadono su un giorno chiuso si anticipano al lavorativo precedente.
+- **Nei documenti**: l'ordine al fornitore chiede la data in cui il materiale serve davvero, l'ordine di lavoro il rientro della tratta.
+- **Carico centri**: le ore stanno nella settimana in cui la fase **comincia**, non in quella in cui il pezzo serve pronto.
+
+**Le cautele**
+- Senza tempi dichiarati una fase non sposta niente: le date restano quelle della consegna. Una fase interna con le sue ore invece sì — 8 ore al giorno di serie, o la capacità settimanale ÷ i giorni lavorativi.
+- Capacità sempre **infinita**: le date dicono quando ciascuna cosa deve succedere, non se il reparto ce la fa. Il sovraccarico resta da leggere nel Carico centri.
+- Netto, impegni e quantità non cambiano: si aggiungono date, non pezzi.
+- Gli ordini di lavoro generati da un ordine di produzione chiedono ancora la consegna dell'ODP: le date congelate per fase arrivano con la 0.90.0.
+
+**Verifica**
+- `test/calendario.test.js` (festivi, Pasqua 2024–2026, chiusure, capodanno, fuso a est di Greenwich) e `test/schedulazione.test.js` (la catena completa con date scritte a mano, attrezzaggio e coda, montaggio dalle ore, margine, patrono in mezzo, due rami, dati mancanti, ODL a mano, Excel, migrazione). `test/carico.test.js` adeguato: le ore seguono la fase.
+- Schema SQL: colonne nuove su `work_centers`, `suppliers`, `items`, con `alter table … add column if not exists` per i database già creati.
+
 ### 0.87.0 — 2026-10-12
 
 **L'archivio senza il tetto dei 5 MB.** L'archivio passa da `localStorage` (circa 5 MB per sito, e un archivio con qualche anno di ordini e movimenti ci arriva) a **IndexedDB**, il database del browser, dove il limite è lo spazio che il browser concede al sito: di solito gigabyte.
