@@ -472,6 +472,11 @@ input[type=date]::-webkit-calendar-picker-indicator,input[type=datetime-local]::
 .cal-dot{display:inline-block;width:8px;height:8px;border-radius:50%;flex:none}
 .cal-more{font-size:11px;color:var(--text-dim);font-family:var(--mono)}
 .cal-block{margin-top:14px}
+.cal-filtri{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:0 0 10px}
+.cal-filtro{background:var(--bg);border:1px solid var(--border);border-radius:20px;padding:4px 10px;font-size:12px;color:var(--text-dim);cursor:pointer;white-space:nowrap;min-height:32px}
+.cal-filtro.on{background:var(--accent-soft,var(--bg));border-color:var(--accent);color:var(--text)}
+.cal-filtro-n{font-family:var(--mono);font-size:11px;opacity:.75}
+.cal-filtro-tutti{font-size:12px}
 .cal-block h4{font-size:13px;margin:0 0 8px}
 .cal-late h4{color:var(--red)}
 .cal-wide{margin-top:14px}
@@ -710,6 +715,22 @@ textarea.notes-internal{border-style:dashed}
 .export-pair{display:flex;flex-direction:column;gap:6px;margin-left:auto}
 .export-pair .export-btn-xls,.export-pair .export-btn-pdf{margin-left:0}
 .export-pair-row{flex-direction:row;flex-wrap:wrap}
+/* Menu a tendina delle testate (0.94.0): «Esporta ▾» e «⋯» */
+.dd{position:relative;display:inline-block}
+.dd > summary{list-style:none;display:inline-flex;align-items:center;gap:6px;cursor:pointer;user-select:none}
+.dd > summary::-webkit-details-marker{display:none}
+.dd[open] > summary{border-color:var(--accent);color:var(--accent)}
+.dd-caret{font-size:10px;opacity:.7}
+.dd-menu{position:absolute;right:0;top:calc(100% + 4px);z-index:60;min-width:190px;display:flex;flex-direction:column;padding:4px;background:var(--card);border:1px solid var(--border);border-radius:9px;box-shadow:0 8px 24px rgba(0,0,0,.14)}
+.dd-item{display:flex;align-items:center;gap:8px;width:100%;text-align:left;background:transparent;border:none;border-radius:6px;padding:8px 10px;font-size:13px;color:var(--text);cursor:pointer;white-space:nowrap;min-height:34px}
+.dd-item:hover,.dd-item:focus-visible{background:var(--card-hover)}
+.dd-item.danger{color:var(--red)}
+.dd-item.danger:hover{background:var(--red-soft)}
+.dd-item:disabled{opacity:.5;cursor:not-allowed}
+.dd-push{margin-left:auto}
+.bom-toolbar-right{display:flex;align-items:center;flex-wrap:wrap;gap:8px}
+.bom-toolbar > .dd{margin-left:auto}
+@media print{.dd{display:none!important}}
 .plan-genera{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:14px 0 4px}
 /* Le schede del piano (0.92.0): una riga che scorre di lato se non ci sta,
    invece di andare a capo e spostare il contenuto sotto a ogni larghezza. */
@@ -800,6 +821,26 @@ button:disabled{opacity:.4;cursor:not-allowed}
 .terms-default{font-size:10.5px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:var(--green);border:1px solid var(--green);border-radius:4px;padding:1px 5px;margin-left:6px}
 /* Ordini */
 .ord-ref{font-size:13px;color:var(--text-dim);margin:10px 0}
+/* A che punto è il documento, e cosa gli è legato (0.93.0) */
+.doc-flow{display:flex;flex-wrap:wrap;align-items:center;gap:10px 18px;margin:12px 0;padding:10px 14px;border:1px solid var(--border);border-radius:10px;background:var(--card)}
+.doc-steps{display:flex;flex-wrap:wrap;align-items:center;gap:4px 0;list-style:none;margin:0;padding:0;flex:1 1 auto}
+.doc-step{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;color:var(--text-dim);white-space:nowrap}
+.doc-step + .doc-step::before{content:'';display:inline-block;width:22px;height:1px;background:var(--border);margin:0 8px}
+.doc-step-dot{display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:50%;border:1px solid var(--border);font-size:11px;font-family:var(--mono)}
+.doc-step.done{color:var(--text)}
+.doc-step.done .doc-step-dot{background:var(--green-solid);border-color:var(--green-solid);color:#fff}
+.doc-step.now{color:var(--accent);font-weight:600}
+.doc-step.now .doc-step-dot{background:var(--accent);border-color:var(--accent);color:#fff}
+.doc-step.off{opacity:.55}
+.doc-step-next-wrap{flex:0 1 auto;display:flex;align-items:center}
+.doc-step-note{font-size:12.5px;color:var(--text-dim)}
+.doc-links{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:0 0 12px}
+.doc-links-label{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--text-dim);margin-right:4px}
+.doc-link{display:inline-flex;align-items:center;gap:5px;background:var(--card);border:1px solid var(--border);border-radius:999px;padding:4px 10px;font-size:12.5px;color:var(--text);cursor:pointer;min-height:28px}
+.doc-link:hover{border-color:var(--accent);color:var(--accent)}
+.doc-link-role{color:var(--text-dim)}
+.doc-link-num{font-family:var(--mono)}
+@media print{.doc-step-next-wrap{display:none}.doc-link{border:none;padding:0 6px 0 0}}
 /* ─── Righe di documento a due piani ───
    Sopra il dato che si compila, sotto quello che lo spiega o ne consegue:
    codice/descrizione, q.tà/U.M., prezzo/importo, richiesta/confermata,
@@ -1154,6 +1195,19 @@ tr.agenda-day td{border-top:1px solid var(--hairline)}
 .gantt-key{display:inline-flex;align-items:center;gap:5px}
 .gantt-key i{display:inline-block;width:12px;height:8px;border-radius:2px}
 @media print{.gantt{break-inside:avoid}}
+/* Avanzamento: il Gantt con quello che è successo davvero */
+.avz-table{min-width:820px}
+.avz-table td{vertical-align:middle}
+.avz-table th.avz-bar,.avz-table td.avz-bar{width:42%;min-width:240px;padding-left:4px;padding-right:4px}
+.avz-svg{display:block;width:100%;height:20px}
+.avz-asse{position:relative;height:16px;font-size:10.5px;font-weight:400;color:var(--text-dim)}
+.avz-asse span{position:absolute;top:0;white-space:nowrap;border-left:1px solid var(--hairline);padding-left:2px}
+.avz-docs{font-size:12px;line-height:1.5;min-width:180px}
+.avz-stato{font-weight:600;font-size:12px}
+.avz-crit td:first-child a,.avz-crit td:first-child{color:var(--red)}
+.avz-chips{display:flex;flex-wrap:wrap;gap:12px;font-size:12px;color:var(--text-dim);margin:0 0 8px}
+.avz-chip{display:inline-flex;align-items:center;gap:5px}
+.avz-chip i{display:inline-block;width:10px;height:10px;border-radius:50%}
 
 /* ─── Bersagli per il dito ───
    Al telefono, e su ogni schermo a sfioramento, nessun comando sotto i 34 px:
@@ -1185,3 +1239,12 @@ tr.agenda-day td{border-top:1px solid var(--hairline)}
 .dash-table th,.dash-table td{padding:7px 8px}
 .dash-table .num{font-family:var(--mono);text-align:right;white-space:nowrap}
 #view-dash > .bom-toolbar,#view-dash > .cost-summary{margin:0}
+/* Storico delle modifiche (views-item.js) */
+.storico{display:flex;flex-direction:column;gap:8px;max-height:520px;overflow:auto}
+.storico-voce{border-left:2px solid var(--border);padding:2px 0 2px 10px;font-size:13px}
+.storico-quando{font-family:var(--mono);font-size:12px;color:var(--text-dim);margin-right:4px}
+.storico-campi{margin:3px 0 0;padding-left:16px}
+.storico-campi li{margin:1px 0;overflow-wrap:anywhere}
+.storico-campo{color:var(--text-dim);margin-right:4px}
+.storico-campo::after{content:':'}
+.storico-prima{color:var(--text-dim)}

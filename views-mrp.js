@@ -362,8 +362,9 @@ function schedFlat(node, livello, out) {
 // La scorta minima non trattiene niente: è un margine, e in un ritardo si usa.
 //
 // Limiti, detti: le parti prodotte non si guardano a magazzino (come nel
-// fabbisogno, dove non hanno netto), un ordine di produzione già avviato non
-// accorcia il conto, e la capacità resta infinita.
+// fabbisogno, dove non hanno netto), un ordine di produzione già avviato
+// accorcia il conto solo per il materiale che ha prelevato, e la capacità
+// resta infinita.
 function schedDisponibilita(planId, lines) {
   const oggi = schedOggi();
   const lordo = new Map();
@@ -377,7 +378,9 @@ function schedDisponibilita(planId, lines) {
   const memo = new Map();
   return it => {
     if (memo.has(it.id)) return memo.get(it.id);
-    const serve = lordo.get(it.id) || 0;
+    // Il già prelevato dai documenti del piano non è più a magazzino e non va
+    // più cercato: vedi commitIndex.
+    const serve = Math.max(0, (lordo.get(it.id) || 0) - prelevatoPer(it.id, planId || null));
     const s = stockOf(it.id);
     const impegnato = commitsOn(it.id, planId || null).reduce((t, c) => t + c.qty, 0);
     let libero = s.onHand - impegnato;
@@ -609,7 +612,11 @@ function mrpBuyRow(entry, netMode, planId) {
   // vedi bestPriceRow(). Un €/kg accanto a un €/m non è un confronto.
   const bestPrice = best ? (rowUnitCost(it, best) || 0) : null;
   const impegni = commitsOn(it.id, planId || null);
-  const st = stockFor(it, entry.qty, impegni.reduce((s, c) => s + c.qty, 0));
+  // Quello che i documenti del piano hanno già prelevato è uscito
+  // dall'esistente: resta da coprire solo il resto del lordo, o il piano
+  // ricomprerebbe ciò che ha appena usato (vedi commitIndex).
+  const prelevato = prelevatoPer(it.id, planId || null);
+  const st = stockFor(it, Math.max(0, entry.qty - prelevato), impegni.reduce((s, c) => s + c.qty, 0));
   const qtyOrder = netMode ? st.net : entry.qty;
 
   // ─── Da chi si compra, e a quale listino ───
@@ -649,7 +656,7 @@ function mrpBuyRow(entry, netMode, planId) {
     // Impegnato dagli **altri** piani aperti, e il dettaglio di chi lo impegna:
     // un numero che toglie merce senza dire chi se l'è presa è un numero che non
     // si può contestare, e quindi neanche credere.
-    committed: st.committed, impegni, libero: st.libero,
+    committed: st.committed, impegni, libero: st.libero, prelevato,
     net: st.net, coperto: !!netMode && st.coperto, qtyOrder,
     supplierId,
     price, amount: price * qtyOrder,
@@ -2088,14 +2095,13 @@ function renderPlanEdit(id) {
         <button class="btn-outline" onclick="planToggleActive('${id}')" title="${p.active === false
           ? 'Chiuso: non impegna materiale. Riaprendolo tornerà a riservarsi quello che gli serve.'
           : 'Aperto: impegna a magazzino il materiale che gli serve, e gli altri piani non se lo contano. Chiudendolo quella quota torna libera.'}">${p.active === false ? ico('unlock', 'tinted', '') + ' Chiuso — riapri' : ico('lock', 'tinted', '') + ' Aperto — chiudi'}</button>
-        <button class="btn-outline" onclick="duplicatePlan('${id}')" title="Duplica il piano">${ico('copy', 'tinted', '')} Duplica</button>
-        <button class="btn-outline" style="color:var(--red);border-color:var(--red)" onclick="delPlan('${id}')" title="Elimina il piano">${ico('trash', 'tinted', '')} Elimina</button>
       </div>
       <div class="bom-toolbar-right">
-        <div class="export-pair export-pair-row">
-          <button class="export-btn-xls" onclick="exportMrpExcel('${id}')">${ico('sheet', 'tinted', '')} Esporta Excel</button>
-          <button class="export-btn-pdf" onclick="exportMrpPDF('${id}')">${ico('file', 'tinted', '')} Esporta PDF</button>
-        </div>
+        ${menuEsporta(`exportMrpExcel('${id}')`, `exportMrpPDF('${id}')`)}
+        ${menuAltro([
+          { label: 'Duplica il piano', icon: 'copy', onclick: `duplicatePlan('${id}')` },
+          { label: 'Elimina il piano', icon: 'trash', onclick: `delPlan('${id}')`, danger: true },
+        ])}
       </div>
     </div>
     <div class="modal-grid">
@@ -2325,10 +2331,7 @@ function planAgendaHtml(plan) {
   const ritardi = tutti.filter(e => e.stato === 'ritardo').length;
   const testa = `<div class="cycle-section-head"><h3>${ico('clock', 'tinted pill', '')} Programma</h3>
       <button class="btn-outline${agendaSoloDaFare ? ' active' : ''}" onclick="toggleAgendaDaFare()" title="Solo ciò che va ancora emesso: ordini, invii, lanci">${agendaSoloDaFare ? '☑' : '☐'} Solo da fare</button>
-      <div class="export-pair export-pair-row" style="margin-left:auto">
-        <button class="export-btn-xls" onclick="exportListXlsx(planAgendaExportSpec())">${ico('sheet', 'tinted', '')} Esporta Excel</button>
-        <button class="export-btn-pdf" onclick="exportListPdf(planAgendaExportSpec())">${ico('file', 'tinted', '')} Esporta PDF</button>
-      </div></div>
+      ${menuEsporta('exportListXlsx(planAgendaExportSpec())', 'exportListPdf(planAgendaExportSpec())', { cls: 'dd-export dd-push' })}</div>
     <p class="empty-text" style="text-align:left;padding:0 0 8px">Tutto quello che deve succedere perché le consegne reggano, <strong>in ordine di data</strong>: le date vengono dalla programmazione a ritroso sul calendario di fabbrica. «Fatto» vuol dire che il documento è stato emesso da questo piano.${ritardi ? ` <span class="mrp-warn">${ico('warning', 'tinted', '')} ${ritardi} ${ritardi === 1 ? 'voce è' : 'voci sono'} già oltre la data.</span>` : ''}</p>`;
   if (!ev.length) return `${testa}<div class="empty-text">${tutti.length ? 'Niente da fare: è tutto emesso.' : 'Nessuna data: le righe di piano non hanno una consegna.'}</div>`;
   let giorno = '';

@@ -22,7 +22,7 @@ La barra dei comandi ha **sette gruppi**, ordinati per processo (dalla 0.91.0); 
 |---|---|
 | 🏠 **Riepilogo** | Riepilogo · Cruscotto |
 | 🌳 **Tecnico** | Articoli di progetto · Articoli d'acquisto · Gestione DB · Visualizza DB · Cicli di lavorazione |
-| 📋 **Pianificazione** | Commesse · Fabbisogno · Carico centri |
+| 📋 **Pianificazione** | Commesse · Fabbisogno · Carico centri · Avanzamento |
 | 🛒 **Acquisti** | Richieste offerta · Ordini fornitore · Listino fornitori |
 | 🏭 **Produzione** | Ordini di produzione · Ordini di lavoro |
 | 📦 **Magazzino** | — |
@@ -91,12 +91,13 @@ Fino alla 0.90 i gruppi seguivano il tipo di dato (Anagrafica, Cicli di lavorazi
 
 Ogni persona ha un utente (*Gestione → 👥 Utenti*, riservata agli amministratori) con nome, email, ruolo, colore e stato attivo/sospeso. I ruoli limitano la **scrittura**: tutti vedono tutto.
 
-| Ruolo | Articoli | Distinte | Richieste e ordini | Gestione |
-|---|:--:|:--:|:--:|:--:|
-| Amministratore | ✔ | ✔ | ✔ | ✔ |
-| Ufficio acquisti | — | — | ✔ | — |
-| Progettazione | ✔ | ✔ | — | — |
-| Lettore | — | — | — | — |
+| Ruolo | Articoli | Distinte | Richieste e ordini | Ricevimenti, avanzamento, giacenze | Gestione |
+|---|:--:|:--:|:--:|:--:|:--:|
+| Amministratore | ✔ | ✔ | ✔ | ✔ | ✔ |
+| Ufficio acquisti | — | — | ✔ | ✔ | — |
+| Progettazione | ✔ | ✔ | — | solo giacenze | — |
+| Officina e magazzino | — | — | — | ✔ | — |
+| Lettore | — | — | — | — | — |
 
 Nelle sezioni non scrivibili compare un banner di sola lettura e i pulsanti di creazione ed eliminazione spariscono; ogni tentativo di modifica viene comunque fermato con un messaggio. La voce *Gestione* — e con essa il backup — è visibile ai soli amministratori. Deve restare **almeno un amministratore attivo**: l'app impedisce di declassare, sospendere o eliminare l'ultimo, e di agire su se stessi.
 
@@ -221,7 +222,7 @@ Il motivo è lo storico: finché lo stesso dato si poteva scrivere in due posti,
 - `index.html` — struttura, navigazione, barre filtri delle due anagrafiche, caricamento degli script.
 - `vendor/` — le librerie di export (SheetJS per Excel, jsPDF per i PDF), tenute nel repo invece che su un CDN. Versioni, origine e come si aggiornano: `vendor/LEGGIMI.md`.
 - `theme.js` — tema chiaro/scuro/automatico: scrive `data-theme` sull'elemento radice, che è tutto ciò che `style.css` legge. La preferenza sta nel browser di chi lavora, non nel database.
-- `store.js` — layer dati: schema, migrazioni versionate, `Store` (API repository) su IndexedDB o localStorage, hashing delle password e autore delle modifiche.
+- `store.js` — layer dati: schema, migrazioni versionate, `Store` (API repository) su IndexedDB o localStorage, hashing delle password, autore delle modifiche e storico di cosa cambia a ogni salvataggio.
 - Il codice dell'app, diviso in **classic script caricati in sequenza** da `index.html` (nessun modulo, nessun build: la pagina si apre anche con un doppio click). Lo scope globale è condiviso, quindi restano un solo insieme di funzioni e un solo stato:
 
 | File | Contenuto |
@@ -248,9 +249,10 @@ Il motivo è lo storico: finché lo stesso dato si poteva scrivere in due posti,
 | `allegati.js` | allegati degli articoli: i documenti d'archivio e i loro collegamenti ai codici; i byte dei vecchi file in IndexedDB |
 | `archivio.js` | la cartella dei PDF: scelta, permesso, lettura, copia e verifica. Impostazione **locale**, un PC alla volta |
 | `export-lists.js` | export PDF ed Excel degli elenchi: una specifica per vista, due traduttori |
-| `views-item.js` | scheda articolo di sola lettura e codice cliccabile |
+| `views-item.js` | scheda articolo di sola lettura e codice cliccabile; come si legge lo storico delle modifiche |
 | `views-docs.js` | richieste di offerta e ordini |
 | `views-prod.js` | ordini di produzione: congelamento del ciclo, successione delle fasi, avanzamento e i due movimenti di magazzino |
+| `views-avanzamento.js` | Pianificazione → Avanzamento: il Gantt del piano con quanto è stato fatto, letto da ordini, ODL e ODP; in sola lettura |
 | `views-manage.js` | gestione (utenti, anagrafiche di servizio, impostazioni) |
 | `cloud-map.js` | traduzione fra la forma annidata locale e quella normalizzata del futuro database condiviso. Funzioni pure, **nessun codice di rete**: l'app resta locale |
 | `import-catalog.js` | articoli ⇄ Excel nei due file Acquisti e Progetto: colonne per tipo, foglio Liste, verifica senza importare |
@@ -293,7 +295,7 @@ Lo storico completo delle versioni è in [CHANGELOG.md](CHANGELOG.md).
 
 ## Note
 
-I dati risiedono nel browser. Per trasferirli su un altro PC usare **Gestione → Backup → Esporta/Importa JSON**.
+I dati risiedono nel browser. Per trasferirli su un altro PC usare **Gestione → Backup → Esporta/Importa JSON**. Dalla 0.95.0 il **backup automatico** (stessa scheda) salva da solo una copia al giorno in una cartella scelta, tenendo gli ultimi 14 giorni: meglio quella di OneDrive, Dropbox o un disco di rete (Chrome o Edge, da `https` o `localhost`).
 
 **Una scheda per volta.** L'archivio è uno solo e ogni salvataggio lo riscrive per intero: due finestre di Bomtrack aperte insieme lavorano sulla stessa cartella senza vedersi. Dalla 0.76.0 non è più un problema silenzioso — l'archivio porta un contatore di revisione, e la scheda che sta per salvare sopra il lavoro di un'altra si ferma e lo dice, offrendo di ricaricare o di tenere la propria versione, con l'export del backup a portata di mano. Quello che l'app **non** fa è fondere le due versioni: per farlo servirebbe sapere, riga per riga, quale delle due vale. Se si lavora abitualmente in due finestre, conviene tenerne aperta una sola per le modifiche.
 

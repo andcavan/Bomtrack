@@ -133,6 +133,55 @@ function openManual() {
 }
 
 // ═══════════════════════════════════════════════════════════
+//  MENU A TENDINA DELLE TESTATE (0.94.0)
+// ═══════════════════════════════════════════════════════════
+// Le testate dei documenti arrivavano a sette pulsanti dello stesso peso:
+// Chiudi, Aperto, Duplica, Elimina, Esporta Excel, Esporta PDF… e il gesto
+// principale non si distingueva dal resto. Ora i comandi di contorno stanno in
+// due menu: «Esporta ▾» (Excel e PDF) e «⋯» (duplica, annulla, elimina).
+// Elimina in un menu è anche una protezione: non sta più a un clic di
+// distanza da Salva.
+//
+// <details> e non un menu fatto a mano: si apre con Invio e Spazio, si legge
+// con un lettore di schermo, e funziona anche quando uno script si rompe.
+// Quello che <details> non fa da solo (chiudersi con un clic fuori, con Esc o
+// scelta una voce) lo fa l'ascoltatore qui sotto.
+//   voce = { label, onclick, icon?, title?, danger?, disabled?, cls? }
+function tendina(sommario, voci, opts) {
+  const o = opts || {};
+  const items = (voci || []).filter(Boolean).map(v => `<button type="button" class="dd-item${v.danger ? ' danger' : ''}${v.cls ? ' ' + v.cls : ''}" role="menuitem"
+      onclick="${v.onclick}"${v.disabled ? ' disabled' : ''}${v.title ? ` title="${esc(v.title)}"` : ''}>${v.icon ? ico(v.icon, 'tinted', '') + ' ' : ''}${esc(v.label)}</button>`).join('');
+  if (!items) return '';
+  return `<details class="dd${o.cls ? ' ' + o.cls : ''}"><summary class="btn-outline${o.icona ? ' btn-icon' : ''}"${o.title ? ` title="${esc(o.title)}" aria-label="${esc(o.title)}"` : ''}>${sommario}</summary>
+    <div class="dd-menu" role="menu">${items}</div></details>`;
+}
+// «Esporta ▾» con Excel e PDF: gli `onclick` sono quelli dei pulsanti di prima.
+function menuEsporta(xls, pdf, opts) {
+  return tendina(`${ico('download', 'tinted', '')} Esporta <span class="dd-caret" aria-hidden="true">▾</span>`, [
+    { label: 'Excel', icon: 'sheet', onclick: xls, cls: 'dd-xls' },
+    { label: 'PDF', icon: 'file', onclick: pdf, cls: 'dd-pdf' },
+  ], Object.assign({ cls: 'dd-export' }, opts || {}));
+}
+// «⋯» con i comandi di contorno di un documento.
+function menuAltro(voci) {
+  return tendina(ico('more', 'tinted', ''), voci, { icona: true, title: 'Altri comandi', cls: 'dd-more' });
+}
+function tendineChiudi(tranne) {
+  if (typeof document === 'undefined') return;
+  document.querySelectorAll('details.dd[open]').forEach(d => { if (d !== tranne) d.removeAttribute('open'); });
+}
+if (typeof window !== 'undefined' && typeof document !== 'undefined' && document.addEventListener) {
+  document.addEventListener('click', e => {
+    const t = e.target && e.target.closest ? e.target : null;
+    if (!t) return;
+    const dd = t.closest('details.dd');
+    if (dd && t.closest('.dd-item')) { dd.removeAttribute('open'); return; }
+    tendineChiudi(dd);
+  });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') tendineChiudi(null); });
+}
+
+// ═══════════════════════════════════════════════════════════
 //  NAVIGAZIONE
 // ═══════════════════════════════════════════════════════════
 // Due livelli: i gruppi in barra, le loro voci su una seconda riga che
@@ -168,7 +217,9 @@ const NAV = [
   { id: 'plan', icon: 'clipboard', label: 'Pianificazione', views: [
     { id: 'jobs', label: 'Commesse' },
     { id: 'mrp', label: 'Fabbisogno' },
-    { id: 'load', label: 'Carico centri' }] },
+    { id: 'load', label: 'Carico centri' },
+    // Il Gantt del piano con quello che è successo davvero (0.97.0).
+    { id: 'avz', label: 'Avanzamento' }] },
   // Il lavoro di chi compra, nell'ordine in cui lo fa: chiedere, ordinare, e il
   // listino dove i prezzi restano.
   { id: 'buying', icon: 'cart', label: 'Acquisti', views: [
@@ -331,7 +382,7 @@ function setView(v) {
   panel.classList.add('active');
   // Sola lettura per il ruolo: la UI nasconde le azioni, le guardie bloccano comunque
   const area = VIEW_AREA[v];
-  panel.classList.toggle('view-readonly', !!area && !canWrite(area));
+  panel.classList.toggle('view-readonly', !!area && !canWrite(area) && !(SHOP_VIEWS.has(v) && canWrite('shop')));
   renderNav();
   if (v === 'bom') renderBom();
   else if (v === 'buy' || v === 'design') renderCatalog(v);
@@ -347,6 +398,7 @@ function setView(v) {
   else if (v === 'odl') renderOdl();
   else if (v === 'odp') renderOdp();
   else if (v === 'load') renderLoad();
+  else if (v === 'avz') renderAvanzamento();
   else if (v === 'pricelist') renderPriceListView();
   else if (v === 'manage') renderManage();
   showReadOnlyBanner(panel, area);

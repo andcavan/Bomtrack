@@ -197,10 +197,12 @@
   <div id="view-buy" class="view-panel">
     <div class="bom-toolbar">
       <h2 class="section-title"><svg class="ico ic-cart tinted pill" aria-hidden="true"><use href="#ic-cart"></use></svg> Commerciali &amp; Materie prime</h2>
-      <div class="export-pair">
-        <button class="export-btn-xls" onclick="exportListXlsx(catalogExportSpec('buy'))"><svg class="ico ic-sheet tinted" aria-hidden="true"><use href="#ic-sheet"></use></svg> Esporta Excel</button>
-        <button class="export-btn-pdf" onclick="exportListPdf(catalogExportSpec('buy'))"><svg class="ico ic-file tinted" aria-hidden="true"><use href="#ic-file"></use></svg> Esporta PDF</button>
-      </div>
+      <!-- «Esporta ▾»: lo stesso markup di menuEsporta() in shell.js -->
+      <details class="dd dd-export"><summary class="btn-outline"><svg class="ico ic-download tinted" aria-hidden="true"><use href="#ic-download"></use></svg> Esporta <span class="dd-caret" aria-hidden="true">▾</span></summary>
+        <div class="dd-menu" role="menu">
+          <button type="button" class="dd-item dd-xls" role="menuitem" onclick="exportListXlsx(catalogExportSpec('buy'))"><svg class="ico ic-sheet tinted" aria-hidden="true"><use href="#ic-sheet"></use></svg> Excel</button>
+          <button type="button" class="dd-item dd-pdf" role="menuitem" onclick="exportListPdf(catalogExportSpec('buy'))"><svg class="ico ic-file tinted" aria-hidden="true"><use href="#ic-file"></use></svg> PDF</button>
+        </div></details>
     </div>
     <div class="catalog-filters">
       <button class="btn-outline" id="filt-toggle-buy" onclick="filtToggle()">Filtri</button>
@@ -233,10 +235,12 @@
   <div id="view-design" class="view-panel">
     <div class="bom-toolbar">
       <h2 class="section-title"><svg class="ico ic-tree tinted pill" aria-hidden="true"><use href="#ic-tree"></use></svg> Macchine, Gruppi &amp; Parti</h2>
-      <div class="export-pair">
-        <button class="export-btn-xls" onclick="exportListXlsx(catalogExportSpec('design'))"><svg class="ico ic-sheet tinted" aria-hidden="true"><use href="#ic-sheet"></use></svg> Esporta Excel</button>
-        <button class="export-btn-pdf" onclick="exportListPdf(catalogExportSpec('design'))"><svg class="ico ic-file tinted" aria-hidden="true"><use href="#ic-file"></use></svg> Esporta PDF</button>
-      </div>
+      <!-- «Esporta ▾»: lo stesso markup di menuEsporta() in shell.js -->
+      <details class="dd dd-export"><summary class="btn-outline"><svg class="ico ic-download tinted" aria-hidden="true"><use href="#ic-download"></use></svg> Esporta <span class="dd-caret" aria-hidden="true">▾</span></summary>
+        <div class="dd-menu" role="menu">
+          <button type="button" class="dd-item dd-xls" role="menuitem" onclick="exportListXlsx(catalogExportSpec('design'))"><svg class="ico ic-sheet tinted" aria-hidden="true"><use href="#ic-sheet"></use></svg> Excel</button>
+          <button type="button" class="dd-item dd-pdf" role="menuitem" onclick="exportListPdf(catalogExportSpec('design'))"><svg class="ico ic-file tinted" aria-hidden="true"><use href="#ic-file"></use></svg> PDF</button>
+        </div></details>
     </div>
     <div class="catalog-filters">
       <button class="btn-outline" id="filt-toggle-design" onclick="filtToggle()">Filtri</button>
@@ -277,10 +281,13 @@
     <div class="bom-toolbar">
       <h2 class="section-title"><svg class="ico ic-package tinted pill" aria-hidden="true"><use href="#ic-package"></use></svg> Magazzino</h2>
       <span id="stk-cl-btn"></span>
-      <div class="export-pair">
-        <button class="export-btn-xls" onclick="exportListXlsx(stockExportSpec())"><svg class="ico ic-sheet tinted" aria-hidden="true"><use href="#ic-sheet"></use></svg> Esporta Excel</button>
-        <button class="export-btn-pdf" onclick="exportListPdf(stockExportSpec())"><svg class="ico ic-file tinted" aria-hidden="true"><use href="#ic-file"></use></svg> Esporta PDF</button>
-      </div>
+      <span id="stk-riordino-btn"></span>
+      <!-- «Esporta ▾»: lo stesso markup di menuEsporta() in shell.js -->
+      <details class="dd dd-export"><summary class="btn-outline"><svg class="ico ic-download tinted" aria-hidden="true"><use href="#ic-download"></use></svg> Esporta <span class="dd-caret" aria-hidden="true">▾</span></summary>
+        <div class="dd-menu" role="menu">
+          <button type="button" class="dd-item dd-xls" role="menuitem" onclick="exportListXlsx(stockExportSpec())"><svg class="ico ic-sheet tinted" aria-hidden="true"><use href="#ic-sheet"></use></svg> Excel</button>
+          <button type="button" class="dd-item dd-pdf" role="menuitem" onclick="exportListPdf(stockExportSpec())"><svg class="ico ic-file tinted" aria-hidden="true"><use href="#ic-file"></use></svg> PDF</button>
+        </div></details>
     </div>
     <div class="catalog-filters">
       <button class="btn-outline" id="filt-toggle-stock" onclick="filtToggle()">Filtri</button>
@@ -327,10 +334,12 @@
   <div id="view-cycles" class="view-panel">
     <div class="bom-toolbar">
       <h2 class="section-title"><svg class="ico ic-wrench tinted pill" aria-hidden="true"><use href="#ic-wrench"></use></svg> Cicli di lavorazione</h2>
-      <div class="export-pair">
-        <button class="export-btn-xls" onclick="exportListXlsx(cycleExportSpec())"><svg class="ico ic-sheet tinted" aria-hidden="true"><use href="#ic-sheet"></use></svg> Esporta Excel</button>
-        <button class="export-btn-pdf" onclick="exportListPdf(cycleExportSpec())"><svg class="ico ic-file tinted" aria-hidden="true"><use href="#ic-file"></use></svg> Esporta PDF</button>
-      </div>
+      <!-- «Esporta ▾»: lo stesso markup di menuEsporta() in shell.js -->
+      <details class="dd dd-export"><summary class="btn-outline"><svg class="ico ic-download tinted" aria-hidden="true"><use href="#ic-download"></use></svg> Esporta <span class="dd-caret" aria-hidden="true">▾</span></summary>
+        <div class="dd-menu" role="menu">
+          <button type="button" class="dd-item dd-xls" role="menuitem" onclick="exportListXlsx(cycleExportSpec())"><svg class="ico ic-sheet tinted" aria-hidden="true"><use href="#ic-sheet"></use></svg> Excel</button>
+          <button type="button" class="dd-item dd-pdf" role="menuitem" onclick="exportListPdf(cycleExportSpec())"><svg class="ico ic-file tinted" aria-hidden="true"><use href="#ic-file"></use></svg> PDF</button>
+        </div></details>
     </div>
     <div class="catalog-filters">
       <button class="btn-outline" id="filt-toggle-cycles" onclick="filtToggle()">Filtri</button>
@@ -363,10 +372,12 @@
         <label>Macchina / Prodotto</label>
         <select id="report-select" onchange="renderReport()"></select>
       </div>
-      <div class="export-pair">
-        <button class="export-btn-xls" onclick="exportBomExcel()"><svg class="ico ic-sheet tinted" aria-hidden="true"><use href="#ic-sheet"></use></svg> Esporta Excel</button>
-        <button class="export-btn-pdf" onclick="exportBomPDF()"><svg class="ico ic-file tinted" aria-hidden="true"><use href="#ic-file"></use></svg> Esporta PDF</button>
-      </div>
+      <!-- «Esporta ▾»: lo stesso markup di menuEsporta() in shell.js -->
+      <details class="dd dd-export"><summary class="btn-outline"><svg class="ico ic-download tinted" aria-hidden="true"><use href="#ic-download"></use></svg> Esporta <span class="dd-caret" aria-hidden="true">▾</span></summary>
+        <div class="dd-menu" role="menu">
+          <button type="button" class="dd-item dd-xls" role="menuitem" onclick="exportBomExcel()"><svg class="ico ic-sheet tinted" aria-hidden="true"><use href="#ic-sheet"></use></svg> Excel</button>
+          <button type="button" class="dd-item dd-pdf" role="menuitem" onclick="exportBomPDF()"><svg class="ico ic-file tinted" aria-hidden="true"><use href="#ic-file"></use></svg> PDF</button>
+        </div></details>
     </div>
     <div id="report-content"></div>
   </div>
@@ -382,6 +393,7 @@
 
   <!-- CARICO DEI CENTRI DI LAVORO (prospetto derivato, sola lettura) -->
   <div id="view-load" class="view-panel"></div>
+  <div id="view-avz" class="view-panel"></div>
 
   <!-- LISTINO FORNITORI — tutte le quotazioni, riempita da renderPriceListView() -->
   <div id="view-pricelist" class="view-panel"></div>
@@ -456,6 +468,7 @@
 <script src="views-item.js"></script>
 <script src="views-docs.js"></script>
 <script src="views-prod.js"></script>
+<script src="views-avanzamento.js"></script>
 <script src="views-manage.js"></script>
 <!-- PDF ed Excel degli elenchi: legge le specifiche che le viste descrivono,
      quindi va dopo di loro. -->

@@ -419,3 +419,109 @@ function itemInfoRevisioni(it) {
     }).join('')}</div>
     <p class="empty-text" style="text-align:left;padding:6px 0 0">In lavorazione: <strong>${esc(itemRev(it))}</strong>. Le revisioni rilasciate sono fotografie e non cambiano più.</p>`);
 }
+
+// ═══════════════════════════════════════════════════════════
+//  Storico delle modifiche: come si legge
+// ═══════════════════════════════════════════════════════════
+// Il registro lo scrive store.js a ogni salvataggio (storicoRegistra); qui si
+// disegna. I nomi dei campi nel registro sono quelli dei dati (`supplierId`,
+// `minStock`): a chi legge si mostrano in italiano, e gli id si risolvono nel
+// nome **di adesso** — un fornitore rinominato si legge col nome nuovo, che è
+// quello che chi cerca ha in testa.
+const STORICO_COLL = {
+  items: 'Articolo', suppliers: 'Fornitore', customers: 'Cliente', rfqs: 'Richiesta d\'offerta',
+  orders: 'Ordine fornitore', workOrders: 'Ordine di lavoro', plans: 'Piano di fabbisogno',
+  prodOrders: 'Ordine di produzione', jobs: 'Commessa', users: 'Utente', families: 'Famiglia',
+  workCenters: 'Centro di lavoro', reminders: 'Promemoria', attachments: 'Allegato',
+  attachmentDocs: 'Documento d\'archivio', productions: 'Produzione', settings: 'Impostazioni',
+};
+const STORICO_CAMPI = {
+  code: 'Codice', name: 'Nome', description: 'Descrizione', type: 'Tipo', uom: 'U.M.',
+  price: 'Prezzo', cost: 'Costo', supplierId: 'Fornitore', activePriceId: 'Prezzo in uso',
+  priceList: 'Listino', components: 'Componenti', cycle: 'Ciclo', operations: 'Lavorazioni',
+  lines: 'Righe', status: 'Stato', qty: 'Quantità', dueDate: 'Consegna', date: 'Data',
+  notes: 'Note', notesInternal: 'Note interne', minStock: 'Scorta minima', familyId: 'Famiglia',
+  active: 'Attivo', title: 'Titolo', customer: 'Cliente', customerId: 'Cliente', role: 'Ruolo',
+  email: 'Email', passwordHash: 'Password', transport: 'Trasporto', payment: 'Pagamento',
+  number: 'Numero', leadDays: 'Giorni di consegna', weight: 'Peso', workCenterId: 'Centro di lavoro',
+  itemId: 'Articolo', jobId: 'Commessa', planId: 'Piano', makeOrBuy: 'Fare o comprare',
+};
+const STORICO_RIF = { supplierId: 'suppliers', customerId: 'customers', familyId: 'families',
+  workCenterId: 'workCenters', itemId: 'items', jobId: 'jobs', planId: 'plans' };
+function _storicoNomeRif(k, v) {
+  const c = STORICO_RIF[k];
+  if (!c || !v) return v;
+  const r = (db[c] || []).find(x => x && x.id === v);
+  return r ? storicoEtichetta(r) : v;
+}
+function _storicoQuando(t) {
+  const d = new Date(t);
+  return isNaN(d) ? '' : d.toLocaleDateString('it-IT') + ' ' + String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+}
+function _storicoChi(u) {
+  const x = u ? getUser(u) : null;
+  return x ? x.name || x.username || x.email : (u ? 'utente rimosso' : '(nessun utente)');
+}
+const STORICO_OP = { n: 'ha creato', m: 'ha modificato', x: 'ha eliminato', b: 'modifiche in blocco su' };
+// `conRecord`: nel registro generale si dice anche *che cosa*; nella scheda di
+// un record si sa già.
+function storicoVoceHtml(e, conRecord) {
+  const coll = STORICO_COLL[e.c] || e.c;
+  const cosa = e.op === 'b' ? `${coll.toLowerCase()}: ${esc(e.n || '')}`
+    : (conRecord ? `${coll.toLowerCase()} <strong>${esc(e.n || '')}</strong>` : '');
+  const righe = (e.d || []).map(x => {
+    const a = _storicoNomeRif(x.k, x.a), b = _storicoNomeRif(x.k, x.b);
+    return `<li><span class="storico-campo">${esc(STORICO_CAMPI[x.k] || x.k)}</span>
+      ${a !== '' ? `<span class="storico-prima">${esc(a)}</span> → ` : ''}${b !== '' ? esc(b) : '<em>(vuoto)</em>'}${x.r ? ` <span class="storico-prima">(${esc(x.r)})</span>` : ''}</li>`;
+  }).join('');
+  return `<div class="storico-voce">
+    <div class="storico-testa"><span class="storico-quando">${esc(_storicoQuando(e.t))}</span> <strong>${esc(_storicoChi(e.u))}</strong> ${STORICO_OP[e.op] || ''} ${cosa}</div>
+    ${righe ? `<ul class="storico-campi">${righe}</ul>` : ''}</div>`;
+}
+// Le modifiche di un record, dalla più recente: la scheda «Storico» del
+// pannello laterale.
+function storicoBody(coll, id) {
+  const voci = storicoDi(coll, id);
+  if (!voci.length) return '<div class="empty-text">Nessuna modifica registrata. Lo storico conta dalla 0.95.0: le modifiche precedenti non sono state annotate.</div>';
+  return `<div class="storico">${voci.map(e => storicoVoceHtml(e, false)).join('')}</div>`;
+}
+// Il registro intero, nella scheda Backup: le ultime STORICO_MOSTRA voci che
+// passano il filtro. Il filtro cerca in tutto quello che si legge.
+const STORICO_MOSTRA = 200;
+let storicoFiltro = '';
+function storicoVociFiltrate(q) {
+  const tutte = Array.isArray(db.storico) ? db.storico : [];
+  const f = String(q || '').trim().toLowerCase();
+  const out = [];
+  for (let i = tutte.length - 1; i >= 0 && out.length < STORICO_MOSTRA; i--) {
+    const e = tutte[i];
+    if (f) {
+      const testo = [e.n, _storicoChi(e.u), STORICO_COLL[e.c] || e.c, _storicoQuando(e.t)]
+        .concat((e.d || []).map(x => [STORICO_CAMPI[x.k] || x.k, _storicoNomeRif(x.k, x.a), _storicoNomeRif(x.k, x.b)].join(' ')))
+        .join(' ').toLowerCase();
+      if (testo.indexOf(f) < 0) continue;
+    }
+    out.push(e);
+  }
+  return out;
+}
+function storicoElencoHtml() {
+  const voci = storicoVociFiltrate(storicoFiltro);
+  if (!voci.length) return `<div class="empty-text">${storicoFiltro ? 'Nessuna modifica corrisponde alla ricerca.' : 'Nessuna modifica registrata finora.'}</div>`;
+  return voci.map(e => storicoVoceHtml(e, true)).join('');
+}
+function storicoFiltra(q) {
+  storicoFiltro = q;
+  const el = document.getElementById('storico-elenco');
+  if (el) el.innerHTML = storicoElencoHtml();
+}
+function renderStorico() {
+  const n = Array.isArray(db.storico) ? db.storico.length : 0;
+  return `<div class="cloud-section" style="margin-top:16px">
+    <div style="flex:1">
+      <strong>${ico('clock', 'tinted', '')} Storico delle modifiche</strong>
+      <p>Chi ha cambiato cosa, e da quale valore a quale: articoli, documenti, anagrafiche, utenti e impostazioni. Si annota a ogni salvataggio, viaggia nel backup e tiene le ultime ${STORICO_MAX} modifiche (ora ${n}). Un import o una generazione di documenti che tocca molti record diventa una voce sola. La modifica di un articolo si vede anche nel pannello laterale, scheda <em>Storico</em>.</p>
+      <input type="text" class="search" placeholder="Cerca per codice, numero, utente, campo…" value="${esc(storicoFiltro)}" oninput="storicoFiltra(this.value)" aria-label="Cerca nello storico" style="margin:8px 0;width:100%;max-width:420px">
+      <div id="storico-elenco" class="storico">${storicoElencoHtml()}</div>
+    </div></div>`;
+}

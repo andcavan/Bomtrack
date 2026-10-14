@@ -109,6 +109,7 @@ function inspSchedeArticolo(it) {
     { id: 'scheda', testo: 'Scheda', corpo: () => itemInfoBody(it) },
     hasPriceList(it) ? { id: 'listino', testo: 'Listino', corpo: () => priceListBody(it.id) } : null,
     { id: 'usato', testo: 'Dove è usato', corpo: () => usageBody(it.id) },
+    { id: 'storico', testo: 'Storico', corpo: () => storicoBody('items', it.id) },
   ].filter(Boolean);
 }
 

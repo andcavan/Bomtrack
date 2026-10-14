@@ -15,7 +15,7 @@ const ROOT = path.join(__dirname, '..');
 // condividono lo scope globale, esattamente come i <script> della pagina.
 const SRC = ['icons.js', 'theme.js', 'store.js', 'cloud-map.js', 'core.js', 'auth.js', 'costing.js', 'calendario.js', 'shell.js', 'worklist.js',
   'views-bom.js', 'views-rev.js', 'views-stock.js', 'views-catalog.js', 'views-report.js', 'views-jobs.js', 'views-home.js', 'views-dash.js', 'produzione.js', 'views-mrp.js', 'allegati.js', 'archivio.js', 'views-item.js',
-  'views-docs.js', 'views-prod.js', 'views-manage.js', 'export-lists.js', 'import-catalog.js', 'columns.js', 'filters.js', 'inspector.js', 'import-export.js'];
+  'views-docs.js', 'views-prod.js', 'views-avanzamento.js', 'views-manage.js', 'export-lists.js', 'import-catalog.js', 'columns.js', 'filters.js', 'inspector.js', 'import-export.js'];
 
 // localStorage finto. `quotaBytes` opzionale: oltre soglia lancia lo stesso
 // errore dei browser, per poter testare la gestione dello spazio esaurito.
@@ -252,6 +252,12 @@ function loadApp(opts) {
           if (files[p] == null && !(opt && opt.create)) return Promise.reject(new Error('NotFound'));
           return Promise.resolve(fileH(p));
         },
+        removeEntry(sub) {
+          const p = (prefisso || '') + sub;
+          if (files[p] == null) return Promise.reject(new Error('NotFound'));
+          delete files[p];
+          return Promise.resolve();
+        },
       };
       return h;
     };
@@ -262,7 +268,7 @@ function loadApp(opts) {
         lastModified: 0, _testo: files[path],
       }),
       createWritable: () => Promise.resolve({
-        write(b) { files[path] = (b && (b._testo || b.name)) || ''; return Promise.resolve(); },
+        write(b) { files[path] = typeof b === 'string' ? b : (b && (b._testo || b.name)) || ''; return Promise.resolve(); },
         close() { return Promise.resolve(); },
       }),
     });
@@ -310,6 +316,20 @@ function loadApp(opts) {
       if (o.collega !== false) {
         tabelle.config.set('cartella', h);
         storage.setItem('bomtrack_archivio_nome', h.name);
+      }
+      return h;
+    },
+    // Collega una cartella dei backup automatici finta. `files` resta vivo: il
+    // test lo legge dopo per vedere cosa l'app ha scritto e cosa ha tolto.
+    cartellaBackup(files, opt) {
+      const o = opt || {};
+      const h = sandbox.__cartella(o.nome || 'Backup', files, o.permesso);
+      sandbox.showDirectoryPicker = () => (o.rifiuta
+        ? Promise.reject(Object.assign(new Error('annullato'), { name: 'AbortError' }))
+        : Promise.resolve(h));
+      if (o.collega !== false) {
+        tabelle.config.set('cartellaBackup', h);
+        storage.setItem('bomtrack_backup_cartella_nome', h.name);
       }
       return h;
     },

@@ -339,15 +339,16 @@ describe('Postgres: permessi per ruolo (D6)', () => {
   const a = app(dbCompleto());
   const righe = ev(a, 'dbVersoCloud(db)');
   const ADMIN = righe.profiles[0].id;
-  const ACQ = U(601), PROG = U(602), LETT = U(603), SOSP = U(604);
+  const ACQ = U(601), PROG = U(602), LETT = U(603), SOSP = U(604), OFF = U(605);
   const conDb = fn => () => {
     const d = pg.nuovoDatabase();
     try {
-      d.utenti([ADMIN, ACQ, PROG, LETT, SOSP]);
+      d.utenti([ADMIN, ACQ, PROG, LETT, SOSP, OFF]);
       d.push({ upsert: righe });   // da superutente: è il caricamento iniziale
       d.sql(`insert into profiles (id, name, role, active) values
         ('${ACQ}', 'Bruno', 'acquisti', true), ('${PROG}', 'Carla', 'progettazione', true),
-        ('${LETT}', 'Dario', 'lettore', true), ('${SOSP}', 'Elena', 'acquisti', false);`);
+        ('${LETT}', 'Dario', 'lettore', true), ('${SOSP}', 'Elena', 'acquisti', false),
+        ('${OFF}', 'Franco', 'officina', true);`);
       fn(d);
     } finally { d.chiudi(); }
   };
@@ -374,6 +375,14 @@ describe('Postgres: permessi per ruolo (D6)', () => {
     const rc = Object.assign({}, righe.order_receipts[0], { id: U(700), qty: 5 });
     const mv = Object.assign({}, righe.stock_movements[0], { id: U(701) });
     assert.deepEqual(d.come(ACQ).push({ upsert: { order_receipts: [rc], stock_movements: [mv] } }).rejected, []);
+  }));
+
+  it('l\'officina registra ricevimenti, movimenti e avanzamento, ma non scrive ordini nuovi né articoli', conDb(d => {
+    const rc = Object.assign({}, righe.order_receipts[0], { id: U(710), qty: 5 });
+    const mv = Object.assign({}, righe.stock_movements[0], { id: U(711) });
+    assert.deepEqual(d.come(OFF).push({ upsert: { order_receipts: [rc], stock_movements: [mv] } }).rejected, []);
+    assert.throws(() => d.come(OFF).push({ upsert: { items: [articolo()] } }), /il ruolo officina non scrive: items/);
+    assert.throws(() => d.come(OFF).push({ upsert: { rfqs: [dopo(righe.rfqs[0], { title: 'x' })] } }), /il ruolo officina non scrive: rfqs/);
   }));
 
   it('una cancellazione vietata si ferma, invece di lasciare una lapide senza cancellare', conDb(d => {
@@ -407,7 +416,7 @@ describe('Postgres: permessi per ruolo (D6)', () => {
   }));
 
   it('i registri si leggono e non si scrivono', conDb(d => {
-    assert.equal(d.come(LETT).sql('select count(*) from role_areas'), '10');
+    assert.equal(d.come(LETT).sql('select count(*) from role_areas'), String(ev(app(makeDb({})), 'Object.values(ROLE_WRITE).flat().length')));
     assert.throws(() => d.come(ADMIN).sql(`insert into role_areas values ('lettore', 'docs')`), /row-level security/);
   }));
 });

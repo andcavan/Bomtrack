@@ -1,6 +1,6 @@
 # Bomtrack — Manuale d'uso
 
-**Versione dell'app documentata: 0.92.0**
+**Versione dell'app documentata: 0.98.1**
 
 📖 **[Leggilo come pagina web](https://claude.ai/code/artifact/726a0963-2db0-4947-999b-d7b5beb91a0b)** — stesso testo, con indice laterale, filtro dei capitoli e tema chiaro/scuro. Comodo da tenere aperto di fianco all'app.
 
@@ -126,7 +126,8 @@ Vale la pena dirlo subito, perché evita di cercare funzioni che non ci sono.
 
 > ⚠️ **I dati risiedono in questo browser, su questo PC.** Non c'è un server. Svuotare i dati del
 > sito, cambiare browser o cambiare PC significa non trovare più l'archivio. Fai backup regolari:
-> *Gestione → Backup → Esporta JSON*. È l'unica cosa di questo manuale che, se la salti, ti costa
+> *Gestione → Backup → Esporta JSON*, o meglio ancora attiva il **backup automatico** in una
+> cartella (→ [cap. 30](#30-backup-e-manutenzione)). È l'unica cosa di questo manuale che, se la salti, ti costa
 > davvero cara — e resterà vera anche il giorno in cui l'archivio sarà condiviso
 > (→ [cap. 31](#31-quando-larchivio-è-condiviso-supabase)).
 
@@ -161,7 +162,7 @@ la sessione aperta fino a **Esci**; quanto duri lo decide l'amministratore in
 
 ### La versione
 
-Il numero di versione si legge **accanto al logo, in alto a sinistra** (es. `v0.92.0`).
+Il numero di versione si legge **accanto al logo, in alto a sinistra** (es. `v0.94.0`).
 Corrisponde alla voce in cima al changelog: serve quando si segnala un problema.
 
 ### Dove sta questo manuale
@@ -223,7 +224,7 @@ ricorda l'ultima voce usata**: tornando su *Acquisti* si riapre dove si era rima
 |---|---|
 | 🏠 **Riepilogo** | Riepilogo · Cruscotto |
 | 🌳 **Tecnico** | Articoli di progetto · Articoli d'acquisto · Gestione DB · Visualizza DB · Cicli di lavorazione |
-| 📋 **Pianificazione** | Commesse · Fabbisogno · Carico centri |
+| 📋 **Pianificazione** | Commesse · Fabbisogno · Carico centri · Avanzamento |
 | 🛒 **Acquisti** | Richieste offerta · Ordini fornitore · Listino fornitori |
 | 🏭 **Produzione** | Ordini di produzione · Ordini di lavoro |
 | 📦 **Magazzino** | *(voce unica)* |
@@ -235,6 +236,40 @@ Fino alla 0.90 i gruppi erano divisi per tipo di dato (*Anagrafica*, *Cicli di l
 La vista aperta finisce **nell'indirizzo del browser** (`…index.html#mrp`). Ne segue che i tasti
 *Indietro* e *Avanti* del browser funzionano, e che un indirizzo si può salvare tra i preferiti o
 mandare a un collega che ha la stessa app.
+
+### Esporta ▾ e ⋯
+
+Dalla 0.94.0 i comandi di contorno non stanno più in fila nella testata. **Esporta ▾** apre un
+menu con *Excel* e *PDF*: dove questo manuale dice «Esporta Excel» o «Esporta PDF», sono le due
+voci di quel menu. Il pulsante **⋯** raccoglie i comandi del documento che non sono il lavoro di
+tutti i giorni: *Duplica*, *Annulla*, *Crea ordine da questa richiesta* e **Elimina**, in rosso.
+Elimina sta lì apposta: in vista, accanto a *Salva*, era a un clic di distanza da un errore. I
+menu si chiudono con un clic fuori, con `Esc` o scegliendo una voce.
+
+### A che punto è un documento
+
+Richieste di offerta, ordini a fornitore, ordini di lavoro, ordini di produzione e commesse hanno
+in testa (dalla 0.93.0) una **barra dei passi**: gli stati del documento in fila, con quelli
+superati spuntati e quello attuale acceso.
+
+| Documento | Passi |
+|---|---|
+| Richiesta di offerta | Bozza → Inviata → Offerta ricevuta → Chiusa |
+| Ordine a fornitore, ordine di lavoro | Bozza → Inviato → Confermato → Parziale → Evaso |
+| Ordine di produzione | Bozza → Lanciato → In corso → Completato → Chiuso |
+| Commessa | Aperta → In produzione → Chiusa |
+
+A destra c'è **il passo successivo**. Quando l'app sa farlo da sé è un pulsante: *Segna come
+inviata/o*, *Crea ordine*, *Segna tutto ricevuto*, *Lancia*, *Chiudi l'ordine*, *Metti in
+produzione*, *Chiudi la commessa*. Il pulsante fa esattamente quello che farebbe il menu
+**Stato**, e salva subito. Quando invece il passo lo fa una persona (scrivere i prezzi
+dell'offerta, il numero di conferma del fornitore, i pezzi sulle fasi), la barra dice cosa manca.
+Un documento **annullato** è *fuori dal giro* e non propone niente. Il menu *Stato* resta dov'era.
+
+Sotto la barra, la riga **Collegati** elenca i documenti legati, ciascuno cliccabile: la commessa
+e il piano da cui viene, la richiesta da cui è nato un ordine, l'ordine di produzione di un ordine
+di lavoro; e nell'altro verso gli ordini nati da una richiesta e gli ordini di lavoro nati da un
+ordine di produzione.
 
 ### Le due forme di schermata
 
@@ -533,13 +568,19 @@ Ogni segnale **nomina i codici e i numeri che lo riguardano** (fino a otto, poi 
 | 9 | Fasi a costo orario senza ore dichiarate | 🟠 media | al ciclo |
 | 10 | Codici articolo duplicati | 🟠 media | a Gestione |
 | 11 | Giorni dall'ultimo backup (da 7; 🔴 da 30) — *solo amministratori* | 🟠 media | a Gestione → Backup |
-| 12 | Spazio del browser occupato (dal 70%; 🔴 dal 90%) — *solo amministratori*. Con l'archivio in IndexedDB conta lo spazio di tutto il sito, allegati compresi | 🟠 media | a Gestione → Backup |
+| 12 | Backup automatico in pausa o non riuscito — *solo amministratori, solo con il backup automatico attivo* | 🟠 media | **Riprendi** lo salva subito |
+| 13 | Spazio del browser occupato (dal 70%; 🔴 dal 90%) — *solo amministratori*. Con l'archivio in IndexedDB conta lo spazio di tutto il sito, allegati compresi | 🟠 media | a Gestione → Backup |
 
 **Il backup che invecchia.** L'archivio esiste solo in questo browser: il segnale 11 conta i
 giorni dall'ultimo *Esporta JSON* fatto **da questo browser**, e porta il pulsante **Esporta ora**.
 Se non se n'è mai fatto uno, conta dal primo giorno in cui l'app l'ha tenuto d'occhio — una
 installazione nuova non parte già in allarme. La data non sta nel database: un backup ripristinato
-su un altro PC non porta con sé la data, perché lì il backup non è mai stato fatto.
+su un altro PC non porta con sé la data, perché lì il backup non è mai stato fatto. Un backup
+automatico (→ [cap. 30](#30-backup-e-manutenzione)) conta come backup e azzera il conteggio.
+
+**Il backup automatico fermo.** Il browser ricorda la cartella dei backup ma non sempre il
+permesso di scriverci, e lo può richiedere solo su un tuo clic. Se all'avvio il permesso non c'è,
+il segnale 12 lo dice: **Riprendi** riconferma il permesso e salva subito.
 
 **Il risparmio potenziale.** In fondo la pagina calcola quanto si risparmierebbe scegliendo
 ovunque la quotazione più bassa già presente a listino. Non cambia niente da solo: è un invito a
@@ -552,6 +593,18 @@ segnale sparisce quando sparisce la sua causa.
 commesse, articoli da ordinare, consegne attese da fornitori e terzisti, fine produzione,
 promemoria. Dalla 0.89.0 ci sono anche gli **invii al terzista** e i **lanci in produzione** dei
 piani aperti, presi dal loro *Programma* (→ [cap. 19](#19-fabbisogno-materiali)).
+
+Dalla 0.98.0 compare anche l'**avvio delle fasi** degli ordini di produzione lanciati o in corso:
+alla data d'inizio programmata di ogni fase non ancora avviata, «Avviare fase 10 di ODP-…». Le fasi
+di una stessa tratta dal terzista partono insieme e sono una voce sola. Una fase che doveva partire
+e non è stata avviata finisce fra le **scadute**; appena la si avvia, la voce sparisce.
+
+**I filtri.** Sopra il calendario una fila di pulsanti, uno per tipo di scadenza, ciascuno con il
+suo numero: *Commesse* · *Piani e programma* · *Da ordinare* · *Consegne e rientri* · *Richieste* ·
+*Avvio fasi ODP* · *Fine produzione* · *Promemoria*. Un clic nasconde quel tipo, un altro lo
+rimostra; i filtri valgono per tutto il calendario (scadute, griglia, giorno scelto e prossimi 14
+giorni), e una riga dice quante scadenze sono nascoste. **Mostra tutto** riaccende tutto. La scelta
+resta in questo browser, per chi la fa: non cambia niente per i colleghi.
 
 ### Il cruscotto
 
@@ -891,7 +944,8 @@ riepilogo dell'articolo scelto (costo, giacenza, impieghi) e sotto i comandi e l
 - Rettifica giacenza · Movimenti (N) · Dove è usato e impatto costi · Modifica articolo ·
   Scheda completa.
 
-**Le schede:** **Scheda** (l'anagrafica) · **Listino** · **Dove è usato**.
+**Le schede:** **Scheda** (l'anagrafica) · **Listino** · **Dove è usato** · **Storico** (chi ha
+cambiato cosa su questo articolo, e da quale valore a quale → [cap. 30](#30-backup-e-manutenzione)).
 
 **La selezione multipla.**
 
@@ -1057,7 +1111,23 @@ una lettera che parte da `A`. Ci si lavora liberamente.
 2. **congela** la distinta com'è adesso, con il costo di oggi;
 3. passa alla lettera successiva, che diventa quella in lavorazione.
 
-**Storico revisioni** mostra le revisioni rilasciate, con data, autore e motivo. **⇄ Confronta**,
+**Ogni rilascio è una modifica tecnica** (dalla 0.96.0). Nella finestra del rilascio, oltre al
+motivo, si sceglie il **tipo**: *Correttiva*, *Migliorativa*, *Richiesta del cliente*, *Cambio di
+fornitore o componente*, *Riduzione dei costi* (si può lasciare vuoto). La finestra mostra prima
+di confermare **quali documenti aperti sono costruiti sulla versione che si lascia**: i piani
+attivi e gli ODP aperti dell'articolo **e degli assiemi che lo contengono**, e le richieste, gli
+ordini e gli ODL aperti dei componenti che la modifica aggiunge, toglie o cambia di quantità. Al
+rilascio la revisione riceve un numero **MT-AAAA-NNN**, progressivo nell'anno, e quella lista resta
+fotografata così com'era: serve a sapere cosa andava rivisto, anche dopo che i documenti si sono
+chiusi.
+
+**Modifiche tecniche**, nella barra revisioni, apre il **registro** di tutte le revisioni
+rilasciate, di tutti gli articoli, dalla più recente: numero, articolo, revisione, tipo, motivo,
+chi e quando, e i documenti che erano aperti. Le revisioni rilasciate prima della 0.96.0 compaiono
+senza numero.
+
+**Storico revisioni** mostra le revisioni rilasciate, con data, autore e motivo (e, dalla 0.96.0,
+numero, tipo e documenti aperti). **⇄ Confronta**,
 su ogni riga, mette quella revisione a fianco della distinta attuale; dal menu **Confronta la Rev. …
 con** si sceglie invece un'altra revisione (dalla 0.85.0). Il confronto dice cosa è **aggiunto**,
 cosa **rimosso** e cosa ha **cambiato quantità**, con il costo congelato di ciascuna delle due e la
@@ -1162,8 +1232,26 @@ e gli articoli fermi da mesi, stanno nel **Cruscotto** (→ [cap. 5](#il-cruscot
 > **Nessuno di questi campi è scrivibile.** Sono tutti calcolati. Per cambiare l'esistente si
 > registra un **movimento**.
 
-**Comandi.** **Presso terzi (N)** (compare solo se c'è qualcosa fuori) · **Esporta Excel** ·
+**Comandi.** **Riordina sotto scorta (N)** (compare solo se qualcosa va riordinato) ·
+**Presso terzi (N)** (compare solo se c'è qualcosa fuori) · **Esporta Excel** ·
 **Esporta PDF**. Nella barra filtri, **Colonne**.
+
+### Riordino sotto scorta
+
+**Riordina sotto scorta** (dalla 0.96.0) elenca gli articoli d'acquisto per cui
+`scorta minima − esistente − in arrivo` è positivo, con la quantità da ordinare
+arrotondata al **lotto di riordino**. Quello che è già ordinato e in viaggio è contato, quindi non si
+ordina due volte. L'**impegnato** dei piani si vede in colonna ma non entra nel conto (dalla 0.98.1):
+quello che i piani hanno promesso lo ordinano i piani, con il documento legato al piano. Gli articoli
+**obsoleti** non si propongono; un articolo che sta già in un ordine **in bozza** lo dice con un'etichetta e parte senza spunta. Le
+parti compaiono solo se si comprano (approvvigionamento *acquisto*): quelle che si fabbricano
+passano dal fabbisogno.
+
+Gli articoli sono raggruppati per **fornitore** (quello della quotazione in uso). Si tolgono le
+spunte da quelli che non si vogliono e **Crea ordini in bozza** fa **un ordine fornitore in bozza
+per fornitore**, con il prezzo del listino e la consegna a oggi più i giorni del fornitore. Da lì
+l'ordine si rivede e si invia come ogni altro. Gli articoli senza fornitore restano in un gruppo a
+parte: si sistemano dal listino. Serve il diritto su *Richieste e ordini*.
 
 **Filtri.** Ricerca, tipo (Componente commerciale · Materia prima · Parte), famiglia,
 sottofamiglia, e il filtro di **stato**:
@@ -1301,7 +1389,7 @@ I badge di riga dicono `aperto` o `chiuso`.
 
 | A sinistra | A destra |
 |---|---|
-| chiudi · numero del piano · **Aperto — chiudi** / **Chiuso — riapri** · **Duplica** · **Elimina** | **Esporta Excel** · **Esporta PDF** |
+| chiudi · numero del piano · **Aperto — chiudi** / **Chiuso — riapri** | **Esporta ▾** (Excel, PDF) · **⋯** (Duplica, Elimina) |
 
 I pulsanti **Genera…** non stanno più nella toolbar (dalla 0.92.0): ciascuno sta nella scheda
 delle righe su cui agisce, vedi sotto.
@@ -1482,6 +1570,43 @@ esatte. Oltre 60 righe il disegno si ferma e lo dice: l'elenco completo è nel *
 Invii e lanci ancora da fare compaiono anche nel **calendario del Riepilogo**, accanto agli ordini
 da emettere e ai rientri degli ordini di lavoro.
 
+### L'avanzamento
+
+**Come ci si arriva.** 📋 *Pianificazione → Avanzamento* (dalla 0.97.0).
+
+**A cosa serve.** Il Gantt dice *entro quando* deve succedere ogni cosa; l'Avanzamento dice anche
+*se è successa*, senza aprire i documenti a uno a uno. Si sceglie il piano e, se ne ha più d'una,
+la riga da consegnare. Non si modifica niente da qui: è una lettura.
+
+**Una riga per tappa**: un acquisto, ogni fase interna o tratta dal terzista di una parte, un
+montaggio. Su ogni riga:
+
+- la **barra grigia** è il programma, la stessa del Gantt;
+- sopra, una **barra colorata** dice quanto è stato fatto: *verde* fatto, *viola* in corso, *rossa*
+  in ritardo (lunga fino a oggi o all'arrivo atteso, se cade dopo la data del programma); una barra
+  grigia **bordata d'arancio** è da fare e ancora in tempo;
+- a destra i **documenti collegati**, con il loro stato, cliccabili per aprirli.
+
+**Da dove viene l'avanzamento.** Dai documenti generati dal piano:
+
+| Tappa | Si legge da | Fatto quando |
+|---|---|---|
+| Acquisto | righe degli ordini a fornitore | il ricevuto copre l'ordinato |
+| Fase interna | fasi dell'ordine di produzione | la fase è chiusa |
+| Tratta dal terzista | fasi dell'ODP, e rientrati dell'ordine di lavoro | la fase è chiusa, o tutto è rientrato |
+| Montaggio | l'ordine di produzione dell'assieme, se c'è | l'ordine è completato |
+
+**Gli stati.** *In ritardo* se la data del programma è passata, o se l'arrivo atteso cade dopo; *in
+corso* se il lavoro è cominciato (o l'ordine al fornitore è inviato); *da fare* se non è cominciato
+ed è ancora in tempo; *da magazzino* se non serve un documento perché esistente e in arrivo bastano;
+*previsto* quando non c'è niente che lo registri, come un montaggio senza ordine di produzione. Un
+ODP lanciato ma non avviato è *da fare*: il documento c'è, il lavoro no.
+
+**In testa** la consegna richiesta, la data fattibile e il margine, i conteggi per stato e, se ci
+sono, le tappe in ritardo **sul percorso critico**: quelle che spostano la consegna. **Apri il
+piano** porta alla scheda del piano; **Esporta Excel / PDF** danno una riga per tappa, con date,
+quantità, stato e documenti.
+
 ### Il fabbisogno netto
 
 ```
@@ -1494,6 +1619,13 @@ poi arrotondato al **lotto di riordino** dell'articolo, secondo il suo modo (*mu
 Il termine **impegnato** è quello che fa la differenza: è la merce che **gli altri piani aperti**
 hanno già promesso a sé. Senza quel termine, due piani si dichiarerebbero coperti con lo stesso
 pezzo, e uno dei due resterebbe a mani vuote.
+
+**L'impegno scende con i prelievi** (dalla 0.98.1). Un piano impegna il suo fabbisogno **meno
+quello che i suoi documenti hanno già prelevato**: quando un ordine di produzione o un ordine di
+lavoro del piano fa uscire il materiale, l'esistente scende e l'impegno scende della stessa quantità.
+La merce uscita non si conta due volte, e il piano non chiede di ricomprare quello che ha appena
+usato. Un ordine **annullato** non riduce l'impegno: il materiale uscito manca, e il piano lo deve
+ancora avere.
 
 **Piano aperto e piano chiuso.** Finché un piano è **aperto**, impegna. Un piano che non serve più
 si **chiude**, e la sua quota torna libera per gli altri. Un piano chiuso non sparisce: resta
@@ -2021,12 +2153,20 @@ Ogni persona ha un utente, con nome, email, ruolo, colore e stato attivo/sospeso
 
 **I ruoli limitano la scrittura, non la lettura: tutti vedono tutto.**
 
-| Ruolo | Articoli | Distinte | Richieste e ordini | Gestione |
-|---|:--:|:--:|:--:|:--:|
-| **Amministratore** | ✔ | ✔ | ✔ | ✔ |
-| **Ufficio acquisti** | — | — | ✔ | — |
-| **Progettazione** | ✔ | ✔ | — | — |
-| **Lettore** | — | — | — | — |
+| Ruolo | Articoli | Distinte | Richieste e ordini | Ricevimenti, avanzamento, giacenze | Gestione |
+|---|:--:|:--:|:--:|:--:|:--:|
+| **Amministratore** | ✔ | ✔ | ✔ | ✔ | ✔ |
+| **Ufficio acquisti** | — | — | ✔ | ✔ | — |
+| **Progettazione** | ✔ | ✔ | — | solo giacenze | — |
+| **Officina e magazzino** | — | — | — | ✔ | — |
+| **Lettore** | — | — | — | — | — |
+
+**Officina e magazzino** (dalla 0.96.0) è il ruolo di chi sta in reparto: **riceve** la merce
+degli ordini e degli ODL, **avvia e dichiara** le fasi degli ODP (e le annulla), registra la
+**produzione** e **rettifica le giacenze** o manda materiale ai terzisti. Non crea né modifica
+richieste, ordini, piani, articoli o distinte: prima per dichiarare l'avanzamento bisognava
+dare il ruolo *Ufficio acquisti*, che scrive anche gli ordini. Magazzino, ordini fornitore, ODL e
+ODP non gli compaiono in sola lettura.
 
 Nelle sezioni non scrivibili compare un **banner di sola lettura** e i pulsanti di creazione ed
 eliminazione spariscono; ogni tentativo di modifica viene comunque fermato con un messaggio.
@@ -2181,6 +2321,32 @@ documento, non l'elenco**.
 >
 > ⚠️ **Il backup contiene gli utenti con i loro hash di password.** È un file riservato.
 
+### Backup automatico
+
+**Esporta JSON** funziona solo se qualcuno se ne ricorda. Il backup automatico no: scelta una
+cartella una volta, Bomtrack ci scrive da sola una copia dell'archivio.
+
+| Quando | Cosa fa |
+|---|---|
+| **All'avvio**, ogni **mezz'ora** e quando passi a un'altra finestra | Salva il file del giorno, `bomtrack_backup_AAAA-MM-GG.json`, se qualcosa è cambiato dall'ultima volta |
+| **Ogni giorno** | Un file nuovo; si tengono gli **ultimi 14** e i più vecchi si cancellano. Gli altri file della cartella non si toccano |
+
+I comandi, nella scheda Backup: **Attiva backup automatico** (scegli la cartella e parte subito il
+primo backup), **Salva ora**, **Cambia cartella**, **Disattiva** (la cartella si dimentica, i file
+restano). Ogni file è un backup normale: si ripristina con **Importa JSON**.
+
+> 💡 **Quale cartella.** Una che non stia solo su questo disco: quella locale di **OneDrive** o
+> **Dropbox**, o un disco di rete. Così il backup sopravvive anche al PC.
+>
+> ⚠️ Come la cartella dell'archivio (→ [cap. 8](#8-la-scheda-articolo-campo-per-campo)), funziona su
+> **Chrome ed Edge** con Bomtrack aperta da un indirizzo `https` o `localhost`, ed è
+> un'impostazione **di questo PC**. Aperta con un doppio clic su `index.html`, la scheda dice che
+> non è disponibile.
+>
+> ⚠️ **Permesso.** Il browser può chiedere di riconfermarlo a ogni riapertura. Bomtrack non lo
+> chiede a freddo: il backup va **in pausa** e il Riepilogo mostra **Riprendi**. Installare l'app
+> (icona nella barra degli indirizzi) di solito fa ricordare il permesso.
+
 **Dati persistenti.** Quando il disco si riempie, un browser può cancellare da solo i dati dei
 siti che considera sacrificabili. All'avvio Bomtrack chiede di essere tenuto come
 **persistente**; la scheda Backup dice se il browser l'ha concesso. Chrome di solito lo concede a
@@ -2202,6 +2368,28 @@ le voci spariscono da sole al caricamento successivo.
 
 Cosa ci finisce: Articolo · Fornitore · Cliente · Centro di lavoro · Macrofamiglia · Richiesta ·
 Ordine · Ordine di lavoro · Piano · Utente · Commessa · Movimento · Revisione.
+
+### Storico delle modifiche
+
+A ogni salvataggio Bomtrack annota che cosa è cambiato: **chi**, **quando**, **quale campo**, **da
+quale valore a quale**. Vale per articoli, documenti (richieste, ordini, ODL, ODP, piani,
+commesse), anagrafiche, utenti e impostazioni.
+
+| Dove | Cosa mostra |
+|---|---|
+| Pannello laterale di un articolo, scheda **Storico** | Le modifiche di quell'articolo, dalla più recente |
+| *Gestione → Backup → Storico delle modifiche* | Le ultime 200 modifiche di tutto l'archivio, con una ricerca per codice, numero, utente, campo o valore |
+
+- Le **righe** di un documento o del listino si contano: «3 righe → 4 righe (+1, 1 cambiata)».
+- I fornitori, i clienti, le famiglie e gli articoli citati si leggono **col nome di oggi**.
+- Un import da Excel o una generazione di documenti che tocca **più di 50 record** di un tipo
+  diventa **una voce sola** («120 nuovi, 3 modificati»).
+- Non entrano i movimenti di magazzino, i ricevimenti, le dichiarazioni di produzione e le
+  revisioni, che sono già un registro loro. Delle **password** si dice solo che sono cambiate.
+- Si tengono le **ultime 5.000** modifiche. Lo storico sta nell'archivio, quindi **viaggia nel
+  backup** e torna con un ripristino.
+
+> 💡 Lo storico conta **dalla 0.95.0**: di quello che è successo prima non c'è traccia.
 
 ### Codici articolo duplicati
 
@@ -2569,10 +2757,11 @@ Senza IndexedDB le prime due stanno in `localStorage`, come `bomtrack_v1` e
 | `bomtrack_session` | La sessione aperta |
 | `bomtrack_columns` | Le colonne nascoste, per vista |
 | `bomtrack_archivio_nome` | Il nome della cartella d'archivio scelta su questo PC |
+| `bomtrack_backup_cartella_nome` | Il nome della cartella del backup automatico scelta su questo PC |
 | *(chiave email)* | L'email ricordata da «Ricordami su questo PC» |
 
-Le ultime cinque sono **preferenze personali di questa macchina**, non dati aziendali: non entrano
-nel backup e non si condividono. La cartella d'archivio sta fra queste di proposito: ogni PC ha la
+Le ultime sei sono **preferenze personali di questa macchina**, non dati aziendali: non entrano
+nel backup e non si condividono. Le due cartelle, archivio e backup, stanno fra queste di proposito: ogni PC ha la
 sua, e importarla da un backup imporrebbe a tutti la lettera di unità del primo che l'ha scelta.
 
 **Fuori dall'archivio** stanno due cose, entrambe fatte di file. In **IndexedDB**, in un database
@@ -2639,6 +2828,7 @@ Ogni record porta `id` (UUID), `createdAt` / `updatedAt`, `createdBy` / `updated
 | `views-catalog.js` | Anagrafiche, listino, scheda articolo, cicli |
 | `views-report.js` · `views-item.js` · `views-home.js` · `views-dash.js` | Costificazione · scheda di sola lettura · Riepilogo · Cruscotto |
 | `views-mrp.js` | Fabbisogno e Carico centri |
+| `views-avanzamento.js` | Avanzamento: il Gantt del piano con lo stato dei documenti |
 | `views-jobs.js` · `views-docs.js` | Commesse · RFQ, ODA, ODL |
 | `views-prod.js` | Ordini di produzione: fasi congelate, avanzamento, movimenti |
 | `views-manage.js` | Gestione |
@@ -2683,6 +2873,6 @@ fusa, e il punto in cui si sostituisce la destinazione dei dati è uno solo.
 
 ---
 
-*Manuale di Bomtrack — aggiornato alla versione 0.92.0.*
+*Manuale di Bomtrack — aggiornato alla versione 0.94.0.*
 *Le funzioni descritte qui corrispondono a quella revisione; il changelog dell'app elenca le
 differenze rispetto alle versioni successive.*

@@ -53,7 +53,7 @@ function daFare(planId, itemId, richiesti) {
 
 // ─── Dichiarare ───
 function produzioneDichiara(planId, itemId, qty, note) {
-  if (!roleGuard('docs')) return null;
+  if (!roleGuardShop('docs')) return null;
   const p = getPlan(planId), it = getItem(itemId);
   if (!p || !it) return null;
   const q = Number(qty) || 0;
@@ -65,7 +65,7 @@ function produzioneDichiara(planId, itemId, qty, note) {
   });
 }
 function produzioneElimina(id) {
-  if (!roleGuard('docs')) return;
+  if (!roleGuardShop('docs')) return;
   const rec = (db.productions || []).find(p => p.id === id);
   if (!rec) return;
   askConfirm('Eliminare questa dichiarazione di produzione?', () => {

@@ -152,7 +152,7 @@ function jobCoverage(jobId) {
     // si riscrive la regola di lotto, scorta e impegni — le si cambia un
     // ingrediente. Se così il netto risale sopra zero, la merce c'è ma tardi.
     const arr = incomingEntro(e.item.id, serve);
-    const netEntro = netRequirement(e.qty, r.onHand, arr.inTempo, r.safety, r.lotSize, r.committed, r.lotMode);
+    const netEntro = netRequirement(Math.max(0, e.qty - r.prelevato), r.onHand, arr.inTempo, r.safety, r.lotSize, r.committed, r.lotMode);
     let livello = 'ok';
     if (r.qtyOrder > 0) livello = refs.length ? 'documentato' : 'ordinare';
     else if (netEntro > 0) livello = 'tardi';
@@ -377,9 +377,12 @@ function renderJobEdit(id) {
       <div class="bom-toolbar-left">
         ${worklistCloseBtn('jobBackToList()', 'la commessa')}
         <h2 class="section-title" style="margin:0">${ico('clipboard', 'tinted pill', 'Commessa')} ${esc(j.number)}</h2>
-        <button class="btn-outline" style="color:var(--red);border-color:var(--red)" onclick="delJob('${id}')">${ico('trash', 'tinted', '')} Elimina</button>
+      </div>
+      <div class="bom-toolbar-right">
+        ${menuAltro([{ label: 'Elimina la commessa', icon: 'trash', onclick: `delJob('${id}')`, danger: true }])}
       </div>
     </div>
+    ${docStepperHtml('job', j)}
     <div class="modal-grid">
       <div class="modal-field"><label>Cliente</label>
         <input list="job-customer-opts" value="${esc(j.customer || '')}" onchange="jobSetField('${id}','customer',this.value)">

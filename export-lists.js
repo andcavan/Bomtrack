@@ -221,9 +221,7 @@ function exportListPdf(spec) {
 // ─── I pulsanti ───
 // Una coppia sola, resa da una funzione: otto viste che scrivono a mano lo
 // stesso markup sono otto occasioni di dimenticare una classe.
+// Dalla 0.94.0 la coppia sta in un menu «Esporta ▾» (vedi tendina in shell.js).
 function listExportButtons(fnSpec) {
-  return `<div class="export-pair">
-    <button class="export-btn-xls" onclick="exportListXlsx(${fnSpec}())">${ico('sheet', 'tinted', '')} Esporta Excel</button>
-    <button class="export-btn-pdf" onclick="exportListPdf(${fnSpec}())">${ico('file', 'tinted', '')} Esporta PDF</button>
-  </div>`;
+  return menuEsporta(`exportListXlsx(${fnSpec}())`, `exportListPdf(${fnSpec}())`);
 }
