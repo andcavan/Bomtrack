@@ -252,6 +252,12 @@ function loadApp(opts) {
           if (files[p] == null && !(opt && opt.create)) return Promise.reject(new Error('NotFound'));
           return Promise.resolve(fileH(p));
         },
+        removeEntry(sub) {
+          const p = (prefisso || '') + sub;
+          if (files[p] == null) return Promise.reject(new Error('NotFound'));
+          delete files[p];
+          return Promise.resolve();
+        },
       };
       return h;
     };
@@ -262,7 +268,7 @@ function loadApp(opts) {
         lastModified: 0, _testo: files[path],
       }),
       createWritable: () => Promise.resolve({
-        write(b) { files[path] = (b && (b._testo || b.name)) || ''; return Promise.resolve(); },
+        write(b) { files[path] = typeof b === 'string' ? b : (b && (b._testo || b.name)) || ''; return Promise.resolve(); },
         close() { return Promise.resolve(); },
       }),
     });
@@ -310,6 +316,20 @@ function loadApp(opts) {
       if (o.collega !== false) {
         tabelle.config.set('cartella', h);
         storage.setItem('bomtrack_archivio_nome', h.name);
+      }
+      return h;
+    },
+    // Collega una cartella dei backup automatici finta. `files` resta vivo: il
+    // test lo legge dopo per vedere cosa l'app ha scritto e cosa ha tolto.
+    cartellaBackup(files, opt) {
+      const o = opt || {};
+      const h = sandbox.__cartella(o.nome || 'Backup', files, o.permesso);
+      sandbox.showDirectoryPicker = () => (o.rifiuta
+        ? Promise.reject(Object.assign(new Error('annullato'), { name: 'AbortError' }))
+        : Promise.resolve(h));
+      if (o.collega !== false) {
+        tabelle.config.set('cartellaBackup', h);
+        storage.setItem('bomtrack_backup_cartella_nome', h.name);
       }
       return h;
     },

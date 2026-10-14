@@ -293,7 +293,7 @@ Lo storico completo delle versioni è in [CHANGELOG.md](CHANGELOG.md).
 
 ## Note
 
-I dati risiedono nel browser. Per trasferirli su un altro PC usare **Gestione → Backup → Esporta/Importa JSON**.
+I dati risiedono nel browser. Per trasferirli su un altro PC usare **Gestione → Backup → Esporta/Importa JSON**. Dalla 0.95.0 il **backup automatico** (stessa scheda) salva da solo una copia al giorno in una cartella scelta, tenendo gli ultimi 14 giorni: meglio quella di OneDrive, Dropbox o un disco di rete (Chrome o Edge, da `https` o `localhost`).
 
 **Una scheda per volta.** L'archivio è uno solo e ogni salvataggio lo riscrive per intero: due finestre di Bomtrack aperte insieme lavorano sulla stessa cartella senza vedersi. Dalla 0.76.0 non è più un problema silenzioso — l'archivio porta un contatore di revisione, e la scheda che sta per salvare sopra il lavoro di un'altra si ferma e lo dice, offrendo di ricaricare o di tenere la propria versione, con l'export del backup a portata di mano. Quello che l'app **non** fa è fondere le due versioni: per farlo servirebbe sapere, riga per riga, quale delle due vale. Se si lavora abitualmente in due finestre, conviene tenerne aperta una sola per le modifiche.
 

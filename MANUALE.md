@@ -1,6 +1,6 @@
 # Bomtrack — Manuale d'uso
 
-**Versione dell'app documentata: 0.92.0**
+**Versione dell'app documentata: 0.95.0**
 
 📖 **[Leggilo come pagina web](https://claude.ai/code/artifact/726a0963-2db0-4947-999b-d7b5beb91a0b)** — stesso testo, con indice laterale, filtro dei capitoli e tema chiaro/scuro. Comodo da tenere aperto di fianco all'app.
 
@@ -126,7 +126,8 @@ Vale la pena dirlo subito, perché evita di cercare funzioni che non ci sono.
 
 > ⚠️ **I dati risiedono in questo browser, su questo PC.** Non c'è un server. Svuotare i dati del
 > sito, cambiare browser o cambiare PC significa non trovare più l'archivio. Fai backup regolari:
-> *Gestione → Backup → Esporta JSON*. È l'unica cosa di questo manuale che, se la salti, ti costa
+> *Gestione → Backup → Esporta JSON*, o meglio ancora attiva il **backup automatico** in una
+> cartella (→ [cap. 30](#30-backup-e-manutenzione)). È l'unica cosa di questo manuale che, se la salti, ti costa
 > davvero cara — e resterà vera anche il giorno in cui l'archivio sarà condiviso
 > (→ [cap. 31](#31-quando-larchivio-è-condiviso-supabase)).
 
@@ -533,13 +534,19 @@ Ogni segnale **nomina i codici e i numeri che lo riguardano** (fino a otto, poi 
 | 9 | Fasi a costo orario senza ore dichiarate | 🟠 media | al ciclo |
 | 10 | Codici articolo duplicati | 🟠 media | a Gestione |
 | 11 | Giorni dall'ultimo backup (da 7; 🔴 da 30) — *solo amministratori* | 🟠 media | a Gestione → Backup |
-| 12 | Spazio del browser occupato (dal 70%; 🔴 dal 90%) — *solo amministratori*. Con l'archivio in IndexedDB conta lo spazio di tutto il sito, allegati compresi | 🟠 media | a Gestione → Backup |
+| 12 | Backup automatico in pausa o non riuscito — *solo amministratori, solo con il backup automatico attivo* | 🟠 media | **Riprendi** lo salva subito |
+| 13 | Spazio del browser occupato (dal 70%; 🔴 dal 90%) — *solo amministratori*. Con l'archivio in IndexedDB conta lo spazio di tutto il sito, allegati compresi | 🟠 media | a Gestione → Backup |
 
 **Il backup che invecchia.** L'archivio esiste solo in questo browser: il segnale 11 conta i
 giorni dall'ultimo *Esporta JSON* fatto **da questo browser**, e porta il pulsante **Esporta ora**.
 Se non se n'è mai fatto uno, conta dal primo giorno in cui l'app l'ha tenuto d'occhio — una
 installazione nuova non parte già in allarme. La data non sta nel database: un backup ripristinato
-su un altro PC non porta con sé la data, perché lì il backup non è mai stato fatto.
+su un altro PC non porta con sé la data, perché lì il backup non è mai stato fatto. Un backup
+automatico (→ [cap. 30](#30-backup-e-manutenzione)) conta come backup e azzera il conteggio.
+
+**Il backup automatico fermo.** Il browser ricorda la cartella dei backup ma non sempre il
+permesso di scriverci, e lo può richiedere solo su un tuo clic. Se all'avvio il permesso non c'è,
+il segnale 12 lo dice: **Riprendi** riconferma il permesso e salva subito.
 
 **Il risparmio potenziale.** In fondo la pagina calcola quanto si risparmierebbe scegliendo
 ovunque la quotazione più bassa già presente a listino. Non cambia niente da solo: è un invito a
@@ -2181,6 +2188,32 @@ documento, non l'elenco**.
 >
 > ⚠️ **Il backup contiene gli utenti con i loro hash di password.** È un file riservato.
 
+### Backup automatico
+
+**Esporta JSON** funziona solo se qualcuno se ne ricorda. Il backup automatico no: scelta una
+cartella una volta, Bomtrack ci scrive da sola una copia dell'archivio.
+
+| Quando | Cosa fa |
+|---|---|
+| **All'avvio**, ogni **mezz'ora** e quando passi a un'altra finestra | Salva il file del giorno, `bomtrack_backup_AAAA-MM-GG.json`, se qualcosa è cambiato dall'ultima volta |
+| **Ogni giorno** | Un file nuovo; si tengono gli **ultimi 14** e i più vecchi si cancellano. Gli altri file della cartella non si toccano |
+
+I comandi, nella scheda Backup: **Attiva backup automatico** (scegli la cartella e parte subito il
+primo backup), **Salva ora**, **Cambia cartella**, **Disattiva** (la cartella si dimentica, i file
+restano). Ogni file è un backup normale: si ripristina con **Importa JSON**.
+
+> 💡 **Quale cartella.** Una che non stia solo su questo disco: quella locale di **OneDrive** o
+> **Dropbox**, o un disco di rete. Così il backup sopravvive anche al PC.
+>
+> ⚠️ Come la cartella dell'archivio (→ [cap. 8](#8-la-scheda-articolo-campo-per-campo)), funziona su
+> **Chrome ed Edge** con Bomtrack aperta da un indirizzo `https` o `localhost`, ed è
+> un'impostazione **di questo PC**. Aperta con un doppio clic su `index.html`, la scheda dice che
+> non è disponibile.
+>
+> ⚠️ **Permesso.** Il browser può chiedere di riconfermarlo a ogni riapertura. Bomtrack non lo
+> chiede a freddo: il backup va **in pausa** e il Riepilogo mostra **Riprendi**. Installare l'app
+> (icona nella barra degli indirizzi) di solito fa ricordare il permesso.
+
 **Dati persistenti.** Quando il disco si riempie, un browser può cancellare da solo i dati dei
 siti che considera sacrificabili. All'avvio Bomtrack chiede di essere tenuto come
 **persistente**; la scheda Backup dice se il browser l'ha concesso. Chrome di solito lo concede a
@@ -2569,10 +2602,11 @@ Senza IndexedDB le prime due stanno in `localStorage`, come `bomtrack_v1` e
 | `bomtrack_session` | La sessione aperta |
 | `bomtrack_columns` | Le colonne nascoste, per vista |
 | `bomtrack_archivio_nome` | Il nome della cartella d'archivio scelta su questo PC |
+| `bomtrack_backup_cartella_nome` | Il nome della cartella del backup automatico scelta su questo PC |
 | *(chiave email)* | L'email ricordata da «Ricordami su questo PC» |
 
-Le ultime cinque sono **preferenze personali di questa macchina**, non dati aziendali: non entrano
-nel backup e non si condividono. La cartella d'archivio sta fra queste di proposito: ogni PC ha la
+Le ultime sei sono **preferenze personali di questa macchina**, non dati aziendali: non entrano
+nel backup e non si condividono. Le due cartelle, archivio e backup, stanno fra queste di proposito: ogni PC ha la
 sua, e importarla da un backup imporrebbe a tutti la lettera di unità del primo che l'ha scelta.
 
 **Fuori dall'archivio** stanno due cose, entrambe fatte di file. In **IndexedDB**, in un database

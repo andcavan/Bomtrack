@@ -52,7 +52,10 @@ describe('Calendario: da dove arrivano le date', () => {
     a.eval(`Store.insert('plans', { id: 'pl1', number: 'FAB-1', active: true, lines: [{ id: 'l1', itemId: 'mac', qty: 1, dueDate: '${due}' }] })`);
     const f = eventi(a).filter(e => e.tipo === 'fabbisogno');
     assert.equal(f.length, 1, 'due articoli dello stesso piano nello stesso giorno sono una voce sola');
-    assert.equal(f[0].data, giorni(a, 3), 'serve fra 13 giorni, consegna in 10: si ordina fra 3');
+    // L'ordine parte in un giorno lavorativo: se fra 3 giorni è sabato, domenica
+    // o un festivo, si ordina il lavorativo prima. Senza questo il test dipendeva
+    // dal giorno della settimana in cui gira.
+    assert.equal(f[0].data, a.eval(`prevWorkDay(addDays(oggiISO(), 3))`), 'serve fra 13 giorni, consegna in 10: si ordina fra 3, o il lavorativo prima');
     assert.equal(f[0].gravita, 'media', 'dentro la finestra d\'avviso');
     assert.match(f[0].testo, /2 articoli/);
     assert.match(f[0].azione, /homeApri\('plan','pl1'\)/);

@@ -1096,6 +1096,181 @@ function persistenzaLine() {
     ? '<p style="margin-top:6px">Il browser tiene questi dati come <strong>persistenti</strong>: non li cancella da solo quando il disco si riempie.</p>'
     : '<p style="margin-top:6px">Il browser <strong>può cancellare questi dati da solo</strong> se il disco si riempie: un motivo in più per i backup. Installare l\'app (icona nella barra degli indirizzi) di solito lo evita.</p>';
 }
+// ─── Backup automatico in una cartella ───
+// Il promemoria del Riepilogo dice *quando* esportare, ma resta un gesto a
+// mano, e il giorno in cui il disco si rompe è quasi sempre il giorno dopo
+// quello in cui ci si è dimenticati. Qui l'app scrive da sola una copia JSON in
+// una cartella scelta una volta: all'avvio, ogni mezz'ora se qualcosa è
+// cambiato, e quando si passa a un'altra finestra. Un file al giorno
+// (`bomtrack_backup_AAAA-MM-GG.json`, lo stesso nome dell'export a mano, che
+// si ripristina da Importa JSON), riscritto durante la giornata; si tengono gli
+// ultimi BACKUP_AUTO_TENERE e i più vecchi si cancellano. Solo i file con quel
+// nome esatto: il resto della cartella non è nostro e non si tocca.
+//
+// La cartella migliore è fuori dal browser *e* fuori dal PC: quella locale di
+// OneDrive, Dropbox o di un disco di rete. È un'impostazione di questo PC, come
+// la cartella dell'archivio (archivio.js) e per le stesse ragioni: il
+// riferimento sta in IndexedDB, il nome in localStorage, e serve Chrome o Edge
+// da un indirizzo https o localhost.
+//
+// Il permesso: il browser ricorda la cartella ma non sempre il permesso di
+// scriverci, e lo può richiedere solo su un clic. All'avvio quindi si prova
+// **senza chiedere**; se non c'è, il backup è «in pausa» e il Riepilogo lo
+// dice con un pulsante che lo riprende — il clic è il gesto che serve.
+const BACKUP_AUTO_KEY = 'cartellaBackup';
+const BACKUP_AUTO_NOME_KEY = 'bomtrack_backup_cartella_nome';
+const BACKUP_AUTO_TENERE = 14;
+const BACKUP_AUTO_OGNI_MS = 30 * 60 * 1000;
+const BACKUP_AUTO_FILE_RE = /^bomtrack_backup_\d{4}-\d{2}-\d{2}\.json$/;
+// Esito dell'ultimo tentativo di questa sessione: { stato, ora, file, errore }.
+// `stato`: 'ok' | 'pausa' (manca il permesso) | 'errore' | null (non ancora provato).
+let _backupAuto = { stato: null };
+let _backupAutoScritto = '';   // l'ultimo contenuto scritto: uguale, non si riscrive
+let _backupAutoInCorso = null;
+function _oraLocale() {
+  const d = new Date();
+  return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+}
+function backupAutoNome() { return localPref(BACKUP_AUTO_NOME_KEY) || ''; }
+function backupAutoAttivo() { return archivioSupportato() && !!backupAutoNome(); }
+function backupAutoEsito() { return _backupAuto; }
+function backupAutoHandle() {
+  if (!archivioSupportato()) return Promise.resolve(null);
+  return _archivioTx('readonly', st => st.get(BACKUP_AUTO_KEY)).catch(() => null);
+}
+// Va chiamata da un clic. Scelta la cartella, il primo backup parte subito:
+// è la prova, sotto gli occhi di chi l'ha appena configurato, che funziona.
+function backupAutoScegli() {
+  if (!roleGuard('manage')) return Promise.resolve(false);
+  if (!archivioSupportato()) {
+    showToast('Questo browser non consente di collegare una cartella: servono Chrome o Edge', 'error');
+    return Promise.resolve(false);
+  }
+  return window.showDirectoryPicker({ id: 'bomtrack-backup', mode: 'readwrite' })
+    .then(h => _archivioTx('readwrite', st => st.put(h, BACKUP_AUTO_KEY)).then(() => {
+      try { localStorage.setItem(BACKUP_AUTO_NOME_KEY, String(h.name || 'cartella')); } catch (e) { /* niente da rompere */ }
+      _backupAutoScritto = '';
+      return backupAutoEsegui(true);
+    }))
+    .then(esito => {
+      if (esito && esito.stato === 'ok') showToast('Backup automatico attivo: primo backup salvato');
+      if (typeof activeView !== 'undefined' && activeView === 'manage') renderManage();
+      return !!(esito && esito.stato === 'ok');
+    })
+    .catch(e => {
+      if (e && e.name === 'AbortError') return false;
+      console.error('Cartella dei backup non collegata:', e);
+      showToast('Cartella dei backup non collegata', 'error');
+      return false;
+    });
+}
+function backupAutoDisattiva() {
+  if (!roleGuard('manage')) return Promise.resolve(false);
+  try { localStorage.removeItem(BACKUP_AUTO_NOME_KEY); } catch (e) { /* niente da rompere */ }
+  _backupAuto = { stato: null }; _backupAutoScritto = '';
+  return _archivioTx('readwrite', st => st.delete(BACKUP_AUTO_KEY)).catch(() => null).then(() => {
+    showToast('Backup automatico disattivato: i file già salvati restano nella cartella');
+    if (typeof activeView !== 'undefined' && activeView === 'manage') renderManage();
+    return true;
+  });
+}
+// Toglie i backup oltre gli ultimi `tenere`. Il nome porta la data, quindi
+// l'ordine alfabetico è quello cronologico.
+function _backupAutoPota(dir, tenere) {
+  const nomi = [];
+  return _perOgniVoce(dir, (nome, h) => { if (h.kind === 'file' && BACKUP_AUTO_FILE_RE.test(nome)) nomi.push(nome); })
+    .then(() => {
+      nomi.sort();
+      const via = nomi.slice(0, Math.max(0, nomi.length - tenere));
+      if (!via.length || typeof dir.removeEntry !== 'function') return [];
+      return via.reduce((p, n) => p.then(() => dir.removeEntry(n)).catch(() => null), Promise.resolve()).then(() => via);
+    })
+    .catch(() => []);
+}
+// Scrive il backup del giorno. `chiedi`: su un clic si può chiedere il
+// permesso; all'avvio e dal timer no. `forza` riscrive anche se non è cambiato
+// niente. Torna l'esito, e non lancia mai: è un lavoro di fondo, e un suo
+// guasto non deve rompere niente di ciò che l'utente sta facendo.
+function backupAutoEsegui(chiedi, forza) {
+  if (!backupAutoAttivo()) return Promise.resolve(_backupAuto);
+  if (_backupAutoInCorso) return _backupAutoInCorso;
+  let payload;
+  try { payload = Store.exportSnapshot(); }
+  catch (e) { _backupAuto = { stato: 'errore', ora: _oraLocale(), errore: String(e && e.message || e) }; return Promise.resolve(_backupAuto); }
+  if (!forza && payload === _backupAutoScritto && _backupAuto.stato === 'ok') return Promise.resolve(_backupAuto);
+  const file = `bomtrack_backup_${oggiISO()}.json`;
+  _backupAutoInCorso = backupAutoHandle()
+    .then(h => {
+      if (!h) return { stato: 'errore', ora: _oraLocale(), errore: 'cartella non disponibile' };
+      return _permesso(h, !!chiedi).then(ok => {
+        if (!ok) return { stato: 'pausa', ora: _oraLocale() };
+        return h.getFileHandle(file, { create: true })
+          .then(fh => fh.createWritable())
+          .then(w => Promise.resolve(w.write(payload)).then(() => w.close()))
+          .then(() => _backupAutoPota(h, BACKUP_AUTO_TENERE))
+          .then(() => {
+            _backupAutoScritto = payload;
+            registraBackup();
+            return { stato: 'ok', ora: _oraLocale(), file };
+          });
+      });
+    })
+    .catch(e => {
+      console.error('Backup automatico non riuscito:', e);
+      return { stato: 'errore', ora: _oraLocale(), errore: String(e && e.message || e) };
+    })
+    .then(esito => { _backupAuto = esito; _backupAutoInCorso = null; return esito; });
+  return _backupAutoInCorso;
+}
+// Il pulsante «Riprendi» del Riepilogo e «Salva ora» della scheda Backup.
+function backupAutoOra() {
+  if (!roleGuard('manage')) return Promise.resolve(null);
+  return backupAutoEsegui(true, true).then(e => {
+    if (e.stato === 'ok') showToast('Backup salvato in ' + backupAutoNome());
+    else if (e.stato === 'pausa') showToast('Il browser non ha concesso di scrivere nella cartella dei backup', 'error');
+    else showToast('Backup non salvato: ' + (e.errore || 'errore'), 'error');
+    if (typeof activeView !== 'undefined') {
+      if (activeView === 'home' && typeof renderHome === 'function') renderHome();
+      if (activeView === 'manage') renderManage();
+    }
+    return e;
+  });
+}
+// Avvio: un tentativo subito, poi ogni mezz'ora e a ogni cambio di finestra.
+// Fuori dal browser (test) non parte niente.
+function backupAutoAvvia() {
+  if (!backupAutoAttivo()) return;
+  // Il Riepilogo è già disegnato quando l'esito arriva: se il backup è fermo
+  // lo si ridisegna, o l'avviso comparirebbe solo al prossimo cambio di vista.
+  backupAutoEsegui(false).then(e => {
+    if (e.stato !== 'ok' && typeof activeView !== 'undefined' && activeView === 'home' && typeof renderHome === 'function') renderHome();
+  });
+  if (typeof setInterval === 'function') setInterval(() => backupAutoEsegui(false), BACKUP_AUTO_OGNI_MS);
+  if (typeof document !== 'undefined' && document.addEventListener) {
+    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') backupAutoEsegui(false); });
+  }
+}
+function backupAutoLine() {
+  if (!archivioSupportato()) {
+    return '<p style="margin-top:6px"><strong>Backup automatico:</strong> non disponibile in questo browser. Servono Chrome o Edge, con Bomtrack aperta da un indirizzo https o localhost.</p>';
+  }
+  const nome = backupAutoNome();
+  if (!nome) {
+    return `<p style="margin-top:6px"><strong>Backup automatico:</strong> spento. Scegli una cartella — meglio quella di OneDrive, Dropbox o un disco di rete — e Bomtrack ci salverà da sola una copia al giorno, tenendo le ultime ${BACKUP_AUTO_TENERE}.</p>
+      <div style="margin-top:6px"><button class="btn-outline" onclick="backupAutoScegli()">${ico('folder', 'tinted', '')} Attiva backup automatico</button></div>`;
+  }
+  const e = _backupAuto;
+  const stato = e.stato === 'ok' ? `ultimo salvataggio <strong>${esc(e.file || '')}</strong> alle ${esc(e.ora || '')}`
+    : e.stato === 'pausa' ? '<strong style="color:var(--red)">in pausa</strong>: il browser chiede di riconfermare il permesso sulla cartella'
+    : e.stato === 'errore' ? `<strong style="color:var(--red)">non riuscito</strong> (${esc(e.errore || 'errore')})`
+    : 'nessun salvataggio ancora in questa sessione';
+  return `<p style="margin-top:6px"><strong>Backup automatico</strong> nella cartella <strong>${esc(nome)}</strong>: ${stato}. Si tengono gli ultimi ${BACKUP_AUTO_TENERE} giorni.</p>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px">
+      <button class="btn-outline" onclick="backupAutoOra()">${ico('save', 'tinted', '')} ${e.stato === 'pausa' ? 'Riprendi' : 'Salva ora'}</button>
+      <button class="btn-outline" onclick="backupAutoScegli()">${ico('folder', 'tinted', '')} Cambia cartella</button>
+      <button class="btn-outline" onclick="backupAutoDisattiva()">Disattiva</button>
+    </div>`;
+}
 function renderBackup() {
   return `<div class="cloud-section">
     <div style="flex:1">
@@ -1105,6 +1280,7 @@ function renderBackup() {
       ${dbSizeLine()}
       ${backupLine()}
       ${persistenzaLine()}
+      ${backupAutoLine()}
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
         <button class="add-btn-sm" onclick="exportBackup()">${ico('download', 'tinted', '')} Esporta JSON</button>
         <button class="btn-outline" onclick="document.getElementById('import-file').click()">${ico('upload', 'tinted', '')} Importa JSON</button>
@@ -1350,6 +1526,7 @@ async function init() {
   // Sessione salvata → si rientra diretti; altrimenti accesso (o setup del primo admin)
   if (!restoreSession()) renderLogin();
   richiediPersistenza();
+  backupAutoAvvia();
 }
 // Nel browser parte da sé; sotto test (Node, nessun DOM) il file si carica
 // senza avviare l'app, così la suite può pilotare Store e il motore di costo.

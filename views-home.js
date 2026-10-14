@@ -172,6 +172,14 @@ function homeSegnali() {
       testo: b.mai ? 'giorni senza un backup: non ne è mai stato esportato uno da questo browser' : 'giorni dall\'ultimo backup',
       vista: 'manage', apri: "homeApri('backup')", gravita: b.giorni >= BACKUP_ALLARME_GG ? 'alta' : 'media',
       voci: [voce('Esporta ora', 'Scarica il backup JSON dell\'intero archivio', 'exportBackup();renderHome()')] });
+    // Il backup automatico fermo: senza questo avviso lo si scoprirebbe solo
+    // fra sette giorni, dal promemoria qui sopra. «Riprendi» è il clic che il
+    // browser vuole per ridare il permesso sulla cartella.
+    const ba = backupAutoAttivo() ? backupAutoEsito() : { stato: null };
+    if (ba.stato === 'pausa' || ba.stato === 'errore') out.push({ n: 1,
+      testo: ba.stato === 'pausa' ? 'backup automatico in pausa: il browser chiede di riconfermare la cartella' : 'backup automatico non riuscito',
+      vista: 'manage', apri: "homeApri('backup')", gravita: 'media',
+      voci: [voce('Riprendi', ba.stato === 'pausa' ? 'Riconferma il permesso e salva il backup di oggi nella cartella ' + backupAutoNome() : 'Riprova a salvare nella cartella ' + backupAutoNome() + (ba.errore ? ' (' + ba.errore + ')' : ''), 'backupAutoOra()')] });
     const pct = dbSpazioPct();
     if (pct >= 70) out.push({ n: pct, testo: '% dello spazio del browser occupato dall\'archivio',
       vista: 'manage', apri: "homeApri('backup')", gravita: pct >= 90 ? 'alta' : 'media',
