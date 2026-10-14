@@ -4,20 +4,23 @@ Le revisioni seguono il versionamento semantico `0.MINOR.PATCH`: **MINOR** per n
 
 ### 0.95.0 — 2026-10-14
 
-**Il backup si fa da solo.** Il Riepilogo ricordava di esportare, ma l'export restava un gesto a mano, e l'unica copia dell'archivio stava in questo browser.
+**Il backup si fa da solo, e le modifiche lasciano traccia.** Il Riepilogo ricordava di esportare, ma l'export restava un gesto a mano, e l'unica copia dell'archivio stava in questo browser. E di ogni record si sapeva chi l'aveva toccato per ultimo, non che cosa aveva cambiato.
 
 **Nuovo**
 - **Backup automatico in una cartella** (*Gestione → Backup → Attiva backup automatico*): scelta una cartella una volta — meglio quella di OneDrive, Dropbox o un disco di rete — Bomtrack ci salva da sola il file del giorno, `bomtrack_backup_AAAA-MM-GG.json`, all'avvio, ogni mezz'ora se qualcosa è cambiato e quando si passa a un'altra finestra. Si tengono gli ultimi 14 giorni; gli altri file della cartella non si toccano. Ogni file si ripristina con *Importa JSON*.
 - Un backup automatico **conta come backup**: il promemoria dei 7 giorni non scatta.
 - **Riepilogo**: se il browser non ha ridato il permesso sulla cartella, il backup va *in pausa* e compare un avviso con **Riprendi**, che lo salva subito.
+- **Storico delle modifiche**: a ogni salvataggio si annota chi ha cambiato cosa, e da quale valore a quale, su articoli, documenti, anagrafiche, utenti e impostazioni. Si legge nel pannello laterale dell'articolo (scheda **Storico**) e in *Gestione → Backup*, con una ricerca. Le righe dei documenti e del listino si contano (aggiunte, tolte, cambiate); un import o una generazione che tocca più di 50 record è una voce sola; si tengono le ultime 5.000 e viaggiano nel backup. Delle password si dice solo che sono cambiate.
 
 **Da sapere**
+- Lo storico conta da questa versione. Il confronto si fa sul contenuto dei record, non sulle date: costa qualche millisecondo per salvataggio (su un archivio di 2,7 MB da 13 a 22 ms).
 - Come la cartella dell'archivio: Chrome o Edge, Bomtrack aperta da `https` o `localhost`, impostazione di questo PC. Aperta con un doppio clic su `index.html` la scheda dice che non è disponibile.
 
 **Corretto**
 - Un test del calendario falliva nei giorni in cui la data d'ordine cadeva di sabato, domenica o in un festivo: l'app la sposta giustamente al lavorativo prima, il test non lo sapeva. Ora la suite è verde qualunque giorno giri.
 
 **Verifica**
+- `test/storico.test.js`: campi e valori, niente rumore dalle sole date, modifiche senza `touch()`, righe contate, impostazioni, blocchi, tetto, password, backup e ricaricamento, scheda e ricerca.
 - `test/backup-auto.test.js`: file valido per l'import, rotazione a 14 senza toccare i file altrui, riscrittura solo su modifica, pausa senza permesso e ripresa dal Riepilogo, scelta e disattivazione, ruoli.
 
 ### 0.92.0 — 2026-10-13

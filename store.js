@@ -557,7 +557,7 @@ function loadDB() {
   // misurano su questa. Va letta anche quando il blob non c'è (archivio vuoto).
   try { revVista = adapter.leggiRev ? adapter.leggiRev() : 0; } catch (e) { revVista = 0; }
   if (grezzo) {
-    try { db = JSON.parse(grezzo); migrateDB(); markSynced(); return; }
+    try { db = JSON.parse(grezzo); migrateDB(); markSynced(); storicoFotografa(); return; }
     catch (e) {
       console.error('Dati salvati illeggibili:', e);
       let salvato = false;
@@ -573,6 +573,7 @@ function loadDB() {
   // ancora. Il primo salvataggio lo farà lui, dopo aver letto l'avviso.
   if (!dbLoadError) saveDB();
   markSynced();
+  storicoFotografa();
   if (dbLoadError && typeof onLoadError === 'function') onLoadError(dbLoadError);
 }
 // Il calendario di fabbrica di serie: lunedì–venerdì e le festività nazionali
@@ -1414,7 +1415,7 @@ function markSynced(mark) {
 // mentre è cambiato tutto. Si dichiara di non sapere — `pendingChanges()`
 // tornerà `null` — e il riallineamento tocca all'adapter, che è l'unico a poter
 // confrontare le due parti.
-function markUnknown() { _baseIds = null; _baseChildren = null; _baseSettings = null; _childFp = null; }
+function markUnknown() { _baseIds = null; _baseChildren = null; _baseSettings = null; _childFp = null; _storicoBase = null; }
 // { items: { upsert: [id…], remove: [id…], removeChildren: { priceList: [id…] } }, …, settings: true }
 // Le collezioni senza modifiche non compaiono, e `removeChildren` compare solo
 // se qualche riga figlia è sparita da un padre che **esiste ancora** — quelle
@@ -1666,6 +1667,149 @@ function commitFailed(kind, err, bytes) {
   return false;
 }
 
+// ── Storico delle modifiche ─────────────────────────────────
+// Ogni record dice chi l'ha toccato per ultimo (`updatedBy`), non che cosa è
+// cambiato: un prezzo sbagliato o una quantità corretta male non si potevano
+// ricostruire. Qui, a ogni salvataggio, si confronta ogni record con com'era
+// al salvataggio precedente e le differenze finiscono in `db.storico`, una
+// voce per record toccato: chi, quando, quali campi, da cosa a cosa.
+//
+// Perché nel salvataggio e non in chi modifica: i punti che scrivono sono
+// ottanta e passano tutti da qui (`Store.commit`), e un registro che dipende dal
+// ricordarsi di chiamarlo è un registro con dei buchi. Il confronto è sul JSON
+// del record, non su `updatedAt`: una modifica che non timbra la data si vede
+// lo stesso, e un `touch()` che non cambia niente non fa rumore.
+//
+// Cosa NON entra: le collezioni che sono già un registro (movimenti,
+// ricevimenti, dichiarazioni di produzione, revisioni, cestino). E un
+// salvataggio che tocca più di STORICO_BLOCCO record di una collezione — un
+// import da Excel, una generazione di ordini da un piano — diventa **una**
+// voce riassuntiva: cinquemila voci da un import cancellerebbero tutto il
+// resto dal registro, che tiene le ultime STORICO_MAX.
+//
+// Sta dentro il database, quindi viaggia col backup. Non è una collezione di
+// SCHEMA: il database condiviso, il giorno che ci sarà, avrà il suo.
+const STORICO_MAX = 5000;
+const STORICO_BLOCCO = 50;
+const STORICO_ESCLUSE = new Set(['movements', 'receipts', 'prodDecls', 'revisions', 'trash']);
+const STORICO_TECNICI = new Set(['createdAt', 'createdBy', 'updatedAt', 'updatedBy']);
+const STORICO_NASCOSTI = new Set(['passwordHash', 'passwordSalt']);
+const STORICO_LUNG = 80;
+let _storicoBase = null;   // Map collezione → Map id → JSON; 'settings' → JSON
+function storicoFotografa() {
+  if (!db) { _storicoBase = null; return; }
+  const m = new Map();
+  COLLECTIONS.forEach(c => {
+    if (STORICO_ESCLUSE.has(c)) return;
+    const inner = new Map();
+    (db[c] || []).forEach(r => { if (r && r.id != null) inner.set(r.id, safeStringify(r)); });
+    m.set(c, inner);
+  });
+  m.set('settings', safeStringify(db.settings));
+  _storicoBase = m;
+}
+// Il nome con cui una persona riconosce il record, preso al momento.
+function storicoEtichetta(r) {
+  if (!r) return '';
+  return String(r.code || r.number || r.name || r.title || r.username || r.email || r.id || '').slice(0, STORICO_LUNG);
+}
+function _storicoValore(v) {
+  if (v == null || v === '') return '';
+  if (typeof v === 'object') return Array.isArray(v) ? v.length + (v.length === 1 ? ' riga' : ' righe') : '(modificato)';
+  const t = String(v);
+  return t.length > STORICO_LUNG ? t.slice(0, STORICO_LUNG - 1) + '…' : t;
+}
+// Le righe di un elenco annidato con un id proprio (righe dei documenti,
+// listino): quante aggiunte, tolte e cambiate. Senza id si dice solo che è
+// cambiato.
+function _storicoRighe(prima, dopo) {
+  const id = x => (x && x.id != null ? x.id : null);
+  if (!prima.every(x => id(x) != null) || !dopo.every(x => id(x) != null)) return '';
+  const a = new Map(prima.map(x => [id(x), safeStringify(x)]));
+  let piu = 0, cambiate = 0;
+  const visti = new Set();
+  dopo.forEach(x => {
+    visti.add(id(x));
+    if (!a.has(id(x))) piu++;
+    else if (a.get(id(x)) !== safeStringify(x)) cambiate++;
+  });
+  const meno = prima.filter(x => !visti.has(id(x))).length;
+  return [piu ? '+' + piu : '', meno ? '−' + meno : '', cambiate ? cambiate + (cambiate === 1 ? ' cambiata' : ' cambiate') : ''].filter(Boolean).join(', ');
+}
+// [{ k: campo, a: prima, b: dopo, r?: dettaglio delle righe }]
+function storicoDiff(prima, dopo) {
+  const out = [];
+  const chiavi = new Set(Object.keys(prima || {}).concat(Object.keys(dopo || {})));
+  chiavi.forEach(k => {
+    if (STORICO_TECNICI.has(k)) return;
+    const a = prima ? prima[k] : undefined, b = dopo ? dopo[k] : undefined;
+    if (safeStringify(a) === safeStringify(b)) return;
+    if ((a == null || a === '') && (b == null || b === '')) return;
+    if (STORICO_NASCOSTI.has(k)) { out.push({ k, a: '', b: '(modificata)' }); return; }
+    const voce = { k, a: _storicoValore(a), b: _storicoValore(b) };
+    if (Array.isArray(a) && Array.isArray(b)) { const r = _storicoRighe(a, b); if (r) voce.r = r; }
+    out.push(voce);
+  });
+  return out;
+}
+function storicoRegistra() {
+  if (!db) return;
+  if (!_storicoBase) { storicoFotografa(); return; }
+  const t = nowISO(), u = actorId || null;
+  const nuove = [];
+  const dopo = new Map();
+  COLLECTIONS.forEach(c => {
+    if (STORICO_ESCLUSE.has(c)) return;
+    const prima = _storicoBase.get(c) || new Map();
+    const ora = new Map();
+    dopo.set(c, ora);
+    const voci = [];
+    (db[c] || []).forEach(r => {
+      if (!r || r.id == null) return;
+      const j = safeStringify(r);
+      ora.set(r.id, j);
+      const pj = prima.get(r.id);
+      if (pj === undefined) voci.push({ op: 'n', r });
+      else if (pj !== j) voci.push({ op: 'm', r, p: pj });
+    });
+    prima.forEach((pj, id) => { if (!ora.has(id)) voci.push({ op: 'x', p: pj }); });
+    if (!voci.length) return;
+    if (voci.length > STORICO_BLOCCO) {
+      const n = op => voci.filter(v => v.op === op).length;
+      nuove.push({ t, u, c, op: 'b', n: [n('n') && n('n') + ' nuovi', n('m') && n('m') + ' modificati', n('x') && n('x') + ' eliminati'].filter(Boolean).join(', ') });
+      return;
+    }
+    voci.forEach(v => {
+      let vecchio = null;
+      try { vecchio = v.p ? JSON.parse(v.p) : null; } catch (e) { vecchio = null; }
+      const rec = v.r || vecchio || {};
+      const e = { t, u, c, id: rec.id, op: v.op, n: storicoEtichetta(rec) };
+      if (v.op === 'm') {
+        e.d = storicoDiff(vecchio, v.r);
+        if (!e.d.length) return;   // solo date e autore: nessuna modifica vera
+      }
+      nuove.push(e);
+    });
+  });
+  const set = safeStringify(db.settings);
+  if (set !== _storicoBase.get('settings')) {
+    let vecchie = {};
+    try { vecchie = JSON.parse(_storicoBase.get('settings') || '{}') || {}; } catch (e) { vecchie = {}; }
+    const d = storicoDiff(vecchie, db.settings || {});
+    if (d.length) nuove.push({ t, u, c: 'settings', id: null, op: 'm', n: 'Impostazioni', d });
+  }
+  dopo.set('settings', set);
+  _storicoBase = dopo;
+  if (!nuove.length) return;
+  if (!Array.isArray(db.storico)) db.storico = [];
+  Array.prototype.push.apply(db.storico, nuove);
+  if (db.storico.length > STORICO_MAX) db.storico.splice(0, db.storico.length - STORICO_MAX);
+}
+// Le voci di un record, dalla più recente.
+function storicoDi(coll, id) {
+  return (Array.isArray(db && db.storico) ? db.storico : []).filter(e => e.c === coll && e.id === id).reverse();
+}
+
 // ── Store: API repository (contratto per il futuro adapter cloud) ──
 const Store = {
   load() { loadDB(); },
@@ -1677,6 +1821,9 @@ const Store = {
     if (typeof invalidateCaches === 'function') invalidateCaches();
     // Le righe figlie modificate prendono la loro data prima di essere scritte.
     stampChildRows();
+    // Cosa è cambiato dall'ultimo salvataggio, nel registro: prima di
+    // serializzare, così il registro viaggia nello stesso salvataggio.
+    storicoRegistra();
     let payload;
     try { payload = JSON.stringify(db); }
     catch (e) { return commitFailed('serialize', e, 0); }

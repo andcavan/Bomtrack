@@ -898,7 +898,8 @@ riepilogo dell'articolo scelto (costo, giacenza, impieghi) e sotto i comandi e l
 - Rettifica giacenza · Movimenti (N) · Dove è usato e impatto costi · Modifica articolo ·
   Scheda completa.
 
-**Le schede:** **Scheda** (l'anagrafica) · **Listino** · **Dove è usato**.
+**Le schede:** **Scheda** (l'anagrafica) · **Listino** · **Dove è usato** · **Storico** (chi ha
+cambiato cosa su questo articolo, e da quale valore a quale → [cap. 30](#30-backup-e-manutenzione)).
 
 **La selezione multipla.**
 
@@ -2235,6 +2236,28 @@ le voci spariscono da sole al caricamento successivo.
 
 Cosa ci finisce: Articolo · Fornitore · Cliente · Centro di lavoro · Macrofamiglia · Richiesta ·
 Ordine · Ordine di lavoro · Piano · Utente · Commessa · Movimento · Revisione.
+
+### Storico delle modifiche
+
+A ogni salvataggio Bomtrack annota che cosa è cambiato: **chi**, **quando**, **quale campo**, **da
+quale valore a quale**. Vale per articoli, documenti (richieste, ordini, ODL, ODP, piani,
+commesse), anagrafiche, utenti e impostazioni.
+
+| Dove | Cosa mostra |
+|---|---|
+| Pannello laterale di un articolo, scheda **Storico** | Le modifiche di quell'articolo, dalla più recente |
+| *Gestione → Backup → Storico delle modifiche* | Le ultime 200 modifiche di tutto l'archivio, con una ricerca per codice, numero, utente, campo o valore |
+
+- Le **righe** di un documento o del listino si contano: «3 righe → 4 righe (+1, 1 cambiata)».
+- I fornitori, i clienti, le famiglie e gli articoli citati si leggono **col nome di oggi**.
+- Un import da Excel o una generazione di documenti che tocca **più di 50 record** di un tipo
+  diventa **una voce sola** («120 nuovi, 3 modificati»).
+- Non entrano i movimenti di magazzino, i ricevimenti, le dichiarazioni di produzione e le
+  revisioni, che sono già un registro loro. Delle **password** si dice solo che sono cambiate.
+- Si tengono le **ultime 5.000** modifiche. Lo storico sta nell'archivio, quindi **viaggia nel
+  backup** e torna con un ripristino.
+
+> 💡 Lo storico conta **dalla 0.95.0**: di quello che è successo prima non c'è traccia.
 
 ### Codici articolo duplicati
 

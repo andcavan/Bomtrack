@@ -221,7 +221,7 @@ Il motivo è lo storico: finché lo stesso dato si poteva scrivere in due posti,
 - `index.html` — struttura, navigazione, barre filtri delle due anagrafiche, caricamento degli script.
 - `vendor/` — le librerie di export (SheetJS per Excel, jsPDF per i PDF), tenute nel repo invece che su un CDN. Versioni, origine e come si aggiornano: `vendor/LEGGIMI.md`.
 - `theme.js` — tema chiaro/scuro/automatico: scrive `data-theme` sull'elemento radice, che è tutto ciò che `style.css` legge. La preferenza sta nel browser di chi lavora, non nel database.
-- `store.js` — layer dati: schema, migrazioni versionate, `Store` (API repository) su IndexedDB o localStorage, hashing delle password e autore delle modifiche.
+- `store.js` — layer dati: schema, migrazioni versionate, `Store` (API repository) su IndexedDB o localStorage, hashing delle password, autore delle modifiche e storico di cosa cambia a ogni salvataggio.
 - Il codice dell'app, diviso in **classic script caricati in sequenza** da `index.html` (nessun modulo, nessun build: la pagina si apre anche con un doppio click). Lo scope globale è condiviso, quindi restano un solo insieme di funzioni e un solo stato:
 
 | File | Contenuto |
@@ -248,7 +248,7 @@ Il motivo è lo storico: finché lo stesso dato si poteva scrivere in due posti,
 | `allegati.js` | allegati degli articoli: i documenti d'archivio e i loro collegamenti ai codici; i byte dei vecchi file in IndexedDB |
 | `archivio.js` | la cartella dei PDF: scelta, permesso, lettura, copia e verifica. Impostazione **locale**, un PC alla volta |
 | `export-lists.js` | export PDF ed Excel degli elenchi: una specifica per vista, due traduttori |
-| `views-item.js` | scheda articolo di sola lettura e codice cliccabile |
+| `views-item.js` | scheda articolo di sola lettura e codice cliccabile; come si legge lo storico delle modifiche |
 | `views-docs.js` | richieste di offerta e ordini |
 | `views-prod.js` | ordini di produzione: congelamento del ciclo, successione delle fasi, avanzamento e i due movimenti di magazzino |
 | `views-manage.js` | gestione (utenti, anagrafiche di servizio, impostazioni) |

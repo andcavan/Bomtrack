@@ -1291,6 +1291,7 @@ function renderBackup() {
     </div></div>
   ${renderArchivio()}
   ${renderTrash()}
+  ${renderStorico()}
   ${renderDuplicateCodes()}
   <div class="cloud-section" style="margin-top:16px">
     <div style="flex:1">
