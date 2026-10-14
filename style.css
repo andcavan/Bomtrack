@@ -472,6 +472,11 @@ input[type=date]::-webkit-calendar-picker-indicator,input[type=datetime-local]::
 .cal-dot{display:inline-block;width:8px;height:8px;border-radius:50%;flex:none}
 .cal-more{font-size:11px;color:var(--text-dim);font-family:var(--mono)}
 .cal-block{margin-top:14px}
+.cal-filtri{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:0 0 10px}
+.cal-filtro{background:var(--bg);border:1px solid var(--border);border-radius:20px;padding:4px 10px;font-size:12px;color:var(--text-dim);cursor:pointer;white-space:nowrap;min-height:32px}
+.cal-filtro.on{background:var(--accent-soft,var(--bg));border-color:var(--accent);color:var(--text)}
+.cal-filtro-n{font-family:var(--mono);font-size:11px;opacity:.75}
+.cal-filtro-tutti{font-size:12px}
 .cal-block h4{font-size:13px;margin:0 0 8px}
 .cal-late h4{color:var(--red)}
 .cal-wide{margin-top:14px}

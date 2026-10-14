@@ -224,3 +224,89 @@ describe('Promemoria', () => {
     assert.equal(a.eval('Array.isArray(db.reminders) && db.reminders.length'), 0);
   });
 });
+
+// 0.98.0: l'avvio delle fasi programmate degli ODP lanciati, e i filtri per tipo.
+describe('Calendario: avvio delle fasi degli ordini di produzione', () => {
+  function conOdp(stato) {
+    const a = app();
+    a.eval(`db.suppliers = [{ id: 'beta', name: 'Beta', active: true }];
+      db.items = [{ id: 'p1', code: 'P1', name: 'Perno', type: 'parte', uom: 'pz', cycle: [], active: true }];
+      db.prodOrders = [{ id: 'odp1', number: 'ODP-2026-001', itemId: 'p1', qty: 5, status: '${stato}', active: true, dueDate: addDays(oggiISO(), 30),
+        phases: [
+          { id: 'f1', seq: 10, opIndex: 0, wcName: 'Tornio', supplierId: null, plannedStart: addDays(oggiISO(), -2), plannedEnd: addDays(oggiISO(), 1) },
+          { id: 'f2', seq: 20, opIndex: 1, wcName: 'Zincatura', supplierId: 'beta', supplierName: 'Beta', plannedStart: addDays(oggiISO(), 20), plannedEnd: addDays(oggiISO(), 25) },
+          { id: 'f3', seq: 30, opIndex: 2, wcName: 'Passivazione', supplierId: 'beta', supplierName: 'Beta', plannedStart: addDays(oggiISO(), 20), plannedEnd: addDays(oggiISO(), 25) },
+        ] }];
+      db.prodDecls = []; invalidateCaches();`);
+    return a;
+  }
+  const fasi = a => eventi(a).filter(e => e.tipo === 'fase');
+
+  it('ogni giorno d\'avvio di un ODP lanciato è una voce; la tratta dal terzista è una sola', () => {
+    const a = conOdp('lanciato');
+    const f = fasi(a);
+    assert.equal(f.length, 2);
+    assert.equal(f[0].testo, 'Avviare fase 10 di ODP-2026-001');
+    assert.equal(f[0].gravita, 'alta', 'doveva partire due giorni fa');
+    assert.equal(f[1].testo, 'Avviare fasi 20, 30 di ODP-2026-001');
+    assert.match(f[1].dettaglio, /P1 — Beta/);
+    assert.match(f[1].azione, /homeApri\('odp','odp1'\)/);
+  });
+
+  it('una fase avviata non chiede più di essere avviata', () => {
+    const a = conOdp('corso');
+    a.eval(`db.prodDecls.push({ id: 'd1', odpId: 'odp1', phaseId: 'f1', kind: 'avvio', date: oggiISO() }); invalidateCaches();`);
+    assert.deepEqual(fasi(a).map(e => e.testo), ['Avviare fasi 20, 30 di ODP-2026-001']);
+  });
+
+  it('un ODP in bozza o chiuso non mette fasi in calendario', () => {
+    assert.equal(fasi(conOdp('bozza')).length, 0);
+    assert.equal(fasi(conOdp('chiuso')).length, 0);
+  });
+});
+
+describe('Calendario: filtri per tipo', () => {
+  function popolato() {
+    const a = app();
+    a.eval(`db.jobs = [{ id: 'j1', number: 'COM-1', status: 'aperta', dueDate: '2020-01-01', active: true }];
+      db.reminders = [{ id: 'r1', title: 'Collaudo', date: oggiISO(), gravita: 'info', active: true }];
+      homeCalNascosti = null; localStorage.removeItem(CAL_FILTRI_KEY); renderHome();`);
+    return a;
+  }
+
+  it('ogni tipo di scadenza ha il suo filtro', () => {
+    const a = app();
+    const tipi = ['commessa', 'piano', 'programma', 'fabbisogno', 'ordine', 'richiesta', 'fase', 'produzione', 'promemoria'];
+    tipi.forEach(t => assert.ok(a.eval(`!!calFiltroDi('${t}')`), t));
+  });
+
+  it('spegnere un tipo lo toglie da scadute, giorno e prossimi, e lo dice', () => {
+    const a = popolato();
+    let h = a.html('view-home');
+    assert.match(h, /COM-1/);
+    assert.match(h, /Collaudo/);
+    a.eval("homeCalFiltro('commesse')");
+    h = a.html('view-home');
+    assert.doesNotMatch(h, /Scadute e non risolte/);
+    assert.match(h, /Collaudo/, 'gli altri tipi restano');
+    assert.match(h, /1 scadenza nascosta dai filtri/);
+    assert.match(h, /aria-pressed="false"[^>]*>Commesse/);
+  });
+
+  it('la scelta si ricorda in questo browser, e «Mostra tutto» la azzera', () => {
+    const a = popolato();
+    a.eval("homeCalFiltro('promemoria')");
+    assert.equal(a.eval('localStorage.getItem(CAL_FILTRI_KEY)'), '["promemoria"]');
+    a.eval('homeCalNascosti = null; renderHome()');
+    assert.doesNotMatch(a.html('view-home'), /Collaudo/);
+    a.eval('homeCalTutti()');
+    assert.match(a.html('view-home'), /Collaudo/);
+    assert.equal(a.eval('localStorage.getItem(CAL_FILTRI_KEY)'), '[]');
+  });
+
+  it('una preferenza illeggibile non rompe niente: si vede tutto', () => {
+    const a = popolato();
+    a.eval(`localStorage.setItem(CAL_FILTRI_KEY, '{rotto'); homeCalNascosti = null; renderHome();`);
+    assert.match(a.html('view-home'), /Collaudo/);
+  });
+});

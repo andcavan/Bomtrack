@@ -1,6 +1,6 @@
 # Bomtrack — Manuale d'uso
 
-**Versione dell'app documentata: 0.97.0**
+**Versione dell'app documentata: 0.98.0**
 
 📖 **[Leggilo come pagina web](https://claude.ai/code/artifact/726a0963-2db0-4947-999b-d7b5beb91a0b)** — stesso testo, con indice laterale, filtro dei capitoli e tema chiaro/scuro. Comodo da tenere aperto di fianco all'app.
 
@@ -559,6 +559,18 @@ segnale sparisce quando sparisce la sua causa.
 commesse, articoli da ordinare, consegne attese da fornitori e terzisti, fine produzione,
 promemoria. Dalla 0.89.0 ci sono anche gli **invii al terzista** e i **lanci in produzione** dei
 piani aperti, presi dal loro *Programma* (→ [cap. 19](#19-fabbisogno-materiali)).
+
+Dalla 0.98.0 compare anche l'**avvio delle fasi** degli ordini di produzione lanciati o in corso:
+alla data d'inizio programmata di ogni fase non ancora avviata, «Avviare fase 10 di ODP-…». Le fasi
+di una stessa tratta dal terzista partono insieme e sono una voce sola. Una fase che doveva partire
+e non è stata avviata finisce fra le **scadute**; appena la si avvia, la voce sparisce.
+
+**I filtri.** Sopra il calendario una fila di pulsanti, uno per tipo di scadenza, ciascuno con il
+suo numero: *Commesse* · *Piani e programma* · *Da ordinare* · *Consegne e rientri* · *Richieste* ·
+*Avvio fasi ODP* · *Fine produzione* · *Promemoria*. Un clic nasconde quel tipo, un altro lo
+rimostra; i filtri valgono per tutto il calendario (scadute, griglia, giorno scelto e prossimi 14
+giorni), e una riga dice quante scadenze sono nascoste. **Mostra tutto** riaccende tutto. La scelta
+resta in questo browser, per chi la fa: non cambia niente per i colleghi.
 
 ### Il cruscotto
 

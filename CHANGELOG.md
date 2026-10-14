@@ -2,6 +2,17 @@
 
 Le revisioni seguono il versionamento semantico `0.MINOR.PATCH`: **MINOR** per nuove funzionalità, **PATCH** per correzioni. La versione in cima è quella in `APP_VERSION` (`core.js`) e mostrata nell'header dell'app.
 
+### 0.98.0 — 2026-10-14
+
+**Il calendario si filtra, e dice quando partono le fasi.** Un ordine di produzione lanciato aveva le fasi programmate con inizio e fine, ma il Riepilogo mostrava solo la sua data di fine; e con fabbisogno, consegne e promemoria nello stesso mese la griglia si leggeva a fatica.
+
+**Nuovo**
+- **Avvio delle fasi degli ODP** nel calendario del Riepilogo: alla data d'inizio programmata di ogni fase non ancora avviata di un ordine lanciato o in corso, «Avviare fase 10 di ODP-…», con la parte e il centro o il terzista. Le fasi di una tratta dal terzista sono una voce sola. Se la data è passata la voce è fra le scadute; avviata la fase, sparisce.
+- **Filtri per tipo** sopra il calendario: Commesse, Piani e programma, Da ordinare, Consegne e rientri, Richieste, Avvio fasi ODP, Fine produzione, Promemoria, ognuno col suo numero. Valgono per scadute, griglia, giorno e prossimi 14 giorni; una riga dice quante scadenze sono nascoste e **Mostra tutto** le riaccende. La scelta si ricorda in questo browser.
+
+**Verifica**
+- `test/calendar.test.js`: le fasi (una voce per giorno, tratta unica, scaduta, avviata che sparisce, bozza e chiuso esclusi) e i filtri (ogni tipo coperto, scadute e giorno filtrati, conteggio dei nascosti, memoria, «Mostra tutto», preferenza illeggibile).
+
 ### 0.97.0 — 2026-10-14
 
 **Il Gantt con quello che è successo davvero.** Il Gantt del piano dice entro quando deve succedere ogni cosa; per sapere se era successa si aprivano a uno a uno ordini, ordini di lavoro e ordini di produzione.

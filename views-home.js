@@ -342,6 +342,30 @@ function homeEventi() {
       gravita: calGravitaData(due, oggi), azione: `homeApri('odp','${o.id}')` });
   });
 
+  // Fasi programmate degli ordini di produzione lanciati o in corso (0.98.0):
+  // il giorno in cui ciascuna fase deve partire, finché non è avviata. Le fasi
+  // di una tratta dal terzista partono insieme, e lo stesso giorno di uno
+  // stesso ordine è una voce sola. Una data passata senza avvio è scaduta.
+  (db.prodOrders || []).forEach(o => {
+    if (o.active === false || !ODP_APERTI.includes(o.status)) return;
+    const it = getItem(o.itemId);
+    const perGiorno = new Map();
+    (o.phases || []).forEach(f => {
+      const d = String(f.plannedStart || '').slice(0, 10);
+      if (!d || opAvviata(o, f) || opChiusa(o, f)) return;
+      if (!perGiorno.has(d)) perGiorno.set(d, []);
+      perGiorno.get(d).push(f);
+    });
+    perGiorno.forEach((fasi, d) => {
+      const nos = fasi.map(f => f.seq);
+      const dove = Array.from(new Set(fasi.map(f => f.supplierId ? (f.supplierName || supplierName(f.supplierId) || 'terzista') : (f.wcName || '')))).filter(Boolean).join(', ');
+      out.push({ tipo: 'fase', data: d, icona: fasi.some(f => f.supplierId) ? 'truck' : 'factory',
+        testo: `Avviare ${nos.length === 1 ? 'fase ' + nos[0] : 'fasi ' + nos.join(', ')} di ${o.number || 'ODP'}`,
+        dettaglio: [it && (it.code || it.name), dove].filter(Boolean).join(' — '),
+        gravita: calGravitaData(d, oggi), azione: `homeApri('odp','${o.id}')` });
+    });
+  });
+
   // Richieste inviate: la consegna chiesta, per sapere quando sollecitare
   (db.rfqs || []).forEach(q => {
     if (q.active === false || q.status !== 'inviata') return;
@@ -366,6 +390,55 @@ function homeEventi() {
 
   out.forEach(e => { delete e.numero; delete e.n; });
   return out.sort((a, b) => a.data.localeCompare(b.data) || CAL_GRAV_ORD[a.gravita] - CAL_GRAV_ORD[b.gravita]);
+}
+
+// ─── Filtri per tipo ───
+// Con fabbisogno, programma, consegne, fasi e promemoria nello stesso mese la
+// griglia si riempie: i filtri lasciano guardare una cosa alla volta. Valgono
+// per tutto il calendario (scadute, griglia, giorno, prossimi 14 giorni) e
+// solo per chi guarda: si ricordano in questo browser, non nel database.
+const CAL_FILTRI = [
+  { id: 'commesse', label: 'Commesse', tipi: ['commessa'] },
+  { id: 'piani', label: 'Piani e programma', tipi: ['piano', 'programma'] },
+  { id: 'ordinare', label: 'Da ordinare', tipi: ['fabbisogno'] },
+  { id: 'consegne', label: 'Consegne e rientri', tipi: ['ordine'] },
+  { id: 'richieste', label: 'Richieste', tipi: ['richiesta'] },
+  { id: 'fasi', label: 'Avvio fasi ODP', tipi: ['fase'] },
+  { id: 'produzione', label: 'Fine produzione', tipi: ['produzione'] },
+  { id: 'promemoria', label: 'Promemoria', tipi: ['promemoria'] },
+];
+const CAL_FILTRI_KEY = 'bomtrack_cal_nascosti';
+let homeCalNascosti = null;   // Set degli id di CAL_FILTRI spenti; null = da leggere
+function calNascosti() {
+  if (homeCalNascosti) return homeCalNascosti;
+  homeCalNascosti = new Set();
+  try {
+    const v = JSON.parse(localStorage.getItem(CAL_FILTRI_KEY) || '[]');
+    if (Array.isArray(v)) v.forEach(id => { if (CAL_FILTRI.some(f => f.id === id)) homeCalNascosti.add(id); });
+  } catch (e) { /* preferenza illeggibile: si vede tutto */ }
+  return homeCalNascosti;
+}
+function calFiltroSalva() {
+  try { localStorage.setItem(CAL_FILTRI_KEY, JSON.stringify(Array.from(calNascosti()))); } catch (e) { /* niente da rompere */ }
+}
+function calFiltroDi(tipo) { return CAL_FILTRI.find(f => f.tipi.includes(tipo)) || null; }
+function calVisibile(e) { const f = calFiltroDi(e.tipo); return !f || !calNascosti().has(f.id); }
+function homeCalFiltro(id) {
+  const n = calNascosti();
+  if (n.has(id)) n.delete(id); else n.add(id);
+  calFiltroSalva(); renderHome();
+}
+function homeCalTutti() { calNascosti().clear(); calFiltroSalva(); renderHome(); }
+function calFiltriHtml(eventi) {
+  const n = calNascosti();
+  const conta = new Map();
+  eventi.forEach(e => { const f = calFiltroDi(e.tipo); if (f) conta.set(f.id, (conta.get(f.id) || 0) + 1); });
+  const chips = CAL_FILTRI.map(f => {
+    const on = !n.has(f.id);
+    return `<button type="button" class="cal-filtro${on ? ' on' : ''}" aria-pressed="${on}" onclick="homeCalFiltro('${f.id}')" title="${on ? 'Nascondi' : 'Mostra'} ${esc(f.label.toLowerCase())}">${esc(f.label)} <span class="cal-filtro-n">${conta.get(f.id) || 0}</span></button>`;
+  }).join('');
+  return `<div class="cal-filtri" role="group" aria-label="Tipi di scadenza mostrati">${chips}
+    ${n.size ? `<button type="button" class="btn-ghost cal-filtro-tutti" onclick="homeCalTutti()">Mostra tutto</button>` : ''}</div>`;
 }
 
 // Stato della vista: mese mostrato e giorno scelto. Comodità di navigazione,
@@ -416,8 +489,10 @@ function calElenco(eventi, conData, vuoto) {
     : `<div class="empty-text" style="text-align:left">${esc(vuoto)}</div>`;
 }
 
-function renderHomeCalendar(eventi) {
+function renderHomeCalendar(tutti) {
   const oggi = oggiISO();
+  const eventi = tutti.filter(calVisibile);
+  const nascosti = tutti.length - eventi.length;
   if (!homeCalMese) homeCalMese = calMeseDi(oggi);
   if (!homeCalGiorno) homeCalGiorno = oggi;
   const perGiorno = new Map();
@@ -447,6 +522,8 @@ function renderHomeCalendar(eventi) {
         <h3 style="flex:1">${ico('clock', 'tinted pill', '')} Calendario scadenze</h3>
         ${puoi ? `<button class="btn-outline" onclick="reminderModal(null, '${homeCalGiorno}')">+ Promemoria</button>` : ''}
       </div>
+      ${calFiltriHtml(tutti)}
+      ${nascosti ? `<div class="empty-text" style="text-align:left;padding:0 0 6px">${nascosti} ${nascosti === 1 ? 'scadenza nascosta' : 'scadenze nascoste'} dai filtri.</div>` : ''}
       ${scaduti.length ? `<div class="cal-block cal-late">
         <h4>${ico('warning', '', '')} Scadute e non risolte (${scaduti.length})</h4>
         ${calElenco(scaduti.slice(0, MAX_SCADUTI), true, '')}
