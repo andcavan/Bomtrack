@@ -410,9 +410,14 @@ create table if not exists public.item_revisions (
   id uuid primary key,
   item_id uuid references public.items(id) deferrable initially deferred,
   rev text, date timestamptz, motivo text, snapshot jsonb,
+  eco_number text, eco_kind text, eco_impact jsonb,
   pos int, created_at timestamptz, updated_at timestamptz, created_by uuid, updated_by uuid,
   synced_at timestamptz not null default clock_timestamp()
 );
+-- Modifiche tecniche (0.96.0): numero, tipo e documenti aperti al rilascio.
+alter table public.item_revisions add column if not exists eco_number text;
+alter table public.item_revisions add column if not exists eco_kind text;
+alter table public.item_revisions add column if not exists eco_impact jsonb;
 
 -- ─── Allegati, promemoria, cestino ──────────────────────────
 create table if not exists public.attachment_docs (

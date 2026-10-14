@@ -79,18 +79,26 @@ function revSnapshot(it) {
 
 // Rilascia la revisione in lavorazione e ne apre la successiva.
 // Ritorna il record creato, o null se non c'era niente da rilasciare.
-function releaseRevision(itemId, motivo) {
+// `eco` (facoltativo): { tipo } — il tipo di modifica tecnica. Il numero
+// MT-… e l'impatto sui documenti aperti li calcola il rilascio stesso: sono un
+// fatto del momento, e chi chiama non deve poterli scrivere diversi.
+function releaseRevision(itemId, motivo, eco) {
   // La guardia sta nel mutatore, non solo nei chiamanti: la funzione è globale
   // e chiunque la raggiunga deve passare dallo stesso controllo.
   if (!roleGuard('bom')) return null;
   const it = getItem(itemId);
   if (!it || !hasRevisions(it)) return null;
   const rev = itemRev(it);
+  const snapshot = revSnapshot(it);
+  const ultima = revisionsOf(it.id)[0];
   const rec = {
     id: gid(), itemId, rev,
     date: nowISO(),
     motivo: String(motivo || '').trim(),
-    snapshot: revSnapshot(it),
+    snapshot,
+    ecoNumber: nextEcoNumber(),
+    ecoKind: ECO_TIPI[eco && eco.tipo] ? eco.tipo : '',
+    ecoImpact: ecoImpatto(it.id, ultima ? revDiff(ultima.snapshot, snapshot) : null),
   };
   // Prima si avanza l'articolo, poi si inserisce: Store.insert salva una volta
   // sola e porta con sé entrambe le modifiche. Passa da lì anche perché crea la
@@ -99,6 +107,124 @@ function releaseRevision(itemId, motivo) {
   touch(it);
   Store.insert('revisions', rec);
   return rec;
+}
+
+// ═══ Modifiche tecniche ═══
+// Una revisione diceva *che cosa* era cambiato e, se qualcuno lo scriveva,
+// *perché*. Mancavano le due domande che si fanno il giorno dopo: che modifica
+// era (un errore da correggere o un miglioramento? chiesto dal cliente?) e
+// **cosa c'era già in giro** costruito sulla versione vecchia — piani aperti,
+// ordini di produzione lanciati, ordini a fornitore di un componente tolto.
+//
+// Il rilascio diventa quindi una modifica tecnica numerata (MT-AAAA-NNN), col
+// suo tipo e la fotografia dei documenti aperti toccati. La fotografia è del
+// momento del rilascio: fra un mese quei documenti saranno chiusi, e la domanda
+// «chi ha costruito sulla B?» deve avere ancora una risposta.
+const ECO_TIPI = {
+  correttiva: 'Correttiva — corregge un errore',
+  migliorativa: 'Migliorativa',
+  cliente: 'Richiesta del cliente',
+  fornitore: 'Cambio di fornitore o componente',
+  costo: 'Riduzione dei costi',
+};
+function nextEcoNumber() {
+  const prefix = `MT-${new Date().getFullYear()}-`;
+  const seqs = (db.revisions || []).filter(r => String(r.ecoNumber || '').startsWith(prefix))
+    .map(r => parseInt(String(r.ecoNumber).slice(prefix.length), 10) || 0);
+  return prefix + String((seqs.length ? Math.max(...seqs) : 0) + 1).padStart(3, '0');
+}
+// L'articolo e tutto ciò che lo contiene, a qualunque livello: un piano aperto
+// sulla macchina è toccato da una modifica a una sua vite.
+function ecoAntenati(itemId) {
+  const visti = new Set([itemId]);
+  const coda = [itemId];
+  const idx = parentIndex();
+  while (coda.length) {
+    (idx.get(coda.shift()) || []).forEach(p => { if (!visti.has(p.id)) { visti.add(p.id); coda.push(p.id); } });
+  }
+  return visti;
+}
+// I documenti **aperti** costruiti sulla versione che si sta lasciando:
+//   - piani di fabbisogno e ordini di produzione dell'articolo o di chi lo
+//     contiene (si costruisce con la distinta vecchia);
+//   - richieste e ordini a fornitore, e ordini di lavoro, dei componenti che
+//     la modifica aggiunge, toglie o cambia (si compra per la distinta vecchia).
+// [{ k, id, number, perche }]
+function ecoImpatto(itemId, diff) {
+  const sopra = ecoAntenati(itemId);
+  const toccati = new Set([itemId]);
+  if (diff) [].concat(diff.aggiunte, diff.rimosse, diff.cambiate).forEach(r => {
+    const m = /^[ic]:(.+)$/.exec(r.chiave || '');
+    if (m && getItem(m[1])) toccati.add(m[1]);
+  });
+  const out = [];
+  const nome = id => { const i = getItem(id); return i ? i.code || i.name : ''; };
+  (db.plans || []).forEach(p => {
+    if (p.active === false) return;
+    const l = (p.lines || []).find(x => sopra.has(x.itemId));
+    if (l) out.push({ k: 'plan', id: p.id, number: p.number || '', perche: 'piano aperto su ' + nome(l.itemId) });
+  });
+  (db.prodOrders || []).forEach(o => {
+    if (['completato', 'chiuso', 'annullato'].includes(o.status)) return;
+    if (sopra.has(o.itemId)) out.push({ k: 'odp', id: o.id, number: o.number || '', perche: 'ordine di produzione ' + (o.status || '') + ' di ' + nome(o.itemId) });
+  });
+  const righe = (k, docs, chiusi) => (docs || []).forEach(d => {
+    if (chiusi.includes(d.status) || d.active === false) return;
+    const l = (d.lines || []).find(x => x.itemId && toccati.has(x.itemId));
+    if (l) out.push({ k, id: d.id, number: d.number || '', perche: (d.status || '') + ', con ' + nome(l.itemId) });
+  });
+  righe('rfq', db.rfqs, ['chiusa']);
+  righe('order', db.orders, ['evaso', 'annullato']);
+  righe('odl', db.workOrders, ['evaso', 'annullato']);
+  return out;
+}
+const ECO_DOC = { plan: 'Piano', odp: 'ODP', rfq: 'Richiesta', order: 'Ordine', odl: 'ODL' };
+function ecoApri(k, id) {
+  closeModal();
+  if (k === 'plan') { setView('mrp'); openPlanEdit(id); }
+  else if (k === 'odp') { setView('odp'); openOdpEdit(id); }
+  else if (k === 'rfq') { setView('rfq'); openRfqEdit(id); }
+  else if (k === 'order') { setView('orders'); openOrderEdit(id); }
+  else if (k === 'odl') { setView('odl'); openOdlEdit(id); }
+}
+function ecoImpattoHtml(lista, vivo) {
+  if (!lista || !lista.length) return `<p class="empty-text" style="text-align:left;padding:0">${vivo ? 'Nessun documento aperto è costruito sulla versione attuale.' : 'Nessun documento aperto era toccato.'}</p>`;
+  return `<ul class="storico-campi">${lista.map(d => {
+    const esiste = { plan: getPlan, odp: getOdp, rfq: getRfq, order: getOrder, odl: getOdl }[d.k];
+    const vivoDoc = typeof esiste === 'function' && esiste(d.id);
+    const n = `${ECO_DOC[d.k] || d.k} ${esc(d.number)}`;
+    return `<li>${vivoDoc ? `<a href="#" onclick="ecoApri('${d.k}','${d.id}');return false">${n}</a>` : n} <span class="storico-prima">— ${esc(d.perche)}</span></li>`;
+  }).join('')}</ul>`;
+}
+function ecoTipoLabel(k) { return ECO_TIPI[k] ? ECO_TIPI[k].split(' — ')[0] : ''; }
+// Tutte le modifiche tecniche, di tutti gli articoli, dalla più recente.
+function ecoRegistro() {
+  return (db.revisions || []).map((r, i) => ({ r, i }))
+    .sort((a, b) => String(b.r.date || '').localeCompare(String(a.r.date || '')) || b.i - a.i)
+    .map(x => x.r);
+}
+function ecoRegistroModal() {
+  const lista = ecoRegistro();
+  const corpo = lista.length ? lista.map(r => {
+    const it = getItem(r.itemId);
+    return `<div class="mgmt-item" style="display:block">
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <strong style="font-family:var(--mono)">${esc(r.ecoNumber || '—')}</strong>
+        ${it ? codeLink(it.id, it.code) : '<span class="empty-text" style="padding:0">(articolo eliminato)</span>'}
+        <span>Rev. ${esc(r.rev)}</span>
+        ${r.ecoKind ? `<span class="doc-badge">${esc(ecoTipoLabel(r.ecoKind))}</span>` : ''}
+        <span style="flex:1"></span>
+        <span class="empty-text" style="padding:0">${esc(fmtDateIt(r.date))} · ${esc(r.createdBy ? actorName(r.createdBy) : '—')}</span>
+        ${it ? `<button class="btn-ghost" onclick="revCompareModal('${r.id}')">⇄ Confronta</button>` : ''}
+      </div>
+      ${r.motivo ? `<div style="margin-top:4px">${esc(r.motivo)}</div>` : ''}
+      ${(r.ecoImpact || []).length ? `<div style="margin-top:4px"><span class="storico-campo">Documenti aperti al rilascio</span>${ecoImpattoHtml(r.ecoImpact)}</div>` : ''}
+    </div>`;
+  }).join('') : '<div class="empty-text">Nessuna modifica tecnica: si registrano rilasciando una revisione di distinta o di ciclo.</div>';
+  openModal(`<h3>${ico('clock', 'tinted pill', '')} Registro delle modifiche tecniche</h3>
+    <p>Ogni revisione rilasciata è una modifica tecnica: numero, tipo, motivo, chi e quando, e i documenti aperti che erano costruiti sulla versione precedente.</p>
+    <div style="display:flex;flex-direction:column;gap:8px">${corpo}</div>
+    <div class="modal-actions"><button class="btn-ghost" onclick="closeModal()">Chiudi</button></div>`, true, 'eco');
 }
 
 // ─── Confronto ───
@@ -168,7 +294,8 @@ function renderRevBar(elId, itemId) {
   if (!it || !hasRevisions(it)) { el.innerHTML = ''; return; }
   el.innerHTML = `${revBadge(it)}
     <button class="btn-outline" onclick="releaseRevisionModal('${it.id}')">${ico('pin', 'tinted', '')} Nuova revisione</button>
-    <button class="btn-outline" onclick="revHistoryModal('${it.id}')">${ico('clock', 'tinted', '')} Storico revisioni</button>${isAssembly(it.type) ? `
+    <button class="btn-outline" onclick="revHistoryModal('${it.id}')">${ico('clock', 'tinted', '')} Storico revisioni</button>
+    <button class="btn-outline" onclick="ecoRegistroModal()" title="Tutte le revisioni rilasciate, di tutti gli articoli">Modifiche tecniche</button>${isAssembly(it.type) ? `
     <button class="btn-outline" onclick="bomCompareModal('${it.id}')" title="Le differenze con un'altra distinta, su tutti i livelli">⇄ Confronta con…</button>` : ''}`;
 }
 function renderBomRevBar() { renderRevBar('bom-rev-bar', currentBomId); }
@@ -190,6 +317,10 @@ function releaseRevisionModal(itemId) {
   openModal(`<h3>${ico('pin', 'tinted pill', '')} Rilascia revisione ${esc(rev)}</h3>
     <p>La distinta di <strong>${esc(it.code)} — ${esc(it.name)}</strong> viene <strong>congelata così com'è</strong>, col costo di oggi. Da qui in poi si lavora sulla <strong>${esc(nextRev(rev))}</strong>: la ${esc(rev)} resta consultabile e non cambia più.</p>
     ${riepilogo}${avviso}
+    <div class="modal-field"><label>Tipo di modifica</label>
+      <select id="rev-tipo"><option value="">— scegli —</option>${Object.entries(ECO_TIPI).map(([k, v]) => `<option value="${k}">${esc(v)}</option>`).join('')}</select></div>
+    <div class="modal-field"><label>Documenti aperti costruiti sulla ${esc(rev)}</label>
+      ${ecoImpattoHtml(ecoImpatto(it.id, d), true)}</div>
     <div class="modal-field"><label>Motivo del rilascio</label>
       <input id="rev-motivo" placeholder="es. Approvata per produzione lotto 2026-08" autocomplete="off"></div>
     <p class="empty-text" style="text-align:left;padding:0 0 10px">Il motivo è quello che si legge fra un anno per capire perché la distinta è cambiata. Vale la pena scriverlo.</p>
@@ -202,13 +333,13 @@ function releaseRevisionModal(itemId) {
 function releaseRevisionConfirm(itemId) {
   if (!roleGuard('bom')) return;
   const it = getItem(itemId || currentBomId); if (!it) return;
-  const rec = releaseRevision(it.id, val('rev-motivo'));
+  const rec = releaseRevision(it.id, val('rev-motivo'), { tipo: val('rev-tipo') });
   if (!rec) { showToast('Questo articolo non ha una distinta da rilasciare', 'error'); return; }
   closeModal();
   // Si ridisegna la vista da cui si è partiti, non quella dell'altro tipo.
   if (it.type === 'parte' && typeof renderCycles === 'function' && activeView === 'cycles') renderCycles();
   else renderBom();
-  showToast(`Revisione ${rec.rev} rilasciata — si lavora sulla ${itemRev(getItem(it.id))}`);
+  showToast(`${rec.ecoNumber}: revisione ${rec.rev} rilasciata — si lavora sulla ${itemRev(getItem(it.id))}${rec.ecoImpact.length ? ` · ${rec.ecoImpact.length} documenti aperti da verificare` : ''}`);
 }
 
 function revHistoryModal(itemId) {
@@ -222,13 +353,14 @@ function revHistoryModal(itemId) {
     const quante = d.aggiunte.length + d.rimosse.length + d.cambiate.length;
     return `<div class="mgmt-item" style="display:block">
       <div style="display:flex;align-items:center;gap:8px">
-        <strong style="font-family:var(--mono)">Rev. ${esc(r.rev)}</strong>
+        <strong style="font-family:var(--mono)">Rev. ${esc(r.rev)}</strong>${r.ecoNumber ? ` <span class="empty-text" style="padding:0;font-family:var(--mono)">${esc(r.ecoNumber)}</span>` : ''}${r.ecoKind ? ` <span class="doc-badge">${esc(ecoTipoLabel(r.ecoKind))}</span>` : ''}
         <span class="empty-text" style="padding:0">${esc(String(r.date || '').slice(0, 10))} · ${esc(r.createdBy ? actorName(r.createdBy) : '—')}</span>
         <span style="flex:1"></span>
         <span class="empty-text" style="padding:0">${fmtPer(r.snapshot.cost ? r.snapshot.cost.total : 0, itemUom(it))}</span>
         <button class="btn-ghost" onclick="revCompareModal('${r.id}')">${quante ? '⇄ Confronta (' + quante + ')' : '⇄ Confronta'}</button>
       </div>
       ${r.motivo ? `<div style="margin-top:4px">${esc(r.motivo)}</div>` : '<div class="empty-text" style="text-align:left;padding:2px 0 0">nessun motivo indicato</div>'}
+      ${(r.ecoImpact || []).length ? `<div style="margin-top:4px"><span class="storico-campo">Documenti aperti al rilascio</span>${ecoImpattoHtml(r.ecoImpact)}</div>` : ''}
     </div>`;
   }).join('') : `<div class="empty-text">Nessuna revisione rilasciata. La distinta attuale è la ${esc(itemRev(it))}.</div>`;
   openModal(`<h3>${ico('clock', 'tinted pill', '')} Revisioni — ${esc(it.code)} ${esc(it.name)}</h3>
