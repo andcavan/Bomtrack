@@ -362,8 +362,9 @@ function schedFlat(node, livello, out) {
 // La scorta minima non trattiene niente: è un margine, e in un ritardo si usa.
 //
 // Limiti, detti: le parti prodotte non si guardano a magazzino (come nel
-// fabbisogno, dove non hanno netto), un ordine di produzione già avviato non
-// accorcia il conto, e la capacità resta infinita.
+// fabbisogno, dove non hanno netto), un ordine di produzione già avviato
+// accorcia il conto solo per il materiale che ha prelevato, e la capacità
+// resta infinita.
 function schedDisponibilita(planId, lines) {
   const oggi = schedOggi();
   const lordo = new Map();
@@ -377,7 +378,9 @@ function schedDisponibilita(planId, lines) {
   const memo = new Map();
   return it => {
     if (memo.has(it.id)) return memo.get(it.id);
-    const serve = lordo.get(it.id) || 0;
+    // Il già prelevato dai documenti del piano non è più a magazzino e non va
+    // più cercato: vedi commitIndex.
+    const serve = Math.max(0, (lordo.get(it.id) || 0) - prelevatoPer(it.id, planId || null));
     const s = stockOf(it.id);
     const impegnato = commitsOn(it.id, planId || null).reduce((t, c) => t + c.qty, 0);
     let libero = s.onHand - impegnato;
@@ -609,7 +612,11 @@ function mrpBuyRow(entry, netMode, planId) {
   // vedi bestPriceRow(). Un €/kg accanto a un €/m non è un confronto.
   const bestPrice = best ? (rowUnitCost(it, best) || 0) : null;
   const impegni = commitsOn(it.id, planId || null);
-  const st = stockFor(it, entry.qty, impegni.reduce((s, c) => s + c.qty, 0));
+  // Quello che i documenti del piano hanno già prelevato è uscito
+  // dall'esistente: resta da coprire solo il resto del lordo, o il piano
+  // ricomprerebbe ciò che ha appena usato (vedi commitIndex).
+  const prelevato = prelevatoPer(it.id, planId || null);
+  const st = stockFor(it, Math.max(0, entry.qty - prelevato), impegni.reduce((s, c) => s + c.qty, 0));
   const qtyOrder = netMode ? st.net : entry.qty;
 
   // ─── Da chi si compra, e a quale listino ───
@@ -649,7 +656,7 @@ function mrpBuyRow(entry, netMode, planId) {
     // Impegnato dagli **altri** piani aperti, e il dettaglio di chi lo impegna:
     // un numero che toglie merce senza dire chi se l'è presa è un numero che non
     // si può contestare, e quindi neanche credere.
-    committed: st.committed, impegni, libero: st.libero,
+    committed: st.committed, impegni, libero: st.libero, prelevato,
     net: st.net, coperto: !!netMode && st.coperto, qtyOrder,
     supplierId,
     price, amount: price * qtyOrder,

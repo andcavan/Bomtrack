@@ -2,6 +2,83 @@
 
 Le revisioni seguono il versionamento semantico `0.MINOR.PATCH`: **MINOR** per nuove funzionalità, **PATCH** per correzioni. La versione in cima è quella in `APP_VERSION` (`core.js`) e mostrata nell'header dell'app.
 
+### 0.98.1 — 2026-10-14
+
+**Correzioni ai conti di magazzino.** Un controllo dei calcoli di giacenza, impegno e scorta ha trovato un doppio conteggio e tre comportamenti sbagliati.
+
+**Corretto**
+- **L'impegno scende quando il materiale esce.** Un piano impegnava sempre il suo fabbisogno lordo intero, anche dopo che un suo ODP o ODL aveva prelevato il materiale: l'esistente scendeva e l'impegno no, quindi la stessa merce si toglieva due volte. Il libero andava sotto zero, il piano chiedeva di ricomprare quello che aveva appena usato, gli altri piani si vedevano scoperti e la copertura della commessa diventava rossa. Ora l'impegno è il lordo meno il prelevato dai documenti del piano (`commitIndex`, `prelevatiIndex` in `views-stock.js`); il netto del piano stesso, il programma e la copertura della commessa tolgono il prelevato dal lordo. Sui dati di esempio, MAT-ACC-LAM-003 passa da 148 a 311 kg liberi.
+- **Il riordino sotto scorta propone solo quello che è sotto scorta.** Il conto è `scorta minima − esistente − in arrivo`: l'impegnato dei piani non entra più, perché lo ordinano i piani. Prima comparivano articoli che sotto scorta non erano, e generando nello stesso giorno anche gli ordini del piano la merce si comprava due volte.
+- **Il riordino non propone gli articoli obsoleti.**
+- **Una rettifica con il campo quantità vuoto** non azzera più la giacenza: chiede la quantità.
+
+**Verifica**
+- `test/impegni-prelievo.test.js` (nuovo): prelievo totale e parziale, dettaglio dell'impegno, ODP annullato, ODP senza piano, piano chiuso. `test/riordino.test.js`: impegnato fuori dal conto, obsoleti. `test/officina.test.js`: rettifica con il campo vuoto.
+
+### 0.98.0 — 2026-10-14
+
+**Il calendario si filtra, e dice quando partono le fasi.** Un ordine di produzione lanciato aveva le fasi programmate con inizio e fine, ma il Riepilogo mostrava solo la sua data di fine; e con fabbisogno, consegne e promemoria nello stesso mese la griglia si leggeva a fatica.
+
+**Nuovo**
+- **Avvio delle fasi degli ODP** nel calendario del Riepilogo: alla data d'inizio programmata di ogni fase non ancora avviata di un ordine lanciato o in corso, «Avviare fase 10 di ODP-…», con la parte e il centro o il terzista. Le fasi di una tratta dal terzista sono una voce sola. Se la data è passata la voce è fra le scadute; avviata la fase, sparisce.
+- **Filtri per tipo** sopra il calendario: Commesse, Piani e programma, Da ordinare, Consegne e rientri, Richieste, Avvio fasi ODP, Fine produzione, Promemoria, ognuno col suo numero. Valgono per scadute, griglia, giorno e prossimi 14 giorni; una riga dice quante scadenze sono nascoste e **Mostra tutto** le riaccende. La scelta si ricorda in questo browser.
+
+**Verifica**
+- `test/calendar.test.js`: le fasi (una voce per giorno, tratta unica, scaduta, avviata che sparisce, bozza e chiuso esclusi) e i filtri (ogni tipo coperto, scadute e giorno filtrati, conteggio dei nascosti, memoria, «Mostra tutto», preferenza illeggibile).
+
+### 0.97.0 — 2026-10-14
+
+**Il Gantt con quello che è successo davvero.** Il Gantt del piano dice entro quando deve succedere ogni cosa; per sapere se era successa si aprivano a uno a uno ordini, ordini di lavoro e ordini di produzione.
+
+**Nuovo**
+- **Pianificazione → Avanzamento**: per un piano e una sua riga, una riga per tappa (acquisto, fase interna, tratta dal terzista, montaggio) con la barra del programma del Gantt e sopra l'avanzamento reale, letto dai documenti del piano: ricevuto sugli ordini, pezzi dichiarati sulle fasi degli ODP, rientrati sugli ODL. Stati *fatto*, *in corso*, *in ritardo*, *da fare*, *da magazzino*, *previsto*; a fianco i documenti collegati con il loro stato, cliccabili. In testa consegna richiesta, fattibile, margine, conteggi e le tappe in ritardo sul percorso critico. Export Excel e PDF.
+
+**Da sapere**
+- È una vista in sola lettura e non aggiunge dati: Gantt, Programma e fabbisogno non cambiano.
+- Un montaggio senza ordine di produzione resta *previsto*: non c'è niente che ne registri l'avanzamento, e la vista lo dice invece di indovinarlo.
+
+**Verifica**
+- `test/avanzamento.test.js`: date uguali al Gantt, gli stati degli acquisti (da fare, in corso, fatto, ritardo per data o per arrivo atteso, da magazzino, ordine annullato), le fasi dell'ODP e l'ODL della tratta, il montaggio senza documento, la vista che non scrive niente, export e apertura dei documenti. La vista entra anche nel controllo di impaginazione in Chromium a sette larghezze.
+
+### 0.96.0 — 2026-10-14
+
+**Il magazzino si riordina da sé, l'officina ha il suo ruolo, e una revisione è una modifica tecnica.** Il resto della lista di migliorie, tranne DDT, preventivi cliente e archivio condiviso.
+
+**Nuovo**
+- **Riordino sotto scorta** (*Magazzino → Riordina sotto scorta*): gli articoli d'acquisto sotto la scorta minima, con la quantità per tornarci (`scorta minima + impegnato − esistente − in arrivo`, arrotondata al lotto), raggruppati per fornitore. Un clic crea **un ordine in bozza per fornitore**, col prezzo del listino e la consegna dai giorni del fornitore. Quello che è già in viaggio è contato; quello che è già in una bozza lo dice e parte senza spunta. Le parti compaiono solo se si comprano.
+- **Ruolo «Officina e magazzino»**: riceve la merce di ordini e ODL, avvia e dichiara le fasi degli ODP, registra la produzione, rettifica le giacenze e manda materiale ai terzisti; non scrive richieste, ordini, piani, articoli né distinte. Prima per dichiarare l'avanzamento serviva *Ufficio acquisti*. Nessun ruolo esistente perde niente.
+- **Modifiche tecniche**: ogni revisione rilasciata riceve un numero **MT-AAAA-NNN** e, se si vuole, un tipo (correttiva, migliorativa, richiesta del cliente, cambio di fornitore o componente, riduzione dei costi). Prima di rilasciare si vedono i documenti aperti costruiti sulla versione che si lascia — piani e ODP dell'articolo e di chi lo contiene, richieste, ordini e ODL dei componenti toccati — e la lista resta fotografata nella revisione. **Modifiche tecniche**, nella barra revisioni, apre il registro di tutte.
+
+**Più veloce**
+- Il **Cruscotto** e il magazzino su archivi grandi: le righe di materiale in lavorazione si calcolavano una volta per articolo e i movimenti di ogni ODP si cercavano su tutti i movimenti. Su un archivio dieci volte quello d'esempio (1.370 articoli, 330 ODP) il cruscotto passa da **32 secondi a 0,1**. Riepilogo e salvataggio restano sotto i 350 ms.
+
+**Da sapere**
+- Lo schema SQL (`supabase/schema.sql`) ha il ruolo nuovo, l'area `shop` sulle tabelle di ricevimenti, produzione e movimenti, e tre colonne sulle revisioni (`eco_number`, `eco_kind`, `eco_impact`), aggiunte anche a un database esistente.
+- Le revisioni rilasciate prima di questa versione restano senza numero: il registro le mostra lo stesso.
+
+**Verifica**
+- `test/riordino.test.js`, `test/officina.test.js`, `test/eco.test.js`; `test/schema-sql.test.js` controlla la matrice del ruolo nuovo anche su Postgres; `test/odp.test.js` controlla che le cache nuove seguano ogni gesto.
+
+### 0.95.0 — 2026-10-14
+
+**Il backup si fa da solo, e le modifiche lasciano traccia.** Il Riepilogo ricordava di esportare, ma l'export restava un gesto a mano, e l'unica copia dell'archivio stava in questo browser. E di ogni record si sapeva chi l'aveva toccato per ultimo, non che cosa aveva cambiato.
+
+**Nuovo**
+- **Backup automatico in una cartella** (*Gestione → Backup → Attiva backup automatico*): scelta una cartella una volta — meglio quella di OneDrive, Dropbox o un disco di rete — Bomtrack ci salva da sola il file del giorno, `bomtrack_backup_AAAA-MM-GG.json`, all'avvio, ogni mezz'ora se qualcosa è cambiato e quando si passa a un'altra finestra. Si tengono gli ultimi 14 giorni; gli altri file della cartella non si toccano. Ogni file si ripristina con *Importa JSON*.
+- Un backup automatico **conta come backup**: il promemoria dei 7 giorni non scatta.
+- **Riepilogo**: se il browser non ha ridato il permesso sulla cartella, il backup va *in pausa* e compare un avviso con **Riprendi**, che lo salva subito.
+- **Storico delle modifiche**: a ogni salvataggio si annota chi ha cambiato cosa, e da quale valore a quale, su articoli, documenti, anagrafiche, utenti e impostazioni. Si legge nel pannello laterale dell'articolo (scheda **Storico**) e in *Gestione → Backup*, con una ricerca. Le righe dei documenti e del listino si contano (aggiunte, tolte, cambiate); un import o una generazione che tocca più di 50 record è una voce sola; si tengono le ultime 5.000 e viaggiano nel backup. Delle password si dice solo che sono cambiate.
+
+**Da sapere**
+- Lo storico conta da questa versione. Il confronto si fa sul contenuto dei record, non sulle date: costa qualche millisecondo per salvataggio (su un archivio di 2,7 MB da 13 a 22 ms).
+- Come la cartella dell'archivio: Chrome o Edge, Bomtrack aperta da `https` o `localhost`, impostazione di questo PC. Aperta con un doppio clic su `index.html` la scheda dice che non è disponibile.
+
+**Corretto**
+- Un test del calendario falliva nei giorni in cui la data d'ordine cadeva di sabato, domenica o in un festivo: l'app la sposta giustamente al lavorativo prima, il test non lo sapeva. Ora la suite è verde qualunque giorno giri.
+
+**Verifica**
+- `test/storico.test.js`: campi e valori, niente rumore dalle sole date, modifiche senza `touch()`, righe contate, impostazioni, blocchi, tetto, password, backup e ricaricamento, scheda e ricerca.
+- `test/backup-auto.test.js`: file valido per l'import, rotazione a 14 senza toccare i file altrui, riscrittura solo su modifica, pausa senza permesso e ripresa dal Riepilogo, scelta e disattivazione, ruoli.
 ### 0.94.0 — 2026-10-13
 
 **Testate più pulite.** Le testate dei documenti arrivavano a sette pulsanti dello stesso peso, e il gesto principale non si distingueva dal resto.

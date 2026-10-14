@@ -152,7 +152,7 @@ function jobCoverage(jobId) {
     // si riscrive la regola di lotto, scorta e impegni — le si cambia un
     // ingrediente. Se così il netto risale sopra zero, la merce c'è ma tardi.
     const arr = incomingEntro(e.item.id, serve);
-    const netEntro = netRequirement(e.qty, r.onHand, arr.inTempo, r.safety, r.lotSize, r.committed, r.lotMode);
+    const netEntro = netRequirement(Math.max(0, e.qty - r.prelevato), r.onHand, arr.inTempo, r.safety, r.lotSize, r.committed, r.lotMode);
     let livello = 'ok';
     if (r.qtyOrder > 0) livello = refs.length ? 'documentato' : 'ordinare';
     else if (netEntro > 0) livello = 'tardi';

@@ -119,7 +119,7 @@ function opFreezeMaterials(part, qty) {
 // ciclo di vita degli altri indici: azzerato da invalidateCaches().
 let _opDeclIdx = null;
 let _opOdlIdx = null;
-function invalidateProd() { _opDeclIdx = null; _opOdlIdx = null; }
+function invalidateProd() { _opDeclIdx = null; _opOdlIdx = null; _opMovIdx = null; _wipRows = null; _wipPer = null; }
 function opDeclIndex() {
   if (_opDeclIdx) return _opDeclIdx;
   const map = new Map();
@@ -244,10 +244,27 @@ function opKindEntrata(odp) { const f = opUltima(odp); return f && f.supplierId 
 // ─── Quanto è già stato registrato su questa fase, in questo verso ───
 // Stessa forma di clRegistrato: il conto si legge dai movimenti, che l'ordine e
 // la fase li portano già, senza nessun campo nuovo da tenere allineato.
+// I movimenti per ordine, una volta per giro: opRegistrato si chiama per ogni
+// ordine aperto, e prodWipRows per ogni articolo del magazzino — scorrere tutti
+// i movimenti ogni volta faceva crescere il cruscotto col prodotto delle due
+// cose (32 secondi su un archivio di 1.400 articoli e 330 ODP).
+let _opMovIdx = null;
+function opMovimentiDi(odpId) {
+  if (!_opMovIdx) {
+    _opMovIdx = new Map();
+    (db.movements || []).forEach(x => {
+      if (!x.orderId) return;
+      let l = _opMovIdx.get(x.orderId);
+      if (!l) { l = []; _opMovIdx.set(x.orderId, l); }
+      l.push(x);
+    });
+  }
+  return _opMovIdx.get(odpId) || [];
+}
 function opRegistrato(odp, fase, verso) {
   const m = new Map();
   const uscita = verso === 'out';
-  (db.movements || []).forEach(x => {
+  opMovimentiDi(odp.id).forEach(x => {
     if (x.orderId !== odp.id || x.lineId !== (fase && fase.id) || !x.itemId) return;
     const suo = uscita ? (x.kind === 'clOut' || x.kind === 'scarico') : (x.kind === 'clIn' || x.kind === 'versamento');
     if (!suo) return;
@@ -264,7 +281,7 @@ function opMaterialeResiduo(odp) {
 function opMaterialePrelevato(odp) { return opRegistrato(odp, opPrima(odp), 'out').size > 0; }
 function opVersato(odp) {
   let n = 0;
-  (db.movements || []).forEach(x => {
+  opMovimentiDi(odp.id).forEach(x => {
     if (x.orderId !== odp.id || x.itemId !== odp.itemId) return;
     if (x.kind === 'clIn' || x.kind === 'versamento') n += Number(x.qty) || 0;
   });
@@ -280,7 +297,11 @@ function opVersato(odp) {
 // la parte non esiste, e nominarla significherebbe mostrare una giacenza che
 // non c'è. È la ragione per cui questo prospetto esiste al posto di un
 // movimento fra le fasi.
+// Calcolato una volta per giro (invalidateProd): lo chiedono atSupplierOf e
+// inWorkOf per ogni articolo. Chi lo legge non lo modifica.
+let _wipRows = null, _wipPer = null;
 function prodWipRows() {
+  if (_wipRows) return _wipRows;
   const out = [];
   (db.prodOrders || []).forEach(o => {
     if (o.active === false || !ODP_APERTI.includes(o.status)) return;
@@ -293,17 +314,25 @@ function prodWipRows() {
       out.push({ luogo: fase.supplierId || CL_WIP, item: it, qty: uscito, odp: o, fase });
     });
   });
+  _wipRows = out;
   return out;
 }
-function prodWipAt(luogo, itemId) {
-  return prodWipRows().reduce((s, r) => s + ((r.luogo === luogo && r.item.id === itemId) ? r.qty : 0), 0);
+// Per articolo: { fuori, casa, perLuogo }.
+function _prodWipDi(itemId) {
+  if (!_wipPer) {
+    _wipPer = new Map();
+    prodWipRows().forEach(r => {
+      let e = _wipPer.get(r.item.id);
+      if (!e) { e = { fuori: 0, casa: 0, perLuogo: new Map() }; _wipPer.set(r.item.id, e); }
+      if (r.luogo === CL_WIP) e.casa += r.qty; else e.fuori += r.qty;
+      e.perLuogo.set(r.luogo, (e.perLuogo.get(r.luogo) || 0) + r.qty);
+    });
+  }
+  return _wipPer.get(itemId) || { fuori: 0, casa: 0, perLuogo: new Map() };
 }
-function prodWipOf(itemId) {
-  return prodWipRows().reduce((s, r) => s + (r.item.id === itemId && r.luogo !== CL_WIP ? r.qty : 0), 0);
-}
-function prodWipInCasa(itemId) {
-  return prodWipRows().reduce((s, r) => s + (r.item.id === itemId && r.luogo === CL_WIP ? r.qty : 0), 0);
-}
+function prodWipAt(luogo, itemId) { return _prodWipDi(itemId).perLuogo.get(luogo) || 0; }
+function prodWipOf(itemId) { return _prodWipDi(itemId).fuori; }
+function prodWipInCasa(itemId) { return _prodWipDi(itemId).casa; }
 // I movimenti di un ordine di produzione escono dal conto per coppia
 // (luogo, articolo) di clIndex(): là un `clOut` senza un `clIn` dello stesso
 // codice resterebbe per sempre presso il terzista, e su una trasformazione —
@@ -323,7 +352,7 @@ function opMovimentoDiOdp(m) {
 // sta in DOC_KINDS.
 let odpUnlockedId = null;
 function opGuard(id, lockKind) {
-  if (!roleGuard('docs')) return false;
+  if (!(lockKind === 'reception' ? roleGuardShop('docs') : roleGuard('docs'))) return false;
   const o = getOdp(id); if (!o) return false;
   if (modeAllows(odpMode(o), lockKind)) return true;
   showToast(`Ordine di produzione ${(ODP_STATUS[o.status] || o.status || '').toLowerCase()}: usa «Sblocca per modifica»`, 'error');
@@ -451,7 +480,7 @@ function opRiapriFase(id, faseId) {
 // Annullare una dichiarazione toglie **i suoi** movimenti, non quelli della
 // fase: è per questo che ogni movimento porta il `declId` di chi l'ha generato.
 function opAnnullaDichiarazione(declId) {
-  if (!roleGuard('docs')) return false;
+  if (!roleGuardShop('docs')) return false;
   const d = (db.prodDecls || []).find(x => x.id === declId); if (!d) return false;
   if (!opGuard(d.odpId, 'reception')) return false;
   const o = getOdp(d.odpId);
@@ -871,7 +900,7 @@ function opTestaModal(o, f, titolo) {
 function opAvviaModal(id, faseId) {
   const x = opFaseDi(id, faseId); if (!x) return;
   const { o, f } = x;
-  if (!roleGuard('docs')) return;
+  if (!roleGuardShop('docs')) return;
   const prima = opEPrima(o, f);
   const righe = prima ? opMaterialeResiduo(o).filter(m => m.residuo > 0.000001) : [];
   window.__opAvviaMat = righe.map(m => m.itemId);
@@ -906,7 +935,7 @@ function opAvviaSave(id, faseId) {
 function opDichiaraModal(id, faseId) {
   const x = opFaseDi(id, faseId); if (!x) return;
   const { o, f } = x;
-  if (!roleGuard('docs')) return;
+  if (!roleGuardShop('docs')) return;
   const residua = opResidua(o, f);
   const ultima = opEUltima(o, f);
   openModal(`${opTestaModal(o, f, 'Dichiara l\'avanzamento')}
@@ -936,7 +965,7 @@ function opDichiaraSave(id, faseId) {
 function opForzaModal(id, faseId) {
   const x = opFaseDi(id, faseId); if (!x) return;
   const { o, f } = x;
-  if (!roleGuard('docs')) return;
+  if (!roleGuardShop('docs')) return;
   const blocco = opAvviabile(o, f);
   openModal(`${opTestaModal(o, f, 'Forza l\'avvio della fase ' + f.seq)}
     <div class="rfq-warn">${ico('warning', 'tinted', '')} ${esc(blocco.motivo || '')}. Avviando comunque, i pezzi di questa fase partono da un conto che non torna.</div>
