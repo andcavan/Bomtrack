@@ -1076,6 +1076,8 @@ function renderStock() {
   });
   const clHost = document.getElementById(STOCK_PFX + '-cl-btn');
   if (clHost) clHost.innerHTML = contoLavoroButton();
+  const roHost = document.getElementById(STOCK_PFX + '-riordino-btn');
+  if (roHost) roHost.innerHTML = riordinoButton();
   const kpiHost = document.getElementById(STOCK_PFX + '-kpi');
   if (kpiHost) kpiHost.innerHTML = [
     kpi('Articoli a magazzino', String(tutti.length), ''),
@@ -1155,4 +1157,119 @@ function stockExportSpec(soloIds) {
       righe,
     }],
   };
+}
+
+// ═══════════════════════════════════════════════════════════
+//  Riordino sotto scorta
+// ═══════════════════════════════════════════════════════════
+// La scorta minima si vedeva — ⚠ in elenco, un segnale nel Riepilogo, una
+// tabella nel Cruscotto — ma per ordinare bisognava fare un piano di
+// fabbisogno apposta, o scrivere l'ordine a mano articolo per articolo. Qui la
+// proposta nasce da sé e l'ordine anche: una bozza per fornitore.
+//
+// Quanto ordinare è lo stesso conto del fabbisogno con un lordo di zero:
+// scorta minima + impegnato − esistente − in arrivo, arrotondato al lotto.
+// Quindi un articolo sotto scorta con un ordine già in viaggio che basta non
+// si propone, e uno che gli altri piani hanno già promesso sì: la proposta
+// risponde a «cosa manca per tornare alla scorta», non a «cosa è sotto».
+//
+// Si propone solo quello che si compra: un articolo con un fornitore (dalla
+// quotazione in uso, o dal campo fornitore). Una parte fatta in casa sotto
+// scorta si rifà con un piano, non con un ordine d'acquisto.
+function riordinoProposte() {
+  const out = [];
+  // Le bozze d'ordine non contano come in arrivo — non sono partite — ma un
+  // secondo clic su «Crea ordini» le raddoppierebbe: si dicono, e la riga
+  // nasce non spuntata.
+  const bozze = new Map();
+  (db.orders || []).forEach(o => {
+    if (o.status !== 'bozza' || o.active === false) return;
+    (o.lines || []).forEach(l => { if (l.itemId && !bozze.has(l.itemId)) bozze.set(l.itemId, o.number || ''); });
+  });
+  (db.items || []).forEach(it => {
+    if (!hasStock(it) || it.active === false || !hasPriceList(it)) return;
+    if (it.type === 'parte' && partSourcing(it) !== 'buy') return;
+    const st = stockState(it);
+    if (!(st.safety > 0)) return;
+    const qty = netRequirement(0, st.onHand, st.incoming, st.safety, st.lotSize, st.committed, st.lotMode);
+    if (!(qty > 0)) return;
+    const supplierId = buySupplierId(it);
+    out.push({ it, qty, supplierId: supplierId || '', onHand: st.onHand, incoming: st.incoming,
+      committed: st.committed, safety: st.safety, leadDays: supplierId ? buyLeadDays(it) : 0,
+      inBozza: bozze.get(it.id) || '' });
+  });
+  return out.sort((a, b) => (supplierName(a.supplierId) || '~').localeCompare(supplierName(b.supplierId) || '~')
+    || String(a.it.code).localeCompare(String(b.it.code)));
+}
+// Una bozza d'ordine per fornitore, con le righe scelte. Le righe senza
+// fornitore restano fuori: un ordine senza intestatario non si manda a
+// nessuno, e il modale lo dice prima. Torna gli ordini creati.
+function riordinoGenera(itemIds) {
+  if (!roleGuard('docs')) return [];
+  const scelti = new Set(itemIds || []);
+  const perFornitore = new Map();
+  riordinoProposte().filter(p => scelti.has(p.it.id) && p.supplierId).forEach(p => {
+    if (!perFornitore.has(p.supplierId)) perFornitore.set(p.supplierId, []);
+    perFornitore.get(p.supplierId).push(p);
+  });
+  const oggi = oggiISO();
+  const creati = [];
+  perFornitore.forEach((ps, supplierId) => {
+    const sup = getSupplier(supplierId);
+    const o = stampNew({ id: gid(), number: nextOrderNumber(), title: 'Riordino sotto scorta', date: oggi,
+      status: 'bozza', supplierId,
+      transport: (sup && sup.defaultTransport) || db.settings.transportDefault || '',
+      payment: (sup && sup.defaultPayment) || db.settings.paymentDefault || '',
+      rfqId: null, planId: null, supplierConfirmation: '', notes: '', notesInternal: 'Generato dal riordino sotto scorta del magazzino.',
+      lines: ps.map(p => Object.assign(docLineFromItem(p.it, supplierId), {
+        qty: p.qty, received: 0, deliveryDate: p.leadDays ? addDays(oggi, p.leadDays) : '' })),
+      active: true });
+    db.orders.push(o);
+    creati.push(o);
+  });
+  if (creati.length) saveDB();
+  return creati;
+}
+function riordinoButton() {
+  const n = riordinoProposte().length;
+  if (!n) return '';
+  return `<button class="btn-outline" onclick="riordinoModal()" title="Articoli da riordinare per tornare alla scorta minima">
+    ${ico('cart', 'tinted', '')} Riordina sotto scorta (${n})</button>`;
+}
+function riordinoModal() {
+  const ps = riordinoProposte();
+  const scrive = canWrite('docs');
+  const riga = p => {
+    const u = itemUom(p.it);
+    return `<tr>
+      <td>${scrive && p.supplierId ? `<input type="checkbox" class="riordino-sel" value="${esc(p.it.id)}"${p.inBozza ? '' : ' checked'} aria-label="Ordina ${esc(p.it.code || p.it.name)}">` : ''}</td>
+      <td>${codeLink(p.it.id, p.it.code)}</td><td>${esc(p.it.name || '')}${p.inBozza ? ` <span class="doc-badge" title="C'è già una bozza d'ordine con questo articolo: non ancora inviata">in bozza ${esc(p.inBozza)}</span>` : ''}</td>
+      <td class="num">${fmtQtyIt(p.onHand)}</td><td class="num">${p.incoming ? fmtQtyIt(p.incoming) : '—'}</td>
+      <td class="num">${p.committed ? fmtQtyIt(p.committed) : '—'}</td><td class="num">${fmtQtyIt(p.safety)}</td>
+      <td class="num"><strong>${fmtUom(p.qty, u)}</strong></td>
+      <td>${p.leadDays ? fmtDateIt(addDays(oggiISO(), p.leadDays)) : '—'}</td></tr>`;
+  };
+  const perFornitore = new Map();
+  ps.forEach(p => { const k = p.supplierId || ''; if (!perFornitore.has(k)) perFornitore.set(k, []); perFornitore.get(k).push(p); });
+  const blocchi = Array.from(perFornitore.entries()).map(([k, rs]) => `
+    <h4 class="settings-group-title">${ico('cart', 'tinted', '')} ${k ? esc(supplierName(k)) : 'Senza fornitore'}</h4>
+    ${k ? '' : '<p class="empty-text" style="text-align:left;padding:0 0 6px">Questi articoli non hanno un fornitore né una quotazione in uso: si sistemano dal listino, poi compaiono nel gruppo giusto.</p>'}
+    <div class="table-wrap"><table class="dash-table"><thead><tr><th scope="col"><span class="sr-only">Scegli</span></th><th scope="col">Codice</th><th scope="col">Descrizione</th>
+      <th scope="col" class="num">Esistente</th><th scope="col" class="num">In arrivo</th><th scope="col" class="num">Impegnato</th><th scope="col" class="num">Scorta min.</th><th scope="col" class="num">Da ordinare</th><th scope="col">Consegna</th></tr></thead>
+      <tbody>${rs.map(riga).join('')}</tbody></table></div>`).join('');
+  openModal(`<h3>${ico('cart', 'tinted pill', '')} Riordino sotto scorta</h3>
+    <p class="empty-text" style="text-align:left;padding:0 0 8px">Quanto serve per tornare alla scorta minima: <strong>scorta minima + impegnato − esistente − in arrivo</strong>, arrotondato al lotto di riordino. Quello che è già ordinato e in viaggio è contato: non si ordina due volte. Si crea <strong>un ordine in bozza per fornitore</strong>, con il prezzo del suo listino e la consegna dai suoi giorni; da lì si rivede e si invia come ogni ordine.</p>
+    ${blocchi || '<div class="empty-text">Niente da riordinare: ogni articolo con una scorta minima ci arriva con quello che c\'è e quello che è in arrivo.</div>'}
+    <div class="modal-actions"><button class="btn-ghost" onclick="closeModal()">Chiudi</button>
+      ${scrive && ps.some(p => p.supplierId) ? '<button class="add-btn-sm" onclick="riordinoConferma()">Crea ordini in bozza</button>' : ''}</div>`, true, 'riordino');
+}
+function riordinoConferma() {
+  const ids = Array.prototype.map.call(document.querySelectorAll('.riordino-sel'), el => (el.checked ? el.value : null)).filter(Boolean);
+  if (!ids.length) { showToast('Nessun articolo scelto', 'error'); return; }
+  const creati = riordinoGenera(ids);
+  closeModal();
+  if (!creati.length) return;
+  showToast(creati.length === 1 ? `Creato l'ordine ${creati[0].number} in bozza` : `Creati ${creati.length} ordini in bozza: ${creati.map(o => o.number).join(', ')}`);
+  setView('orders');
+  openOrderEdit(creati[0].id);
 }
