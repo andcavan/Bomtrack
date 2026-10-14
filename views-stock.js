@@ -480,7 +480,7 @@ function stockPanelHtml(it) {
 }
 
 function stockAdjustModal(itemId) {
-  if (!roleGuard('catalog')) return;
+  if (!roleGuardShop('catalog')) return;
   const it = getItem(itemId); if (!it || !hasStock(it)) return;
   const attuale = onHandOf(it.id);
   openModal(`<h3>${ico('scale', 'tinted pill', '')} Rettifica giacenza — ${esc(it.code)}</h3>
@@ -546,7 +546,7 @@ function stockAdjustHint(itemId) {
   if (el) el.innerHTML = MOVEMENT_HINTS[kind] || MOVEMENT_HINTS.carico;
 }
 function saveStockAdjust(itemId) {
-  if (!roleGuard('catalog')) return;
+  if (!roleGuardShop('catalog')) return;
   const it = getItem(itemId); if (!it) return;
   const kind = MOVEMENT_KINDS[val('mv-kind')] ? val('mv-kind') : 'rettifica';
   const inserita = rawNum('mv-qty');
@@ -752,7 +752,7 @@ function clRegistrato(o, l, verso) {
 }
 
 function clFromOdlModal(docId, lineId, verso) {
-  if (!roleGuard('catalog')) return;
+  if (!roleGuardShop('catalog')) return;
   const o = clDocById(docId); if (!o) return;
   const l = (o.lines || []).find(x => x.id === lineId); if (!l) return;
   // La guardia sta **anche qui**, non solo nella UI che non disegna i comandi:
@@ -815,7 +815,7 @@ function clFromOdlModal(docId, lineId, verso) {
     </div>`, true, 'form');
 }
 function saveClFromOdl(docId, lineId, verso) {
-  if (!roleGuard('catalog')) return;
+  if (!roleGuardShop('catalog')) return;
   const o = clDocById(docId); if (!o || !o.supplierId) return;
   const riga = (o.lines || []).find(x => x.id === lineId);
   if (riga && riga.odpId) { showToast('I movimenti di questa lavorazione si registrano sull\'ordine di produzione', 'error'); return; }
@@ -916,7 +916,7 @@ function contoLavoroExportSpec() {
   };
 }
 function delMovement(id, itemId) {
-  if (!roleGuard('catalog')) return;
+  if (!roleGuardShop('catalog')) return;
   askConfirm('Eliminare questo movimento? La giacenza cambia di conseguenza.', () => {
     removeConUndo('movements', id, 'Movimento eliminato', () => stockMovementsModal(itemId));
   });

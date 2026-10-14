@@ -236,7 +236,7 @@ function newSalt() { return newId().replace(/-/g, ''); }
 function hashPassword(password, salt) { return sha256Hex(salt + ':' + password); }
 
 // Ruoli: chi può scrivere cosa è deciso in core.js, qui resta solo l'elenco valido
-const USER_ROLES = ['admin', 'acquisti', 'progettazione', 'lettore'];
+const USER_ROLES = ['admin', 'acquisti', 'progettazione', 'officina', 'lettore'];
 
 // ── ID e timestamp ──────────────────────────────────────────
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;

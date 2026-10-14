@@ -418,15 +418,28 @@ const ROLES = {
   admin: 'Amministratore',
   acquisti: 'Ufficio acquisti',
   progettazione: 'Progettazione',
+  officina: 'Officina e magazzino',
   lettore: 'Lettore',
 };
 const ROLE_WRITE = {
-  admin: ['catalog', 'bom', 'docs', 'manage', 'agenda'],
+  admin: ['catalog', 'bom', 'docs', 'manage', 'agenda', 'shop'],
   acquisti: ['docs', 'agenda'],
   progettazione: ['catalog', 'bom', 'agenda'],
+  // Chi sta in officina e in magazzino: dichiara l'avanzamento degli ordini di
+  // produzione, registra i ricevimenti, rettifica le giacenze e muove il
+  // materiale verso i terzisti. Non scrive richieste, ordini, piani né
+  // anagrafiche. Prima doveva essere «acquisti», che scrive anche gli ordini.
+  officina: ['shop', 'agenda'],
   lettore: [],
 };
-const AREA_LABELS = { catalog: 'anagrafiche articoli', bom: 'distinte base', docs: 'richieste e ordini', manage: 'gestione', agenda: 'promemoria' };
+// L'area `shop` è un sottoinsieme di gesti che prima stavano dentro `docs`
+// (avanzamento, ricevimenti) e `catalog` (giacenze): chi aveva quelle aree li
+// fa ancora, e chi ha solo `shop` fa solo quelli. Per questo la guardia di quei
+// gesti accetta l'una o l'altra, invece di spostarli e togliere qualcosa a
+// qualcuno.
+function canWriteShop(oppure) { return canWrite('shop') || canWrite(oppure); }
+function roleGuardShop(oppure) { return canWriteShop(oppure) || roleGuard(oppure); }
+const AREA_LABELS = { catalog: 'anagrafiche articoli', bom: 'distinte base', docs: 'richieste e ordini', manage: 'gestione', agenda: 'promemoria', shop: 'avanzamento, ricevimenti e giacenze' };
 function roleLabel(r) { return ROLES[r] || r || '—'; }
 function canWrite(area) {
   if (!currentUser) return false;
@@ -443,6 +456,9 @@ function roleGuard(area) {
 // `load` (Carico centri) è null come `report`: è un prospetto derivato, in sola
 // lettura, da cui non si scrive niente.
 const VIEW_AREA = { home: null, dash: null, bom: 'bom', buy: 'catalog', design: 'catalog', stock: 'catalog', cycles: 'catalog', load: null, report: null, jobs: 'docs', mrp: 'docs', rfq: 'docs', orders: 'docs', odl: 'docs', odp: 'docs', pricelist: 'catalog', manage: 'manage' };
+// Le viste in cui l'officina lavora pur senza l'area della vista: lì non va in
+// sola lettura, e le guardie dei singoli gesti fanno il resto.
+const SHOP_VIEWS = new Set(['stock', 'orders', 'odl', 'odp']);
 
 // Le due viste di anagrafica: ciò che si compra e ciò che si progetta.
 // Ogni vista ha i suoi filtri (prefisso degli id nella pagina) e la creazione

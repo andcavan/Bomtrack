@@ -75,7 +75,7 @@ create table if not exists public.settings (
 create table if not exists public.profiles (
   id uuid primary key references auth.users(id) on delete cascade deferrable initially deferred,
   name text, username text, email text,
-  role text check (role in ('admin', 'acquisti', 'progettazione', 'lettore')),
+  role text check (role in ('admin', 'acquisti', 'progettazione', 'officina', 'lettore')),
   color text, active boolean,
   pos int, created_at timestamptz, updated_at timestamptz, created_by uuid, updated_by uuid,
   synced_at timestamptz not null default clock_timestamp()
@@ -735,9 +735,10 @@ create table if not exists public.role_areas (
 );
 delete from public.role_areas;
 insert into public.role_areas (role, area) values
-  ('admin', 'catalog'), ('admin', 'bom'), ('admin', 'docs'), ('admin', 'manage'), ('admin', 'agenda'),
+  ('admin', 'catalog'), ('admin', 'bom'), ('admin', 'docs'), ('admin', 'manage'), ('admin', 'agenda'), ('admin', 'shop'),
   ('acquisti', 'docs'), ('acquisti', 'agenda'),
-  ('progettazione', 'catalog'), ('progettazione', 'bom'), ('progettazione', 'agenda');
+  ('progettazione', 'catalog'), ('progettazione', 'bom'), ('progettazione', 'agenda'),
+  ('officina', 'shop'), ('officina', 'agenda');
 
 create table if not exists public.table_areas (
   tab text not null, area text not null, primary key (tab, area)
@@ -762,12 +763,19 @@ select t, a from (values
   ('production_orders', 'docs'), ('production_order_phases', 'docs'), ('production_order_materials', 'docs'),
   ('production_declarations', 'docs'), ('productions', 'docs'),
   ('stock_movements', 'catalog'), ('stock_movements', 'docs'),
+  -- L'officina (area `shop`): ricevimenti sugli ordini e sugli ODL, avanzamento
+  -- degli ordini di produzione, giacenze. Un ricevimento riscrive anche il
+  -- ricevuto della riga e lo stato del documento, per questo ci sono le testate.
+  ('orders', 'shop'), ('order_lines', 'shop'), ('order_receipts', 'shop'),
+  ('work_orders', 'shop'), ('work_order_lines', 'shop'),
+  ('production_orders', 'shop'), ('production_order_phases', 'shop'), ('production_order_materials', 'shop'),
+  ('production_declarations', 'shop'), ('productions', 'shop'), ('stock_movements', 'shop'),
   ('jobs', 'docs'), ('jobs', 'manage'),
   ('reminders', 'agenda'),
   -- Il cestino e le lapidi li scrive chiunque elimini qualcosa, in qualunque area.
-  ('trash', 'catalog'), ('trash', 'bom'), ('trash', 'docs'), ('trash', 'manage'), ('trash', 'agenda'),
+  ('trash', 'catalog'), ('trash', 'bom'), ('trash', 'docs'), ('trash', 'manage'), ('trash', 'agenda'), ('trash', 'shop'),
   ('sync_tombstones', 'catalog'), ('sync_tombstones', 'bom'), ('sync_tombstones', 'docs'),
-  ('sync_tombstones', 'manage'), ('sync_tombstones', 'agenda')
+  ('sync_tombstones', 'manage'), ('sync_tombstones', 'agenda'), ('sync_tombstones', 'shop')
 ) v(t, a);
 
 -- `security definer`: leggono `profiles` senza passare dalle sue policy, che a

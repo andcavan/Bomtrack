@@ -229,7 +229,8 @@ function docMode(k, doc) {
 // documenti non passa nemmeno su una bozza.
 function docGuard(k, id, lockKind) {
   const K = docKind(k);
-  if (!roleGuard('docs')) return false;
+  // I ricevimenti li registra anche l'officina (area `shop`).
+  if (!(lockKind === 'reception' ? roleGuardShop('docs') : roleGuard('docs'))) return false;
   const doc = K.get(id); if (!doc) return false;
   if (modeAllows(docMode(k, doc), lockKind)) return true;
   showToast(`${K.nome} ${docStatusLabel(K, doc)}: usa «Sblocca per modifica»`, 'error');

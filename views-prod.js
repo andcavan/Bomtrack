@@ -323,7 +323,7 @@ function opMovimentoDiOdp(m) {
 // sta in DOC_KINDS.
 let odpUnlockedId = null;
 function opGuard(id, lockKind) {
-  if (!roleGuard('docs')) return false;
+  if (!(lockKind === 'reception' ? roleGuardShop('docs') : roleGuard('docs'))) return false;
   const o = getOdp(id); if (!o) return false;
   if (modeAllows(odpMode(o), lockKind)) return true;
   showToast(`Ordine di produzione ${(ODP_STATUS[o.status] || o.status || '').toLowerCase()}: usa «Sblocca per modifica»`, 'error');
@@ -451,7 +451,7 @@ function opRiapriFase(id, faseId) {
 // Annullare una dichiarazione toglie **i suoi** movimenti, non quelli della
 // fase: è per questo che ogni movimento porta il `declId` di chi l'ha generato.
 function opAnnullaDichiarazione(declId) {
-  if (!roleGuard('docs')) return false;
+  if (!roleGuardShop('docs')) return false;
   const d = (db.prodDecls || []).find(x => x.id === declId); if (!d) return false;
   if (!opGuard(d.odpId, 'reception')) return false;
   const o = getOdp(d.odpId);
@@ -876,7 +876,7 @@ function opTestaModal(o, f, titolo) {
 function opAvviaModal(id, faseId) {
   const x = opFaseDi(id, faseId); if (!x) return;
   const { o, f } = x;
-  if (!roleGuard('docs')) return;
+  if (!roleGuardShop('docs')) return;
   const prima = opEPrima(o, f);
   const righe = prima ? opMaterialeResiduo(o).filter(m => m.residuo > 0.000001) : [];
   window.__opAvviaMat = righe.map(m => m.itemId);
@@ -911,7 +911,7 @@ function opAvviaSave(id, faseId) {
 function opDichiaraModal(id, faseId) {
   const x = opFaseDi(id, faseId); if (!x) return;
   const { o, f } = x;
-  if (!roleGuard('docs')) return;
+  if (!roleGuardShop('docs')) return;
   const residua = opResidua(o, f);
   const ultima = opEUltima(o, f);
   openModal(`${opTestaModal(o, f, 'Dichiara l\'avanzamento')}
@@ -941,7 +941,7 @@ function opDichiaraSave(id, faseId) {
 function opForzaModal(id, faseId) {
   const x = opFaseDi(id, faseId); if (!x) return;
   const { o, f } = x;
-  if (!roleGuard('docs')) return;
+  if (!roleGuardShop('docs')) return;
   const blocco = opAvviabile(o, f);
   openModal(`${opTestaModal(o, f, 'Forza l\'avvio della fase ' + f.seq)}
     <div class="rfq-warn">${ico('warning', 'tinted', '')} ${esc(blocco.motivo || '')}. Avviando comunque, i pezzi di questa fase partono da un conto che non torna.</div>

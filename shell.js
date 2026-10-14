@@ -331,7 +331,7 @@ function setView(v) {
   panel.classList.add('active');
   // Sola lettura per il ruolo: la UI nasconde le azioni, le guardie bloccano comunque
   const area = VIEW_AREA[v];
-  panel.classList.toggle('view-readonly', !!area && !canWrite(area));
+  panel.classList.toggle('view-readonly', !!area && !canWrite(area) && !(SHOP_VIEWS.has(v) && canWrite('shop')));
   renderNav();
   if (v === 'bom') renderBom();
   else if (v === 'buy' || v === 'design') renderCatalog(v);
