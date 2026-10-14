@@ -1,6 +1,6 @@
 # Bomtrack — Manuale d'uso
 
-**Versione dell'app documentata: 0.95.0**
+**Versione dell'app documentata: 0.96.0**
 
 📖 **[Leggilo come pagina web](https://claude.ai/code/artifact/726a0963-2db0-4947-999b-d7b5beb91a0b)** — stesso testo, con indice laterale, filtro dei capitoli e tema chiaro/scuro. Comodo da tenere aperto di fianco all'app.
 
@@ -1065,7 +1065,23 @@ una lettera che parte da `A`. Ci si lavora liberamente.
 2. **congela** la distinta com'è adesso, con il costo di oggi;
 3. passa alla lettera successiva, che diventa quella in lavorazione.
 
-**Storico revisioni** mostra le revisioni rilasciate, con data, autore e motivo. **⇄ Confronta**,
+**Ogni rilascio è una modifica tecnica** (dalla 0.96.0). Nella finestra del rilascio, oltre al
+motivo, si sceglie il **tipo**: *Correttiva*, *Migliorativa*, *Richiesta del cliente*, *Cambio di
+fornitore o componente*, *Riduzione dei costi* (si può lasciare vuoto). La finestra mostra prima
+di confermare **quali documenti aperti sono costruiti sulla versione che si lascia**: i piani
+attivi e gli ODP aperti dell'articolo **e degli assiemi che lo contengono**, e le richieste, gli
+ordini e gli ODL aperti dei componenti che la modifica aggiunge, toglie o cambia di quantità. Al
+rilascio la revisione riceve un numero **MT-AAAA-NNN**, progressivo nell'anno, e quella lista resta
+fotografata così com'era: serve a sapere cosa andava rivisto, anche dopo che i documenti si sono
+chiusi.
+
+**Modifiche tecniche**, nella barra revisioni, apre il **registro** di tutte le revisioni
+rilasciate, di tutti gli articoli, dalla più recente: numero, articolo, revisione, tipo, motivo,
+chi e quando, e i documenti che erano aperti. Le revisioni rilasciate prima della 0.96.0 compaiono
+senza numero.
+
+**Storico revisioni** mostra le revisioni rilasciate, con data, autore e motivo (e, dalla 0.96.0,
+numero, tipo e documenti aperti). **⇄ Confronta**,
 su ogni riga, mette quella revisione a fianco della distinta attuale; dal menu **Confronta la Rev. …
 con** si sceglie invece un'altra revisione (dalla 0.85.0). Il confronto dice cosa è **aggiunto**,
 cosa **rimosso** e cosa ha **cambiato quantità**, con il costo congelato di ciascuna delle due e la
@@ -1170,8 +1186,24 @@ e gli articoli fermi da mesi, stanno nel **Cruscotto** (→ [cap. 5](#il-cruscot
 > **Nessuno di questi campi è scrivibile.** Sono tutti calcolati. Per cambiare l'esistente si
 > registra un **movimento**.
 
-**Comandi.** **Presso terzi (N)** (compare solo se c'è qualcosa fuori) · **Esporta Excel** ·
+**Comandi.** **Riordina sotto scorta (N)** (compare solo se qualcosa va riordinato) ·
+**Presso terzi (N)** (compare solo se c'è qualcosa fuori) · **Esporta Excel** ·
 **Esporta PDF**. Nella barra filtri, **Colonne**.
+
+### Riordino sotto scorta
+
+**Riordina sotto scorta** (dalla 0.96.0) elenca gli articoli d'acquisto per cui
+`scorta minima + impegnato − esistente − in arrivo` è positivo, con la quantità da ordinare
+arrotondata al **lotto di riordino**. Quello che è già ordinato e in viaggio è contato, quindi non si
+ordina due volte; un articolo che sta già in un ordine **in bozza** lo dice con un'etichetta e parte senza spunta. Le
+parti compaiono solo se si comprano (approvvigionamento *acquisto*): quelle che si fabbricano
+passano dal fabbisogno.
+
+Gli articoli sono raggruppati per **fornitore** (quello della quotazione in uso). Si tolgono le
+spunte da quelli che non si vogliono e **Crea ordini in bozza** fa **un ordine fornitore in bozza
+per fornitore**, con il prezzo del listino e la consegna a oggi più i giorni del fornitore. Da lì
+l'ordine si rivede e si invia come ogni altro. Gli articoli senza fornitore restano in un gruppo a
+parte: si sistemano dal listino. Serve il diritto su *Richieste e ordini*.
 
 **Filtri.** Ricerca, tipo (Componente commerciale · Materia prima · Parte), famiglia,
 sottofamiglia, e il filtro di **stato**:
@@ -2029,12 +2061,20 @@ Ogni persona ha un utente, con nome, email, ruolo, colore e stato attivo/sospeso
 
 **I ruoli limitano la scrittura, non la lettura: tutti vedono tutto.**
 
-| Ruolo | Articoli | Distinte | Richieste e ordini | Gestione |
-|---|:--:|:--:|:--:|:--:|
-| **Amministratore** | ✔ | ✔ | ✔ | ✔ |
-| **Ufficio acquisti** | — | — | ✔ | — |
-| **Progettazione** | ✔ | ✔ | — | — |
-| **Lettore** | — | — | — | — |
+| Ruolo | Articoli | Distinte | Richieste e ordini | Ricevimenti, avanzamento, giacenze | Gestione |
+|---|:--:|:--:|:--:|:--:|:--:|
+| **Amministratore** | ✔ | ✔ | ✔ | ✔ | ✔ |
+| **Ufficio acquisti** | — | — | ✔ | ✔ | — |
+| **Progettazione** | ✔ | ✔ | — | solo giacenze | — |
+| **Officina e magazzino** | — | — | — | ✔ | — |
+| **Lettore** | — | — | — | — | — |
+
+**Officina e magazzino** (dalla 0.96.0) è il ruolo di chi sta in reparto: **riceve** la merce
+degli ordini e degli ODL, **avvia e dichiara** le fasi degli ODP (e le annulla), registra la
+**produzione** e **rettifica le giacenze** o manda materiale ai terzisti. Non crea né modifica
+richieste, ordini, piani, articoli o distinte: prima per dichiarare l'avanzamento bisognava
+dare il ruolo *Ufficio acquisti*, che scrive anche gli ordini. Magazzino, ordini fornitore, ODL e
+ODP non gli compaiono in sola lettura.
 
 Nelle sezioni non scrivibili compare un **banner di sola lettura** e i pulsanti di creazione ed
 eliminazione spariscono; ogni tentativo di modifica viene comunque fermato con un messaggio.

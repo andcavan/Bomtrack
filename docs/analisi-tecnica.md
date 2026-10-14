@@ -796,6 +796,55 @@ Coperto da `test/layout.test.js`, che in CI apre l'app vera a sette larghezze.
 
 ---
 
+## Risolto fra la 0.95.0 e la 0.96.0
+
+> Come per il tratto 0.44–0.75, le versioni fra la 0.84.0 e la 0.94.0 non hanno
+> voci qui: stanno in `CHANGELOG.md`. Questo giro riparte dalla lista di
+> migliorie di ottobre 2026.
+
+### 53. Il cruscotto cresceva col prodotto di articoli e ODP *(0.96.0)*
+
+`dashModello()` impiegava **32 s** su un archivio dieci volte quello d'esempio
+(1.370 articoli, 330 ODP, 8,7 MB). Il profilo diceva due cose, nello stesso
+punto: `prodWipRows()` si ricalcolava da capo per ogni articolo (lo chiedono
+`atSupplierOf` e `inWorkOf`), e ogni riga chiamava `opRegistrato`, che scorreva
+**tutti** i movimenti per trovare quelli di un ordine.
+
+Ora `opMovimentiDi()` indicizza i movimenti per ordine, `prodWipRows()` tiene il
+risultato, e `_prodWipDi()` lo raccoglie per articolo; `invalidateProd()` butta
+tutti e tre, con lo stesso ciclo di vita di `_opDeclIdx`. Il cruscotto passa a
+**0,12 s**. Sullo stesso archivio un salvataggio costa 54 ms, `homeSegnali` 230,
+`homeEventi` 340, senza un punto caldo dominante.
+
+Il rischio di una cache è la lettura vecchia dentro un gesto. Qui non c'è:
+`addMovement` passa da `Store.insert`, che salva e invalida prima che
+`odpAutoStatus` rilegga. `test/odp.test.js` lo controlla gesto per gesto, senza
+mai chiamare `invalidateCaches()` a mano.
+
+### 54. D10 — un ruolo per l'officina *(0.96.0)*
+
+La voce era aperta come «decisione di come lavora l'azienda»; la decisione è
+stata presa. `officina: ['shop', 'agenda']` in `ROLE_WRITE`, con un'area nuova
+`shop`. I gesti di reparto (ricevere, avviare e dichiarare le fasi, registrare
+la produzione, rettificare le giacenze) passano da `roleGuardShop(oppure)`, che
+accetta `shop` **oppure** l'area che li guardava prima: nessun ruolo esistente
+perde un gesto, e `test/officina.test.js` lo prova per acquisti e
+progettazione. Lo schema SQL ha le righe in `role_areas` e `table_areas`, e
+`test/schema-sql.test.js` confronta ancora la matrice JS con quella SQL — ora
+contando le righe invece di scriverne il numero.
+
+### 55. Backup automatico e storico *(0.95.0)*
+
+Due vuoti che non erano difetti di codice ma di esercizio: l'unica copia
+dell'archivio stava nel browser, e di un record si sapeva chi l'aveva toccato
+per ultimo, non cosa avesse cambiato. Il backup scrive un file al giorno in una
+cartella scelta (stesso permesso della cartella dell'archivio) e ne tiene 14;
+lo storico confronta a ogni `commit()` il contenuto delle collezioni con la
+fotografia precedente. Il costo misurato: da 13 a 22 ms per salvataggio su 2,7
+MB, che resta dentro il budget di un gesto.
+
+---
+
 ## Aperto
 
 > **Lettura per la situazione attuale (0.83.1).** Il backend non è previsto per
@@ -917,12 +966,7 @@ schema lo rende obbligatorio: senza un profilo attivo non si legge niente.
 Il primo profilo si crea dall'editor SQL o con la chiave di servizio, che non
 ha RLS; resta da scrivere la procedura, e la edge function d'invito.)*
 
-**D10 — un ruolo per l'officina.** Chi dichiara l'avanzamento in produzione
-oggi deve essere «acquisti» (`roleGuard('docs')`), che però scrive anche
-ordini e richieste. Con la matrice ora nel database, un ruolo
-produzione/magazzino è una riga in `ROLE_WRITE`, una in `role_areas` e una
-nuova area sulle tabelle di dichiarazioni, movimenti e ricevimenti — ma è una
-decisione di come lavora l'azienda, non del codice.
+*(D10 — un ruolo per l'officina — chiusa nella 0.96.0, §54.)*
 
 ---
 

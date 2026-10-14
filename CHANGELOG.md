@@ -2,6 +2,25 @@
 
 Le revisioni seguono il versionamento semantico `0.MINOR.PATCH`: **MINOR** per nuove funzionalità, **PATCH** per correzioni. La versione in cima è quella in `APP_VERSION` (`core.js`) e mostrata nell'header dell'app.
 
+### 0.96.0 — 2026-10-14
+
+**Il magazzino si riordina da sé, l'officina ha il suo ruolo, e una revisione è una modifica tecnica.** Il resto della lista di migliorie, tranne DDT, preventivi cliente e archivio condiviso.
+
+**Nuovo**
+- **Riordino sotto scorta** (*Magazzino → Riordina sotto scorta*): gli articoli d'acquisto sotto la scorta minima, con la quantità per tornarci (`scorta minima + impegnato − esistente − in arrivo`, arrotondata al lotto), raggruppati per fornitore. Un clic crea **un ordine in bozza per fornitore**, col prezzo del listino e la consegna dai giorni del fornitore. Quello che è già in viaggio è contato; quello che è già in una bozza lo dice e parte senza spunta. Le parti compaiono solo se si comprano.
+- **Ruolo «Officina e magazzino»**: riceve la merce di ordini e ODL, avvia e dichiara le fasi degli ODP, registra la produzione, rettifica le giacenze e manda materiale ai terzisti; non scrive richieste, ordini, piani, articoli né distinte. Prima per dichiarare l'avanzamento serviva *Ufficio acquisti*. Nessun ruolo esistente perde niente.
+- **Modifiche tecniche**: ogni revisione rilasciata riceve un numero **MT-AAAA-NNN** e, se si vuole, un tipo (correttiva, migliorativa, richiesta del cliente, cambio di fornitore o componente, riduzione dei costi). Prima di rilasciare si vedono i documenti aperti costruiti sulla versione che si lascia — piani e ODP dell'articolo e di chi lo contiene, richieste, ordini e ODL dei componenti toccati — e la lista resta fotografata nella revisione. **Modifiche tecniche**, nella barra revisioni, apre il registro di tutte.
+
+**Più veloce**
+- Il **Cruscotto** e il magazzino su archivi grandi: le righe di materiale in lavorazione si calcolavano una volta per articolo e i movimenti di ogni ODP si cercavano su tutti i movimenti. Su un archivio dieci volte quello d'esempio (1.370 articoli, 330 ODP) il cruscotto passa da **32 secondi a 0,1**. Riepilogo e salvataggio restano sotto i 350 ms.
+
+**Da sapere**
+- Lo schema SQL (`supabase/schema.sql`) ha il ruolo nuovo, l'area `shop` sulle tabelle di ricevimenti, produzione e movimenti, e tre colonne sulle revisioni (`eco_number`, `eco_kind`, `eco_impact`), aggiunte anche a un database esistente.
+- Le revisioni rilasciate prima di questa versione restano senza numero: il registro le mostra lo stesso.
+
+**Verifica**
+- `test/riordino.test.js`, `test/officina.test.js`, `test/eco.test.js`; `test/schema-sql.test.js` controlla la matrice del ruolo nuovo anche su Postgres; `test/odp.test.js` controlla che le cache nuove seguano ogni gesto.
+
 ### 0.95.0 — 2026-10-14
 
 **Il backup si fa da solo, e le modifiche lasciano traccia.** Il Riepilogo ricordava di esportare, ma l'export restava un gesto a mano, e l'unica copia dell'archivio stava in questo browser. E di ogni record si sapeva chi l'aveva toccato per ultimo, non che cosa aveva cambiato.

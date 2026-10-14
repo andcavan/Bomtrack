@@ -91,12 +91,13 @@ Fino alla 0.90 i gruppi seguivano il tipo di dato (Anagrafica, Cicli di lavorazi
 
 Ogni persona ha un utente (*Gestione → 👥 Utenti*, riservata agli amministratori) con nome, email, ruolo, colore e stato attivo/sospeso. I ruoli limitano la **scrittura**: tutti vedono tutto.
 
-| Ruolo | Articoli | Distinte | Richieste e ordini | Gestione |
-|---|:--:|:--:|:--:|:--:|
-| Amministratore | ✔ | ✔ | ✔ | ✔ |
-| Ufficio acquisti | — | — | ✔ | — |
-| Progettazione | ✔ | ✔ | — | — |
-| Lettore | — | — | — | — |
+| Ruolo | Articoli | Distinte | Richieste e ordini | Ricevimenti, avanzamento, giacenze | Gestione |
+|---|:--:|:--:|:--:|:--:|:--:|
+| Amministratore | ✔ | ✔ | ✔ | ✔ | ✔ |
+| Ufficio acquisti | — | — | ✔ | ✔ | — |
+| Progettazione | ✔ | ✔ | — | solo giacenze | — |
+| Officina e magazzino | — | — | — | ✔ | — |
+| Lettore | — | — | — | — | — |
 
 Nelle sezioni non scrivibili compare un banner di sola lettura e i pulsanti di creazione ed eliminazione spariscono; ogni tentativo di modifica viene comunque fermato con un messaggio. La voce *Gestione* — e con essa il backup — è visibile ai soli amministratori. Deve restare **almeno un amministratore attivo**: l'app impedisce di declassare, sospendere o eliminare l'ultimo, e di agire su se stessi.
 

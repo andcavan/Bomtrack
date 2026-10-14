@@ -330,6 +330,25 @@ describe('ODP: il magazzino, i tre cicli', () => {
     assert.equal(Number(app.eval(`atSupplierOf('tondo')`)), 0);
   });
 
+  // Righe WIP e movimenti per ordine stanno in cache (0.96.0): ogni gesto salva,
+  // e il salvataggio le deve buttare, senza che nessuno chiami invalidateCaches.
+  it('le cache del WIP seguono ogni gesto, senza invalidare a mano', () => {
+    const app = conDb();
+    app.eval(`addMovement('tondo', 'carico', 100, '')`);
+    lancia(app, 'esterna', 10);
+    assert.equal(Number(app.eval(`atSupplierOf('tondo')`)), 0);
+    avvia(app, 'odp-esterna', 0);
+    assert.equal(Number(app.eval(`atSupplierOf('tondo')`)), 20);
+    assert.equal(Number(app.eval(`prodWipAt('beta', 'tondo')`)), 20);
+    dichiara(app, 'odp-esterna', 0, { qty: 10 });
+    avvia(app, 'odp-esterna', 1);
+    assert.equal(Number(app.eval(`prodWipAt('beta', 'tondo')`)), 0);
+    assert.equal(Number(app.eval(`prodWipAt('gamma', 'tondo')`)), 20);
+    dichiara(app, 'odp-esterna', 1, { qty: 10 });
+    assert.equal(app.eval(`opVersato(getOdp('odp-esterna'))`), 10);
+    assert.equal(Number(app.eval(`atSupplierOf('tondo')`)), 0);
+  });
+
   it('il materiale esce una volta sola: riavviare la prima fase non lo ripreleva', () => {
     const app = conDb();
     app.eval(`(addMovement('tondo', 'carico', 100, ''), invalidateCaches())`);
