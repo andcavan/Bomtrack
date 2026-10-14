@@ -1,13 +1,15 @@
 // Riordino sotto scorta.
 //
-// La proposta è il conto del fabbisogno con un lordo di zero: scorta minima +
-// impegnato − esistente − in arrivo, arrotondato al lotto. Le proprietà che
-// contano:
+// La proposta è il conto del fabbisogno con un lordo di zero e senza
+// impegnato: scorta minima − esistente − in arrivo, arrotondato al lotto. Le
+// proprietà che contano:
 //   1. quello che è già in viaggio non si ordina due volte;
 //   2. il lotto di riordino si rispetta;
 //   3. un ordine in bozza per fornitore, col listino di quel fornitore;
 //   4. le parti fatte in casa non si propongono: si rifanno con un piano;
-//   5. chi non può scrivere ordini non ne crea.
+//   5. chi non può scrivere ordini non ne crea;
+//   6. l'impegnato dei piani non entra: lo ordinano i piani;
+//   7. un articolo obsoleto non si propone.
 
 const assert = require('node:assert/strict');
 const { describe, it } = require('./tap.js');
@@ -97,5 +99,29 @@ describe('Riordino: gli ordini', () => {
     const b = app();
     b.eval("db.items.forEach(i => { i.safetyStock = 0; })");
     assert.equal(b.eval('riordinoButton()'), '');
+  });
+});
+
+describe('Riordino: impegnato e obsoleti', () => {
+  it('l\'impegnato dei piani non fa riordinare: quello lo ordinano i piani', () => {
+    const a = app();
+    a.eval("addMovement('a1', 'carico', 50, 'inventario')");
+    a.eval(`db.plans = [{ id: 'pl1', number: 'FAB-1', title: '', date: '2026-07-01', active: true,
+      lines: [{ id: 'r1', itemId: 'a1', qty: 45, dueDate: '2026-12-01' }] }]; invalidateCaches();`);
+    assert.equal(a.eval("committedOf('a1', null)"), 45, 'il piano impegna');
+    assert.equal(proposte(a).find(x => x.id === 'a1'), undefined,
+      '50 a magazzino, scorta 10: non è sotto scorta, e il riordino non lo propone');
+  });
+  it('sotto scorta e impegnato: si riordina solo fino alla scorta', () => {
+    const a = app();
+    a.eval("addMovement('a1', 'carico', 4, 'inventario')");
+    a.eval(`db.plans = [{ id: 'pl1', number: 'FAB-1', title: '', date: '2026-07-01', active: true,
+      lines: [{ id: 'r1', itemId: 'a1', qty: 30, dueDate: '2026-12-01' }] }]; invalidateCaches();`);
+    assert.equal(proposte(a).find(x => x.id === 'a1').qty, 6, '10 − 4: i 30 del piano non entrano');
+  });
+  it('un articolo obsoleto non si propone', () => {
+    const a = app();
+    a.eval("getItem('a1').obsolete = true; invalidateCaches();");
+    assert.equal(proposte(a).find(x => x.id === 'a1'), undefined);
   });
 });

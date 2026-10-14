@@ -39,6 +39,16 @@ describe('Officina: i suoi gesti', () => {
     assert.equal(a.eval("onHandOf('c1')"), 12);
   });
 
+  it('una rettifica col campo vuoto non azzera la giacenza', () => {
+    const a = app('officina');
+    a.el('mv-kind').value = 'rettifica';
+    a.el('mv-qty').value = '12';
+    a.eval("saveStockAdjust('c1')");
+    a.el('mv-qty').value = '';
+    a.eval("saveStockAdjust('c1')");
+    assert.equal(a.eval("onHandOf('c1')"), 12, 'un campo vuoto non è un inventario a zero');
+  });
+
   it('la vista del magazzino e degli ordini non è in sola lettura', () => {
     const a = app('officina');
     assert.equal(a.eval("SHOP_VIEWS.has('stock') && canWrite('shop')"), true);

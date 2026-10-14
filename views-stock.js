@@ -139,7 +139,7 @@ function stockIndex() {
   _stockIdx = idx;
   return idx;
 }
-function invalidateStock() { _stockIdx = null; _commitIdx = null; _clIdx = null; }
+function invalidateStock() { _stockIdx = null; _commitIdx = null; _prelIdx = null; _clIdx = null; }
 function stockOf(itemId) { return stockIndex().get(itemId) || { onHand: 0, incoming: 0, arrivi: [] }; }
 function onHandOf(itemId) { return stockOf(itemId).onHand; }
 function incomingOf(itemId) { return stockOf(itemId).incoming; }
@@ -179,7 +179,18 @@ function incomingEntro(itemId, data) {
 // gesto con cui si dice «questo non serve più»; senza di esso ogni piano mai
 // creato continuerebbe a bloccare materiale per sempre, e dopo un anno d'uso
 // nessun articolo risulterebbe più disponibile.
+//
+// ── L'impegno scende quando il materiale esce ──
+// Il fabbisogno di un piano è lordo e non cambia; il suo impegno sì. Quando un
+// ODP o un ODL del piano preleva il materiale, quella merce esce dall'esistente:
+// se l'impegno restasse il lordo intero la stessa merce si toglierebbe due
+// volte — una dall'esistente, una come impegno — e il piano chiederebbe di
+// ricomprare quello che ha appena usato. Quindi l'impegno è il lordo **meno il
+// già prelevato** dai documenti del piano (`prelevatiIndex`), mai sotto zero.
+// `lordo` resta sulla voce per chi deve rifare il conto dal piano stesso
+// (mrpBuyRow), che il prelevato lo toglie da sé.
 let _commitIdx = null;
+let _prelIdx = null;
 function commitIndex() {
   if (_commitIdx) return _commitIdx;
   const idx = new Map();
@@ -188,15 +199,54 @@ function commitIndex() {
   if (typeof mrpExplode === 'function') {
     (db.plans || []).forEach(p => {
       if (p.active === false || !(p.lines || []).length) return;
+      const prel = prelevatiIndex().get(p.id);
       mrpExplode(p.lines).buy.forEach(e => {
+        const gia = (prel && prel.get(e.item.id)) || 0;
+        // Tutto prelevato: il piano su questo articolo non promette più niente.
+        if (!(e.qty - gia > 0.000001)) return;
         let l = idx.get(e.item.id);
         if (!l) { l = []; idx.set(e.item.id, l); }
-        l.push({ planId: p.id, number: p.number || '', title: p.title || '', qty: e.qty, due: e.due || '' });
+        l.push({ planId: p.id, number: p.number || '', title: p.title || '',
+          qty: e.qty - gia, lordo: e.qty, prelevato: gia, due: e.due || '' });
       });
     });
   }
   _commitIdx = idx;
   return idx;
+}
+// Il materiale già uscito dal magazzino **per un piano**: piano → articolo →
+// quantità. Conta i movimenti che portano l'id di un documento del piano (ODP,
+// ODL, ordine di conto lavoro): lo `scarico` e l'uscita a conto lavoro tolgono,
+// un rientro dello **stesso** codice restituisce. I documenti annullati non
+// contano: quel materiale è uscito ma il piano lo deve ancora avere, e se si
+// rilancia un ordine serve di nuovo.
+function prelevatiIndex() {
+  if (_prelIdx) return _prelIdx;
+  const docPiano = new Map();
+  [].concat(db.prodOrders || [], db.workOrders || [], db.orders || []).forEach(d => {
+    if (d.planId && d.status !== 'annullato') docPiano.set(d.id, d.planId);
+  });
+  const idx = new Map();
+  (db.movements || []).forEach(m => {
+    if (!m.itemId || !m.orderId) return;
+    if (m.kind !== 'scarico' && m.kind !== 'clOut' && m.kind !== 'clIn') return;
+    const planId = docPiano.get(m.orderId); if (!planId) return;
+    let p = idx.get(planId);
+    if (!p) { p = new Map(); idx.set(planId, p); }
+    p.set(m.itemId, (p.get(m.itemId) || 0) - (Number(m.qty) || 0));
+  });
+  // Un rientro può superare l'uscita (torna un codice che non era uscito per
+  // questo piano): il prelevato non va sotto zero.
+  idx.forEach(p => p.forEach((q, id) => { if (q < 0) p.set(id, 0); }));
+  _prelIdx = idx;
+  return idx;
+}
+// Quanto di un articolo i piani indicati hanno già prelevato. Stessa forma
+// dell'esclusione di commitsOn: un piano, un elenco o un insieme.
+function prelevatoPer(itemId, piani) {
+  const ids = piani instanceof Set ? Array.from(piani)
+    : (Array.isArray(piani) ? piani : (piani ? [piani] : []));
+  return ids.reduce((s, id) => s + ((prelevatiIndex().get(id) || new Map()).get(itemId) || 0), 0);
 }
 // Chi impegna questo articolo, **escluso** il piano da cui si sta guardando:
 // un piano non fa concorrenza a sé stesso, e sottrargli il proprio fabbisogno
@@ -549,6 +599,12 @@ function saveStockAdjust(itemId) {
   if (!roleGuardShop('catalog')) return;
   const it = getItem(itemId); if (!it) return;
   const kind = MOVEMENT_KINDS[val('mv-kind')] ? val('mv-kind') : 'rettifica';
+  // Un campo vuoto non è uno zero: su una rettifica varrebbe «non ce n'è
+  // nessuno» e azzererebbe la giacenza senza che nessuno l'abbia contata.
+  const campo = document.getElementById('mv-qty');
+  if (!campo || String(campo.value).trim() === '' || !isFinite(parseFloat(campo.value))) {
+    showToast('Scrivi la quantità', 'error'); return;
+  }
   const inserita = rawNum('mv-qty');
   if (kind !== 'rettifica' && inserita < 0) { showToast('Inserisci una quantità positiva: è il tipo a decidere il verso', 'error'); return; }
   // Senza terzista il movimento non è ricostruibile: il prospetto non saprebbe
@@ -1167,11 +1223,14 @@ function stockExportSpec(soloIds) {
 // fabbisogno apposta, o scrivere l'ordine a mano articolo per articolo. Qui la
 // proposta nasce da sé e l'ordine anche: una bozza per fornitore.
 //
-// Quanto ordinare è lo stesso conto del fabbisogno con un lordo di zero:
-// scorta minima + impegnato − esistente − in arrivo, arrotondato al lotto.
-// Quindi un articolo sotto scorta con un ordine già in viaggio che basta non
-// si propone, e uno che gli altri piani hanno già promesso sì: la proposta
-// risponde a «cosa manca per tornare alla scorta», non a «cosa è sotto».
+// Quanto ordinare è lo stesso conto del fabbisogno con un lordo di zero e
+// **senza impegnato**: scorta minima − esistente − in arrivo, arrotondato al
+// lotto. Un articolo sotto scorta con un ordine già in viaggio che basta non si
+// propone. L'impegnato resta fuori di proposito: quello che i piani hanno
+// promesso lo ordinano i piani, con il loro documento legato al piano. Contarlo
+// anche qui faceva comparire nel riordino articoli che sotto scorta non sono, e
+// se nello stesso giorno si generavano anche gli ordini del piano — le bozze non
+// sono in arrivo — la stessa merce si comprava due volte.
 //
 // Si propone solo quello che si compra: un articolo con un fornitore (dalla
 // quotazione in uso, o dal campo fornitore). Una parte fatta in casa sotto
@@ -1187,11 +1246,12 @@ function riordinoProposte() {
     (o.lines || []).forEach(l => { if (l.itemId && !bozze.has(l.itemId)) bozze.set(l.itemId, o.number || ''); });
   });
   (db.items || []).forEach(it => {
-    if (!hasStock(it) || it.active === false || !hasPriceList(it)) return;
+    // Un articolo obsoleto non si riordina, anche se gli è rimasta una scorta.
+    if (!hasStock(it) || it.active === false || it.obsolete || !hasPriceList(it)) return;
     if (it.type === 'parte' && partSourcing(it) !== 'buy') return;
     const st = stockState(it);
     if (!(st.safety > 0)) return;
-    const qty = netRequirement(0, st.onHand, st.incoming, st.safety, st.lotSize, st.committed, st.lotMode);
+    const qty = netRequirement(0, st.onHand, st.incoming, st.safety, st.lotSize, 0, st.lotMode);
     if (!(qty > 0)) return;
     const supplierId = buySupplierId(it);
     out.push({ it, qty, supplierId: supplierId || '', onHand: st.onHand, incoming: st.incoming,
@@ -1258,7 +1318,7 @@ function riordinoModal() {
       <th scope="col" class="num">Esistente</th><th scope="col" class="num">In arrivo</th><th scope="col" class="num">Impegnato</th><th scope="col" class="num">Scorta min.</th><th scope="col" class="num">Da ordinare</th><th scope="col">Consegna</th></tr></thead>
       <tbody>${rs.map(riga).join('')}</tbody></table></div>`).join('');
   openModal(`<h3>${ico('cart', 'tinted pill', '')} Riordino sotto scorta</h3>
-    <p class="empty-text" style="text-align:left;padding:0 0 8px">Quanto serve per tornare alla scorta minima: <strong>scorta minima + impegnato − esistente − in arrivo</strong>, arrotondato al lotto di riordino. Quello che è già ordinato e in viaggio è contato: non si ordina due volte. Si crea <strong>un ordine in bozza per fornitore</strong>, con il prezzo del suo listino e la consegna dai suoi giorni; da lì si rivede e si invia come ogni ordine.</p>
+    <p class="empty-text" style="text-align:left;padding:0 0 8px">Quanto serve per tornare alla scorta minima: <strong>scorta minima − esistente − in arrivo</strong>, arrotondato al lotto di riordino. Quello che è già ordinato e in viaggio è contato: non si ordina due volte. L'impegnato dei piani si vede ma non entra nel conto: quello lo ordinano i piani. Si crea <strong>un ordine in bozza per fornitore</strong>, con il prezzo del suo listino e la consegna dai suoi giorni; da lì si rivede e si invia come ogni ordine.</p>
     ${blocchi || '<div class="empty-text">Niente da riordinare: ogni articolo con una scorta minima ci arriva con quello che c\'è e quello che è in arrivo.</div>'}
     <div class="modal-actions"><button class="btn-ghost" onclick="closeModal()">Chiudi</button>
       ${scrive && ps.some(p => p.supplierId) ? '<button class="add-btn-sm" onclick="riordinoConferma()">Crea ordini in bozza</button>' : ''}</div>`, true, 'riordino');

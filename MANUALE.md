@@ -1,6 +1,6 @@
 # Bomtrack — Manuale d'uso
 
-**Versione dell'app documentata: 0.98.0**
+**Versione dell'app documentata: 0.98.1**
 
 📖 **[Leggilo come pagina web](https://claude.ai/code/artifact/726a0963-2db0-4947-999b-d7b5beb91a0b)** — stesso testo, con indice laterale, filtro dei capitoli e tema chiaro/scuro. Comodo da tenere aperto di fianco all'app.
 
@@ -1205,9 +1205,11 @@ e gli articoli fermi da mesi, stanno nel **Cruscotto** (→ [cap. 5](#il-cruscot
 ### Riordino sotto scorta
 
 **Riordina sotto scorta** (dalla 0.96.0) elenca gli articoli d'acquisto per cui
-`scorta minima + impegnato − esistente − in arrivo` è positivo, con la quantità da ordinare
+`scorta minima − esistente − in arrivo` è positivo, con la quantità da ordinare
 arrotondata al **lotto di riordino**. Quello che è già ordinato e in viaggio è contato, quindi non si
-ordina due volte; un articolo che sta già in un ordine **in bozza** lo dice con un'etichetta e parte senza spunta. Le
+ordina due volte. L'**impegnato** dei piani si vede in colonna ma non entra nel conto (dalla 0.98.1):
+quello che i piani hanno promesso lo ordinano i piani, con il documento legato al piano. Gli articoli
+**obsoleti** non si propongono; un articolo che sta già in un ordine **in bozza** lo dice con un'etichetta e parte senza spunta. Le
 parti compaiono solo se si comprano (approvvigionamento *acquisto*): quelle che si fabbricano
 passano dal fabbisogno.
 
@@ -1583,6 +1585,13 @@ poi arrotondato al **lotto di riordino** dell'articolo, secondo il suo modo (*mu
 Il termine **impegnato** è quello che fa la differenza: è la merce che **gli altri piani aperti**
 hanno già promesso a sé. Senza quel termine, due piani si dichiarerebbero coperti con lo stesso
 pezzo, e uno dei due resterebbe a mani vuote.
+
+**L'impegno scende con i prelievi** (dalla 0.98.1). Un piano impegna il suo fabbisogno **meno
+quello che i suoi documenti hanno già prelevato**: quando un ordine di produzione o un ordine di
+lavoro del piano fa uscire il materiale, l'esistente scende e l'impegno scende della stessa quantità.
+La merce uscita non si conta due volte, e il piano non chiede di ricomprare quello che ha appena
+usato. Un ordine **annullato** non riduce l'impegno: il materiale uscito manca, e il piano lo deve
+ancora avere.
 
 **Piano aperto e piano chiuso.** Finché un piano è **aperto**, impegna. Un piano che non serve più
 si **chiude**, e la sua quota torna libera per gli altri. Un piano chiuso non sparisce: resta

@@ -2,6 +2,19 @@
 
 Le revisioni seguono il versionamento semantico `0.MINOR.PATCH`: **MINOR** per nuove funzionalità, **PATCH** per correzioni. La versione in cima è quella in `APP_VERSION` (`core.js`) e mostrata nell'header dell'app.
 
+### 0.98.1 — 2026-10-14
+
+**Correzioni ai conti di magazzino.** Un controllo dei calcoli di giacenza, impegno e scorta ha trovato un doppio conteggio e tre comportamenti sbagliati.
+
+**Corretto**
+- **L'impegno scende quando il materiale esce.** Un piano impegnava sempre il suo fabbisogno lordo intero, anche dopo che un suo ODP o ODL aveva prelevato il materiale: l'esistente scendeva e l'impegno no, quindi la stessa merce si toglieva due volte. Il libero andava sotto zero, il piano chiedeva di ricomprare quello che aveva appena usato, gli altri piani si vedevano scoperti e la copertura della commessa diventava rossa. Ora l'impegno è il lordo meno il prelevato dai documenti del piano (`commitIndex`, `prelevatiIndex` in `views-stock.js`); il netto del piano stesso, il programma e la copertura della commessa tolgono il prelevato dal lordo. Sui dati di esempio, MAT-ACC-LAM-003 passa da 148 a 311 kg liberi.
+- **Il riordino sotto scorta propone solo quello che è sotto scorta.** Il conto è `scorta minima − esistente − in arrivo`: l'impegnato dei piani non entra più, perché lo ordinano i piani. Prima comparivano articoli che sotto scorta non erano, e generando nello stesso giorno anche gli ordini del piano la merce si comprava due volte.
+- **Il riordino non propone gli articoli obsoleti.**
+- **Una rettifica con il campo quantità vuoto** non azzera più la giacenza: chiede la quantità.
+
+**Verifica**
+- `test/impegni-prelievo.test.js` (nuovo): prelievo totale e parziale, dettaglio dell'impegno, ODP annullato, ODP senza piano, piano chiuso. `test/riordino.test.js`: impegnato fuori dal conto, obsoleti. `test/officina.test.js`: rettifica con il campo vuoto.
+
 ### 0.98.0 — 2026-10-14
 
 **Il calendario si filtra, e dice quando partono le fasi.** Un ordine di produzione lanciato aveva le fasi programmate con inizio e fine, ma il Riepilogo mostrava solo la sua data di fine; e con fabbisogno, consegne e promemoria nello stesso mese la griglia si leggeva a fatica.

@@ -195,7 +195,7 @@ a:focus-visible,button:focus-visible,input:focus-visible{outline:2px solid var(-
     <div class="brand">
       <div class="brand-top">
         <span class="brand-name">Bomtrack</span>
-        <span class="chip">v0.98.0</span>
+        <span class="chip">v0.98.1</span>
       </div>
       <div class="brand-sub">Manuale d&rsquo;uso</div>
     </div>
@@ -613,7 +613,7 @@ prezzo vendita = costo totale × (1 + margine %)</code></pre>
 <blockquote><p><strong>Nessuno di questi campi è scrivibile.</strong> Sono tutti calcolati. Per cambiare l'esistente si registra un <strong>movimento</strong>.</p></blockquote>
 <p><strong>Comandi.</strong> <strong>Riordina sotto scorta (N)</strong> (compare solo se qualcosa va riordinato) · <strong>Presso terzi (N)</strong> (compare solo se c'è qualcosa fuori) · <strong>Esporta Excel</strong> · <strong>Esporta PDF</strong>. Nella barra filtri, <strong>Colonne</strong>.</p>
 <h3 id="riordino-sotto-scorta">Riordino sotto scorta</h3>
-<p><strong>Riordina sotto scorta</strong> (dalla 0.96.0) elenca gli articoli d'acquisto per cui <code>scorta minima + impegnato − esistente − in arrivo</code> è positivo, con la quantità da ordinare arrotondata al <strong>lotto di riordino</strong>. Quello che è già ordinato e in viaggio è contato, quindi non si ordina due volte; un articolo che sta già in un ordine <strong>in bozza</strong> lo dice con un'etichetta e parte senza spunta. Le parti compaiono solo se si comprano (approvvigionamento <em>acquisto</em>): quelle che si fabbricano passano dal fabbisogno.</p>
+<p><strong>Riordina sotto scorta</strong> (dalla 0.96.0) elenca gli articoli d'acquisto per cui <code>scorta minima − esistente − in arrivo</code> è positivo, con la quantità da ordinare arrotondata al <strong>lotto di riordino</strong>. Quello che è già ordinato e in viaggio è contato, quindi non si ordina due volte. L'<strong>impegnato</strong> dei piani si vede in colonna ma non entra nel conto (dalla 0.98.1): quello che i piani hanno promesso lo ordinano i piani, con il documento legato al piano. Gli articoli <strong>obsoleti</strong> non si propongono; un articolo che sta già in un ordine <strong>in bozza</strong> lo dice con un'etichetta e parte senza spunta. Le parti compaiono solo se si comprano (approvvigionamento <em>acquisto</em>): quelle che si fabbricano passano dal fabbisogno.</p>
 <p>Gli articoli sono raggruppati per <strong>fornitore</strong> (quello della quotazione in uso). Si tolgono le spunte da quelli che non si vogliono e <strong>Crea ordini in bozza</strong> fa <strong>un ordine fornitore in bozza per fornitore</strong>, con il prezzo del listino e la consegna a oggi più i giorni del fornitore. Da lì l'ordine si rivede e si invia come ogni altro. Gli articoli senza fornitore restano in un gruppo a parte: si sistemano dal listino. Serve il diritto su <em>Richieste e ordini</em>.</p>
 <p><strong>Filtri.</strong> Ricerca, tipo (Componente commerciale · Materia prima · Parte), famiglia, sottofamiglia, e il filtro di <strong>stato</strong>:</p>
 <ul><li><em>Sotto la scorta minima</em></li><li><em>Giacenza a zero</em></li><li><em>Con giacenza</em></li><li><em>Libero negativo</em> — si è promesso più di quanto si abbia e si aspetti</li><li><em>Presso terzi o in lavorazione</em></li></ul>
@@ -714,6 +714,7 @@ prezzo vendita = costo totale × (1 + margine %)</code></pre>
 <pre><code>netto = lordo + scorta minima + impegnato − esistente − in arrivo</code></pre>
 <p>poi arrotondato al <strong>lotto di riordino</strong> dell'articolo, secondo il suo modo (<em>multiplo esatto</em> o <em>quantità minima</em>).</p>
 <p>Il termine <strong>impegnato</strong> è quello che fa la differenza: è la merce che <strong>gli altri piani aperti</strong> hanno già promesso a sé. Senza quel termine, due piani si dichiarerebbero coperti con lo stesso pezzo, e uno dei due resterebbe a mani vuote.</p>
+<p><strong>L'impegno scende con i prelievi</strong> (dalla 0.98.1). Un piano impegna il suo fabbisogno <strong>meno quello che i suoi documenti hanno già prelevato</strong>: quando un ordine di produzione o un ordine di lavoro del piano fa uscire il materiale, l'esistente scende e l'impegno scende della stessa quantità. La merce uscita non si conta due volte, e il piano non chiede di ricomprare quello che ha appena usato. Un ordine <strong>annullato</strong> non riduce l'impegno: il materiale uscito manca, e il piano lo deve ancora avere.</p>
 <p><strong>Piano aperto e piano chiuso.</strong> Finché un piano è <strong>aperto</strong>, impegna. Un piano che non serve più si <strong>chiude</strong>, e la sua quota torna libera per gli altri. Un piano chiuso non sparisce: resta consultabile, smette solo di impegnare. Si riapre quando serve.</p>
 <h3 id="generare-i-documenti">Generare i documenti</h3>
 <p>I tre pulsanti <strong>Genera richieste / ordini / ordini di lavoro</strong> aprono la stessa finestra: le righe <strong>raggruppate per fornitore</strong>, ciascuna con la sua casella di selezione e la quantità — dichiarata come netta o lorda secondo l'interruttore attivo. Si spunta cosa includere e si conferma. Ne esce <strong>un documento per fornitore</strong>.</p>

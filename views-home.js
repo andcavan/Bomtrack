@@ -76,7 +76,7 @@ function homeSegnali() {
   commitIndex().forEach((commits, itemId) => {
     const it = getItem(itemId); if (!it) return;
     commits.forEach(c => {
-      const r = mrpBuyRow({ item: it, qty: c.qty, due: c.due }, true, c.planId);
+      const r = mrpBuyRow({ item: it, qty: c.lordo, due: c.due }, true, c.planId);
       if (r.qtyOrder <= 0) return;
       if (r.urgenza !== 'ritardo' && r.urgenza !== 'urgente') return;
       // La riga è di un articolo **dentro un piano**: il codice dice cosa
@@ -281,7 +281,7 @@ function homeEventi() {
   commitIndex().forEach((commits, itemId) => {
     const it = getItem(itemId); if (!it) return;
     commits.forEach(c => {
-      const r = mrpBuyRow({ item: it, qty: c.qty, due: c.due }, true, c.planId);
+      const r = mrpBuyRow({ item: it, qty: c.lordo, due: c.due }, true, c.planId);
       if (r.qtyOrder <= 0 || !r.orderBy) return;
       const grav = r.urgenza === 'ritardo' ? 'alta' : (r.urgenza === 'urgente' ? 'media' : 'info');
       const g = raggruppa('mrp|' + c.planId + '|' + r.orderBy, { tipo: 'fabbisogno', data: r.orderBy, icona: 'cart',
