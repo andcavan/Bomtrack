@@ -33,6 +33,7 @@ const VISTE = [
   ['orders-edit', "setView('orders'); openOrderEdit(db.orders[0].id)"],
   ['jobs-edit', "setView('jobs'); openJobEdit(db.jobs[0].id)"],
   ['plan-edit', "setView('mrp'); openPlanEdit(db.plans[0].id)"],
+  ['avz', "setView('avz')"],
   ['bom-confronto', "setView('bom'); const as = db.items.filter(i => isAssembly(i.type)); _bomConfronto.soloDiff = false; bomCompareModal(as[0].id, as[1].id)"],
 ];
 const LARGHEZZE = [1920, 1440, 1366, 1280, 1024, 820, 390];

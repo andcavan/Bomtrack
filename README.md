@@ -22,7 +22,7 @@ La barra dei comandi ha **sette gruppi**, ordinati per processo (dalla 0.91.0); 
 |---|---|
 | 🏠 **Riepilogo** | Riepilogo · Cruscotto |
 | 🌳 **Tecnico** | Articoli di progetto · Articoli d'acquisto · Gestione DB · Visualizza DB · Cicli di lavorazione |
-| 📋 **Pianificazione** | Commesse · Fabbisogno · Carico centri |
+| 📋 **Pianificazione** | Commesse · Fabbisogno · Carico centri · Avanzamento |
 | 🛒 **Acquisti** | Richieste offerta · Ordini fornitore · Listino fornitori |
 | 🏭 **Produzione** | Ordini di produzione · Ordini di lavoro |
 | 📦 **Magazzino** | — |
@@ -252,6 +252,7 @@ Il motivo è lo storico: finché lo stesso dato si poteva scrivere in due posti,
 | `views-item.js` | scheda articolo di sola lettura e codice cliccabile; come si legge lo storico delle modifiche |
 | `views-docs.js` | richieste di offerta e ordini |
 | `views-prod.js` | ordini di produzione: congelamento del ciclo, successione delle fasi, avanzamento e i due movimenti di magazzino |
+| `views-avanzamento.js` | Pianificazione → Avanzamento: il Gantt del piano con quanto è stato fatto, letto da ordini, ODL e ODP; in sola lettura |
 | `views-manage.js` | gestione (utenti, anagrafiche di servizio, impostazioni) |
 | `cloud-map.js` | traduzione fra la forma annidata locale e quella normalizzata del futuro database condiviso. Funzioni pure, **nessun codice di rete**: l'app resta locale |
 | `import-catalog.js` | articoli ⇄ Excel nei due file Acquisti e Progetto: colonne per tipo, foglio Liste, verifica senza importare |

@@ -168,7 +168,9 @@ const NAV = [
   { id: 'plan', icon: 'clipboard', label: 'Pianificazione', views: [
     { id: 'jobs', label: 'Commesse' },
     { id: 'mrp', label: 'Fabbisogno' },
-    { id: 'load', label: 'Carico centri' }] },
+    { id: 'load', label: 'Carico centri' },
+    // Il Gantt del piano con quello che è successo davvero (0.97.0).
+    { id: 'avz', label: 'Avanzamento' }] },
   // Il lavoro di chi compra, nell'ordine in cui lo fa: chiedere, ordinare, e il
   // listino dove i prezzi restano.
   { id: 'buying', icon: 'cart', label: 'Acquisti', views: [
@@ -347,6 +349,7 @@ function setView(v) {
   else if (v === 'odl') renderOdl();
   else if (v === 'odp') renderOdp();
   else if (v === 'load') renderLoad();
+  else if (v === 'avz') renderAvanzamento();
   else if (v === 'pricelist') renderPriceListView();
   else if (v === 'manage') renderManage();
   showReadOnlyBanner(panel, area);

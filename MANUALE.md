@@ -1,6 +1,6 @@
 # Bomtrack — Manuale d'uso
 
-**Versione dell'app documentata: 0.96.0**
+**Versione dell'app documentata: 0.97.0**
 
 📖 **[Leggilo come pagina web](https://claude.ai/code/artifact/726a0963-2db0-4947-999b-d7b5beb91a0b)** — stesso testo, con indice laterale, filtro dei capitoli e tema chiaro/scuro. Comodo da tenere aperto di fianco all'app.
 
@@ -224,7 +224,7 @@ ricorda l'ultima voce usata**: tornando su *Acquisti* si riapre dove si era rima
 |---|---|
 | 🏠 **Riepilogo** | Riepilogo · Cruscotto |
 | 🌳 **Tecnico** | Articoli di progetto · Articoli d'acquisto · Gestione DB · Visualizza DB · Cicli di lavorazione |
-| 📋 **Pianificazione** | Commesse · Fabbisogno · Carico centri |
+| 📋 **Pianificazione** | Commesse · Fabbisogno · Carico centri · Avanzamento |
 | 🛒 **Acquisti** | Richieste offerta · Ordini fornitore · Listino fornitori |
 | 🏭 **Produzione** | Ordini di produzione · Ordini di lavoro |
 | 📦 **Magazzino** | *(voce unica)* |
@@ -1522,6 +1522,43 @@ esatte. Oltre 60 righe il disegno si ferma e lo dice: l'elenco completo è nel *
 Invii e lanci ancora da fare compaiono anche nel **calendario del Riepilogo**, accanto agli ordini
 da emettere e ai rientri degli ordini di lavoro.
 
+### L'avanzamento
+
+**Come ci si arriva.** 📋 *Pianificazione → Avanzamento* (dalla 0.97.0).
+
+**A cosa serve.** Il Gantt dice *entro quando* deve succedere ogni cosa; l'Avanzamento dice anche
+*se è successa*, senza aprire i documenti a uno a uno. Si sceglie il piano e, se ne ha più d'una,
+la riga da consegnare. Non si modifica niente da qui: è una lettura.
+
+**Una riga per tappa**: un acquisto, ogni fase interna o tratta dal terzista di una parte, un
+montaggio. Su ogni riga:
+
+- la **barra grigia** è il programma, la stessa del Gantt;
+- sopra, una **barra colorata** dice quanto è stato fatto: *verde* fatto, *viola* in corso, *rossa*
+  in ritardo (lunga fino a oggi o all'arrivo atteso, se cade dopo la data del programma); una barra
+  grigia **bordata d'arancio** è da fare e ancora in tempo;
+- a destra i **documenti collegati**, con il loro stato, cliccabili per aprirli.
+
+**Da dove viene l'avanzamento.** Dai documenti generati dal piano:
+
+| Tappa | Si legge da | Fatto quando |
+|---|---|---|
+| Acquisto | righe degli ordini a fornitore | il ricevuto copre l'ordinato |
+| Fase interna | fasi dell'ordine di produzione | la fase è chiusa |
+| Tratta dal terzista | fasi dell'ODP, e rientrati dell'ordine di lavoro | la fase è chiusa, o tutto è rientrato |
+| Montaggio | l'ordine di produzione dell'assieme, se c'è | l'ordine è completato |
+
+**Gli stati.** *In ritardo* se la data del programma è passata, o se l'arrivo atteso cade dopo; *in
+corso* se il lavoro è cominciato (o l'ordine al fornitore è inviato); *da fare* se non è cominciato
+ed è ancora in tempo; *da magazzino* se non serve un documento perché esistente e in arrivo bastano;
+*previsto* quando non c'è niente che lo registri, come un montaggio senza ordine di produzione. Un
+ODP lanciato ma non avviato è *da fare*: il documento c'è, il lavoro no.
+
+**In testa** la consegna richiesta, la data fattibile e il margine, i conteggi per stato e, se ci
+sono, le tappe in ritardo **sul percorso critico**: quelle che spostano la consegna. **Apri il
+piano** porta alla scheda del piano; **Esporta Excel / PDF** danno una riga per tappa, con date,
+quantità, stato e documenti.
+
 ### Il fabbisogno netto
 
 ```
@@ -2736,6 +2773,7 @@ Ogni record porta `id` (UUID), `createdAt` / `updatedAt`, `createdBy` / `updated
 | `views-catalog.js` | Anagrafiche, listino, scheda articolo, cicli |
 | `views-report.js` · `views-item.js` · `views-home.js` · `views-dash.js` | Costificazione · scheda di sola lettura · Riepilogo · Cruscotto |
 | `views-mrp.js` | Fabbisogno e Carico centri |
+| `views-avanzamento.js` | Avanzamento: il Gantt del piano con lo stato dei documenti |
 | `views-jobs.js` · `views-docs.js` | Commesse · RFQ, ODA, ODL |
 | `views-prod.js` | Ordini di produzione: fasi congelate, avanzamento, movimenti |
 | `views-manage.js` | Gestione |

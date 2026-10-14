@@ -2,6 +2,20 @@
 
 Le revisioni seguono il versionamento semantico `0.MINOR.PATCH`: **MINOR** per nuove funzionalità, **PATCH** per correzioni. La versione in cima è quella in `APP_VERSION` (`core.js`) e mostrata nell'header dell'app.
 
+### 0.97.0 — 2026-10-14
+
+**Il Gantt con quello che è successo davvero.** Il Gantt del piano dice entro quando deve succedere ogni cosa; per sapere se era successa si aprivano a uno a uno ordini, ordini di lavoro e ordini di produzione.
+
+**Nuovo**
+- **Pianificazione → Avanzamento**: per un piano e una sua riga, una riga per tappa (acquisto, fase interna, tratta dal terzista, montaggio) con la barra del programma del Gantt e sopra l'avanzamento reale, letto dai documenti del piano: ricevuto sugli ordini, pezzi dichiarati sulle fasi degli ODP, rientrati sugli ODL. Stati *fatto*, *in corso*, *in ritardo*, *da fare*, *da magazzino*, *previsto*; a fianco i documenti collegati con il loro stato, cliccabili. In testa consegna richiesta, fattibile, margine, conteggi e le tappe in ritardo sul percorso critico. Export Excel e PDF.
+
+**Da sapere**
+- È una vista in sola lettura e non aggiunge dati: Gantt, Programma e fabbisogno non cambiano.
+- Un montaggio senza ordine di produzione resta *previsto*: non c'è niente che ne registri l'avanzamento, e la vista lo dice invece di indovinarlo.
+
+**Verifica**
+- `test/avanzamento.test.js`: date uguali al Gantt, gli stati degli acquisti (da fare, in corso, fatto, ritardo per data o per arrivo atteso, da magazzino, ordine annullato), le fasi dell'ODP e l'ODL della tratta, il montaggio senza documento, la vista che non scrive niente, export e apertura dei documenti. La vista entra anche nel controllo di impaginazione in Chromium a sette larghezze.
+
 ### 0.96.0 — 2026-10-14
 
 **Il magazzino si riordina da sé, l'officina ha il suo ruolo, e una revisione è una modifica tecnica.** Il resto della lista di migliorie, tranne DDT, preventivi cliente e archivio condiviso.
