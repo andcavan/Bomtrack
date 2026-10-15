@@ -1272,7 +1272,7 @@ function backupAutoLine() {
     </div>`;
 }
 function renderBackup() {
-  return `<div class="cloud-section">
+  return `${renderArchivioCondiviso()}<div class="cloud-section">
     <div style="flex:1">
       <strong>${ico('save', 'tinted', '')} Backup locale</strong>
       <p>I dati sono salvati nel browser (${inIndexedDb() ? 'IndexedDB' : 'localStorage'}). Esporta un file JSON per conservare un backup o trasferire i dati su un altro PC. L'import sovrascrive i dati attuali.</p>
@@ -1401,6 +1401,17 @@ function renderDuplicateCodes() {
     </div></div>`;
 }
 
+// Il riquadro dell'archivio condiviso, in testa al Backup: dice dove stanno
+// i dati e porta alla scheda del collegamento (cloud.js).
+function renderArchivioCondiviso() {
+  const c = cloudConfig();
+  return `<div class="cloud-section" style="margin-bottom:16px"><div style="flex:1">
+    <strong>${ico('cloud', 'tinted', '')} Archivio condiviso</strong>
+    ${c ? `<p>Questo PC lavora sull'archivio condiviso di <strong>${esc(c.url)}</strong>. I dati di questo browser sono la sua copia: le modifiche partono da sole, e quelle dei colleghi arrivano ogni 25 secondi.</p>`
+      : `<p>Oggi i dati stanno solo in questo browser. Con un progetto Supabase diventano un archivio unico per tutti i colleghi, con i permessi dei ruoli applicati dal server. Prima di collegare: un PC solo porta i dati buoni, gli altri li scaricano.</p>`}
+    <div style="margin-top:8px"><button class="${c ? 'btn-outline' : 'add-btn-sm'}" onclick="cloudPannello()">${ico('cloud', 'tinted', '')} ${c ? 'Stato e collegamento' : 'Collega un archivio condiviso'}</button></div>
+  </div></div>`;
+}
 function exportBackup() {
   // Il backup contiene tutto, utenti e hash compresi: solo agli amministratori
   if (!roleGuard('manage')) return;
@@ -1414,6 +1425,7 @@ function exportBackup() {
 }
 function importBackup(ev) {
   if (!roleGuard('manage')) return;
+  if (cloudBlocca(ev)) return;
   const file = ev.target.files[0]; if (!file) return;
   const reader = new FileReader();
   reader.onload = () => {
@@ -1444,6 +1456,7 @@ function importBackup(ev) {
   ev.target.value = '';
 }
 function resetDB() {
+  if (cloudBlocca()) return;
   if (!roleGuard('manage')) return;
   askConfirm('Ripristinare i dati di esempio? Tutti i dati attuali saranno persi.', () => {
     Store.reset();
@@ -1472,6 +1485,7 @@ function reconcileSession() {
 // Azzeramento totale: doppia conferma, la seconda va digitata (il click distratto non basta).
 function wipeAll() {
   if (!roleGuard('manage')) return;
+  if (cloudBlocca()) return;
   const size = Store.sizeInfo();
   openModal(`<h3>${ico('warning', 'tinted pill', '')} Azzera tutto</h3>
     <p class="confirm-text">Il database verrà svuotato <strong>completamente</strong> e in modo <strong>irreversibile</strong>:
@@ -1520,12 +1534,16 @@ async function init() {
   await Store.preparaArchivio();
   if (Store.archivio === 'indexeddb') aggiornaStimaSpazio();
   Store.load();
+  cloudAvvio();
   const ver = 'v' + APP_VERSION;
   ['app-version', 'app-version-login'].forEach(id => {
     const el = document.getElementById(id); if (el) el.textContent = ver;
   });
   // Sessione salvata → si rientra diretti; altrimenti accesso (o setup del primo admin)
-  if (!restoreSession()) renderLogin();
+  // Un link d'invito, di recupero password o di collegamento prende lui la
+  // schermata d'accesso (cloud.js).
+  if (cloudAllAvvio()) renderLogin();
+  else if (!restoreSession()) renderLogin();
   richiediPersistenza();
   backupAutoAvvia();
 }

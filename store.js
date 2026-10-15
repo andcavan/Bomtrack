@@ -1752,10 +1752,14 @@ function storicoDiff(prima, dopo) {
   });
   return out;
 }
+// Vero mentre si salvano le modifiche arrivate dall'archivio condiviso: nel
+// registro l'autore è chi le ha fatte (updatedBy del record), non chi le
+// riceve. Le metterebbe tutte a nome di chi ha la finestra aperta.
+let _storicoDaRemoto = false;
 function storicoRegistra() {
   if (!db) return;
   if (!_storicoBase) { storicoFotografa(); return; }
-  const t = nowISO(), u = actorId || null;
+  const t = nowISO(), u = _storicoDaRemoto ? null : (actorId || null);
   const nuove = [];
   const dopo = new Map();
   COLLECTIONS.forEach(c => {
@@ -1783,7 +1787,7 @@ function storicoRegistra() {
       let vecchio = null;
       try { vecchio = v.p ? JSON.parse(v.p) : null; } catch (e) { vecchio = null; }
       const rec = v.r || vecchio || {};
-      const e = { t, u, c, id: rec.id, op: v.op, n: storicoEtichetta(rec) };
+      const e = { t, u: _storicoDaRemoto ? (rec.updatedBy || null) : u, c, id: rec.id, op: v.op, n: storicoEtichetta(rec) };
       if (v.op === 'm') {
         e.d = storicoDiff(vecchio, v.r);
         if (!e.d.length) return;   // solo date e autore: nessuna modifica vera
@@ -1852,6 +1856,7 @@ const Store = {
       revVista = revAttuale + 1;
       try { if (adapter.scriviRev) adapter.scriviRev(revVista); } catch (e) { /* il blob è salvo: il contatore si riallinea al prossimo caricamento */ }
       if (!adapter.asincrono) scritturaRiuscita();
+      if (typeof Store.dopoCommit === 'function') { try { Store.dopoCommit(); } catch (e) { console.error(e); } }
       return true;
     } catch (e) {
       return commitFailed(isQuotaError(e) ? 'quota' : 'storage', e, payload.length);
@@ -2010,6 +2015,64 @@ const Store = {
   getSettings() { return db.settings; },
   setSettings(patch) { Object.assign(db.settings, patch); this.commit(); },
   exportSnapshot() { return JSON.stringify(db, null, 2); },
+  // ── Per l'archivio condiviso (cloud.js, dalla 0.103.0) ──
+  // La fotografia dell'ultimo invio riuscito, in una forma che si salva: senza,
+  // chiudere la finestra con una modifica non ancora partita la perderebbe —
+  // al riavvio il caricamento rifotografa l'adesso e la modifica non risulta
+  // più da mandare. `null` = nessuna fotografia.
+  baseSalvabile() {
+    if (!_baseIds) return null;
+    const ids = {}, children = {};
+    _baseIds.forEach((m, c) => { ids[c] = Object.fromEntries(m); });
+    if (_baseChildren) _baseChildren.forEach((m, k) => { children[k] = Object.fromEntries(m); });
+    return { ids, children: _baseChildren ? children : null, settings: _baseSettings };
+  },
+  // L'inverso. Una fotografia vuota ({}) dice «il server non ha visto niente
+  // di questo archivio»: tutto risulta da mandare, e niente da cancellare.
+  ripristinaBase(b) {
+    const o = b || {};
+    const ids = new Map();
+    COLLECTIONS.forEach(c => { ids.set(c, new Map(Object.entries((o.ids || {})[c] || {}))); });
+    const children = new Map();
+    Object.keys(o.children || {}).forEach(k => { children.set(k, new Map(Object.entries(o.children[k]))); });
+    _baseIds = ids; _baseChildren = children; _baseSettings = o.settings == null ? '' : o.settings;
+  },
+  // Le modifiche che arrivano dal server: si applicano a `db` e si salvano in
+  // locale, ma **non** sono modifiche di questo PC e non vanno rimandate.
+  // Due cose da evitare: che stampChildRows() le scambi per righe modificate e
+  // le dati con l'adesso (vincerebbero a torto al prossimo invio), e che il
+  // conto delle modifiche le veda. Si chiama solo senza modifiche in sospeso:
+  // la fotografia finale le dà tutte per inviate.
+  applicaRemoto(fn) {
+    fn(db);
+    // I ricevuti delle righe arrivate si ricalcolano dagli eventi: il campo è
+    // derivato, e dal server torna senza.
+    if (modoCondiviso) riallineaRicevuti(false);
+    _childFp = null;
+    _storicoDaRemoto = true;
+    let ok;
+    try { ok = this.commit(); } finally { _storicoDaRemoto = false; }
+    markSynced();
+    return ok;
+  },
+  // Un archivio intero che arriva dal server sostituisce quello locale (il
+  // primo collegamento di un PC). Come un ripristino, ma la fotografia è
+  // quella giusta: quello che c'è adesso è esattamente ciò che il server ha.
+  sostituisciDaRemoto(nuovo) {
+    db = nuovo;
+    migrateDB();
+    _childFp = null;
+    _storicoBase = null;   // il registro riparte da qui: non è «tutto nuovo, a nome mio»
+    const ok = this.commit();
+    markSynced();
+    return ok;
+  },
+  // Chi vuole sapere che un salvataggio è andato a buon fine: l'archivio
+  // condiviso ci aggancia l'invio. Una funzione sola, di proposito.
+  dopoCommit: null,
+  // Il record era già nella fotografia dell'ultimo invio? Un padre nuovo
+  // manda tutte le sue righe; uno già noto solo quelle cambiate.
+  inBase(coll, id) { return !!(_baseIds && _baseIds.get(coll) && _baseIds.get(coll).has(id)); },
   importSnapshot(json) {
     const data = typeof json === 'string' ? JSON.parse(json) : json;
     const err = validateSnapshot(data);

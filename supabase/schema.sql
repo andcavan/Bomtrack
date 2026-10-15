@@ -651,9 +651,18 @@ begin
 
     accettati := accettati || jsonb_build_object(reg.tab, to_jsonb(applicati));
     conteggio := conteggio || jsonb_build_object(reg.tab, coalesce(array_length(applicati, 1), 0));
+    select coalesce(array_agg(d), '{}') into ids from unnest(dati) d where d is not null and not (d = any(applicati));
     select respinti || coalesce(jsonb_agg(jsonb_build_object('tab', reg.tab, 'id', d)), '[]')
-      into respinti
-      from unnest(dati) d where d is not null and not (d = any(applicati));
+      into respinti from unnest(ids) d;
+    -- Chi è stato respinto deve ricevere la versione che ha vinto. Quella riga
+    -- però non è cambiata in questo invio, e il suo synced_at può essere più
+    -- vecchio dell'ultimo pull del mittente: senza questo ritocco il pull non
+    -- gliela riporterebbe mai, e il suo archivio terrebbe la versione perdente.
+    -- Lo stesso per una lapide che ha vinto.
+    if array_length(ids, 1) > 0 then
+      execute format('update public.%I set synced_at = clock_timestamp() where id::text = any($1)', reg.tab) using ids;
+      update sync_tombstones t set synced_at = clock_timestamp() where t.tab = reg.tab and t.id = any(ids);
+    end if;
   end loop;
 
   -- Cancellazioni, con la lapide.
@@ -840,3 +849,62 @@ begin
 end $$;
 grant execute on function public.push_changes(jsonb) to authenticated;
 grant execute on function public.pull_changes(timestamptz) to authenticated;
+
+-- ─── Profili: nascono da Supabase Auth (dalla 0.103.0) ──────
+-- Un collega entra in Bomtrack perché l'amministratore lo **invita** dal
+-- pannello di Supabase (Authentication → Users → Invite user): l'invito crea
+-- la riga in auth.users, e questo trigger le affianca il profilo. Nasce
+-- **sospeso**, come lettore: finché un amministratore non lo attiva da
+-- Gestione → Utenti non legge niente. Così anche una registrazione lasciata
+-- aperta per sbaglio nel pannello di Supabase non apre l'archivio a nessuno.
+--
+-- L'unica eccezione è il primo: se non c'è ancora un amministratore attivo,
+-- chi arriva lo diventa. È l'utente che si crea a mano nel pannello prima di
+-- tutti gli altri, ed è lui a caricare l'archivio.
+create or replace function public.profilo_crea(uid uuid, mail text, nome text)
+returns void language plpgsql security definer set search_path = public as $$
+declare primo boolean;
+begin
+  primo := not exists (select 1 from public.profiles where role = 'admin' and active is not false);
+  insert into public.profiles (id, email, name, role, active, created_at, updated_at)
+    values (uid, mail, coalesce(nullif(nome, ''), split_part(coalesce(mail, ''), '@', 1)),
+            case when primo then 'admin' else 'lettore' end, primo, now(), now())
+    on conflict (id) do nothing;
+end $$;
+revoke execute on function public.profilo_crea(uuid, text, text) from public, anon, authenticated;
+
+create or replace function public.profilo_da_utente() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  perform public.profilo_crea(new.id, new.email, new.raw_user_meta_data->>'name');
+  return new;
+end $$;
+drop trigger if exists profilo_da_utente on auth.users;
+create trigger profilo_da_utente after insert on auth.users
+  for each row execute function public.profilo_da_utente();
+
+-- Gli utenti creati prima di questo schema: stessa regola, nell'ordine in cui
+-- sono nati. Rieseguire il file non tocca chi un profilo ce l'ha già.
+select public.profilo_crea(a.id, a.email, a.raw_user_meta_data->>'name')
+  from (select * from auth.users a
+         where not exists (select 1 from public.profiles p where p.id = a.id)
+         order by a.created_at nulls last, a.id) a;
+
+-- ─── Chi sono e che cosa c'è (dalla 0.103.0) ────────────────
+-- La prima domanda che l'app fa dopo l'accesso, prima di scaricare qualunque
+-- cosa: il proprio profilo (anche sospeso: l'app deve poter dire «chiedi
+-- all'amministratore di attivarti» invece di un generico errore) e se
+-- l'archivio è ancora vuoto, cioè se tocca a questo PC caricarlo.
+-- `security definer` perché un profilo sospeso non legge niente per policy;
+-- restituisce solo la propria riga e un sì/no, nient'altro.
+create or replace function public.archivio_stato() returns jsonb
+language sql stable security definer set search_path = public as $$
+  select jsonb_build_object(
+    'profilo', (select jsonb_build_object('id', p.id, 'email', p.email, 'name', p.name, 'role', p.role, 'active', p.active)
+                  from public.profiles p where p.id = auth.uid()),
+    'vuoto', not (exists (select 1 from public.items) or exists (select 1 from public.suppliers)
+                  or exists (select 1 from public.orders) or exists (select 1 from public.rfqs)
+                  or exists (select 1 from public.families)),
+    'ora', clock_timestamp())
+$$;
+grant execute on function public.archivio_stato() to authenticated;

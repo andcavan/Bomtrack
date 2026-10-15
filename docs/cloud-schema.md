@@ -1,17 +1,36 @@
-# Bomtrack — Schema dati cloud (contratto per il futuro adapter)
+# Bomtrack — Schema dati cloud (contratto dell'archivio condiviso)
 
-Stato attuale: **nessun codice di rete, e lo spostamento su un backend non è previsto per
-ora.** I dati vivono in `localStorage` (chiave `bomtrack_v1`) come unico blob JSON, gestito da
-`store.js`, e l'app deve funzionare così. Questo documento definisce il contratto verso cui il
-layer dati è predisposto: un backend condiviso per un piccolo team (Supabase / Cloudflare D1)
-con **tabelle normalizzate**.
+Stato attuale (dalla 0.103.0): **l'adattatore esiste ed è `cloud.js`.** Senza collegamento i
+dati vivono nel browser (IndexedDB, o `localStorage` dove manca) come unico documento JSON,
+gestito da `store.js`, e l'app si comporta come sempre. Collegato un progetto Supabase, quel
+documento diventa lo specchio di un database condiviso con **tabelle normalizzate**, e la coda
+di ciò che non è ancora partito. Questo documento è il contratto fra i due.
 
-> **Predisposto, ma spento (dalla 0.83.1).** La contabilità che serve solo a un backend —
+**Come lavora `cloud.js`** (il «vero percorso» qui sotto, fatto):
+- `Store.dopoCommit` programma un invio dopo ogni salvataggio riuscito; il lotto di
+  `Store.takeChanges()` diventa **una** chiamata a `push_changes()`, mai spezzata
+  (`cloudPayload()`: le radici con la loro `pos`, le figlie `row` di un padre già noto solo se
+  cambiate dall'ultimo invio, le `replace` intere, le impostazioni solo con la gestione);
+- `pull_changes(since)` ogni 25 s, al ritorno sulla finestra e della rete, applicato con
+  `Store.applicaRemoto()` (`cloudApplica()`) solo senza modifiche in sospeso e senza schede o
+  campi aperti; le righe che arrivano non tornano indietro e non si datano di nuovo;
+- la fotografia dell'ultimo invio riuscito (`Store.baseSalvabile()` →
+  `localStorage.bomtrack_cloud_base`) sopravvive alla chiusura della finestra, così la coda
+  resta;
+- Auth e RPC con `fetch()`, senza `supabase-js`; il rinnovo del token è uno alla volta;
+- primo collegamento: `cloudCaricaArchivio()` (server vuoto, amministratore: utenti per
+  email, `remapIds()`, invio a gruppi nell'ordine delle chiavi esterne) o
+  `cloudScaricaArchivio()` (`Store.sostituisciDaRemoto()`).
+
+Le prove stanno in `test/cloud.test.js` e `test/cloud-ui.test.js`, contro
+`test/supabase-finto.js`: Auth e RPC finti, con dietro Postgres e `supabase/schema.sql` veri.
+
+> **Spento finché non si collega (dalla 0.83.1).** La contabilità che serve solo a un backend —
 > date e cancellazioni riga per riga delle tabelle figlie, ricevimenti come eventi — costava
 > in locale spazio (+40% e +45% di archivio, misurati, in un localStorage da ~5 MB) e tempo
 > di salvataggio, senza alcun vantaggio per chi lavora da solo. Sta dietro un interruttore,
-> `Store.modoCondiviso`, **spento di serie**; lo accenderà l'adattatore cloud prima di
-> `Store.load()`, e accenderlo dopo non perde niente. Tutto ciò che questo documento descrive
+> `Store.modoCondiviso`, **spento di serie**; lo accende `cloud.js` prima di
+> `Store.load()` quando il PC è collegato, e accenderlo dopo non perde niente. Tutto ciò che questo documento descrive
 > resta vero e testato con l'interruttore acceso; in locale l'app si comporta come prima.
 
 ## Predisposizioni già attive (schema v2, aggiornate alla 0.24.0)

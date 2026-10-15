@@ -2,6 +2,33 @@
 
 Le revisioni seguono il versionamento semantico `0.MINOR.PATCH`: **MINOR** per nuove funzionalità, **PATCH** per correzioni. La versione in cima è quella in `APP_VERSION` (`core.js`) e mostrata nell'header dell'app.
 
+### 0.103.0 — 2026-10-15
+
+**L'archivio condiviso su Supabase.** Ogni PC aveva il suo archivio, e due colleghi si allineavano passandosi il backup. Lo schema, le funzioni di sincronizzazione e i permessi erano pronti da tempo: mancava la parte dell'app che si collega.
+
+**Nuovo**
+- **Collegare un PC** a un progetto Supabase dalla schermata d'accesso o da *Gestione → Backup → Archivio condiviso*: indirizzo e chiave pubblica, con **Prova**. Restano in questo browser, non nel codice. Il **link di collegamento** (`?supabase=…&chiave=…`) porta un collega già puntato al progetto, dopo una conferma che mostra a quale.
+- **Accesso con Supabase Auth**: email e password di Supabase, sessione che si rinnova da sola, **Password dimenticata?**, **Cambia password**. Gli inviti e i recuperi tornano all'app, che chiede la password nuova.
+- **Primo collegamento**: l'amministratore **carica** l'archivio del suo PC nel progetto vuoto (gli utenti passano per email e prendono l'id di Supabase, con tutti i campi d'autore; chi non ha un utente resta fuori, e l'app dice chi); gli altri lo **scaricano**. Un caricamento interrotto si riprende.
+- **Sincronizzazione** (`cloud.js`, nuovo, senza librerie): ogni salvataggio programma un invio, e un lotto di modifiche è una chiamata sola a `push_changes()`, cioè una transazione. Ogni 25 secondi, al ritorno sulla finestra e al ritorno della rete arrivano le modifiche dei colleghi, mai in mezzo a una scheda aperta o a un campo in scrittura. Senza rete si lavora; la coda resta anche chiudendo la finestra.
+- La **nuvola** nell'intestazione dice lo stato (sincronizzato, da inviare, senza rete, errore, accesso scaduto) e apre il pannello: **Sincronizza ora**, **Scarta e riscarica**, **Scollega questo PC**, il link per i colleghi.
+- **Conflitti**: chi aveva salvato una versione più vecchia riceve un avviso e vede quella che ha vinto. Il registro delle modifiche attribuisce quelle arrivate a chi le ha fatte.
+- **Utenti**: con l'archivio condiviso si invitano da Supabase; nascono **sospesi**, e l'amministratore dà il ruolo e li attiva in *Gestione → Utenti*. Non si eliminano, si sospendono. Chi è sospeso non entra.
+- Con l'archivio condiviso **import di un backup, dati d'esempio e azzeramento** sono bloccati: toccherebbero tutti.
+
+**Database** (`supabase/schema.sql`, da rieseguire)
+- Il **profilo nasce dall'utente di Supabase Auth** (trigger su `auth.users`): il primo è amministratore attivo, gli altri lettori sospesi. Chi esisteva già prende il profilo alla prima esecuzione.
+- `archivio_stato()`: il proprio profilo, anche sospeso, e se l'archivio è ancora vuoto.
+- `push_changes()`: una riga respinta perché più vecchia viene ridatata, così il pull la riporta a chi l'aveva persa. Prima il suo archivio avrebbe tenuto la versione perdente.
+
+**Documentazione**
+- MANUALE: il cap. 31 riscritto, da «progettato» a «come si mette in piedi e come si lavora»: il progetto, il primo caricamento, gli inviti, la nuvola, chi vince, quello che il server non lascia fare, il backup che resta. Riferimenti aggiornati nei cap. 1, 26, 30, nelle domande frequenti e nell'appendice (le chiavi `bomtrack_cloud*`).
+
+**Verifica**
+- `test/supabase-finto.js` (nuovo): un Supabase finto (Auth e RPC) con dietro Postgres e lo schema vero.
+- `test/cloud.test.js` (nuovo, 23 casi): il lotto da inviare e la risposta da applicare, senza rete; poi tre PC contro il server: caricamento e scaricamento, modifiche nei due versi, quotazioni concorrenti, conflitto, cancellazione, ruolo che non scrive, impostazioni, rete che cade e riavvio, token scaduto, utente sospeso.
+- `test/cloud-ui.test.js` e `test/cloud-browser.js` (nuovi): il giro dall'interfaccia in Chromium, al PC e al telefono.
+
 ### 0.102.0 — 2026-10-15
 
 **I fornitori si cercano scrivendo.** Nei menu dei fornitori, che sono decine, si cercava scorrendo.

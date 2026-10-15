@@ -54,6 +54,9 @@ function roleOptions(sel) {
   return Object.entries(ROLES).map(([k, v]) => `<option value="${k}" ${k === sel ? 'selected' : ''}>${v}</option>`).join('');
 }
 function renderUsers() {
+  // Con l'archivio condiviso gli utenti nascono da un invito di Supabase, e
+  // le password le tiene Supabase: qui si assegnano ruolo e stato.
+  const cloud = cloudInUso();
   const list = userList().map(u => {
     const me = currentUser && u.id === currentUser.id;
     const susp = u.active === false;
@@ -64,11 +67,18 @@ function renderUsers() {
       <span class="doc-badge ${susp ? 'st-sospeso' : 'st-attivo'}">${susp ? 'Sospeso' : 'Attivo'}</span>
       <div class="mgmt-item-actions">
         <button class="mini-btn" onclick="editUserModal('${u.id}')" title="Modifica">${ico('edit', 'tinted', 'Modifica')}</button>
-        <button class="mini-btn" onclick="resetUserPasswordModal('${u.id}')" title="Imposta password">${ico('key', 'tinted', 'Imposta password')}</button>
+        ${cloud ? '' : `<button class="mini-btn" onclick="resetUserPasswordModal('${u.id}')" title="Imposta password">${ico('key', 'tinted', 'Imposta password')}</button>`}
         <button class="mini-btn" onclick="toggleUserActive('${u.id}')" title="${susp ? 'Riattiva' : 'Sospendi'}">${susp ? ico('check', 'tinted', 'Riattiva') : ico('pause', 'tinted', 'Sospendi')}</button>
-        <button class="mini-btn danger" onclick="delUser('${u.id}')" title="Elimina">${ico('trash', 'tinted', 'Elimina')}</button>
+        ${cloud ? '' : `<button class="mini-btn danger" onclick="delUser('${u.id}')" title="Elimina">${ico('trash', 'tinted', 'Elimina')}</button>`}
       </div></div>`;
   }).join('') || '<div class="empty-text">Nessun utente.</div>';
+  const nuovo = cloud
+    ? `<div class="cloud-section" style="margin-top:10px"><div style="flex:1">
+        <strong>${ico('mail', 'tinted', '')} Un nuovo collega si invita da Supabase</strong>
+        <p>Nel pannello di Supabase: <strong>Authentication → Users → Invite user</strong>, con la sua email. Riceve il link, sceglie la password e compare qui come <strong>Lettore sospeso</strong>: gli assegni il ruolo e lo riattivi. Per toglierlo, sospendilo.</p></div></div>`
+    : '';
+  if (cloud) return `<div class="mgmt-panel"><div class="mgmt-list">${list}</div>${nuovo}
+    <p class="empty-text" style="text-align:left;padding:6px 0 0">${ruoliHtml()}</p></div>`;
   return `<div class="mgmt-panel"><div class="mgmt-list">${list}</div>
     <div class="mgmt-form">
       <input id="nu-name" placeholder="Nome e cognome">
@@ -78,15 +88,18 @@ function renderUsers() {
       <input type="color" id="nu-color" value="#3A7BE8" title="Colore" style="padding:2px;width:44px">
       <input type="password" id="nu-password" placeholder="Password iniziale">
       <button class="add-btn-sm" onclick="addUser()">+ Aggiungi</button></div>
-    <p class="empty-text" style="text-align:left;padding:6px 0 0">
-      <strong>Amministratore</strong>: tutto, compresi utenti, impostazioni e backup ·
+    <p class="empty-text" style="text-align:left;padding:6px 0 0">${ruoliHtml()}<br>
+      ${ico('warning', 'tinted', '')} Con i dati nel browser questi ruoli separano le responsabilità, non proteggono i dati: la protezione vera arriva con l'archivio condiviso (Gestione → Backup).</p></div>`;
+}
+function ruoliHtml() {
+  return `<strong>Amministratore</strong>: tutto, compresi utenti, impostazioni e backup ·
       <strong>Ufficio acquisti</strong>: richieste e ordini ·
       <strong>Progettazione</strong>: articoli e distinte ·
-      <strong>Lettore</strong>: sola lettura.<br>
-      ${ico('warning', 'tinted', '')} Con i dati nel browser questi ruoli separano le responsabilità, non proteggono i dati: la protezione vera arriverà con l'accesso Supabase.</p></div>`;
+      <strong>Lettore</strong>: sola lettura.`;
 }
 function addUser() {
   if (!roleGuard('manage')) return;
+  if (cloudInUso()) { showToast('Con l\'archivio condiviso i colleghi si invitano da Supabase', 'error'); return; }
   const name = val('nu-name'), email = val('nu-email');
   const pwd = document.getElementById('nu-password').value;
   if (!name) { showToast('Nome richiesto', 'error'); return; }
@@ -140,6 +153,7 @@ function resetUserPasswordModal(id) {
 }
 function saveUserPassword(id) {
   if (!roleGuard('manage')) return;
+  if (cloudInUso()) return;
   const u = getUser(id); if (!u) return;
   const pwd = document.getElementById('ru-pwd').value;
   if (pwd.length < 4) { showToast('La password deve avere almeno 4 caratteri', 'error'); return; }
@@ -159,6 +173,7 @@ function toggleUserActive(id) {
 }
 function delUser(id) {
   if (!roleGuard('manage')) return;
+  if (cloudInUso()) { showToast('Con l\'archivio condiviso un utente si sospende, non si elimina', 'error'); return; }
   const u = getUser(id); if (!u) return;
   if (currentUser && id === currentUser.id) { showToast('Non puoi eliminare te stesso', 'error'); return; }
   if (u.role === 'admin' && !activeAdmins(id).length) { showToast('Deve restare almeno un amministratore attivo', 'error'); return; }
