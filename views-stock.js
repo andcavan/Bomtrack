@@ -59,6 +59,11 @@ const MOVEMENT_KINDS = {
   // per cui `clIn` non è un carico manuale. Tenerli distinti è ciò che lascia
   // leggere uno storico e sapere da dove viene ogni pezzo.
   versamento: 'Versamento di produzione',
+  // ── Il reso di produzione (dalla 0.100.0) ──
+  // Il materiale che torna a scaffale da un ordine di produzione **annullato**:
+  // era uscito come consumo, e non è stato consumato. Non è un carico manuale
+  // per la stessa ragione per cui non lo è il versamento: l'ordine c'è.
+  reso: 'Reso da produzione',
 };
 // I tipi che muovono materiale verso un terzista e indietro. Portano un
 // fornitore, e senza quello il prospetto non saprebbe da chi andare a riprendere
@@ -87,6 +92,49 @@ const ORDER_INCOMING_STATES = ['inviato', 'confermato', 'parziale'];
 // Tipi che si tengono a magazzino. Un assieme si produce, non si stocca: la sua
 // giacenza sarebbe quella dei suoi componenti contata due volte.
 function hasStock(it) { return !!it && (it.type === 'materiale' || it.type === 'acquistato' || it.type === 'parte'); }
+
+// ─── Ubicazioni (dalla 0.101.0) ───
+// Dove sta un articolo a scaffale: un testo libero sull'articolo («A-03-2»,
+// «CASSETTIERA 4»), una sola ubicazione per articolo. Non è un'anagrafica a
+// parte: un'ubicazione esiste finché c'è almeno un articolo che la porta, ed è
+// quello che il QR sullo scaffale apre. Si scrive maiuscolo e senza spazi
+// doppi, così «a-03» e «A-03 » sono lo stesso posto.
+function ubicazioneNorm(v) { return String(v == null ? '' : v).trim().replace(/\s+/g, ' ').toUpperCase(); }
+function ubicazioneOf(it) { return ubicazioneNorm(it && it.location); }
+// A-2 prima di A-10: l'ordine in cui si cammina fra gli scaffali.
+function ubicazioneConfronta(a, b) {
+  return String(a || '').localeCompare(String(b || ''), 'it', { numeric: true, sensitivity: 'base' });
+}
+function ubicazioniElenco() {
+  const set = new Set();
+  (db.items || []).forEach(i => { const u = hasStock(i) && ubicazioneOf(i); if (u) set.add(u); });
+  return Array.from(set).sort(ubicazioneConfronta);
+}
+function articoliInUbicazione(codice) {
+  const k = ubicazioneNorm(codice);
+  if (!k) return [];
+  return (db.items || []).filter(i => hasStock(i) && ubicazioneOf(i) === k)
+    .sort((a, b) => String(a.code || '').localeCompare(String(b.code || '')));
+}
+// Un testo libero dentro un onclick="…": letterale JS fra apici singoli, con
+// le virgolette e gli altri caratteri dell'HTML resi innocui. Un'ubicazione
+// è scritta dall'utente e può contenere qualunque cosa.
+function jsAttrStr(v) {
+  return "'" + String(v == null ? '' : v).replace(/\\/g, '\\\\').replace(/'/g, "\\'")
+    .replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;') + "'";
+}
+// La forma che il QR e le etichette si aspettano: { id, code, items }.
+function ubicazioneRec(codice) {
+  const k = ubicazioneNorm(codice);
+  const items = articoliInUbicazione(k);
+  return items.length ? { id: k, code: k, items } : null;
+}
+// Per un giro fra gli scaffali: ubicazione, poi codice; chi non ne ha va in fondo.
+function ordinePerUbicazione(a, b) {
+  const ua = ubicazioneOf(a), ub = ubicazioneOf(b);
+  if (ua !== ub) { if (!ua) return 1; if (!ub) return -1; return ubicazioneConfronta(ua, ub); }
+  return String(a.code || '').localeCompare(String(b.code || ''));
+}
 
 // ─── Indice delle giacenze ───
 // Stesso ciclo di vita degli altri indici (`invalidateCaches()` lo azzera):
@@ -139,7 +187,7 @@ function stockIndex() {
   _stockIdx = idx;
   return idx;
 }
-function invalidateStock() { _stockIdx = null; _commitIdx = null; _prelIdx = null; _clIdx = null; }
+function invalidateStock() { _stockIdx = null; _commitIdx = null; _prelIdx = null; _clIdx = null; _scaffaleIdx = null; }
 function stockOf(itemId) { return stockIndex().get(itemId) || { onHand: 0, incoming: 0, arrivi: [] }; }
 function onHandOf(itemId) { return stockOf(itemId).onHand; }
 function incomingOf(itemId) { return stockOf(itemId).incoming; }
@@ -200,7 +248,7 @@ function commitIndex() {
     (db.plans || []).forEach(p => {
       if (p.active === false || !(p.lines || []).length) return;
       const prel = prelevatiIndex().get(p.id);
-      mrpExplode(p.lines).buy.forEach(e => {
+      mrpExplodePlan(p).buy.forEach(e => {
         const gia = (prel && prel.get(e.item.id)) || 0;
         // Tutto prelevato: il piano su questo articolo non promette più niente.
         if (!(e.qty - gia > 0.000001)) return;
@@ -209,11 +257,132 @@ function commitIndex() {
         l.push({ planId: p.id, number: p.number || '', title: p.title || '',
           qty: e.qty - gia, lordo: e.qty, prelevato: gia, due: e.due || '' });
       });
+      // Le parti pronte che il piano prende dallo scaffale (scaffaleIndex): sono
+      // promesse a lui, e un altro piano non deve contarle come libere.
+      const sc = scaffaleIndex().get(p.id);
+      if (sc) sc.impegno.forEach((q, itemId) => {
+        if (!(q > 0.000001)) return;
+        let l = idx.get(itemId);
+        if (!l) { l = []; idx.set(itemId, l); }
+        l.push({ planId: p.id, number: p.number || '', title: p.title || '',
+          qty: q, lordo: q, prelevato: 0, due: '' });
+      });
     });
   }
   _commitIdx = idx;
   return idx;
 }
+
+// ─── Le parti già pronte riducono il fabbisogno ───
+// Fino alla 0.99 l'esplosione scendeva sempre fino al materiale: un piano
+// comprava il tondo e lanciava le fasi anche per parti che stavano già a
+// scaffale. Ora, prima di fabbricare una parte, il piano prende quelle pronte.
+//
+// Lo scaffale è uno solo e i piani sono tanti, quindi va **spartito**, e la
+// spartizione deve essere la stessa ogni volta che qualcuno la chiede: non può
+// dipendere da quale piano si sta guardando. Si fa una volta per tutti i piani
+// aperti, in ordine di **urgenza** (la consegna più vicina prima, poi la data
+// del piano, poi il numero): chi deve consegnare prima prende prima.
+//
+// Cosa è disponibile per una parte:
+//   esistente − scorta minima − i pezzi che ODP di un piano hanno versato
+//   e che quel piano non ha ancora usato
+// L'ultimo termine tiene fuori dalla spartizione i pezzi **fabbricati per un
+// piano**: sono il suo «da fabbricare» già fatto, e se un altro piano più
+// urgente se li prendesse il primo si ritroverebbe a rifarli.
+//
+// E quello che un piano ha **già consumato** dallo scaffale (un montaggio, il
+// prelievo di un ODP che usa la parte come materiale) conta per lui come preso:
+// è uscito dall'esistente, e senza questo il piano lo rifabbricherebbe — lo
+// stesso doppio conteggio che `prelevatiIndex` evita sul materiale.
+//
+// → piano → { quota: Map(parte → quanto può prendere), impegno: Map(parte →
+//   quanto toglie allo scaffale e non ha ancora consumato) }
+let _scaffaleIdx = null;
+function planUrgenza(p) {
+  const date = (p.lines || []).map(l => l.dueDate || p.dueDate || '').filter(Boolean).sort();
+  return date[0] || '9999-12-31';
+}
+function scaffaleIndex() {
+  if (_scaffaleIdx) return _scaffaleIdx;
+  const idx = new Map();
+  _scaffaleIdx = idx;                   // prima del calcolo: niente rientri
+  if (typeof mrpExplode !== 'function') return idx;
+  const piani = (db.plans || []).filter(p => p.active !== false && (p.lines || []).length)
+    .sort((a, b) => planUrgenza(a).localeCompare(planUrgenza(b))
+      || String(a.date || '').localeCompare(String(b.date || ''))
+      || String(a.number || '').localeCompare(String(b.number || '')));
+  // Versato dagli ODP di ciascun piano, per parte.
+  const versato = new Map();
+  if (typeof opVersato === 'function') {
+    (db.prodOrders || []).forEach(o => {
+      if (!o.planId || o.status === 'annullato') return;
+      const v = opVersato(o); if (!(v > 0)) return;
+      let m = versato.get(o.planId);
+      if (!m) { m = new Map(); versato.set(o.planId, m); }
+      m.set(o.itemId, (m.get(o.itemId) || 0) + v);
+    });
+  }
+  const aperti = new Set(piani.map(p => p.id));
+  // Quanto di una parte resta in mano al piano che l'ha fatta, e quanto il
+  // piano ha consumato dallo scaffale comune (oltre i suoi).
+  const propri = (planId, itemId) => Math.max(0, ((versato.get(planId) || new Map()).get(itemId) || 0) - prelevatoPer(itemId, planId));
+  const dalComune = (planId, itemId) => Math.max(0, prelevatoPer(itemId, planId) - ((versato.get(planId) || new Map()).get(itemId) || 0));
+  const comune = new Map();
+  const comuneDi = itemId => {
+    if (!comune.has(itemId)) {
+      let riservati = 0;
+      aperti.forEach(pid => { riservati += propri(pid, itemId); });
+      const it = getItem(itemId);
+      comune.set(itemId, Math.max(0, onHandOf(itemId) - safetyStockOf(it) - riservati));
+    }
+    return comune.get(itemId);
+  };
+  piani.forEach(p => {
+    const preso = new Map(), consumato = new Map(), budget = new Map();
+    const scaffale = { prendi(itemId, q) {
+      if (!budget.has(itemId)) {
+        const c = dalComune(p.id, itemId);
+        consumato.set(itemId, c);
+        budget.set(itemId, c + comuneDi(itemId));
+      }
+      const t = Math.min(q, budget.get(itemId));
+      if (!(t > 0)) return 0;
+      budget.set(itemId, budget.get(itemId) - t);
+      preso.set(itemId, (preso.get(itemId) || 0) + t);
+      return t;
+    } };
+    mrpExplode(p.lines, { scaffale });
+    const impegno = new Map();
+    preso.forEach((t, itemId) => {
+      const dalloScaffale = Math.max(0, t - (consumato.get(itemId) || 0));
+      comune.set(itemId, Math.max(0, comuneDi(itemId) - dalloScaffale));
+      impegno.set(itemId, dalloScaffale);
+    });
+    idx.set(p.id, { quota: preso, impegno });
+  });
+  return idx;
+}
+// Lo scaffale di un piano, pronto per mrpExplode: la quota che la spartizione
+// gli ha dato, consumata nello stesso ordine in cui la spartizione l'ha
+// assegnata — la discesa è la stessa, quindi le parti finiscono negli stessi
+// rami.
+function mrpScaffale(planId) {
+  const sc = planId ? scaffaleIndex().get(planId) : null;
+  if (!sc || !sc.quota.size) return null;
+  const resto = new Map(sc.quota);
+  return { prendi(itemId, q) {
+    const t = Math.min(q, resto.get(itemId) || 0);
+    if (!(t > 0)) return 0;
+    resto.set(itemId, resto.get(itemId) - t);
+    return t;
+  } };
+}
+function mrpOpzPiano(planId) { return { scaffale: mrpScaffale(planId) }; }
+// L'esplosione di un piano **com'è davvero**: al netto delle parti pronte che
+// gli toccano. È quella che usano tutte le viste di un piano; la lorda resta per
+// costi e anteprime.
+function mrpExplodePlan(p) { return mrpExplode((p && p.lines) || [], mrpOpzPiano(p && p.id)); }
 // Il materiale già uscito dal magazzino **per un piano**: piano → articolo →
 // quantità. Conta i movimenti che portano l'id di un documento del piano (ODP,
 // ODL, ordine di conto lavoro): lo `scarico` e l'uscita a conto lavoro tolgono,
@@ -226,6 +395,9 @@ function prelevatiIndex() {
   [].concat(db.prodOrders || [], db.workOrders || [], db.orders || []).forEach(d => {
     if (d.planId && d.status !== 'annullato') docPiano.set(d.id, d.planId);
   });
+  // Anche le dichiarazioni di montaggio (produzione.js): i componenti che
+  // scaricano escono per il loro piano.
+  (db.productions || []).forEach(d => { if (d.planId) docPiano.set(d.id, d.planId); });
   const idx = new Map();
   (db.movements || []).forEach(m => {
     if (!m.itemId || !m.orderId) return;
@@ -348,6 +520,32 @@ function addMovement(itemId, kind, qty, note, extra) {
     // esattamente i suoi movimenti, non tutti quelli della fase.
     declId: e.declId || null };
   return Store.insert('movements', rec);
+}
+
+// ─── Un prelievo che va sotto zero (dalla 0.100.0) ───
+// L'avvio di un ODP, un montaggio, uno scarico o un'uscita a conto lavoro
+// scritti a mano non guardavano quanto c'era: l'esistente poteva diventare
+// negativo senza che nessuno se ne accorgesse. Non si blocca — la merce può
+// essere davvero uscita prima che qualcuno registrasse l'arrivo, e rifiutare il
+// gesto vorrebbe dire non registrarla affatto — ma si dice, prima e dopo.
+// `righe` è [{ itemId, qty }] con la quantità che **esce**, in positivo.
+function avvisoSottoZero(righe) {
+  const perArticolo = new Map();
+  (righe || []).forEach(r => {
+    const q = Number(r.qty) || 0;
+    if (r.itemId && q > 0) perArticolo.set(r.itemId, (perArticolo.get(r.itemId) || 0) + q);
+  });
+  const out = [];
+  perArticolo.forEach((q, itemId) => {
+    const it = getItem(itemId); if (!it || !hasStock(it)) return;
+    const c = onHandOf(itemId);
+    if (q > c + 0.000001) out.push(`${it.code}: ne escono ${fmtQty(q)}, a magazzino ce ne sono ${fmtUom(c, itemUom(it))}`);
+  });
+  return out;
+}
+function avvisoSottoZeroHtml(righe) {
+  const a = avvisoSottoZero(righe);
+  return a.length ? `<div class="rfq-warn">${ico('warning', 'tinted', '')} L'esistente va sotto zero: ${a.map(esc).join('; ')}. Si può registrare lo stesso, ma qualcosa non torna — un arrivo non registrato, o un conteggio da rifare.</div>` : '';
 }
 
 // ─── Materiale presso i terzisti ───
@@ -510,7 +708,7 @@ function stockPanelHtml(it) {
   const elencoImp = imp.map(c => `${c.number}${c.title ? ' (' + c.title + ')' : ''}: ${fmtUom(c.qty, u)}`).join(' · ');
   return `<div class="cloud-section" style="margin-top:12px${sotto ? ';border-color:var(--red)' : ''}">
     <div style="flex:1">
-      <strong>${ico('package', 'tinted', '')} Magazzino</strong>
+      <strong>${ico('package', 'tinted', '')} Magazzino</strong>${ubicazioneOf(it) ? ` <span class="empty-text" style="padding:0">· ${ico('pin', 'tinted', '')} ${esc(ubicazioneOf(it))}</span>` : ''}
       <div class="cost-summary" style="margin:8px 0">
         ${kpi('Esistente', fmtUom(s.onHand, u), sotto ? 'orange' : '')}
         ${kpi('In arrivo', fmtUom(s.incoming, u), 'accent')}
@@ -525,6 +723,7 @@ function stockPanelHtml(it) {
       <div style="display:flex;gap:8px;flex-wrap:wrap">
         <button class="btn-outline" onclick="stockAdjustModal('${it.id}')">${ico('scale', 'tinted', '')} Rettifica giacenza</button>
         <button class="btn-outline" onclick="stockMovementsModal('${it.id}')">${ico('clock', 'tinted', '')} Movimenti (${movementsOf(it.id).length})</button>
+        <button class="btn-outline" onclick="qrEtichetteModal(['${it.id}'])">${ico('qr', 'tinted', '')} Etichetta QR</button>
       </div>
     </div></div>`;
 }
@@ -543,7 +742,7 @@ function stockAdjustModal(itemId) {
         <input type="number" id="mv-qty" step="any" value="${attuale}"></div>
     </div>
     <div class="modal-grid" id="mv-cl-box" style="display:none">
-      <div class="modal-field"><label>Terzista</label><select id="mv-sup">
+      <div class="modal-field"><label>Terzista</label><select id="mv-sup" class="sel-cerca">
         <option value="">— scegli —</option>
         ${(db.suppliers || []).filter(x => x.active !== false).sort((a, b) => String(a.name).localeCompare(String(b.name)))
     .map(x => `<option value="${esc(x.id)}">${esc(x.name)}</option>`).join('')}
@@ -577,7 +776,7 @@ function stockAdjustModal(itemId) {
 // `versamento` perché si registra solo da un ordine di produzione — offrirlo
 // qui vorrebbe dire poter fabbricare un carico di produzione senza nessun
 // documento che lo spieghi.
-const MOVEMENT_MANUAL_KINDS = Object.keys(MOVEMENT_KINDS).filter(k => k !== 'clStep' && k !== 'versamento');
+const MOVEMENT_MANUAL_KINDS = Object.keys(MOVEMENT_KINDS).filter(k => k !== 'clStep' && k !== 'versamento' && k !== 'reso');
 const MOVEMENT_HINTS = {
   rettifica: 'Scrivi quanti ce ne sono <strong>davvero</strong>: viene registrata la differenza rispetto all&rsquo;esistente calcolato.',
   scarico: 'Scrivi quanti ne <strong>escono</strong>: verranno sottratti.',
@@ -614,11 +813,13 @@ function saveStockAdjust(itemId) {
   const uscita = kind === 'scarico' || kind === 'clOut';
   const delta = kind === 'rettifica' ? (inserita - onHandOf(it.id)) : (uscita ? -inserita : inserita);
   if (!delta) { showToast('Nessuna differenza da registrare'); closeModal(); return; }
+  const sotto = uscita ? avvisoSottoZero([{ itemId: it.id, qty: inserita }]) : [];
   addMovement(it.id, kind, delta, val('mv-note'), { supplierId, orderId: val('mv-ord') });
   closeModal();
   if (typeof renderCatalogs === 'function') renderCatalogs();
   // Il toast passa già da esc(): qui l'unità va concatenata cruda, non da fmtUom.
-  showToast(`Giacenza aggiornata: ${fmtQty(onHandOf(it.id))} ${itemUom(it)}`.trim());
+  if (sotto.length) showToast(`Registrato, ma l'esistente va sotto zero: ${sotto.join('; ')}`, 'error');
+  else showToast(`Giacenza aggiornata: ${fmtQty(onHandOf(it.id))} ${itemUom(it)}`.trim());
 }
 
 function stockMovementsModal(itemId) {
@@ -879,6 +1080,7 @@ function saveClFromOdl(docId, lineId, verso) {
   const kind = window.__clKind || (uscita ? 'clOut' : 'clIn');
   const passaggio = kind === 'clStep';
   const ids = window.__clRighe || [];
+  const sotto = uscita && kind === 'clOut' ? avvisoSottoZero(ids.map((itemId, i) => ({ itemId, qty: rawNum('cl-q-' + i) }))) : [];
   let n = 0;
   ids.forEach((itemId, i) => {
     const q = rawNum('cl-q-' + i);
@@ -901,6 +1103,7 @@ function saveClFromOdl(docId, lineId, verso) {
   // Si ridisegna la vista che ha aperto la scheda, non tutte e due.
   if (activeView === 'odl' && typeof renderOdl === 'function') renderOdl();
   else if (typeof renderOrders === 'function') renderOrders();
+  if (sotto.length) { showToast('Registrato, ma l\'esistente va sotto zero: ' + sotto.join('; '), 'error'); return; }
   showToast(passaggio
     ? (uscita ? 'Pezzi mandati al terzista' : 'Pezzi ritirati dal terzista')
     : (uscita
@@ -1000,6 +1203,27 @@ const STOCK_TYPES = ['acquistato', 'materiale', 'parte'];   // gli stessi di has
 const STOCK_PFX = 'stk';
 const STOCK_PAGE = 200;
 let stockLimit = STOCK_PAGE;
+const STOCK_LOC_NONE = '@nessuna';
+// Il menu delle ubicazioni nasce dai dati: si riscrive a ogni disegno tenendo
+// la scelta, che sparisce solo se l'ubicazione non c'è più.
+function stockLocSync() {
+  const sel = typeof document !== 'undefined' && document.getElementById(STOCK_PFX + '-loc');
+  if (!sel) return;
+  const prima = sel.value || '';
+  const elenco = ubicazioniElenco();
+  sel.innerHTML = '<option value="">Tutte le ubicazioni</option>'
+    + `<option value="${STOCK_LOC_NONE}">— senza ubicazione —</option>`
+    + elenco.map(u => `<option value="${esc(u)}">${esc(u)}</option>`).join('');
+  sel.value = (prima === STOCK_LOC_NONE || elenco.includes(prima)) ? prima : '';
+}
+// Le card in testa fanno da filtro (dalla 0.101.0): un click mette lo stato
+// corrispondente, un secondo click sulla stessa card lo toglie.
+function stockFiltraStato(stato) {
+  const sel = typeof document !== 'undefined' && document.getElementById(STOCK_PFX + '-state');
+  if (!sel) return;
+  sel.value = sel.value === stato ? '' : (stato || '');
+  stockFilterChange();
+}
 
 function onStockTypeChange() { syncFamilyFilters(STOCK_PFX, STOCK_TYPES); stockFilterChange(); }
 function onStockFamilyChange() { syncFamilyFilters(STOCK_PFX, STOCK_TYPES); stockFilterChange(); }
@@ -1032,6 +1256,7 @@ const STOCK_STATE_FILTERS = {
   sotto: st => st.sotto,
   zero: st => st.onHand <= 0,
   con: st => st.onHand > 0,
+  arrivo: st => st.incoming > 0,
   negativo: st => st.libero < 0,
   // Materiale che sta da un terzista e non è ancora rientrato, o che è tornato
   // fra due fasi e deve ripartire. Non è una giacenza: è roba nostra che allo
@@ -1043,7 +1268,7 @@ const STOCK_STATE_FILTERS = {
 // filtri per esteso e non il valore interno.
 const STOCK_STATE_LABELS = {
   sotto: 'Sotto la scorta minima', zero: 'Giacenza a zero',
-  con: 'Con giacenza', negativo: 'Libero negativo', terzi: 'Presso terzi o in lavorazione',
+  con: 'Con giacenza', arrivo: 'Con merce in arrivo', negativo: 'Libero negativo', terzi: 'Presso terzi o in lavorazione',
 };
 
 // Etichette della modalità lotto, stesse parole dei valori proposti nella
@@ -1063,6 +1288,7 @@ function stockRow(it) {
     <td class="col-type"><span class="bom-type-tag tt-${it.type}">${typeShort(it.type)}</span> ${typeLabel(it.type)}</td>
     <td class="col-family" style="color:var(--text-dim)">${esc(codingLabel(it) || familyLabel(it))}</td>
     <td class="col-uom">${esc(u)}</td>
+    <td class="col-location" style="font-family:var(--mono)${ubicazioneOf(it) ? '' : ';color:var(--text-dim)'}">${esc(ubicazioneOf(it) || '—')}</td>
     ${num(st.onHand, st.sotto ? 'var(--orange, #d90)' : '', 'onhand')}
     ${num(st.incoming, st.incoming > 0 ? 'var(--accent)' : 'var(--text-dim)', 'incoming')}
     ${num(st.committed, st.committed > 0 ? 'var(--orange, #d90)' : 'var(--text-dim)', 'committed')}
@@ -1090,7 +1316,7 @@ function stockFilteredRows(soloIds) {
   const leggi = k => (document.getElementById(STOCK_PFX + '-' + k) || {}).value || '';
   const q = leggi('search').toLowerCase();
   const ft = leggi('type'), ff = leggi('family'), fsf = leggi('subfamily'), fs = leggi('state');
-  const fm = leggi('machine'), fg = leggi('group');
+  const fm = leggi('machine'), fg = leggi('group'), fl = leggi('loc');
   // Gli assiemi restano fuori: un gruppo si produce, non si stocca, e la sua
   // giacenza sarebbe quella dei suoi componenti contata due volte.
   let rows = (db.items || []).filter(hasStock);
@@ -1102,7 +1328,8 @@ function stockFilteredRows(soloIds) {
   // stesso comportamento del filtro famiglia con gli assiemi.
   if (fm) rows = rows.filter(i => i.machineItemId === fm);
   if (fg) rows = rows.filter(i => i.groupItemId === fg);
-  if (q) rows = rows.filter(i => (i.code + ' ' + i.name).toLowerCase().includes(q));
+  if (fl) rows = rows.filter(i => fl === STOCK_LOC_NONE ? !ubicazioneOf(i) : ubicazioneOf(i) === fl);
+  if (q) rows = rows.filter(i => (i.code + ' ' + i.name + ' ' + ubicazioneOf(i)).toLowerCase().includes(q));
   const statoOk = STOCK_STATE_FILTERS[fs];
   if (statoOk) rows = rows.filter(i => statoOk(stockState(i)));
   // La scelta fatta a mano vale come un filtro, e si applica per ultima:
@@ -1116,6 +1343,7 @@ function renderStock() {
   invalidateCaches();
   syncFamilyFilters(STOCK_PFX, STOCK_TYPES);
   syncMachineFilters(STOCK_PFX);
+  stockLocSync();
   filtScopeApply('stock');   // dopo il sync, non prima: vedi nota in renderCatalog
   const rows = stockFilteredRows();
 
@@ -1135,15 +1363,17 @@ function renderStock() {
   const roHost = document.getElementById(STOCK_PFX + '-riordino-btn');
   if (roHost) roHost.innerHTML = riordinoButton();
   const kpiHost = document.getElementById(STOCK_PFX + '-kpi');
+  const statoOra = (document.getElementById(STOCK_PFX + '-state') || {}).value || '';
   if (kpiHost) kpiHost.innerHTML = [
-    kpi('Articoli a magazzino', String(tutti.length), ''),
-    kpi('Sotto scorta minima', String(sotto), sotto > 0 ? 'red' : ''),
-    kpi('Con merce in arrivo', String(inArrivo), 'accent'),
-    kpi(`Valore giacenza (${esc(cur())})`, fmtN(valore), 'purple'),
+    kpi('Articoli a magazzino', String(tutti.length), '', { azione: "stockFiltraStato('')", attiva: false, titolo: 'Mostra tutti gli stati' }),
+    kpi('Sotto scorta minima', String(sotto), sotto > 0 ? 'red' : '', { azione: "stockFiltraStato('sotto')", attiva: statoOra === 'sotto', titolo: 'Filtra gli articoli sotto la scorta minima' }),
+    kpi('Con merce in arrivo', String(inArrivo), 'accent', { azione: "stockFiltraStato('arrivo')", attiva: statoOra === 'arrivo', titolo: 'Filtra gli articoli con merce in arrivo' }),
+    kpi(`Valore giacenza (${esc(cur())})`, fmtN(valore), 'purple', { azione: "setView('dash')", titolo: 'Apri il Cruscotto: valore per tipo e per famiglia' }),
   ].join('');
 
   const head = `<thead><tr><th scope="col" class="col-flags"></th><th scope="col" class="col-code">Codice</th><th scope="col" class="col-name">Descrizione</th>
     <th scope="col" class="col-type">Tipo</th><th scope="col" class="col-family">Famiglia</th><th scope="col" class="col-uom">U.M.</th>
+    <th scope="col" class="col-location">Ubicazione</th>
     <th scope="col" class="col-onhand" style="text-align:right" title="Ricevuto sugli ordini più i movimenti">Esistente</th>
     <th scope="col" class="col-incoming" style="text-align:right" title="Atteso da ordini inviati, confermati o parziali">In arrivo</th>
     <th scope="col" class="col-committed" style="text-align:right" title="Promesso dai piani di fabbisogno aperti">Impegnato</th>
@@ -1187,7 +1417,7 @@ function stockExportSpec(soloIds) {
   const righe = stockFilteredRows(soloIds).map(it => {
     const st = stockState(it);
     return [it.code || '', it.name || '', typeLabel(it.type), codingLabel(it) || familyLabel(it),
-      itemUom(it), st.onHand, st.incoming, st.committed, st.libero, st.safety, st.lotSize];
+      itemUom(it), ubicazioneOf(it), st.onHand, st.incoming, st.committed, st.libero, st.safety, st.lotSize];
   });
   return {
     titolo: 'Magazzino',
@@ -1199,6 +1429,7 @@ function stockExportSpec(soloIds) {
       ['Sottofamiglia', sub ? sub.name : ''],
       ['Macchina', mac ? `${mac.code} — ${mac.name}` : ''],
       ['Gruppo', grp ? `${grp.code} — ${grp.name}` : ''],
+      ['Ubicazione', leggi('loc') === STOCK_LOC_NONE ? 'senza ubicazione' : leggi('loc')],
       ['Stato', STOCK_STATE_LABELS[leggi('state')] || ''],
       ['Selezione', soloIds && soloIds.length ? soloIds.length + ' righe scelte a mano' : ''],
     ],
@@ -1206,7 +1437,7 @@ function stockExportSpec(soloIds) {
       nome: 'Magazzino',
       colonne: [
         { h: 'Codice', w: 18 }, { h: 'Descrizione', w: 34 }, { h: 'Tipo', w: 16 }, { h: 'Famiglia', w: 24 },
-        { h: 'U.M.', w: 8 }, { h: 'Esistente', w: 12, num: true }, { h: 'In arrivo', w: 12, num: true },
+        { h: 'U.M.', w: 8 }, { h: 'Ubicazione', w: 14 }, { h: 'Esistente', w: 12, num: true }, { h: 'In arrivo', w: 12, num: true },
         { h: 'Impegnato', w: 12, num: true }, { h: 'Libero', w: 12, num: true },
         { h: 'Scorta minima', w: 14, num: true }, { h: 'Lotto', w: 10, num: true },
       ],

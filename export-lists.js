@@ -46,7 +46,16 @@ function listFiltersText(spec) {
 }
 // Stessa convenzione degli export che c'erano già (`bomtrack_acquisti_<data>`):
 // i file di più estrazioni si mettono in ordine da soli in una cartella.
-function listExportName(spec, ext) { return `bomtrack_${spec.slug}_${oggiISO()}.${ext}`; }
+// Lo slug può contenere un codice articolo scritto dall'utente (il confronto
+// distinte): una barra o due punti farebbero fallire il salvataggio, e uno
+// spazio spezzerebbe il nome. Dalla 0.101.1 passa da nomeFileSicuro.
+// Un documento singolo (`spec.nomeFile`, l'ODP) si chiama invece come i suoi
+// fratelli ODA e ODL: numero e riferimento, senza prefisso né data.
+function listExportName(spec, ext) {
+  if (spec.nomeFile) return nomeFileSicuro(spec.nomeFile, 'documento') + '.' + ext;
+  const slug = nomeFileSicuro(spec.slug, 'elenco').replace(/\s+/g, '-');
+  return `bomtrack_${slug}_${oggiISO()}.${ext}`;
+}
 
 // ─── Excel ───
 // Il foglio dati comincia dall'intestazione, in riga 1. La tentazione è
@@ -163,6 +172,9 @@ function pdfListHead(doc, spec) {
   doc.text('Filtri: ' + listFiltersText(spec), 14, L.yFiltri);
   doc.setTextColor(130);
   doc.text(`${new Date().toLocaleString('it-IT')}${currentUser && currentUser.name ? ' · ' + currentUser.name : ''} · ${listRows(spec)} righe`, 14, L.yData);
+  // Il documento che ha un QR (l'ordine di produzione) lo porta in alto a
+  // destra, su ogni pagina: il foglio che gira in officina apre la sua scheda.
+  if (spec.qr && typeof qrPdfDraw === 'function') qrPdfDraw(doc, spec.qr, doc.internal.pageSize.getWidth() - 14 - 20, 5, 20);
 }
 
 function exportListPdf(spec) {

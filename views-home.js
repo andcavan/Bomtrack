@@ -634,9 +634,9 @@ function renderHome() {
 
   const kpiRiga = [
     kpi('Articoli', String((db.items || []).length), ''),
-    kpi('Distinte', String((db.items || []).filter(i => isAssembly(i.type)).length), 'purple'),
-    kpi('Commesse aperte', String((db.jobs || []).filter(j => j.status === 'aperta' || j.status === 'produzione').length), 'accent'),
-    kpi('Ordini da evadere', String((db.orders || []).filter(o => o.status === 'inviato' || o.status === 'confermato' || o.status === 'parziale').length), 'orange'),
+    kpi('Distinte', String((db.items || []).filter(i => isAssembly(i.type)).length), 'purple', { azione: "setView('bom')", titolo: 'Apri le distinte' }),
+    kpi('Commesse aperte', String((db.jobs || []).filter(j => j.status === 'aperta' || j.status === 'produzione').length), 'accent', { azione: "setView('jobs')", titolo: 'Apri le commesse' }),
+    kpi('Ordini da evadere', String((db.orders || []).filter(o => o.status === 'inviato' || o.status === 'confermato' || o.status === 'parziale').length), 'orange', { azione: 'homeOrdiniDaEvadere()', titolo: 'Apri gli ordini a fornitore da evadere' }),
   ].join('');
 
   host.innerHTML = `<div class="manage-wrap">
@@ -670,4 +670,11 @@ function renderHome() {
         <button class="btn-outline" onclick="globalSearchModal()">${ico('search', 'tinted', '')} Cerca ovunque (Ctrl+K)</button>
       </div>
     </div></div>`;
+}
+
+// La card «Ordini da evadere» porta all'elenco ordini già filtrato su quegli
+// stati (inviato, confermato, parziale): lo stesso numero che si è cliccato.
+function homeOrdiniDaEvadere() {
+  docFilters.order = Object.assign(docFiltersVuoti(), { status: DOC_STATUS_EVADERE });
+  setView('orders');
 }

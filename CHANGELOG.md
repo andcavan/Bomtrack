@@ -2,6 +2,86 @@
 
 Le revisioni seguono il versionamento semantico `0.MINOR.PATCH`: **MINOR** per nuove funzionalità, **PATCH** per correzioni. La versione in cima è quella in `APP_VERSION` (`core.js`) e mostrata nell'header dell'app.
 
+### 0.102.0 — 2026-10-15
+
+**I fornitori si cercano scrivendo.** Nei menu dei fornitori, che sono decine, si cercava scorrendo.
+
+**Nuovo**
+- Ogni campo fornitore o terzista diventa un campo in cui si scrive: la lista si apre al clic e si filtra mentre si digita (maiuscole e accenti non contano, più parole in qualunque ordine, prima chi comincia così). Frecce e Invio per scegliere, Esc per lasciare com'era. Vale per richiesta, ordine e ordine di lavoro, listino della scheda articolo, listino fornitori, righe e fasi dei cicli, fornitori dei centri di lavoro, rettifica di magazzino, filtri degli elenchi documenti e scelta da catalogo.
+- `combo.js` (nuovo): un `select.sel-cerca` resta nella pagina, nascosto, con id, valore e `onchange`; il campo gli scrive il valore e gli manda `change`. Un MutationObserver trasforma i menu appena compaiono e tiene allineato il campo quando il menu cambia voci o si blocca (documento bloccato).
+
+**Verifica**
+- `test/combo.test.js` (nuovo, 14 casi): il filtro, i campi marcati, e in Chromium (`test/combo-browser.js`) lista intera e filtrata, Invio che arriva al documento, Esc, nessun risultato, documento bloccato, filtro dell'elenco con le frecce.
+
+### 0.101.1 — 2026-10-15
+
+**Nomi dei file esportati.** Un controllo dei nomi con cui l'app salva PDF ed Excel ha trovato due difetti e un'incoerenza.
+
+**Corretto**
+- **Caratteri non ammessi nel nome**: gli export degli elenchi non pulivano lo slug. Il confronto di due distinte mette nel nome i codici articolo, scritti dall'utente: un codice con `/` o `:` faceva fallire o troncare il salvataggio, e gli spazi spezzavano il nome. Ora `listExportName` passa da `nomeFileSicuro` e gli spazi diventano trattini.
+- **Data delle etichette QR**: il file usava la data di Greenwich (`toISOString`), quindi fra mezzanotte e le due prendeva il giorno prima. Ora usa la data del PC come tutti gli altri export.
+- **Ordine di produzione**: il PDF e l'Excel si chiamavano `bomtrack_odp_ODP-2026-004_2026-10-15`, a differenza di ODA e ODL che si chiamano col numero e il fornitore. Ora `ODP-2026-004_PRT-001` (numero e codice della parte).
+- Le etichette QR prendono il prefisso `bomtrack_` come gli altri export.
+
+**Documentazione**
+- MANUALE: la tabella di tutti i nomi dei file; le chiavi `bomtrack_densita` e `bomtrack_inventario` (0.101.0) nell'elenco di quello che resta nel browser.
+
+**Verifica**
+- `test/export-lists.test.js`: codice con barra, due punti e spazi nel nome; nome dell'ODP. `test/qr.test.js`: nuovo nome delle etichette.
+
+### 0.101.0 — 2026-10-15
+
+**Inventario guidato, ubicazioni, card che filtrano, vista compatta.** Per contare il magazzino si cercava un codice alla volta, un QR nominava un articolo ma non un posto, le card in testa alle viste erano solo numeri, e le tabelle lunghe stavano in poche righe per schermo.
+
+**Nuovo**
+- **Ubicazioni**: campo *Ubicazione a scaffale* nella scheda articolo (maiuscolo, senza spazi doppi, con le ubicazioni già usate proposte). Colonna, filtro (anche *senza ubicazione*) e ricerca nel Magazzino, colonna nell'export, riga sull'etichetta QR dell'articolo. **QR dello scaffale** (`#/q/ubi/A-03`): *Etichette ▾ → Ubicazioni degli articoli elencati*, e una scheda rapida con gli articoli del posto e **Conta questa ubicazione**.
+- **Inventario guidato** (*Magazzino → Inventario*, `inventario.js`): si sceglie cosa contare (articoli elencati, un'ubicazione, tutto), la fila segue le ubicazioni, si scrive il contato e si passa al prossimo. Il QR di un articolo o di uno scaffale (fotocamera, pistola o codice scritto) porta all'articolo o al posto giusto. Esistente nascosto se non si chiede di vederlo. Il conteggio resta nel browser e si riprende. Il **riepilogo** mostra le differenze e registra una *Rettifica inventario* per ogni riga spuntata, calcolata al momento di registrare.
+- **Card cliccabili**: nel Magazzino *Sotto scorta minima* e *Con merce in arrivo* (nuovo stato del filtro) filtrano la tabella, la card attiva resta evidenziata e un secondo clic toglie il filtro; *Valore giacenza* apre il Cruscotto. Nel Riepilogo *Distinte*, *Commesse aperte* e *Ordini da evadere* (nuovo stato *Da evadere* nel filtro ordini). Nel Cruscotto *Sotto scorta* apre il Magazzino filtrato, *Fermo* e *Consegne scadute* scorrono alla loro tabella.
+- **Vista compatta**: pulsante ☰ nell'intestazione (al telefono sotto ⋯). Righe di tabella ed elenchi più bassi, testo e card un poco più piccoli; resta in questo browser, come il tema.
+
+**Da sapere**
+- Con il cloud attivo va rilanciato `supabase/schema.sql`: aggiunge la colonna `items.location`.
+- L'export del Magazzino ha una colonna in più (*Ubicazione*, dopo *U.M.*).
+
+**Verifica**
+- `test/inventario-ubicazioni.test.js` (nuovo, 29 casi): ubicazioni scritte uguali e in ordine di cammino, filtro e export, QR dello scaffale anche con apici nel nome, fila d'inventario, campo vuoto che non è zero, letture da QR, bozza ripresa, rettifiche calcolate al momento di registrare e solo sulle righe scelte, ruoli, card che filtrano, ordini da evadere, vista compatta. Aggiornati tre test dell'export del Magazzino per la colonna nuova.
+
+### 0.100.0 — 2026-10-15
+
+**Il magazzino segue il montaggio, le parti a scaffale e gli annulli.** Il montaggio di un assieme non scaricava i componenti, le parti già a scaffale si rifacevano, un ODP annullato lasciava fuori il materiale uscito e un prelievo oltre la giacenza passava in silenzio.
+
+**Nuovo**
+- **Dichiara montaggio**: nuova scheda **Da montare** nel piano, una riga per assieme con quantità, date, montati e restanti. La finestra propone i componenti diretti (con lo scarto della distinta) per i pezzi montati, mostra la giacenza, si corregge a mano e registra un *Consumo di produzione* per componente, legato alla dichiarazione (`db.productions`). Eliminare la dichiarazione toglie anche gli scarichi. Il montaggio dichiarato abbassa l'impegno del piano e porta la tappa a *fatto* in programma e avanzamento.
+- **Parti a scaffale**: l'esplosione del piano prende prima le parti fabbricate che sono già a magazzino e fa produrre (e comprare materiale) solo per il resto. Le prende in ordine di urgenza dei piani aperti, dall'esistente meno la scorta minima, lasciando a ciascun piano i pezzi che i suoi ODP hanno versato e non sono ancora montati; le prese si impegnano. Si vedono nella scheda *Da fabbricare* sotto **Dal magazzino** (`scaffaleIndex`, `mrpExplodePlan` in `views-stock.js`).
+- **Annullare un ODP rende il materiale**: se l'ordine aveva già prelevato, **Annulla** propone di rimettere a magazzino quello uscito, in proporzione ai pezzi della prima fase non ancora lavorati. Nuovo movimento **Reso da produzione** (o *Rientro da conto lavoro* se la prima fase era dal terzista), legato all'ordine.
+- **Avviso sotto zero**: rettifica, uscita a conto lavoro, avvio della prima fase di un ODP e montaggio dicono prima di registrare se l'esistente va sotto zero, e lo ricordano dopo. Il movimento si registra comunque.
+
+**Da sapere**
+- Prima di questa versione il montaggio non scaricava niente: le parti e i commerciali degli assiemi già montati sono ancora nell'esistente, e ora i piani li considerano disponibili. Conviene controllare la lista *Dal magazzino* dei piani aperti e rettificare l'inventario dove serve. Sui dati di esempio FAB-2026-002 prende 10 codici da scaffale, versati da FAB-2026-001.
+- Gantt e data fattibile restano sulla distinta intera. I sottoassiemi si dichiarano sulla loro riga: il montaggio di un assieme non scarica gli assiemi che contiene.
+
+**Verifica**
+- `test/montaggio-scaffale.test.js` (nuovo, 21 casi): scarico dei componenti con lo scarto, eliminazione, impegno, parti a scaffale con priorità e quote fra piani, scorta minima, reso proporzionale e dal terzista, avvisi sotto zero. `test/avanzamento.test.js`: montaggio dichiarato.
+
+### 0.99.0 — 2026-10-15
+
+**Codici QR su etichette e documenti.** Per trovare un articolo davanti allo scaffale, o un ordine con il foglio in mano, si cercava il codice a tastiera.
+
+**Nuovo**
+- **Etichette QR degli articoli**: **Etichette** nella barra del Magazzino (gli articoli elencati, con i filtri), **Etichetta QR** nel riquadro Magazzino della scheda articolo, **Etichette QR della selezione** nel pannello laterale. Formati foglio A4 3×8 (70×37) e 2×7 (99×38), rotolo 50×30 e 62×29; copie per articolo; etichette già usate sul foglio da saltare. PDF con i QR vettoriali.
+- **QR in alto a destra** nei PDF dell'ordine di produzione, dell'ordine a fornitore e dell'ordine di lavoro.
+- **Scheda rapida** aperta dal QR: per l'articolo giacenza, impegnato e libero con Rettifica, Scheda completa e Movimenti; per l'ODP la fase corrente con Avvia o Dichiara; per ODA e ODL le righe con il ricevuto e **Ricevi tutto** (con conferma). I pulsanti aprono le finestre che l'app ha già, con le stesse guardie di ruolo.
+- **Scansiona** nell'intestazione (al telefono sotto ⋯): fotocamera dentro l'app (lettore del browser, o jsQR dove manca) e un campo che accetta il codice scritto o il testo di una pistola USB.
+- **Gestione → Impostazioni → Etichette QR**: l'indirizzo dell'app da mettere nei QR (vuoto = quello da cui è aperta) e il formato predefinito.
+
+**Da sapere**
+- Il QR contiene il **codice** dell'articolo o il **numero** dell'ordine (`…#/q/art/MAT-ACC-LAM-001`), non l'id interno; se il codice non si trova si prova come id. Rinominare un codice rende vecchie le sue etichette.
+- Con l'app aperta dal disco il QR non ha un indirizzo da dare al telefono: si legge solo con Scansiona, e la finestra delle etichette lo dice.
+- Due librerie nuove in `vendor/`, invariate e con l'impronta in `vendor/LEGGIMI.md`: `qrcode.js` (qrcode-generator 1.4.4, MIT) e `jsQR.js` (jsQR 1.4.0, Apache-2.0).
+
+**Verifica**
+- `test/qr.test.js` (nuovo): indirizzo che va e torna uguale anche con caratteri speciali, ricerca per codice, numero e id, QR disegnato e riletto con jsQR, etichette (copie, foglio iniziato, rotolo), arrivo da `#/q/…` a sessione aperta, ruoli, impostazioni. `test/pwa.test.js`: le due librerie in cache.
+
 ### 0.98.1 — 2026-10-14
 
 **Correzioni ai conti di magazzino.** Un controllo dei calcoli di giacenza, impegno e scorta ha trovato un doppio conteggio e tre comportamenti sbagliati.

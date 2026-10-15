@@ -114,11 +114,18 @@ function renderBom() {
   refreshBomPanelIfOpen();
   filtMount('bom');
 }
-function kpi(label, value, cls) {
+// `opz.azione` (dalla 0.101.0) rende la card un pulsante: un filtro sulla
+// tabella sotto, o la vista che spiega il numero. `opz.attiva` la segna quando
+// il suo filtro è quello in uso, così si vede cosa sta filtrando la tabella.
+function kpi(label, value, cls, opz) {
   // L'unità appesa al numero (`€8951.50/pz`) è informazione di contorno: stampata
   // grande quanto la cifra ruba larghezza e costringe a rimpicciolire tutto il
   // riquadro. Va in piccolo, così la cifra — il dato vero — resta leggibile.
   const v = String(value).replace(/(\/[^<>/\s]+)$/, '<span class="kpi-uom">$1</span>');
+  const o = opz || {};
+  if (o.azione) {
+    return `<div class="kpi-card kpi-click ${cls || ''}${o.attiva ? ' kpi-on' : ''}" ${clickAttrs(o.azione, o.titolo || '')}${o.titolo ? ` title="${esc(o.titolo)}"` : ''}${o.attiva ? ' aria-pressed="true"' : ''}><div class="kpi-value">${v}</div><div class="kpi-label">${label}</div></div>`;
+  }
   return `<div class="kpi-card ${cls}"><div class="kpi-value">${v}</div><div class="kpi-label">${label}</div></div>`;
 }
 

@@ -39,6 +39,8 @@
     // visibile: torna solo il lampo scuro. Vanno cambiate insieme.
     var t = localStorage.getItem('bomtrack_theme');
     if (t === 'light' || t === 'dark') document.documentElement.setAttribute('data-theme', t);
+    // Lo stesso per la vista compatta (DENSITA_KEY in theme.js): niente salto di righe all'avvio.
+    if (localStorage.getItem('bomtrack_densita') === 'compatta') document.documentElement.setAttribute('data-densita', 'compatta');
   } catch (e) { /* in automatico: decide la media query */ }
 </script>
 <!-- Librerie di export, dentro il repo (vedi vendor/LEGGIMI.md). Erano su CDN con
@@ -54,6 +56,9 @@
 <script src="vendor/jspdf.umd.min.js"></script>
 <script src="vendor/jspdf.plugin.autotable.min.js"></script>
 <script src="vendor/xlsx.full.min.js"></script>
+<!-- Codici QR: uno li disegna, l'altro li legge dove il browser non sa farlo (qr.js) -->
+<script src="vendor/qrcode.js"></script>
+<script src="vendor/jsQR.js"></script>
 </head>
 <body>
 
@@ -122,11 +127,15 @@
     <!-- I comandi di contorno: in riga quando c'è spazio, sotto «⋯» quando non c'è. `data-etichetta` è il testo della voce nel menu -->
     <button class="btn-outline btn-icon header-menu-btn" id="extra-menu-btn" onclick="headerMenu('extra')" title="Altri comandi" aria-label="Altri comandi" aria-haspopup="true" aria-expanded="false" aria-controls="header-extra"><svg class="ico tinted ic-more" aria-hidden="true"><use href="#ic-more"></use></svg></button>
     <div class="header-extra" id="header-extra">
+      <!-- Il lettore QR (qr.js): in riga quando c'è spazio, primo del menu «⋯» al telefono -->
+      <button class="btn-outline btn-icon" onclick="qrScanModal()" title="Scansiona un codice QR" aria-label="Scansiona un codice QR" data-etichetta="Scansiona QR"><svg class="ico tinted ic-qr" aria-hidden="true"><use href="#ic-qr"></use></svg></button>
       <button class="btn-outline btn-icon" onclick="printView()" title="Stampa questa vista (Ctrl+P)" aria-label="Stampa" data-etichetta="Stampa"><svg class="ico tinted ic-printer" aria-hidden="true"><use href="#ic-printer"></use></svg></button>
       <!-- Il manuale sta accanto a index.html e si apre in una scheda sua: si consulta mentre si lavora, senza perdere il documento aperto -->
       <button class="btn-outline btn-icon" onclick="openManual()" title="Manuale d'uso" aria-label="Manuale d'uso" data-etichetta="Manuale d'uso"><svg class="ico tinted ic-book" aria-hidden="true"><use href="#ic-book"></use></svg></button>
       <!-- Icona e testo li mette themeButtonFill(): dipendono dal tema in corso -->
       <button class="btn-outline btn-icon" id="theme-btn" onclick="themeToggle()" title="Cambia tema" aria-label="Cambia tema" data-etichetta="Cambia tema"></button>
+      <!-- Vista compatta delle tabelle (theme.js): testo e stato li mette densitaButtonFill() -->
+      <button class="btn-outline btn-icon" id="dens-btn" onclick="densitaToggle()" title="Vista compatta" aria-label="Vista compatta" data-etichetta="Vista compatta"><svg class="ico tinted ic-list" aria-hidden="true"><use href="#ic-list"></use></svg></button>
       <button class="btn-outline btn-icon" onclick="changePassword()" title="Cambia password" aria-label="Cambia password" data-etichetta="Cambia password"><svg class="ico tinted ic-key" aria-hidden="true"><use href="#ic-key"></use></svg></button>
       <button class="btn-outline btn-icon" onclick="logout()" title="Esci" aria-label="Esci" data-etichetta="Esci">
         <svg class="ico tinted ic-logout" aria-hidden="true"><use href="#ic-logout"></use></svg>
@@ -282,6 +291,12 @@
       <h2 class="section-title"><svg class="ico ic-package tinted pill" aria-hidden="true"><use href="#ic-package"></use></svg> Magazzino</h2>
       <span id="stk-cl-btn"></span>
       <span id="stk-riordino-btn"></span>
+      <button class="btn-outline" onclick="inventarioModal()" title="Contare gli articoli uno dopo l'altro, con i QR o a mano, e registrare le differenze"><svg class="ico ic-clipboard tinted" aria-hidden="true"><use href="#ic-clipboard"></use></svg> Inventario</button>
+      <details class="dd dd-etichette"><summary class="btn-outline" title="Etichette con codice QR"><svg class="ico ic-qr tinted" aria-hidden="true"><use href="#ic-qr"></use></svg> Etichette <span class="dd-caret" aria-hidden="true">▾</span></summary>
+        <div class="dd-menu" role="menu">
+          <button type="button" class="dd-item" role="menuitem" onclick="qrEtichetteMagazzino()"><svg class="ico ic-package tinted" aria-hidden="true"><use href="#ic-package"></use></svg> Articoli elencati</button>
+          <button type="button" class="dd-item" role="menuitem" onclick="qrEtichetteUbicazioni()"><svg class="ico ic-pin tinted" aria-hidden="true"><use href="#ic-pin"></use></svg> Ubicazioni degli articoli elencati</button>
+        </div></details>
       <!-- «Esporta ▾»: lo stesso markup di menuEsporta() in shell.js -->
       <details class="dd dd-export"><summary class="btn-outline"><svg class="ico ic-download tinted" aria-hidden="true"><use href="#ic-download"></use></svg> Esporta <span class="dd-caret" aria-hidden="true">▾</span></summary>
         <div class="dd-menu" role="menu">
@@ -315,11 +330,15 @@
         <select id="stk-group" onchange="filtScopeChange('stock','group');stockFilterChange()">
           <option value="">Tutti i gruppi</option>
         </select>
+        <select id="stk-loc" onchange="stockFilterChange()">
+          <option value="">Tutte le ubicazioni</option>
+        </select>
         <select id="stk-state" onchange="stockFilterChange()">
           <option value="">Tutti gli stati</option>
           <option value="sotto">Sotto la scorta minima</option>
           <option value="zero">Giacenza a zero</option>
           <option value="con">Con giacenza</option>
+          <option value="arrivo">Con merce in arrivo</option>
           <option value="negativo">Libero negativo</option>
           <option value="terzi">Presso terzi o in lavorazione</option>
         </select>
@@ -483,6 +502,9 @@
 <!-- ULTIMO, sempre: in fondo a questo file c'è init(), che avvia l'app. Uno
      script messo dopo non esiste ancora quando l'avvio disegna la prima vista,
      e la prima chiamata lo scopre con un errore. -->
+<script src="qr.js"></script>
+<script src="inventario.js"></script>
+<script src="combo.js"></script>
 <script src="import-export.js"></script>
 </body>
 </html>

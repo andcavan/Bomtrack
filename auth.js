@@ -129,7 +129,11 @@ function doLogin(user, persist) {
   startClock();
   // L'indirizzo comanda: chi apre un link a una vista precisa, o ricarica la
   // pagina, ci ritrova. Altrimenti si atterra sul riepilogo.
+  // Un QR inquadrato prima di entrare (`#/q/…`, qr.js) si legge adesso, perché
+  // setView riscrive l'indirizzo; la sua scheda si apre sopra il riepilogo.
+  const q = qrDaHash();
   setView(viewIniziale());
+  if (q) qrApri(q);
 }
 // Durata della sessione salvata. 0 = non scade (comportamento fino alla 0.21.0).
 function sessionMaxDays() {

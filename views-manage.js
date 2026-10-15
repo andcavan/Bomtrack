@@ -718,7 +718,7 @@ function delWc(id) {
 function wcSuppliersBody(wcId) {
   const w = db.workCenters.find(x => x.id === wcId); if (!w) return '';
   const righe = (w.suppliers || []).map(s => `<tr>
-    <td><select onchange="wcSupplierSetField('${wcId}','${s.id}','supplierId',this.value)">${supplierOptions(s.supplierId || '')}</select></td>
+    <td><select class="sel-cerca" onchange="wcSupplierSetField('${wcId}','${s.id}','supplierId',this.value)">${supplierOptions(s.supplierId || '')}</select></td>
     <td><input type="number" class="num" min="0" step="0.5" value="${s.rate || 0}" onchange="wcSupplierSetField('${wcId}','${s.id}','rate',this.value)"></td>
     <td><input type="text" value="${esc(s.note || '')}" placeholder="opzionale" onchange="wcSupplierSetField('${wcId}','${s.id}','note',this.value)"></td>
     <td class="pl-act"><button class="mini-btn danger" title="Rimuovi" onclick="wcSupplierDelRow('${wcId}','${s.id}')">${ico('trash', 'tinted', 'Rimuovi')}</button></td>
@@ -958,6 +958,8 @@ function renderSettings() {
 
     ${renderCalendarSettings()}
 
+    ${renderQrSettings()}
+
     <button class="add-btn-sm" onclick="saveSettings()">Salva impostazioni</button></div>`;
 }
 // ─── Calendario di fabbrica ───
@@ -1010,6 +1012,10 @@ function readCalendarSettings() {
 }
 function saveSettings() {
   if (!roleGuard('manage')) return;
+  // Le etichette QR si controllano per prime: un indirizzo sbagliato non salva
+  // niente, invece di salvare il resto e lasciare quello vecchio senza dirlo.
+  const erroreQr = readQrSettings();
+  if (erroreQr) { showToast(erroreQr, 'error'); return; }
   // Percentuali riportate dentro 0-1000 in silenzio, come già fa codeDigits qui sotto.
   db.settings.overheadPct = numVal('set-ov', 0, 1000);
   db.settings.marginPct = numVal('set-mg', 0, 1000);

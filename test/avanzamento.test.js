@@ -146,7 +146,14 @@ describe('Avanzamento: quello che non si registra non si inventa', () => {
     const a = app(60);
     const r = riga(modello(a), 'MAC');
     assert.equal(r.stato, 'previsto');
-    assert.match(r.nota, /non ha un documento/);
+    assert.match(r.nota, /Nessun montaggio dichiarato/);
+  });
+  it('il montaggio dichiarato sul piano dice a che punto è (dalla 0.100.0)', () => {
+    const a = app(60);
+    a.eval("montaggioDichiara('pl1', 'mac', 1)");
+    const r = riga(modello(a), 'MAC');
+    assert.equal(r.stato, 'fatto');
+    assert.match(r.nota, /Montati/);
   });
 });
 

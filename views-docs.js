@@ -755,6 +755,10 @@ const docFilters = {
   odl: { q: '', status: '', supplierId: '', from: '', to: '' },
 };
 function docFiltersVuoti() { return { q: '', status: '', supplierId: '', from: '', to: '' }; }
+// Una voce di stato in più per gli ordini (dalla 0.101.0): gli ordini ancora da
+// ricevere, cioè gli stati di ORDER_INCOMING_STATES insieme. È quella su cui
+// porta la card «Ordini da evadere» del Riepilogo.
+const DOC_STATUS_EVADERE = '@evadere';
 // I campi di filtro dell'elenco, senza contenitore: li incolonna `wl-filters`
 // del telaio (worklist.js). In una colonna da 360px tre menu affiancati
 // sarebbero tre fessure — qui vanno uno sotto l'altro, larghi quanto la colonna.
@@ -764,9 +768,10 @@ function docFilterBar(kind, statusMap, shown, total) {
   return `<input type="text" class="search" id="${kind}f-q" value="${esc(f.q)}" placeholder="Cerca numero, oggetto, fornitore o riga..." oninput="docFilterInput('${kind}')">
     <select id="${kind}f-status" onchange="docFilterChange('${kind}')">
       <option value="">Tutti gli stati</option>
+      ${kind === 'order' ? `<option value="${DOC_STATUS_EVADERE}" ${f.status === DOC_STATUS_EVADERE ? 'selected' : ''}>Da evadere (inviati, confermati, parziali)</option>` : ''}
       ${Object.entries(statusMap).map(([k, v]) => `<option value="${k}" ${f.status === k ? 'selected' : ''}>${v}</option>`).join('')}
     </select>
-    <select id="${kind}f-sup" onchange="docFilterChange('${kind}')">
+    <select id="${kind}f-sup" class="sel-cerca" onchange="docFilterChange('${kind}')">
       <option value="">Tutti i fornitori</option>
       <option value="none" ${f.supplierId === 'none' ? 'selected' : ''}>— senza fornitore —</option>
       ${sups.map(s => `<option value="${s.id}" ${f.supplierId === s.id ? 'selected' : ''}>${esc(s.name)}</option>`).join('')}
@@ -815,7 +820,8 @@ function docSearchText(d) {
 function docFilterApply(kind, docs) {
   const f = docFilters[kind];
   return docs.filter(d => {
-    if (f.status && d.status !== f.status) return false;
+    if (f.status === DOC_STATUS_EVADERE) { if (!ORDER_INCOMING_STATES.includes(d.status)) return false; }
+    else if (f.status && d.status !== f.status) return false;
     if (f.supplierId === 'none' ? !!d.supplierId : (f.supplierId && d.supplierId !== f.supplierId)) return false;
     if (!inDateRange(d.date, f.from, f.to)) return false;
     if (!f.q) return true;
@@ -852,7 +858,7 @@ function docListExportSpec(kind) {
     slug: { rfq: 'richieste', order: 'ordini', odl: 'ordini_di_lavoro' }[kind],
     filtri: [
       ['Ricerca', f.q],
-      ['Stato', mappaStati[f.status] || ''],
+      ['Stato', f.status === DOC_STATUS_EVADERE ? 'Da evadere (inviati, confermati, parziali)' : (mappaStati[f.status] || '')],
       ['Fornitore', f.supplierId === 'none' ? 'senza fornitore' : (supplierName(f.supplierId) || '')],
       ['Data', dateRangeText(f.from, f.to)],
     ],
@@ -1035,7 +1041,7 @@ function catalogPickerModal(onAddIds, opts) {
       <select id="pick-type" onchange="pickFilter()"><option value="">Tutti i tipi</option>${typeOpts}</select>
       <select id="pick-fam" onchange="pickFamilyChange()"><option value="">Tutte le famiglie</option>${famOpts}</select>
       <select id="pick-sub" onchange="pickFilter()"><option value="">Tutte le sottofamiglie</option></select>
-      <select id="pick-sup" onchange="pickFilter()"><option value="">Tutti i fornitori</option>${db.suppliers.map(s => `<option value="${s.id}">${esc(s.name)}</option>`).join('')}</select>
+      <select id="pick-sup" class="sel-cerca" onchange="pickFilter()"><option value="">Tutti i fornitori</option>${db.suppliers.map(s => `<option value="${s.id}">${esc(s.name)}</option>`).join('')}</select>
     </div>
     <div class="rfq-pick-list" id="pick-list">${scelte || `<div class="empty-text">${cfg.vuoto || 'Catalogo vuoto.'}</div>`}</div>
     <div class="empty-text" id="pick-empty" style="display:none">Nessun articolo con questi filtri.</div>
@@ -1147,7 +1153,7 @@ function renderRfqEdit(id) {
     <div class="rfq-head">
       <div class="modal-field"><label>Titolo / oggetto</label><input class="lock-contract" value="${esc(r.title || '')}" onchange="rfqSetField('${id}','title',this.value)"></div>
       <div class="rfq-head-row">
-        <div class="modal-field"><label>Fornitore</label><select class="lock-contract" onchange="rfqSetSupplier('${id}',this.value)">${supplierOptions(r.supplierId)}</select></div>
+        <div class="modal-field"><label>Fornitore</label><select class="lock-contract sel-cerca" onchange="rfqSetSupplier('${id}',this.value)">${supplierOptions(r.supplierId)}</select></div>
         <div class="modal-field"><label>Data</label><input type="date" class="lock-contract" value="${(r.date || '').slice(0, 10)}" onchange="rfqSetField('${id}','date',this.value)"></div>
         <div class="modal-field"><label>Stato</label><select onchange="rfqSetField('${id}','status',this.value)">
           ${Object.entries(RFQ_STATUS).map(([k, v]) => `<option value="${k}" ${r.status === k ? 'selected' : ''}>${v}</option>`).join('')}
@@ -1639,7 +1645,7 @@ function renderOrderEdit(id) {
     <div class="rfq-head">
       <div class="modal-field"><label>Titolo / oggetto</label><input class="lock-contract" value="${esc(o.title || '')}" onchange="ordSetField('${id}','title',this.value)"></div>
       <div class="rfq-head-row">
-        <div class="modal-field"><label>Fornitore</label><select class="lock-contract" onchange="ordSetSupplier('${id}',this.value)">${supplierOptions(o.supplierId)}</select></div>
+        <div class="modal-field"><label>Fornitore</label><select class="lock-contract sel-cerca" onchange="ordSetSupplier('${id}',this.value)">${supplierOptions(o.supplierId)}</select></div>
         <div class="modal-field"><label>Data ordine</label><input type="date" class="lock-contract" value="${(o.date || '').slice(0, 10)}" onchange="ordSetField('${id}','date',this.value)"></div>
         <div class="modal-field"><label>Stato</label><select onchange="ordSetField('${id}','status',this.value)">
           ${Object.entries(ORDER_STATUS).map(([k, v]) => `<option value="${k}" ${o.status === k ? 'selected' : ''}>${v}</option>`).join('')}
@@ -1695,6 +1701,9 @@ function exportOrderPDF(id) {
   const sup = o.supplierId ? getSupplier(o.supplierId) : null;
   const hasSup = (o.lines || []).some(l => lineSupInfo(o.supplierId, l));
   const doc = new jsPDF({ orientation: 'landscape' });
+  // Il QR in alto a destra apre la scheda rapida dell'ordine (qr.js): chi riceve
+  // la merce inquadra la copia stampata e registra il ricevimento da lì.
+  if (o.number) qrPdfDraw(doc, qrLink('oda', o.number), doc.internal.pageSize.getWidth() - 14 - 22, 5, 22);
   doc.setFontSize(15); doc.setTextColor(30); doc.text(`Ordine di acquisto / Purchase Order — ${o.number}`, 14, 16);
   doc.setFontSize(9); doc.setTextColor(90);
   doc.text(`Data / Date: ${fmtDateIt(o.date) || fmtDateIt(nowISO())}`, 14, 22);
@@ -2036,7 +2045,7 @@ function renderOdlEdit(id) {
     <div class="rfq-head">
       <div class="modal-field"><label>Titolo / oggetto</label><input class="lock-contract" value="${esc(o.title || '')}" onchange="odlSetField('${id}','title',this.value)"></div>
       <div class="rfq-head-row">
-        <div class="modal-field"><label>Terzista</label><select class="lock-contract" onchange="odlSetSupplier('${id}',this.value)">${supplierOptions(o.supplierId)}</select></div>
+        <div class="modal-field"><label>Terzista</label><select class="lock-contract sel-cerca" onchange="odlSetSupplier('${id}',this.value)">${supplierOptions(o.supplierId)}</select></div>
         <div class="modal-field"><label>Data ordine</label><input type="date" class="lock-contract" value="${(o.date || '').slice(0, 10)}" onchange="odlSetField('${id}','date',this.value)"></div>
         <div class="modal-field"><label>Stato</label><select onchange="odlSetField('${id}','status',this.value)">
           ${Object.entries(ORDER_STATUS).map(([k, v]) => `<option value="${k}" ${o.status === k ? 'selected' : ''}>${v}</option>`).join('')}
@@ -2096,6 +2105,8 @@ function exportOdlPDF(id) {
   const co = db.settings.company || {};
   const sup = o.supplierId ? getSupplier(o.supplierId) : null;
   const doc = new jsPDF({ orientation: 'landscape' });
+  // Come sull'ordine d'acquisto: il QR apre la scheda rapida dell'ODL.
+  if (o.number) qrPdfDraw(doc, qrLink('odl', o.number), doc.internal.pageSize.getWidth() - 14 - 22, 5, 22);
   doc.setFontSize(15); doc.setTextColor(30); doc.text(`Ordine di lavoro / Subcontract Order — ${o.number}`, 14, 16);
   doc.setFontSize(9); doc.setTextColor(90);
   doc.text(`Data / Date: ${fmtDateIt(o.date) || fmtDateIt(nowISO())}`, 14, 22);

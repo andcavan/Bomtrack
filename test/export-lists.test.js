@@ -124,8 +124,8 @@ describe('Magazzino', () => {
     a.eval('addMovement("m1", "carico", 100, "")');
     filtra(a, 'stk', { search: 'm1' });
     const r = spec(a, 'stockExportSpec()').sezioni[0].righe[0];
-    assert.equal(r[5], 100, 'esistente');
-    assert.equal(r[9], 50, 'scorta minima');
+    assert.equal(r[6], 100, 'esistente (dopo l\'ubicazione, dalla 0.101.0)');
+    assert.equal(r[10], 50, 'scorta minima');
   });
 
   it('la paginazione a schermo non taglia l\'export', () => {
@@ -317,6 +317,19 @@ describe('Il contorno del file', () => {
     assert.ok(/^bomtrack_magazzino_\d{4}-\d{2}-\d{2}\.xlsx$/.test(nome), nome);
   });
 
+  it('un codice con barre, due punti o spazi non rompe il nome del file (0.101.1)', () => {
+    const a = app();
+    const nome = a.eval('listExportName({ slug: "confronto_TUBO Ø40/2_A:B" }, "pdf")');
+    assert.ok(/^bomtrack_confronto_TUBO-Ø40-2_A-B_\d{4}-\d{2}-\d{2}\.pdf$/.test(nome), nome);
+  });
+
+  it('l\'ordine di produzione si chiama come ODA e ODL: numero e codice (0.101.1)', () => {
+    const a = app();
+    const nome = a.eval(`listExportName(odpDocSpec({ id: 'x', number: 'ODP-2026-004', code: 'PRT-001', name: 'Fiancata',
+      qty: 2, uom: 'pz', status: 'bozza', phases: [], materials: [] }), 'pdf')`);
+    assert.equal(nome, 'ODP-2026-004_PRT-001.pdf');
+  });
+
   it('il foglio Estrazione registra azienda, filtri e righe', () => {
     const a = app();
     a.eval('db.settings.company = { name: "Meccanica Rossi" }; saveDB();');
@@ -494,8 +507,8 @@ describe('L\'Excel', () => {
   it('senza totali l\'autofiltro arriva fino all\'ultima riga', () => {
     const a = app();
     const stato = fintoXlsx(a);
-    a.eval('exportListXlsx(stockExportSpec())');   // 3 articoli, 11 colonne
-    assert.equal(stato().fogli[0]['!autofilter'].ref, '0,0:3,10');
+    a.eval('exportListXlsx(stockExportSpec())');   // 3 articoli, 12 colonne
+    assert.equal(stato().fogli[0]['!autofilter'].ref, '0,0:3,11');
   });
 
   it('le larghezze di colonna arrivano al foglio', () => {
@@ -503,7 +516,7 @@ describe('L\'Excel', () => {
     const stato = fintoXlsx(a);
     a.eval('exportListXlsx(stockExportSpec())');
     const cols = stato().fogli[0]['!cols'];
-    assert.equal(cols.length, 11);
+    assert.equal(cols.length, 12);
     assert.equal(cols[0].wch, 18);
   });
 

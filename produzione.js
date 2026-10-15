@@ -68,12 +68,162 @@ function produzioneElimina(id) {
   if (!roleGuardShop('docs')) return;
   const rec = (db.productions || []).find(p => p.id === id);
   if (!rec) return;
-  askConfirm('Eliminare questa dichiarazione di produzione?', () => {
+  const mov = montaggioMovimenti(id);
+  askConfirm(mov.length
+    ? `Eliminare questo montaggio? I ${mov.length === 1 ? 'componente scaricato torna' : mov.length + ' componenti scaricati tornano'} a magazzino.`
+    : 'Eliminare questa dichiarazione di produzione?', () => {
+    // I movimenti del montaggio se ne vanno con lui: sono la sua conseguenza,
+    // e lasciarli scaricherebbe componenti per un montaggio che non c'è più.
+    mov.forEach(m => Store.remove('movements', m.id));
     Store.remove('productions', id);
-    savedToast('Dichiarazione eliminata');
-    if (window.__prodPlanId) produzioneRefresh();
+    savedToast(mov.length ? 'Montaggio eliminato, componenti restituiti' : 'Dichiarazione eliminata');
+    if (window.__montPlanId) montaggioRefresh();
+    else if (window.__prodPlanId) produzioneRefresh();
     else renderMrp();
   });
+}
+
+// ═══════════════════════════════════════════════════════════
+//  IL MONTAGGIO SCARICA I COMPONENTI (dalla 0.100.0)
+// ═══════════════════════════════════════════════════════════
+// Commerciali e parti entravano a magazzino — dai ricevimenti, dai versamenti
+// degli ODP — ma nessun gesto li faceva uscire quando l'assieme veniva montato:
+// senza uno scarico scritto a mano la loro giacenza cresceva per sempre, e con
+// lei la sicurezza che «ce ne sono».
+//
+// Il montaggio si dichiara come la produzione di una parte, **dentro un
+// piano** e con la stessa tabella (`productions`, l'assieme come articolo), e
+// in più scarica i **componenti diretti** dell'assieme che si tengono a
+// magazzino. I movimenti portano l'id della dichiarazione come documento:
+// `prelevatiIndex` li attribuisce al piano — così l'impegno scende come scende
+// col prelievo di un ODP — ed eliminare la dichiarazione li toglie con sé.
+//
+// I **sottoassiemi** non si tengono a magazzino e hanno un montaggio loro: si
+// dichiarano a parte, ciascuno con i suoi componenti. Scendere nei loro figli
+// da qui scaricherebbe due volte chi li dichiara entrambi.
+function montaggioComponenti(asm, pezzi) {
+  const n = Number(pezzi) || 0;
+  const stock = [], sotto = [];
+  ((asm && asm.components) || []).forEach(c => {
+    const it = getItem(c.itemId); if (!it) return;
+    const perPezzo = (Number(c.qty) || 0) * (1 + (Number(c.scrapPct) || 0) / 100);
+    if (hasStock(it)) {
+      const gia = stock.find(x => x.item.id === it.id);
+      if (gia) { gia.perPezzo += perPezzo; gia.qty = gia.perPezzo * n; }
+      else stock.push({ item: it, perPezzo, qty: perPezzo * n });
+    } else if (isAssembly(it.type)) sotto.push({ item: it, perPezzo, qty: perPezzo * n });
+  });
+  return { stock, sotto };
+}
+function montaggioMovimenti(prodId) { return (db.movements || []).filter(m => m.orderId === prodId && m.kind === 'scarico'); }
+// `righe` è [{ itemId, qty }] in positivo, quanto esce; senza, i componenti
+// pieni per i pezzi dichiarati.
+function montaggioDichiara(planId, asmId, qty, righe, note) {
+  if (!roleGuardShop('docs')) return null;
+  const p = getPlan(planId), asm = getItem(asmId);
+  if (!p || !asm || !isAssembly(asm.type)) return null;
+  const q = Number(qty) || 0;
+  if (!(q > 0)) { showToast('Scrivi quanti ne sono stati montati', 'error'); return null; }
+  const lista = righe || montaggioComponenti(asm, q).stock.map(x => ({ itemId: x.item.id, qty: x.qty }));
+  const rec = Store.insert('productions', { planId, itemId: asmId, qty: q, date: nowISO(), note: String(note || '').trim() });
+  if (!rec) return null;
+  const testo = `Montaggio ${asm.code || ''} — ${p.number || ''}`.trim();
+  lista.forEach(r => {
+    const x = Number(r.qty) || 0;
+    if (x > 0) addMovement(r.itemId, 'scarico', -x, note ? testo + ' · ' + note : testo, { orderId: rec.id });
+  });
+  return rec;
+}
+
+onPanelClose('montaggio', () => { window.__montPlanId = null; window.__montAsmId = null; });
+function montaggioModal(planId, asmId, richiesti) {
+  const p = getPlan(planId), asm = getItem(asmId);
+  if (!p || !asm) return;
+  window.__montPlanId = planId;
+  window.__montAsmId = asmId;
+  window.__montRichiesti = Number(richiesti) || 0;
+  openModal(`<h3>${ico('wrench', 'tinted pill', '')} Montaggio — ${esc(asm.code)}</h3>
+    <p style="color:var(--text-dim);margin-bottom:14px">${esc(asm.name)} · piano <strong>${esc(p.number)}</strong></p>
+    <div id="montaggio-body">${montaggioBody()}</div>
+    <div class="modal-actions"><button class="btn-ghost" onclick="closeModal()">Chiudi</button></div>`, true, 'montaggio');
+}
+function montaggioRefresh() {
+  const host = document.getElementById('montaggio-body');
+  if (host) host.innerHTML = montaggioBody();
+}
+function montaggioBody() {
+  const planId = window.__montPlanId, asm = getItem(window.__montAsmId);
+  if (!asm) return '';
+  const richiesti = Number(window.__montRichiesti) || 0;
+  const fatti = prodottiDi(planId, asm.id);
+  const resta = daFare(planId, asm.id, richiesti);
+  const u = itemUom(asm) || 'pz';
+  const puoScrivere = canWriteShop('docs');
+  const comp = montaggioComponenti(asm, resta);
+  window.__montRighe = comp.stock.map(x => ({ itemId: x.item.id, perPezzo: x.perPezzo }));
+  const storico = (db.productions || [])
+    .filter(x => x.planId === planId && x.itemId === asm.id)
+    .sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')))
+    .map(x => {
+      const mov = montaggioMovimenti(x.id);
+      return `<div class="mgmt-item">
+      <span class="mgmt-item-name" style="font-family:var(--mono)">${fmtQty(x.qty)} ${esc(u)}</span>
+      <span class="mgmt-item-meta">${esc(fmtDateIt(x.date))}${x.createdBy ? ' · ' + esc(actorName(x.createdBy)) : ''}${x.note ? ' · ' + esc(x.note) : ''} · ${mov.length} ${mov.length === 1 ? 'componente scaricato' : 'componenti scaricati'}
+        ${puoScrivere ? `<button class="mini-btn danger" title="Elimina il montaggio e restituisci i componenti" onclick="produzioneElimina('${x.id}')">${ico('trash', 'tinted', 'Elimina')}</button>` : ''}</span>
+    </div>`;
+    }).join('');
+  const righe = comp.stock.map((x, i) => {
+    const esistente = onHandOf(x.item.id);
+    return `<div class="mgmt-item">
+      <span style="width:130px;font-family:var(--mono)">${esc(x.item.code)}</span>
+      <span style="flex:1">${esc(x.item.name)} <span class="empty-text" style="padding:0">${fmtQty(x.perPezzo)} ${esc(itemUom(x.item))}/${esc(u)} · a magazzino ${fmtUom(esistente, itemUom(x.item))}</span></span>
+      <input class="num" type="number" id="mont-q-${i}" min="0" step="any" value="${esc(String(+x.qty.toFixed(4)))}" style="width:110px" oninput="montaggioAvviso()" aria-label="Quantità di ${esc(x.item.code)}">
+      <span class="empty-text" style="padding:0;width:40px">${esc(itemUom(x.item))}</span>
+    </div>`;
+  }).join('');
+  const modulo = puoScrivere ? `
+    <div class="modal-grid" style="margin-top:12px">
+      <div class="modal-field"><label>Montati (${esc(u)})</label>
+        <input type="number" id="mont-qty" min="0" step="any" value="${resta || ''}" placeholder="0" oninput="montaggioRicalcola()"></div>
+      <div class="modal-field"><label>Nota (facoltativa)</label>
+        <input type="text" id="mont-note" placeholder="Es. matricola 0412"></div>
+    </div>
+    ${righe ? `<h4 class="settings-group-title">Componenti che escono dal magazzino</h4>
+      <div style="display:flex;flex-direction:column;gap:6px">${righe}</div>` : '<p class="empty-text" style="text-align:left">Nessun componente diretto a magazzino: dichiarare il montaggio non scarica niente.</p>'}
+    <div id="mont-avviso">${montaggioAvvisoHtml()}</div>
+    ${comp.sotto.length ? `<p class="empty-text" style="text-align:left;padding:8px 0 0">I sottoassiemi (${comp.sotto.map(x => esc(x.item.code)).join(', ')}) si dichiarano a parte, ciascuno con i suoi componenti.</p>` : ''}
+    <div style="margin-top:8px"><button class="add-btn-sm" onclick="montaggioSalva()">Dichiara montaggio</button></div>` : '';
+  return `${kpi('Richiesti dal piano', fmtQty(richiesti) + ' ' + u, '')}
+    ${kpi('Montati', fmtQty(fatti) + ' ' + u, fatti >= richiesti && richiesti > 0 ? 'green' : '')}
+    ${kpi('Restano', fmtQty(resta) + ' ' + u, resta > 0 ? 'orange' : 'green')}
+    ${storico ? `<h4 class="settings-group-title">${ico('clock', 'tinted', '')} Montaggi dichiarati</h4><div class="mgmt-list">${storico}</div>` : ''}
+    ${modulo}
+    <p class="empty-text" style="text-align:left;padding:10px 0 0">Il montaggio <strong>scarica i componenti</strong> come consumo di produzione per questo piano: l'esistente scende, e scende anche l'impegno del piano su di loro. Le quantità si possono correggere riga per riga. Eliminare un montaggio li restituisce.</p>`;
+}
+// Cambiando i pezzi, le quantità dei componenti seguono: è il caso normale, e
+// riscriverle a mano una per una sarebbe lavoro inutile.
+function montaggioRicalcola() {
+  const n = rawNum('mont-qty');
+  (window.__montRighe || []).forEach((r, i) => {
+    const el = document.getElementById('mont-q-' + i);
+    if (el) el.value = String(+((r.perPezzo * (n > 0 ? n : 0)).toFixed(4)));
+  });
+  montaggioAvviso();
+}
+function montaggioRigheLette() {
+  return (window.__montRighe || []).map((r, i) => ({ itemId: r.itemId, qty: Math.max(0, rawNum('mont-q-' + i)) }));
+}
+function montaggioAvvisoHtml() { return avvisoSottoZeroHtml(montaggioRigheLette()); }
+function montaggioAvviso() { const el = document.getElementById('mont-avviso'); if (el) el.innerHTML = montaggioAvvisoHtml(); }
+function montaggioSalva() {
+  const q = rawNum('mont-qty');
+  const righe = montaggioRigheLette();
+  const sotto = avvisoSottoZero(righe);
+  const fatto = montaggioDichiara(window.__montPlanId, window.__montAsmId, q, righe, val('mont-note'));
+  if (!fatto) return;
+  if (sotto.length) showToast('Montaggio registrato, ma va sotto zero: ' + sotto.join('; '), 'error');
+  else savedToast('Montaggio registrato');
+  montaggioRefresh();
 }
 
 // ─── La scheda ───

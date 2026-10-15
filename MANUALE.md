@@ -1,6 +1,6 @@
 # Bomtrack — Manuale d'uso
 
-**Versione dell'app documentata: 0.98.1**
+**Versione dell'app documentata: 0.102.0**
 
 📖 **[Leggilo come pagina web](https://claude.ai/code/artifact/726a0963-2db0-4947-999b-d7b5beb91a0b)** — stesso testo, con indice laterale, filtro dei capitoli e tema chiaro/scuro. Comodo da tenere aperto di fianco all'app.
 
@@ -200,15 +200,17 @@ In alto, da sinistra a destra:
 | **Orologio** | Data e ora correnti |
 | **Pillola utente** | Chi è connesso, con il suo colore |
 | 🔎 **Cerca ovunque** | Ricerca globale — `Ctrl+K` |
+| ▦ **Scansiona QR** | Apre la fotocamera e legge un'etichetta o il QR di un documento (→ [cap. 17](#17-magazzino), *Le etichette QR*) |
 | 🖨 **Stampa questa vista** | Stampa pulita della schermata — `Ctrl+P` |
 | 📖 **Manuale d'uso** | **Questo manuale.** Si apre in una scheda nuova, così resta consultabile mentre si lavora, senza perdere il documento aperto |
 | 🌗 **Cambia tema** | Gira su tre stati: *come il sistema*, *chiaro*, *scuro* |
+| ☰ **Vista compatta** | Righe di tabella più basse: si vedono quasi il doppio delle righe (→ *Il tema*, qui sotto) |
 | 🔑 **Cambia password** | La propria password |
 | **Esci** | Chiude la sessione |
 
 **Su uno schermo più stretto** l'intestazione resta su una riga sola e fa spazio da sé, un passo
-alla volta, solo quanto serve: prima spariscono il ruolo nella pillola e la data; poi stampa,
-manuale, tema, password ed esci passano sotto il pulsante **⋯** (*Altri comandi*); poi le sezioni
+alla volta, solo quanto serve: prima spariscono il ruolo nella pillola e la data; poi scansiona, stampa,
+manuale, tema, vista compatta, password ed esci passano sotto il pulsante **⋯** (*Altri comandi*); poi le sezioni
 restano con la sola icona (il nome compare passandoci sopra); per ultimo, sul telefono, le sezioni
 stesse si aprono dal pulsante **☰**. I due menu si chiudono con `Esc`, con un clic fuori o
 scegliendo una voce.
@@ -300,6 +302,26 @@ Il pulsante 🌗 nell'intestazione gira su tre stati: **come il sistema** (quell
 **chiaro**, **scuro**. La scelta resta su questo browser e non viene condivisa con i colleghi:
 è una preferenza personale, non un dato aziendale. **In stampa la carta resta bianca** in tutti e
 tre i casi.
+
+**Vista compatta** (dalla 0.101.0). Il pulsante ☰ accanto al tema abbassa le righe di tutte le
+tabelle e degli elenchi, e rimpicciolisce un poco il testo e le card in testa: in officina, o su un
+portatile, si vedono quasi il doppio delle righe. Si spegne con lo stesso pulsante. Come il tema,
+resta in questo browser.
+
+**I fornitori si cercano scrivendo** (dalla 0.102.0). Ogni campo in cui si sceglie un fornitore o
+un terzista — nei documenti (richiesta, ordine, ordine di lavoro), nel listino della scheda
+articolo, nei cicli, nei centri di lavoro, nella rettifica di magazzino e nei filtri degli elenchi
+— è un campo in cui si scrive: un clic apre la lista intera, e mentre si digita restano solo i
+fornitori che corrispondono. Maiuscole e accenti non contano, e più parole valgono in qualunque
+ordine: `rid bonf` trova *Bonfiglioli Riduttori*. Prima vengono quelli che **cominciano** con
+quello che si è scritto. Si sceglie con un clic, o con le frecce e **Invio**; **Esc** chiude la
+lista e lascia il fornitore di prima. Su un documento bloccato il campo è bloccato anche lui.
+
+**Le card in testa si cliccano** (dalla 0.101.0). Nel Riepilogo, nel Cruscotto e nel Magazzino le
+card con i numeri portano alla lista che li spiega, già filtrata: *Sotto scorta minima* mostra gli
+articoli sotto scorta, *Ordini da evadere* apre gli ordini a fornitore inviati, confermati o
+parziali, e così via. Nel Magazzino la card del filtro in uso resta evidenziata, e un secondo clic
+toglie il filtro.
 
 ---
 
@@ -965,6 +987,7 @@ cui sta per agire:
 - *Segna come non più utilizzabili* / *Rendi di nuovo utilizzabili*
 - *Segna preferiti (N)* / *Togli dai preferiti*
 - Esporta la selezione in **Excel** o **PDF**
+- **Etichette QR della selezione** (→ [cap. 17](#17-magazzino), *Le etichette QR*)
 - *Elimina N articoli*
 
 **Da sapere.** Con il pannello aperto **la colonna dei pulsanti sparisce dall'elenco**: i suoi
@@ -1218,10 +1241,15 @@ In testa quattro **KPI**: *Articoli a magazzino* · *Sotto scorta minima* · *Co
 **Valore giacenza (€)** (esistente × costo unitario). Il valore ripartito per tipo e per famiglia,
 e gli articoli fermi da mesi, stanno nel **Cruscotto** (→ [cap. 5](#il-cruscotto)).
 
+Le card **filtrano la tabella** (dalla 0.101.0): *Sotto scorta minima* e *Con merce in arrivo*
+mettono il filtro di stato corrispondente, *Articoli a magazzino* lo toglie, *Valore giacenza* apre
+il Cruscotto. La card del filtro in uso resta evidenziata; un secondo clic lo toglie.
+
 **Le colonne, e come si calcolano.**
 
 | Colonna | Significato | Da dove viene |
 |---|---|---|
+| **Ubicazione** | Dove sta a scaffale | dalla scheda articolo (dalla 0.101.0) |
 | **Esistente** | Quello che c'è adesso a scaffale | ricevuto sugli ordini **+** movimenti |
 | **In arrivo** | Ordinato e non ancora entrato | ordini aperti |
 | **Impegnato** | Promesso ai piani aperti | fabbisogno dei piani aperti |
@@ -1233,8 +1261,8 @@ e gli articoli fermi da mesi, stanno nel **Cruscotto** (→ [cap. 5](#il-cruscot
 > registra un **movimento**.
 
 **Comandi.** **Riordina sotto scorta (N)** (compare solo se qualcosa va riordinato) ·
-**Presso terzi (N)** (compare solo se c'è qualcosa fuori) · **Esporta Excel** ·
-**Esporta PDF**. Nella barra filtri, **Colonne**.
+**Presso terzi (N)** (compare solo se c'è qualcosa fuori) · **Inventario** · **Etichette ▾**
+(articoli o ubicazioni) · **Esporta Excel** · **Esporta PDF**. Nella barra filtri, **Colonne**.
 
 ### Riordino sotto scorta
 
@@ -1253,12 +1281,13 @@ per fornitore**, con il prezzo del listino e la consegna a oggi più i giorni de
 l'ordine si rivede e si invia come ogni altro. Gli articoli senza fornitore restano in un gruppo a
 parte: si sistemano dal listino. Serve il diritto su *Richieste e ordini*.
 
-**Filtri.** Ricerca, tipo (Componente commerciale · Materia prima · Parte), famiglia,
-sottofamiglia, e il filtro di **stato**:
+**Filtri.** Ricerca (anche per ubicazione), tipo (Componente commerciale · Materia prima · Parte),
+famiglia, sottofamiglia, **ubicazione** (una, o *senza ubicazione*), e il filtro di **stato**:
 
 - *Sotto la scorta minima*
 - *Giacenza a zero*
 - *Con giacenza*
+- *Con merce in arrivo* (dalla 0.101.0)
 - *Libero negativo* — si è promesso più di quanto si abbia e si aspetti
 - *Presso terzi o in lavorazione*
 
@@ -1268,7 +1297,7 @@ sottofamiglia, e il filtro di **stato**:
 movimento**, **Quantità**, (per il conto lavoro) **Terzista** e **Ordine di conto lavoro**,
 **Nota**, e il pulsante **Registra**. Ogni tipo porta il suo suggerimento contestuale.
 
-**I sette tipi di movimento:**
+**Gli otto tipi di movimento:**
 
 | Tipo | Effetto sulla giacenza | Quando si usa |
 |---|---|---|
@@ -1279,9 +1308,11 @@ movimento**, **Quantità**, (per il conto lavoro) **Terzista** e **Ordine di con
 | **Rientro da conto lavoro** | **+** somma | il pezzo finito che torna |
 | **Passaggio di lavorazione** | **nessuno** | il pezzo va da un terzista al successivo |
 | **Versamento di produzione** | **+** somma | il pezzo finito all'ultima fase di un ordine di produzione |
+| **Reso da produzione** | **+** somma | il materiale che torna a scaffale da un ordine di produzione annullato |
 
-Gli ultimi due **non si scelgono a mano** dalla rettifica: il passaggio si registra dalla riga di
-un ODL, il versamento da un ordine di produzione (→ [cap. 22](#22-ordini-di-produzione-odp)). Un
+Gli ultimi tre **non si scelgono a mano** dalla rettifica: il passaggio si registra dalla riga di
+un ODL, il versamento da un ordine di produzione (→ [cap. 22](#22-ordini-di-produzione-odp)), il reso
+annullando un ordine di produzione. Un
 versamento senza un ordine dietro sarebbe un carico che nessuno spiega — per quello c'è il *Carico
 manuale*.
 
@@ -1290,6 +1321,13 @@ luogo a quantità invariata**. Contarlo come carico e poi come scarico farebbe c
 un semilavorato che a scaffale non c'è mai stato, e il codice prodotto si caricherebbe una volta
 per ogni terzista che l'ha toccato. Il passaggio si registra solo dalla riga di un ODL, e porta
 due fornitori: *dove va* e *da dove viene*.
+
+**Se l'esistente va sotto zero** (dalla 0.100.0). Una rettifica, un'uscita a conto lavoro,
+l'avvio di un ordine di produzione o un montaggio che fanno uscire più di quanto c'è a scaffale
+**si registrano lo stesso** — il pezzo è uscito davvero, e il conto sbagliato è quello di prima —
+ma la finestra lo dice prima di registrare (*«ne escono X, a magazzino ce ne sono Y»*) e, dopo, un
+avviso ricorda che l'esistente è negativo. È il segno che manca un carico, un versamento o un
+inventario.
 
 **La finestra «Movimenti»** mostra lo storico dell'articolo, con la possibilità di eliminare una
 riga sbagliata.
@@ -1318,6 +1356,105 @@ movimenti. Quando si scrive *ricevuto 50* su una riga d'ordine, quei 50 entrano 
 
 > ⚠️ **Cancellare un ordine già ricevuto toglie la sua merce dal magazzino.** È coerente, ma chi
 > cancella un ordine vecchio va avvisato.
+
+### Le etichette QR
+
+Ogni articolo può avere un'etichetta con un **codice QR** da attaccare allo scaffale o al
+contenitore. Inquadrata con il telefono, apre Bomtrack sulla **scheda rapida** dell'articolo:
+esistente, in arrivo, impegnato, libero, e i pulsanti **Rettifica giacenza**, **Scheda completa**
+e **Movimenti**. È il modo di fare l'inventario davanti allo scaffale, senza cercare il codice.
+
+**Stampare le etichette.**
+- **Etichette ▾ → Articoli elencati** nella barra del Magazzino: gli articoli che l'elenco mostra
+  adesso, con i suoi filtri.
+- **Etichette ▾ → Ubicazioni degli articoli elencati**: un'etichetta per ogni ubicazione, da
+  attaccare allo scaffale (→ *Le ubicazioni*, qui sotto).
+- **Etichetta QR** nel riquadro *Magazzino* della scheda articolo: una sola.
+- **Etichette QR della selezione** nel pannello laterale, quando si scelgono più articoli
+  (→ [cap. 12](#12-pannello-laterale-e-selezione-multipla)).
+
+Nella finestra si scelgono il **formato** (foglio A4 3×8 da 70×37 mm, foglio A4 2×7 da 99×38 mm,
+rotolo 50×30 o 62×29 mm per le stampanti termiche), le **copie** di ogni articolo e quante
+etichette del foglio sono **già usate**, così un foglio iniziato non si butta. Esce un PDF: va
+stampato al **100%**, non «adatta alla pagina», o le etichette non cadono nelle caselle.
+
+**Anche i documenti hanno il loro QR**, in alto a destra nel PDF dell'**ordine di produzione**,
+dell'**ordine a fornitore** e dell'**ordine di lavoro**. Inquadrato, apre la scheda rapida del
+documento:
+
+| Documento | Cosa mostra | Cosa offre |
+|---|---|---|
+| **ODP** | la fase su cui è fermo, quanti pezzi ha fatto, o perché non può partire | **Avvia la fase** o **Dichiara avanzamento**, e *Apri l'ordine* |
+| **ODA / ODL** | fornitore, stato, ogni riga con *ricevuto / ordinato* | **Ricevi tutto** (chiede conferma), e *Apri l'ordine* |
+
+I pulsanti aprono le **stesse finestre** dell'app, con le stesse regole: chi ha un ruolo in sola
+lettura vede i numeri ma non i comandi.
+
+**Scansiona.** Il pulsante con il QR nell'intestazione (al telefono, sotto **⋯**) apre la
+fotocamera dentro l'app. Sotto c'è un campo di testo: accetta il codice scritto a mano
+(`MAT-ACC-LAM-001`, `ODP-2026-012`) e il testo di una **pistola lettore USB**, che lo «digita» e
+preme Invio.
+
+**L'indirizzo dentro il QR.** Il telefono deve sapere dove aprire l'app. Bomtrack usa l'indirizzo
+da cui è aperta, oppure quello scritto in *Gestione → Impostazioni → Etichette QR*. Se l'app è
+aperta **dal disco** (doppio click su `index.html`) un indirizzo non c'è: le etichette funzionano
+lo stesso con **Scansiona**, ma non con la fotocamera del telefono, e la finestra lo dice prima di
+stampare.
+
+> Nel QR c'è il **codice** dell'articolo o il **numero** dell'ordine, non un identificativo
+> interno: l'etichetta si legge anche a occhio e resta valida dopo un ripristino da backup.
+> Rinominare il codice di un articolo, però, rende vecchie le sue etichette: vanno ristampate.
+
+### Le ubicazioni
+
+Dalla 0.101.0 ogni articolo a magazzino può dire **dove sta**: il campo **Ubicazione a scaffale**
+nella scheda articolo, accanto a scorta minima e lotto. È un testo libero — `A-03-2`,
+`CASSETTIERA 4` — e si scrive sempre maiuscolo, senza spazi doppi: `a-03` e `A-03` sono lo stesso
+posto. Mentre si scrive, il campo propone le ubicazioni già usate. Un articolo ha **una**
+ubicazione.
+
+Non c'è un archivio delle ubicazioni da tenere: un'ubicazione esiste finché almeno un articolo la
+porta. Si vede nella colonna **Ubicazione** del Magazzino, nell'export, nella scheda articolo e
+sull'etichetta QR dell'articolo; il filtro *Ubicazione* mostra un posto solo, o gli articoli che
+un posto non ce l'hanno ancora.
+
+**Il QR dello scaffale.** *Etichette ▾ → Ubicazioni degli articoli elencati* stampa un'etichetta
+per ogni ubicazione. Inquadrata, apre la scheda dell'ubicazione: gli articoli che ci stanno, con
+l'esistente, ciascuno cliccabile, e il pulsante **Conta questa ubicazione** che avvia l'inventario
+di quel posto.
+
+> Con il cloud attivo, la colonna `location` va aggiunta al database: si rilancia
+> `supabase/schema.sql`, che la aggiunge senza toccare il resto.
+
+### L'inventario guidato
+
+**Inventario** nella barra del Magazzino (dalla 0.101.0) serve a contare il magazzino senza
+cercare un codice alla volta. Si sceglie **cosa contare**: gli articoli che il Magazzino elenca
+adesso (con i suoi filtri), un'ubicazione, o tutto. Gli articoli vengono messi in fila
+**nell'ordine delle ubicazioni** (A-2 prima di A-10), quelli senza ubicazione in fondo.
+
+**Si conta.** Per l'articolo in fila si scrive quanti ce ne sono e si preme **Conta** (o Invio):
+si passa al prossimo da contare. **Salta** lo lascia per dopo; un clic su una riga dell'elenco ci
+torna. Un campo vuoto non è uno zero: se non ce n'è nessuno si scrive **0**. Per non farsi guidare
+dal numero l'esistente non si vede, a meno di spuntare *Mostra l'esistente mentre conto*.
+
+**Con i QR.** Il campo in alto accetta il codice scritto o la pistola USB; **Fotocamera** accende
+il lettore e lo lascia acceso. Un'etichetta d'**articolo** porta a quell'articolo — se non era in
+fila ci entra —; un'etichetta d'**ubicazione** porta al primo articolo ancora da contare in quel
+posto.
+
+**Il riepilogo.** **Riepilogo differenze** mostra ogni articolo contato con *esistente*,
+*contato* e *differenza*, quanti hanno una differenza, quanti non sono stati contati e il valore
+delle differenze. Le righe con una differenza sono spuntate: si tolgono quelle da non registrare.
+**Registra** scrive una **Rettifica inventario** per ogni riga spuntata, con la nota proposta
+(*Inventario del …*). Gli articoli non contati restano come sono.
+
+> **Contare non tocca il magazzino**: finché non si registra non cambia niente. Il conteggio resta
+> in **questo browser**: si chiude con *Chiudi e continua dopo* e si riprende da **Inventario →
+> Riprendi**, anche dopo aver chiuso l'app. Un altro dispositivo non lo vede.
+>
+> La differenza si calcola **quando si registra**: se fra il conteggio e la registrazione entra o
+> esce qualcosa, finisce nella rettifica. Si registra a fine giro, non il giorno dopo.
 
 ---
 
@@ -1405,7 +1542,8 @@ In alto, sempre visibili, stanno le righe **Da produrre** e i **KPI**. Il resto 
 |---|---|---|
 | **Da acquistare (N)** | La lista consolidata del materiale | Genera richieste · Genera ordini |
 | **Conto lavoro (N)** | Le fasi *Da far lavorare fuori* | Genera richieste · Genera ordini di lavoro |
-| **Da fabbricare (N)** | Le parti a produzione interna, con l'avanzamento | Genera ordini di produzione |
+| **Da fabbricare (N)** | Le parti a produzione interna, con l'avanzamento; sotto, quelle prese **dal magazzino** | Genera ordini di produzione |
+| **Da montare (N)** | Gli assiemi del piano, con i montaggi dichiarati | **Dichiara montaggio** su ogni riga |
 | **Programma** | L'agenda del piano in ordine di data | — |
 | **Gantt** | Il programma disegnato, riga per riga | — |
 | **Carico** | Le ore che questo piano chiede ai centri | — |
@@ -1546,7 +1684,8 @@ La sezione **Programma** mette in fila tutte le date del piano, giorno per giorn
 | **Ordinare** | ordinare entro | c'è un ordine a fornitore emesso dal piano (una sola richiesta d'offerta lo segna «richiesto») |
 | **Inviare al terzista** | invio della tratta | c'è un ordine di lavoro o un ordine di produzione |
 | **Lanciare in produzione** | inizio della prima fase | c'è un ordine di produzione |
-| **Rientro dal terzista** · **Fase interna** · **Montaggio** · **Consegna** | la loro data | non hanno un documento: sono «previsti» |
+| **Montaggio** | la sua data | i montaggi dichiarati nella scheda *Da montare* coprono la quantità |
+| **Rientro dal terzista** · **Fase interna** · **Consegna** | la loro data | non hanno un documento: sono «previsti» |
 
 Una voce oltre la sua data e non fatta è **in ritardo**. **☐ Solo da fare** lascia le voci ancora
 da emettere. Esporta in Excel e PDF, una riga per voce.
@@ -1594,12 +1733,12 @@ montaggio. Su ogni riga:
 | Acquisto | righe degli ordini a fornitore | il ricevuto copre l'ordinato |
 | Fase interna | fasi dell'ordine di produzione | la fase è chiusa |
 | Tratta dal terzista | fasi dell'ODP, e rientrati dell'ordine di lavoro | la fase è chiusa, o tutto è rientrato |
-| Montaggio | l'ordine di produzione dell'assieme, se c'è | l'ordine è completato |
+| Montaggio | l'ordine di produzione dell'assieme, se c'è; se no i montaggi dichiarati nel piano | l'ordine è completato, o i montati coprono la quantità |
 
 **Gli stati.** *In ritardo* se la data del programma è passata, o se l'arrivo atteso cade dopo; *in
 corso* se il lavoro è cominciato (o l'ordine al fornitore è inviato); *da fare* se non è cominciato
 ed è ancora in tempo; *da magazzino* se non serve un documento perché esistente e in arrivo bastano;
-*previsto* quando non c'è niente che lo registri, come un montaggio senza ordine di produzione. Un
+*previsto* quando non c'è niente che lo registri, come un montaggio non ancora dichiarato. Un
 ODP lanciato ma non avviato è *da fare*: il documento c'è, il lavoro no.
 
 **In testa** la consegna richiesta, la data fattibile e il margine, i conteggi per stato e, se ci
@@ -1625,7 +1764,52 @@ quello che i suoi documenti hanno già prelevato**: quando un ordine di produzio
 lavoro del piano fa uscire il materiale, l'esistente scende e l'impegno scende della stessa quantità.
 La merce uscita non si conta due volte, e il piano non chiede di ricomprare quello che ha appena
 usato. Un ordine **annullato** non riduce l'impegno: il materiale uscito manca, e il piano lo deve
-ancora avere.
+ancora avere — a meno che, annullandolo, il materiale sia stato **reso** a magazzino (→
+[cap. 22](#22-ordini-di-produzione-odp)): allora torna nell'esistente e il piano lo ritrova lì.
+
+### Le parti a scaffale (dalla 0.100.0)
+
+Una **parte** che si fabbrica e che c'è già a magazzino **non si rifà**. L'esplosione del piano,
+scendendo nella distinta, prende prima quello che c'è a scaffale e fabbrica solo il resto: se ne
+servono 10 e ce ne sono 4, il piano fa produrre 6 pezzi e compra il materiale per 6. Le parti prese
+dal magazzino compaiono nella scheda **Da fabbricare**, sotto il titolo **Dal magazzino**, con la
+quantità presa.
+
+Quanto un piano può prendere lo decide l'ordine dei piani: **chi serve prima prende prima** (data
+di consegna più vicina, poi data del piano, poi numero). Si parte dall'esistente meno la scorta
+minima; i pezzi che un ordine di produzione di un piano aperto ha versato e quel piano non ha
+ancora montato **restano suoi** e gli altri piani non li vedono. Le parti prese **si impegnano**
+come i commerciali, e l'impegno scende quando il montaggio le scarica.
+
+Vale per le parti, non per i commerciali (che passano dal fabbisogno netto, come prima) né per gli
+assiemi (che non stanno a magazzino).
+
+### Il montaggio (dalla 0.100.0)
+
+La scheda **Da montare** elenca gli assiemi del piano — macchine, gruppi, sottogruppi — con la
+quantità, le date di montaggio, i componenti, quanti ne sono già stati **montati** e quanti
+**restano**. **Dichiara montaggio** apre la finestra:
+
+- in testa quanti ne servono, quanti montati e quanti restano, e lo storico delle dichiarazioni;
+- si scrive **quanti assiemi** si sono montati: le righe dei **componenti diretti** (parti e
+  commerciali, con lo scarto della distinta) si ricalcolano, ciascuna con quello che c'è a
+  magazzino, e si possono correggere a mano;
+- se qualcosa va sotto zero lo dice, ma registra lo stesso;
+- **Registra** scrive un **consumo di produzione** per ogni componente, legato a quel montaggio.
+
+Gli **assiemi dentro l'assieme** non si scaricano: non stanno a magazzino, si dichiarano a loro
+volta sulla loro riga. Una dichiarazione si **elimina** dallo storico, e con lei i suoi scarichi.
+Il montaggio dichiarato fa scendere l'impegno del piano come gli altri prelievi, e porta il
+montaggio a *fatto* nel programma e nell'avanzamento.
+
+> **Da sapere passando alla 0.100.0.** Prima il montaggio non scaricava niente: le parti versate e
+> i commerciali ricevuti per gli assiemi già fatti sono ancora nell'esistente. Con le parti a
+> scaffale il piano li considera disponibili e può proporre di fabbricarne meno. Conviene guardare
+> la lista **Dal magazzino** dei piani aperti e, se l'esistente non è vero, fare una **rettifica
+> inventario**.
+>
+> Il **Gantt** e la **data fattibile** restano calcolati sulla distinta intera, senza togliere
+> quello che si prende a scaffale.
 
 **Piano aperto e piano chiuso.** Finché un piano è **aperto**, impegna. Un piano che non serve più
 si **chiude**, e la sua quota torna libera per gli altri. Un piano chiuso non sparisce: resta
@@ -1869,6 +2053,15 @@ una lavorazione da commissionare, non due.
   terzi*, ed è per questo che il prospetto le tiene separate invece di fonderle.
 - **Annullare non è eliminare**: un ordine annullato smette di coprire la parte nel fabbisogno, ma
   i movimenti già registrati restano. Eliminarlo invece toglie anche quelli, e la scheda lo avvisa.
+- **Annullare con il reso** (dalla 0.100.0): se l'ordine aveva già fatto uscire il materiale,
+  **Annulla** apre una finestra che propone di **rimetterlo a magazzino** — tutto quello uscito se
+  nessun pezzo è stato lavorato, in proporzione ai pezzi non ancora lavorati della prima fase se
+  qualcuno lo è. Le quantità si correggono; a zero non si rende niente. Il reso è un movimento
+  **Reso da produzione** (o un **Rientro da conto lavoro** dal terzista, se la prima fase era
+  esterna), legato all'ordine. I pezzi già lavorati restano fuori: sono scarto o semilavorato, e si
+  sistemano con una rettifica.
+- **All'avvio della prima fase** la finestra mostra, per ogni codice del ciclo, quanto c'è a
+  magazzino, e avvisa se l'uscita lo porta sotto zero.
 
 ---
 
@@ -2131,6 +2324,15 @@ Il calendario serve alla programmazione a ritroso del fabbisogno: fasi interne e
 contano in giorni lavorativi; le date d'ordine e d'invio che cadono su un giorno chiuso si
 anticipano al lavorativo precedente. Il santo patrono si scrive fra le chiusure.
 
+**Etichette QR**
+
+| Campo | Di serie |
+|---|---|
+| Indirizzo dell'app nei QR | vuoto: quello da cui l'app è aperta |
+| Formato etichette | Foglio A4 · 3×8 (70×37 mm) |
+
+L'indirizzo deve iniziare con `http://` o `https://` (→ [cap. 17](#17-magazzino), *Le etichette QR*).
+
 ### ⬆️ Import · 💾 Backup
 
 → [cap. 27](#27-import-ed-export-da-excel) e [cap. 30](#30-backup-e-manutenzione).
@@ -2273,7 +2475,24 @@ contiene quel file.
 | **PDF** | Testata azienda e numero di pagina su ogni pagina |
 | **Excel** | **Autofiltro** sull'intestazione, i numeri come numeri e **le date come date** — quindi si ordinano e si filtrano per periodo dentro Excel, non come testo |
 
-Nome del file: `bomtrack_<sezione>_<data>.xlsx` o `.pdf`.
+Nome del file: `bomtrack_<sezione>_<data>.xlsx` o `.pdf`. Il nome si pulisce da solo dei
+caratteri che Windows non accetta (`/ \ : * ? " < > |`) e gli spazi diventano trattini: un
+confronto fra `TUBO Ø40/2` e un altro codice esce come `bomtrack_confronto_TUBO-Ø40-2_…`.
+
+**I nomi dei file, tutti insieme** (dalla 0.101.1):
+
+| Cosa | Nome del file |
+|---|---|
+| Elenchi, cruscotto, programma, avanzamento, ciclo, confronto | `bomtrack_<sezione>_<data>` |
+| Richiesta d'offerta, ordine a fornitore, ordine di lavoro | `<numero>_<fornitore>`, es. `ODA-2026-003_Bonfiglioli Riduttori S.p.A.pdf` |
+| Ordine di produzione | `<numero>_<codice parte>`, es. `ODP-2026-004_PRT-001.pdf` |
+| Distinta costificata | `Distinta_<codice>` |
+| Fabbisogno di un piano | `Fabbisogno_<numero piano>` |
+| Etichette QR | `bomtrack_etichette_qr_<data>.pdf` |
+| Anagrafiche da Gestione, impostazioni, backup | `bomtrack_acquisti_<data>`, `bomtrack_impostazioni_<data>`, `bomtrack_backup_<data>.json` |
+
+I documenti che partono verso un fornitore portano il numero, non la data: è il numero che si cerca
+nella posta. La data è sempre quella del PC, non quella di Greenwich.
 
 > Il pannello laterale, con più righe selezionate, esporta **solo la selezione**.
 
@@ -2756,11 +2975,13 @@ Senza IndexedDB le prime due stanno in `localStorage`, come `bomtrack_v1` e
 | `bomtrack_theme` | Il tema scelto |
 | `bomtrack_session` | La sessione aperta |
 | `bomtrack_columns` | Le colonne nascoste, per vista |
+| `bomtrack_densita` | La vista compatta, se accesa |
+| `bomtrack_inventario` | L'inventario in corso, finché non si registra o si annulla |
 | `bomtrack_archivio_nome` | Il nome della cartella d'archivio scelta su questo PC |
 | `bomtrack_backup_cartella_nome` | Il nome della cartella del backup automatico scelta su questo PC |
 | *(chiave email)* | L'email ricordata da «Ricordami su questo PC» |
 
-Le ultime sei sono **preferenze personali di questa macchina**, non dati aziendali: non entrano
+Le ultime otto sono **preferenze personali di questa macchina**, non dati aziendali: non entrano
 nel backup e non si condividono. Le due cartelle, archivio e backup, stanno fra queste di proposito: ogni PC ha la
 sua, e importarla da un backup imporrebbe a tutti la lettera di unità del primo che l'ha scelta.
 
