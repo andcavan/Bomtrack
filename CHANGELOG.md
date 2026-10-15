@@ -2,6 +2,15 @@
 
 Le revisioni seguono il versionamento semantico `0.MINOR.PATCH`: **MINOR** per nuove funzionalità, **PATCH** per correzioni. La versione in cima è quella in `APP_VERSION` (`core.js`) e mostrata nell'header dell'app.
 
+### 0.103.1 — 2026-10-15
+
+**Correzioni**
+- **Un PC scollegato dall'archivio condiviso restava chiuso fuori**: gli utenti arrivati da Supabase non hanno password locali, e nessuno poteva più entrare, nemmeno per ricollegarlo. Ora, finché nessuno ha una password su quel PC, un amministratore entra con la sua email e la password che sceglie, che diventa la sua.
+- **Uno schema Supabase più vecchio dell'app** (`PGRST202`, funzione non trovata) ora dice di rieseguire `supabase/schema.sql`, invece di mostrare l'errore di PostgREST.
+
+**Verifica**
+- `test/genera-dati-prova.js` (nuovo, fuori dalla suite): scrive un backup corposo da importare, un'officina inventata con 474 articoli e sette mesi di commesse, ordini, produzione e magazzino, generati dall'app stessa.
+
 ### 0.103.0 — 2026-10-15
 
 **L'archivio condiviso su Supabase.** Ogni PC aveva il suo archivio, e due colleghi si allineavano passandosi il backup. Lo schema, le funzioni di sincronizzazione e i permessi erano pronti da tempo: mancava la parte dell'app che si collega.

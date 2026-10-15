@@ -195,7 +195,7 @@ a:focus-visible,button:focus-visible,input:focus-visible{outline:2px solid var(-
     <div class="brand">
       <div class="brand-top">
         <span class="brand-name">Bomtrack</span>
-        <span class="chip">v0.103.0</span>
+        <span class="chip">v0.103.1</span>
       </div>
       <div class="brand-sub">Manuale d&rsquo;uso</div>
     </div>
@@ -1017,6 +1017,7 @@ prezzo vendita = costo totale × (1 + margine %)</code></pre>
 <ul><li><strong>Le impostazioni</strong> (<em>Gestione → Impostazioni</em>, unità di misura, condizioni d'offerta…) le cambia solo l'amministratore. Una modifica fatta da un altro ruolo resta sul suo PC, e glielo si dice.</li><li><strong>Importare un backup JSON, rimettere i dati d'esempio e azzerare</strong> sono bloccati: su un archivio condiviso toccherebbero tutti. Per farlo si scollega prima il PC.</li></ul>
 <h3 id="scollegare-un-pc">Scollegare un PC</h3>
 <p>Dallo stato della nuvola, <strong>Scollega questo PC</strong>. I dati restano nel browser, ma da quel momento sono una copia locale: le modifiche non arrivano più ai colleghi, e quelle dei colleghi non arrivano più qui.</p>
+<p>Gli utenti restano, ma <strong>senza password</strong>: quelle le teneva Supabase. Al primo accesso dopo lo scollegamento un <strong>amministratore</strong> entra con la sua email e una password a scelta (almeno 4 caratteri), che diventa la sua password su questo PC. Gli altri utenti la ricevono poi da lui, in <em>Gestione → Utenti</em>. Questa strada si chiude appena qualcuno ha una password locale.</p>
 <h3 id="il-backup-resta">Il backup resta</h3>
 <ol><li><strong>Il piano gratuito non ha backup automatici</strong>: se il progetto si perde, si perde. L'export JSON (<em>Gestione → Backup</em>) o il backup automatico in una cartella restano l'unica risposta, e vanno tenuti <strong>fuori</strong> dal servizio che si sta proteggendo.</li><li><strong>Un progetto inattivo per sette giorni viene sospeso</strong>, e va riacceso a mano dal pannello di Supabase. Un'officina che chiude due settimane ad agosto lo scopre al rientro, con la nuvola rossa. Basta riaccenderlo: i dati ci sono.</li></ol>
 <h3 id="quanto-regge-il-piano-gratuito">Quanto regge il piano gratuito</h3>

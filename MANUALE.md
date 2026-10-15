@@ -1,6 +1,6 @@
 # Bomtrack — Manuale d'uso
 
-**Versione dell'app documentata: 0.103.0**
+**Versione dell'app documentata: 0.103.1**
 
 📖 **[Leggilo come pagina web](https://claude.ai/code/artifact/726a0963-2db0-4947-999b-d7b5beb91a0b)** — stesso testo, con indice laterale, filtro dei capitoli e tema chiaro/scuro. Comodo da tenere aperto di fianco all'app.
 
@@ -2747,6 +2747,11 @@ Due casi particolari:
 Dallo stato della nuvola, **Scollega questo PC**. I dati restano nel browser, ma da quel momento
 sono una copia locale: le modifiche non arrivano più ai colleghi, e quelle dei colleghi non
 arrivano più qui.
+
+Gli utenti restano, ma **senza password**: quelle le teneva Supabase. Al primo accesso dopo lo
+scollegamento un **amministratore** entra con la sua email e una password a scelta (almeno 4
+caratteri), che diventa la sua password su questo PC. Gli altri utenti la ricevono poi da lui, in
+*Gestione → Utenti*. Questa strada si chiude appena qualcuno ha una password locale.
 
 ### Il backup resta
 

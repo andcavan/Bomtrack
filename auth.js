@@ -100,6 +100,21 @@ function submitLogin() {
   if (!email) return _loginError('Inserisci la tua email');
   if (!password) return _loginError('Inserisci la password');
   const u = findUserByEmail(email);
+  // Un PC scollegato dall'archivio condiviso tiene gli utenti di Supabase, ma
+  // senza password locali: quelle le aveva Supabase. Senza questa strada
+  // nessuno potrebbe più entrare, nemmeno per ricollegarlo. Vale solo finché
+  // **nessuno** ha una password qui, e solo per un amministratore attivo: la
+  // prima password scritta diventa la sua.
+  if (u && u.role === 'admin' && u.active !== false && !userList().some(x => x.passwordHash)) {
+    if (password.length < 4) return _loginError('Scegli una password di almeno 4 caratteri: diventa la tua password su questo PC');
+    setUserPassword(u, password);
+    Store.update('users', u.id, { passwordHash: u.passwordHash, passwordSalt: u.passwordSalt });
+    ricordaEmail(document.getElementById('login-remember').checked ? (u.email || '') : '');
+    setVal('login-password', '');
+    doLogin(u, true);
+    showToast('Password di questo PC impostata: d\'ora in poi entri con questa');
+    return;
+  }
   // Un solo messaggio per utente inesistente e password errata: non si rivela
   // quali email esistono.
   if (!u || !verifyPassword(u, password)) {
