@@ -124,8 +124,8 @@ describe('Magazzino', () => {
     a.eval('addMovement("m1", "carico", 100, "")');
     filtra(a, 'stk', { search: 'm1' });
     const r = spec(a, 'stockExportSpec()').sezioni[0].righe[0];
-    assert.equal(r[5], 100, 'esistente');
-    assert.equal(r[9], 50, 'scorta minima');
+    assert.equal(r[6], 100, 'esistente (dopo l\'ubicazione, dalla 0.101.0)');
+    assert.equal(r[10], 50, 'scorta minima');
   });
 
   it('la paginazione a schermo non taglia l\'export', () => {
@@ -494,8 +494,8 @@ describe('L\'Excel', () => {
   it('senza totali l\'autofiltro arriva fino all\'ultima riga', () => {
     const a = app();
     const stato = fintoXlsx(a);
-    a.eval('exportListXlsx(stockExportSpec())');   // 3 articoli, 11 colonne
-    assert.equal(stato().fogli[0]['!autofilter'].ref, '0,0:3,10');
+    a.eval('exportListXlsx(stockExportSpec())');   // 3 articoli, 12 colonne
+    assert.equal(stato().fogli[0]['!autofilter'].ref, '0,0:3,11');
   });
 
   it('le larghezze di colonna arrivano al foglio', () => {
@@ -503,7 +503,7 @@ describe('L\'Excel', () => {
     const stato = fintoXlsx(a);
     a.eval('exportListXlsx(stockExportSpec())');
     const cols = stato().fogli[0]['!cols'];
-    assert.equal(cols.length, 11);
+    assert.equal(cols.length, 12);
     assert.equal(cols[0].wch, 18);
   });
 

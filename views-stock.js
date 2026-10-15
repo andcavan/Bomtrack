@@ -93,6 +93,49 @@ const ORDER_INCOMING_STATES = ['inviato', 'confermato', 'parziale'];
 // giacenza sarebbe quella dei suoi componenti contata due volte.
 function hasStock(it) { return !!it && (it.type === 'materiale' || it.type === 'acquistato' || it.type === 'parte'); }
 
+// ─── Ubicazioni (dalla 0.101.0) ───
+// Dove sta un articolo a scaffale: un testo libero sull'articolo («A-03-2»,
+// «CASSETTIERA 4»), una sola ubicazione per articolo. Non è un'anagrafica a
+// parte: un'ubicazione esiste finché c'è almeno un articolo che la porta, ed è
+// quello che il QR sullo scaffale apre. Si scrive maiuscolo e senza spazi
+// doppi, così «a-03» e «A-03 » sono lo stesso posto.
+function ubicazioneNorm(v) { return String(v == null ? '' : v).trim().replace(/\s+/g, ' ').toUpperCase(); }
+function ubicazioneOf(it) { return ubicazioneNorm(it && it.location); }
+// A-2 prima di A-10: l'ordine in cui si cammina fra gli scaffali.
+function ubicazioneConfronta(a, b) {
+  return String(a || '').localeCompare(String(b || ''), 'it', { numeric: true, sensitivity: 'base' });
+}
+function ubicazioniElenco() {
+  const set = new Set();
+  (db.items || []).forEach(i => { const u = hasStock(i) && ubicazioneOf(i); if (u) set.add(u); });
+  return Array.from(set).sort(ubicazioneConfronta);
+}
+function articoliInUbicazione(codice) {
+  const k = ubicazioneNorm(codice);
+  if (!k) return [];
+  return (db.items || []).filter(i => hasStock(i) && ubicazioneOf(i) === k)
+    .sort((a, b) => String(a.code || '').localeCompare(String(b.code || '')));
+}
+// Un testo libero dentro un onclick="…": letterale JS fra apici singoli, con
+// le virgolette e gli altri caratteri dell'HTML resi innocui. Un'ubicazione
+// è scritta dall'utente e può contenere qualunque cosa.
+function jsAttrStr(v) {
+  return "'" + String(v == null ? '' : v).replace(/\\/g, '\\\\').replace(/'/g, "\\'")
+    .replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;') + "'";
+}
+// La forma che il QR e le etichette si aspettano: { id, code, items }.
+function ubicazioneRec(codice) {
+  const k = ubicazioneNorm(codice);
+  const items = articoliInUbicazione(k);
+  return items.length ? { id: k, code: k, items } : null;
+}
+// Per un giro fra gli scaffali: ubicazione, poi codice; chi non ne ha va in fondo.
+function ordinePerUbicazione(a, b) {
+  const ua = ubicazioneOf(a), ub = ubicazioneOf(b);
+  if (ua !== ub) { if (!ua) return 1; if (!ub) return -1; return ubicazioneConfronta(ua, ub); }
+  return String(a.code || '').localeCompare(String(b.code || ''));
+}
+
 // ─── Indice delle giacenze ───
 // Stesso ciclo di vita degli altri indici (`invalidateCaches()` lo azzera):
 // senza, la lista del fabbisogno rileggerebbe tutti gli ordini e tutti i
@@ -665,7 +708,7 @@ function stockPanelHtml(it) {
   const elencoImp = imp.map(c => `${c.number}${c.title ? ' (' + c.title + ')' : ''}: ${fmtUom(c.qty, u)}`).join(' · ');
   return `<div class="cloud-section" style="margin-top:12px${sotto ? ';border-color:var(--red)' : ''}">
     <div style="flex:1">
-      <strong>${ico('package', 'tinted', '')} Magazzino</strong>
+      <strong>${ico('package', 'tinted', '')} Magazzino</strong>${ubicazioneOf(it) ? ` <span class="empty-text" style="padding:0">· ${ico('pin', 'tinted', '')} ${esc(ubicazioneOf(it))}</span>` : ''}
       <div class="cost-summary" style="margin:8px 0">
         ${kpi('Esistente', fmtUom(s.onHand, u), sotto ? 'orange' : '')}
         ${kpi('In arrivo', fmtUom(s.incoming, u), 'accent')}
@@ -1160,6 +1203,27 @@ const STOCK_TYPES = ['acquistato', 'materiale', 'parte'];   // gli stessi di has
 const STOCK_PFX = 'stk';
 const STOCK_PAGE = 200;
 let stockLimit = STOCK_PAGE;
+const STOCK_LOC_NONE = '@nessuna';
+// Il menu delle ubicazioni nasce dai dati: si riscrive a ogni disegno tenendo
+// la scelta, che sparisce solo se l'ubicazione non c'è più.
+function stockLocSync() {
+  const sel = typeof document !== 'undefined' && document.getElementById(STOCK_PFX + '-loc');
+  if (!sel) return;
+  const prima = sel.value || '';
+  const elenco = ubicazioniElenco();
+  sel.innerHTML = '<option value="">Tutte le ubicazioni</option>'
+    + `<option value="${STOCK_LOC_NONE}">— senza ubicazione —</option>`
+    + elenco.map(u => `<option value="${esc(u)}">${esc(u)}</option>`).join('');
+  sel.value = (prima === STOCK_LOC_NONE || elenco.includes(prima)) ? prima : '';
+}
+// Le card in testa fanno da filtro (dalla 0.101.0): un click mette lo stato
+// corrispondente, un secondo click sulla stessa card lo toglie.
+function stockFiltraStato(stato) {
+  const sel = typeof document !== 'undefined' && document.getElementById(STOCK_PFX + '-state');
+  if (!sel) return;
+  sel.value = sel.value === stato ? '' : (stato || '');
+  stockFilterChange();
+}
 
 function onStockTypeChange() { syncFamilyFilters(STOCK_PFX, STOCK_TYPES); stockFilterChange(); }
 function onStockFamilyChange() { syncFamilyFilters(STOCK_PFX, STOCK_TYPES); stockFilterChange(); }
@@ -1192,6 +1256,7 @@ const STOCK_STATE_FILTERS = {
   sotto: st => st.sotto,
   zero: st => st.onHand <= 0,
   con: st => st.onHand > 0,
+  arrivo: st => st.incoming > 0,
   negativo: st => st.libero < 0,
   // Materiale che sta da un terzista e non è ancora rientrato, o che è tornato
   // fra due fasi e deve ripartire. Non è una giacenza: è roba nostra che allo
@@ -1203,7 +1268,7 @@ const STOCK_STATE_FILTERS = {
 // filtri per esteso e non il valore interno.
 const STOCK_STATE_LABELS = {
   sotto: 'Sotto la scorta minima', zero: 'Giacenza a zero',
-  con: 'Con giacenza', negativo: 'Libero negativo', terzi: 'Presso terzi o in lavorazione',
+  con: 'Con giacenza', arrivo: 'Con merce in arrivo', negativo: 'Libero negativo', terzi: 'Presso terzi o in lavorazione',
 };
 
 // Etichette della modalità lotto, stesse parole dei valori proposti nella
@@ -1223,6 +1288,7 @@ function stockRow(it) {
     <td class="col-type"><span class="bom-type-tag tt-${it.type}">${typeShort(it.type)}</span> ${typeLabel(it.type)}</td>
     <td class="col-family" style="color:var(--text-dim)">${esc(codingLabel(it) || familyLabel(it))}</td>
     <td class="col-uom">${esc(u)}</td>
+    <td class="col-location" style="font-family:var(--mono)${ubicazioneOf(it) ? '' : ';color:var(--text-dim)'}">${esc(ubicazioneOf(it) || '—')}</td>
     ${num(st.onHand, st.sotto ? 'var(--orange, #d90)' : '', 'onhand')}
     ${num(st.incoming, st.incoming > 0 ? 'var(--accent)' : 'var(--text-dim)', 'incoming')}
     ${num(st.committed, st.committed > 0 ? 'var(--orange, #d90)' : 'var(--text-dim)', 'committed')}
@@ -1250,7 +1316,7 @@ function stockFilteredRows(soloIds) {
   const leggi = k => (document.getElementById(STOCK_PFX + '-' + k) || {}).value || '';
   const q = leggi('search').toLowerCase();
   const ft = leggi('type'), ff = leggi('family'), fsf = leggi('subfamily'), fs = leggi('state');
-  const fm = leggi('machine'), fg = leggi('group');
+  const fm = leggi('machine'), fg = leggi('group'), fl = leggi('loc');
   // Gli assiemi restano fuori: un gruppo si produce, non si stocca, e la sua
   // giacenza sarebbe quella dei suoi componenti contata due volte.
   let rows = (db.items || []).filter(hasStock);
@@ -1262,7 +1328,8 @@ function stockFilteredRows(soloIds) {
   // stesso comportamento del filtro famiglia con gli assiemi.
   if (fm) rows = rows.filter(i => i.machineItemId === fm);
   if (fg) rows = rows.filter(i => i.groupItemId === fg);
-  if (q) rows = rows.filter(i => (i.code + ' ' + i.name).toLowerCase().includes(q));
+  if (fl) rows = rows.filter(i => fl === STOCK_LOC_NONE ? !ubicazioneOf(i) : ubicazioneOf(i) === fl);
+  if (q) rows = rows.filter(i => (i.code + ' ' + i.name + ' ' + ubicazioneOf(i)).toLowerCase().includes(q));
   const statoOk = STOCK_STATE_FILTERS[fs];
   if (statoOk) rows = rows.filter(i => statoOk(stockState(i)));
   // La scelta fatta a mano vale come un filtro, e si applica per ultima:
@@ -1276,6 +1343,7 @@ function renderStock() {
   invalidateCaches();
   syncFamilyFilters(STOCK_PFX, STOCK_TYPES);
   syncMachineFilters(STOCK_PFX);
+  stockLocSync();
   filtScopeApply('stock');   // dopo il sync, non prima: vedi nota in renderCatalog
   const rows = stockFilteredRows();
 
@@ -1295,15 +1363,17 @@ function renderStock() {
   const roHost = document.getElementById(STOCK_PFX + '-riordino-btn');
   if (roHost) roHost.innerHTML = riordinoButton();
   const kpiHost = document.getElementById(STOCK_PFX + '-kpi');
+  const statoOra = (document.getElementById(STOCK_PFX + '-state') || {}).value || '';
   if (kpiHost) kpiHost.innerHTML = [
-    kpi('Articoli a magazzino', String(tutti.length), ''),
-    kpi('Sotto scorta minima', String(sotto), sotto > 0 ? 'red' : ''),
-    kpi('Con merce in arrivo', String(inArrivo), 'accent'),
-    kpi(`Valore giacenza (${esc(cur())})`, fmtN(valore), 'purple'),
+    kpi('Articoli a magazzino', String(tutti.length), '', { azione: "stockFiltraStato('')", attiva: false, titolo: 'Mostra tutti gli stati' }),
+    kpi('Sotto scorta minima', String(sotto), sotto > 0 ? 'red' : '', { azione: "stockFiltraStato('sotto')", attiva: statoOra === 'sotto', titolo: 'Filtra gli articoli sotto la scorta minima' }),
+    kpi('Con merce in arrivo', String(inArrivo), 'accent', { azione: "stockFiltraStato('arrivo')", attiva: statoOra === 'arrivo', titolo: 'Filtra gli articoli con merce in arrivo' }),
+    kpi(`Valore giacenza (${esc(cur())})`, fmtN(valore), 'purple', { azione: "setView('dash')", titolo: 'Apri il Cruscotto: valore per tipo e per famiglia' }),
   ].join('');
 
   const head = `<thead><tr><th scope="col" class="col-flags"></th><th scope="col" class="col-code">Codice</th><th scope="col" class="col-name">Descrizione</th>
     <th scope="col" class="col-type">Tipo</th><th scope="col" class="col-family">Famiglia</th><th scope="col" class="col-uom">U.M.</th>
+    <th scope="col" class="col-location">Ubicazione</th>
     <th scope="col" class="col-onhand" style="text-align:right" title="Ricevuto sugli ordini più i movimenti">Esistente</th>
     <th scope="col" class="col-incoming" style="text-align:right" title="Atteso da ordini inviati, confermati o parziali">In arrivo</th>
     <th scope="col" class="col-committed" style="text-align:right" title="Promesso dai piani di fabbisogno aperti">Impegnato</th>
@@ -1347,7 +1417,7 @@ function stockExportSpec(soloIds) {
   const righe = stockFilteredRows(soloIds).map(it => {
     const st = stockState(it);
     return [it.code || '', it.name || '', typeLabel(it.type), codingLabel(it) || familyLabel(it),
-      itemUom(it), st.onHand, st.incoming, st.committed, st.libero, st.safety, st.lotSize];
+      itemUom(it), ubicazioneOf(it), st.onHand, st.incoming, st.committed, st.libero, st.safety, st.lotSize];
   });
   return {
     titolo: 'Magazzino',
@@ -1359,6 +1429,7 @@ function stockExportSpec(soloIds) {
       ['Sottofamiglia', sub ? sub.name : ''],
       ['Macchina', mac ? `${mac.code} — ${mac.name}` : ''],
       ['Gruppo', grp ? `${grp.code} — ${grp.name}` : ''],
+      ['Ubicazione', leggi('loc') === STOCK_LOC_NONE ? 'senza ubicazione' : leggi('loc')],
       ['Stato', STOCK_STATE_LABELS[leggi('state')] || ''],
       ['Selezione', soloIds && soloIds.length ? soloIds.length + ' righe scelte a mano' : ''],
     ],
@@ -1366,7 +1437,7 @@ function stockExportSpec(soloIds) {
       nome: 'Magazzino',
       colonne: [
         { h: 'Codice', w: 18 }, { h: 'Descrizione', w: 34 }, { h: 'Tipo', w: 16 }, { h: 'Famiglia', w: 24 },
-        { h: 'U.M.', w: 8 }, { h: 'Esistente', w: 12, num: true }, { h: 'In arrivo', w: 12, num: true },
+        { h: 'U.M.', w: 8 }, { h: 'Ubicazione', w: 14 }, { h: 'Esistente', w: 12, num: true }, { h: 'In arrivo', w: 12, num: true },
         { h: 'Impegnato', w: 12, num: true }, { h: 'Libero', w: 12, num: true },
         { h: 'Scorta minima', w: 14, num: true }, { h: 'Lotto', w: 10, num: true },
       ],

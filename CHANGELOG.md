@@ -2,6 +2,23 @@
 
 Le revisioni seguono il versionamento semantico `0.MINOR.PATCH`: **MINOR** per nuove funzionalità, **PATCH** per correzioni. La versione in cima è quella in `APP_VERSION` (`core.js`) e mostrata nell'header dell'app.
 
+### 0.101.0 — 2026-10-15
+
+**Inventario guidato, ubicazioni, card che filtrano, vista compatta.** Per contare il magazzino si cercava un codice alla volta, un QR nominava un articolo ma non un posto, le card in testa alle viste erano solo numeri, e le tabelle lunghe stavano in poche righe per schermo.
+
+**Nuovo**
+- **Ubicazioni**: campo *Ubicazione a scaffale* nella scheda articolo (maiuscolo, senza spazi doppi, con le ubicazioni già usate proposte). Colonna, filtro (anche *senza ubicazione*) e ricerca nel Magazzino, colonna nell'export, riga sull'etichetta QR dell'articolo. **QR dello scaffale** (`#/q/ubi/A-03`): *Etichette ▾ → Ubicazioni degli articoli elencati*, e una scheda rapida con gli articoli del posto e **Conta questa ubicazione**.
+- **Inventario guidato** (*Magazzino → Inventario*, `inventario.js`): si sceglie cosa contare (articoli elencati, un'ubicazione, tutto), la fila segue le ubicazioni, si scrive il contato e si passa al prossimo. Il QR di un articolo o di uno scaffale (fotocamera, pistola o codice scritto) porta all'articolo o al posto giusto. Esistente nascosto se non si chiede di vederlo. Il conteggio resta nel browser e si riprende. Il **riepilogo** mostra le differenze e registra una *Rettifica inventario* per ogni riga spuntata, calcolata al momento di registrare.
+- **Card cliccabili**: nel Magazzino *Sotto scorta minima* e *Con merce in arrivo* (nuovo stato del filtro) filtrano la tabella, la card attiva resta evidenziata e un secondo clic toglie il filtro; *Valore giacenza* apre il Cruscotto. Nel Riepilogo *Distinte*, *Commesse aperte* e *Ordini da evadere* (nuovo stato *Da evadere* nel filtro ordini). Nel Cruscotto *Sotto scorta* apre il Magazzino filtrato, *Fermo* e *Consegne scadute* scorrono alla loro tabella.
+- **Vista compatta**: pulsante ☰ nell'intestazione (al telefono sotto ⋯). Righe di tabella ed elenchi più bassi, testo e card un poco più piccoli; resta in questo browser, come il tema.
+
+**Da sapere**
+- Con il cloud attivo va rilanciato `supabase/schema.sql`: aggiunge la colonna `items.location`.
+- L'export del Magazzino ha una colonna in più (*Ubicazione*, dopo *U.M.*).
+
+**Verifica**
+- `test/inventario-ubicazioni.test.js` (nuovo, 29 casi): ubicazioni scritte uguali e in ordine di cammino, filtro e export, QR dello scaffale anche con apici nel nome, fila d'inventario, campo vuoto che non è zero, letture da QR, bozza ripresa, rettifiche calcolate al momento di registrare e solo sulle righe scelte, ruoli, card che filtrano, ordini da evadere, vista compatta. Aggiornati tre test dell'export del Magazzino per la colonna nuova.
+
 ### 0.100.0 — 2026-10-15
 
 **Il magazzino segue il montaggio, le parti a scaffale e gli annulli.** Il montaggio di un assieme non scaricava i componenti, le parti già a scaffale si rifacevano, un ODP annullato lasciava fuori il materiale uscito e un prelievo oltre la giacenza passava in silenzio.

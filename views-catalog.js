@@ -1018,6 +1018,9 @@ function itemModalBody(it, scope) {
           <option value="multiple" ${(!it || it.lotMode !== 'min') ? 'selected' : ''}>un multiplo esatto (6, 12, 18…)</option>
           <option value="min" ${(it && it.lotMode === 'min') ? 'selected' : ''}>una quantità minima (poi libera)</option>
         </select></div>
+      <div class="modal-field"><label>Ubicazione a scaffale</label>
+        <input id="it-loc" list="it-loc-list" autocomplete="off" maxlength="40" value="${esc(it ? ubicazioneOf(it) : '')}" placeholder="es. A-03-2">
+        <datalist id="it-loc-list">${ubicazioniElenco().map(u => `<option value="${esc(u)}">`).join('')}</datalist></div>
       <div class="modal-field" style="grid-column:1/-1"><span class="empty-text" style="padding:0">La <strong>scorta minima</strong> è la quantità che il fabbisogno netto vuole lasciare a magazzino dopo aver coperto il piano. Il <strong>lotto di riordino</strong> arrotonda per eccesso quanto si compra — vuoto: nessun arrotondamento; <strong>multiplo esatto</strong>: si compra solo a passi del lotto, come una barra da 6 m che non si taglia; <strong>quantità minima</strong>: sotto soglia si arrotonda al minimo, sopra si compra esattamente quanto serve.</span></div>
     </div>
     ${it ? stockPanelHtml(it) : ''}
@@ -1855,6 +1858,9 @@ function readItemForm(it) {
     // giro un valore che non si applica a niente.
     if (it.lotSize) { if (val('it-lotmode') === 'min') it.lotMode = 'min'; else delete it.lotMode; }
     else delete it.lotMode;
+    // Vuota: il campo sparisce, come la modalità lotto senza lotto.
+    const ub = ubicazioneNorm(val('it-loc'));
+    if (ub) it.location = ub; else delete it.location;
   }
   // Doppia unità di misura. Le due voci vanno insieme: un'unità senza fattore
   // non converte niente, un fattore senza unità non si applica a niente.

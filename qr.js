@@ -28,6 +28,7 @@ const QR_TIPI = {
   odp: 'Ordine di produzione',
   oda: 'Ordine di acquisto',
   odl: 'Ordine di lavoro',
+  ubi: 'Ubicazione',   // dalla 0.101.0: il QR sullo scaffale
 };
 
 // ─── L'indirizzo ───
@@ -85,6 +86,8 @@ function qrResolve(tipo, codice) {
     odp: () => perNumero(db.prodOrders),
     oda: () => perNumero(db.orders),
     odl: () => perNumero(db.workOrders),
+    // Ultima: un codice nudo che è sia un articolo sia un'ubicazione è l'articolo.
+    ubi: () => ubicazioneRec(c),
   };
   const tipi = tipo && cerca[tipo] ? [tipo] : Object.keys(cerca);
   for (const t of tipi) {
@@ -167,11 +170,15 @@ const QR_FORMATI = {
 // Le righe di testo di un'etichetta, per tipo. Il codice prima: è quello che
 // si cerca con gli occhi sullo scaffale.
 function qrEtichettaTesti(tipo, rec) {
-  if (tipo === 'art') return { codice: rec.code || '', righe: [rec.name || '', [typeLabel(rec.type), itemUom(rec)].filter(Boolean).join(' · ')] };
+  if (tipo === 'art') return { codice: rec.code || '', righe: [rec.name || '', [typeLabel(rec.type), itemUom(rec)].filter(Boolean).join(' · '), ubicazioneOf(rec) ? 'Ubic. ' + ubicazioneOf(rec) : ''] };
+  if (tipo === 'ubi') {
+    const n = (rec.items || []).length;
+    return { codice: rec.code || '', righe: ['Ubicazione', n === 1 ? '1 articolo' : n + ' articoli'] };
+  }
   if (tipo === 'odp') return { codice: rec.number || '', righe: [`${rec.code || ''} ${rec.name || ''}`.trim(), `${fmtQty(rec.qty)} ${rec.uom || ''}`.trim()] };
   return { codice: rec.number || '', righe: [rec.title || '', rec.supplierId ? (supplierName(rec.supplierId) || '') : ''] };
 }
-function qrCodiceDi(tipo, rec) { return tipo === 'art' ? rec.code : rec.number; }
+function qrCodiceDi(tipo, rec) { return tipo === 'art' || tipo === 'ubi' ? rec.code : rec.number; }
 
 // voci: [{ tipo, rec, copie }]. `salta` lascia vuote le prime etichette di un
 // foglio già usato in parte: senza, un foglio iniziato si butta.
@@ -219,9 +226,12 @@ function qrEtichettePdf(voci, opz) {
 // Riceve gli id degli articoli; per un documento la stessa cosa con un id solo.
 function qrEtichetteModal(ids, tipo) {
   const t = tipo || 'art';
-  const prendi = { art: getItem, odp: getOdp, oda: getOrder, odl: getOdl }[t];
+  const prendi = { art: getItem, odp: getOdp, oda: getOrder, odl: getOdl, ubi: ubicazioneRec }[t];
   const recs = (ids || []).map(id => prendi(id)).filter(r => r && qrCodiceDi(t, r));
-  if (!recs.length) { showToast('Nessun articolo da etichettare con questi filtri', 'error'); return; }
+  if (!recs.length) {
+    showToast(t === 'ubi' ? 'Nessuna ubicazione da etichettare: scrivila nella scheda degli articoli' : 'Nessun articolo da etichettare con questi filtri', 'error');
+    return;
+  }
   window.__qrEtichette = { tipo: t, ids: recs.map(r => r.id) };
   const s = qrSettings();
   const avviso = qrBaseUrl() ? '' : `<div class="rfq-warn">${ico('warning', 'tinted', '')} L'app è aperta dal disco: il QR non contiene un indirizzo, quindi la fotocamera del telefono non saprà dove andare. Si leggerà solo con <strong>Scansiona</strong> dentro Bomtrack. Per i telefoni, scrivi l'indirizzo dell'app in <em>Gestione › Impostazioni › Etichette QR</em>.</div>`;
@@ -234,7 +244,8 @@ function qrEtichetteModal(ids, tipo) {
     </div>`;
   }).join('');
   const oltre = recs.length > 200 ? `<p class="empty-text" style="text-align:left;padding:4px 0">…e altri ${recs.length - 200}, una copia ciascuno.</p>` : '';
-  openModal(`<h3>${ico('qr', 'tinted pill', '')} Etichette QR — ${recs.length === 1 ? '1 ' + (t === 'art' ? 'articolo' : 'documento') : recs.length + ' articoli'}</h3>
+  const nomi = { art: ['articolo', 'articoli'], ubi: ['ubicazione', 'ubicazioni'] }[t] || ['documento', 'documenti'];
+  openModal(`<h3>${ico('qr', 'tinted pill', '')} Etichette QR — ${recs.length === 1 ? '1 ' + nomi[0] : recs.length + ' ' + nomi[1]}</h3>
     ${avviso}
     <div class="modal-grid">
       <div class="modal-field"><label>Formato</label><select id="qr-formato">
@@ -244,7 +255,7 @@ function qrEtichetteModal(ids, tipo) {
         <input class="num" type="number" id="qr-salta" min="0" max="39" step="1" value="0"></div>
     </div>
     <div style="display:flex;flex-direction:column;gap:6px;max-height:40vh;overflow:auto">${elenco}</div>${oltre}
-    <p class="empty-text" style="text-align:left;padding:8px 0">Ogni QR apre la scheda rapida ${t === 'art' ? 'dell\'articolo: giacenza, rettifica, movimenti' : 'del documento'}. Nel PDF i codici sono vettoriali: si stampano nitidi a qualunque misura, con la stampa al <strong>100%</strong> (non «adatta alla pagina»).</p>
+    <p class="empty-text" style="text-align:left;padding:8px 0">Ogni QR apre la scheda rapida ${t === 'art' ? 'dell\'articolo: giacenza, rettifica, movimenti' : t === 'ubi' ? 'dell\'ubicazione: gli articoli che ci stanno, e il conteggio d\'inventario' : 'del documento'}. Nel PDF i codici sono vettoriali: si stampano nitidi a qualunque misura, con la stampa al <strong>100%</strong> (non «adatta alla pagina»).</p>
     <div class="modal-actions">
       <button class="btn-ghost" onclick="closeModal()">Annulla</button>
       <button class="add-btn-sm" onclick="qrEtichetteStampa()">${ico('printer', 'tinted', '')} Crea il PDF</button>
@@ -252,7 +263,7 @@ function qrEtichetteModal(ids, tipo) {
 }
 function qrEtichetteStampa() {
   const sel = window.__qrEtichette; if (!sel) return;
-  const prendi = { art: getItem, odp: getOdp, oda: getOrder, odl: getOdl }[sel.tipo];
+  const prendi = { art: getItem, odp: getOdp, oda: getOrder, odl: getOdl, ubi: ubicazioneRec }[sel.tipo];
   const voci = sel.ids.map((id, i) => {
     const el = document.getElementById('qr-copie-' + i);
     return { tipo: sel.tipo, rec: prendi(id), copie: el && el.value !== '' ? el.value : 1 };
@@ -262,6 +273,13 @@ function qrEtichetteStampa() {
 // Dalla barra del Magazzino: gli articoli che l'elenco mostra adesso, con i
 // suoi filtri. Dalla selezione dell'ispettore: quelli scelti.
 function qrEtichetteMagazzino(soloIds) { qrEtichetteModal(stockFilteredRows(soloIds).map(it => it.id), 'art'); }
+// Le ubicazioni degli articoli elencati, una volta ciascuna, nell'ordine in cui
+// si cammina fra gli scaffali.
+function qrEtichetteUbicazioni(soloIds) {
+  const set = new Set();
+  stockFilteredRows(soloIds).forEach(it => { const u = ubicazioneOf(it); if (u) set.add(u); });
+  qrEtichetteModal(Array.from(set).sort(ubicazioneConfronta), 'ubi');
+}
 
 // ─── Arrivare da un QR ───
 // L'indirizzo `#/q/…` non è una vista: si apre la scheda rapida sopra la vista
@@ -316,9 +334,26 @@ function qrSchedaHtml(tipo, rec) {
     } else {
       corpo = '<p class="empty-text" style="text-align:left;padding:4px 0">Articolo senza giacenza (macchina o gruppo).</p>';
     }
+    const ub = ubicazioneOf(it);
+    const dove = ub ? ` · <span class="code-link" ${clickAttrs(`qrApri({ tipo: 'ubi', codice: ${jsAttrStr(ub)} })`, 'Ubicazione ' + ub)}>${ico('pin', 'tinted', '')} ${esc(ub)}</span>` : '';
     return `<h3>${ico('package', 'tinted pill', '')} ${esc(it.code)}</h3>
-      <p><strong>${esc(it.name || '')}</strong> · ${esc(typeLabel(it.type))}${it.obsolete ? ' · <span style="color:var(--red)">non più utilizzabile</span>' : ''}</p>
+      <p><strong>${esc(it.name || '')}</strong> · ${esc(typeLabel(it.type))}${dove}${it.obsolete ? ' · <span style="color:var(--red)">non più utilizzabile</span>' : ''}</p>
       ${corpo}<div class="qr-azioni">${bottoni.join('')}</div>`;
+  }
+  if (tipo === 'ubi') {
+    // Lo scaffale: cosa ci sta, quanto ne dice l'app, e il conteggio da qui.
+    const righe = (rec.items || []).map(it => `<div class="mgmt-item" ${clickAttrs(`qrSchedaModal('art', getItem('${it.id}'))`, 'Scheda di ' + it.code)} style="cursor:pointer">
+        <span style="width:150px;font-family:var(--mono)">${esc(it.code || '')}</span>
+        <span style="flex:1">${esc(it.name || '')}</span>
+        <span class="num">${fmtUom(onHandOf(it.id), itemUom(it))}</span>
+      </div>`).join('');
+    const bottoni = [];
+    if (canWriteShop('catalog')) bottoni.push(qrBtn('Conta questa ubicazione', 'clipboard', `inventarioAvvia({ ambito: 'ubi', ubi: ${jsAttrStr(rec.code)} })`, true));
+    bottoni.push(qrBtn('Etichetta QR', 'qr', `qrEtichetteModal([${jsAttrStr(rec.code)}], 'ubi')`));
+    return `<h3>${ico('pin', 'tinted pill', '')} ${esc(rec.code)}</h3>
+      <p>${rec.items.length === 1 ? '1 articolo' : rec.items.length + ' articoli'} in questa ubicazione.</p>
+      <div style="display:flex;flex-direction:column;gap:4px;margin:8px 0;max-height:45vh;overflow:auto">${righe}</div>
+      <div class="qr-azioni">${bottoni.join('')}</div>`;
   }
   if (tipo === 'odp') {
     const o = rec;
@@ -398,6 +433,9 @@ function qrScanTesto() {
   if (!t) return;
   qrScanFine(t);
 }
+// Chi apre la fotocamera può dire cosa fare di quello che legge (l'inventario
+// lo usa per passare all'articolo dopo senza chiudere niente). `onRead` torna
+// true quando la lettura chiude il giro; senza, si apre la scheda rapida.
 function qrScanFine(testo) {
   const letto = qrParse(testo);
   const r = letto && qrResolve(letto.tipo, letto.codice);
@@ -416,7 +454,7 @@ function qrScanStop() {
   if (_qrScan.stream) _qrScan.stream.getTracks().forEach(t => t.stop());
   _qrScan = null;
 }
-function qrScanAvvia() {
+function qrScanAvvia(onRead) {
   qrScanStop();
   const video = document.getElementById('qr-video');
   const md = typeof navigator !== 'undefined' && navigator.mediaDevices;
@@ -424,7 +462,7 @@ function qrScanAvvia() {
     qrScanMsg('Fotocamera non disponibile qui: usa il campo qui sotto. Sul telefono serve l\'app aperta da un indirizzo https.');
     return;
   }
-  const stato = { attivo: true, stream: null };
+  const stato = { attivo: true, stream: null, onRead: typeof onRead === 'function' ? onRead : qrScanFine };
   _qrScan = stato;
   md.getUserMedia({ video: { facingMode: 'environment' }, audio: false }).then(stream => {
     if (!stato.attivo) { stream.getTracks().forEach(t => t.stop()); return; }
@@ -448,7 +486,7 @@ function qrScanCiclo(stato, video) {
     const prossimo = () => setTimeout(giro, 200);
     if (rivela) {
       rivela.detect(video).then(c => {
-        if (c && c.length && qrScanFine(c[0].rawValue)) return;
+        if (c && c.length && stato.onRead(c[0].rawValue)) return;
         prossimo();
       }).catch(() => { rivela = null; prossimo(); });
       return;
@@ -459,7 +497,7 @@ function qrScanCiclo(stato, video) {
       const g = tela.getContext('2d');
       g.drawImage(video, 0, 0, w, h);
       const r = jsQR(g.getImageData(0, 0, w, h).data, w, h, { inversionAttempts: 'dontInvert' });
-      if (r && r.data && qrScanFine(r.data)) return;
+      if (r && r.data && stato.onRead(r.data)) return;
     }
     prossimo();
   };

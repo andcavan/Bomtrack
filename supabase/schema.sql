@@ -157,6 +157,7 @@ create table if not exists public.items (
   alt_uom text, alt_factor numeric,
   concept_id text, name_free text, g_code_len int, g_code_type text, incr_digits_n int, incr_digits_s int,
   rev text, lot_size numeric, lot_mode text, safety_stock numeric, assembly_days numeric,
+  location text,
   child_sets text,
   pos int, created_at timestamptz, updated_at timestamptz, created_by uuid, updated_by uuid,
   synced_at timestamptz not null default clock_timestamp()
@@ -168,6 +169,8 @@ alter table public.work_centers add column if not exists queue_days numeric;
 alter table public.work_centers add column if not exists setup_hours numeric;
 alter table public.suppliers add column if not exists transit_days numeric;
 alter table public.items add column if not exists assembly_days numeric;
+-- 0.101.0: l'ubicazione a scaffale dell'articolo.
+alter table public.items add column if not exists location text;
 -- A6: `unique (code)` va aggiunto dopo la bonifica dei duplicati storici
 -- (Gestione › Backup › codici duplicati). Prima, rifiuterebbe dati veri.
 

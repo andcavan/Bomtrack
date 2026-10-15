@@ -104,6 +104,45 @@ function themeWatchSystem() {
 // che la pagina si disegnasse: qui si riallinea lo stato del modulo e si
 // riempie il pulsante. Il DOM finto della suite non ha documentElement con
 // gli attributi: la guardia lo tiene fuori, e le funzioni restano provabili.
+// ─── Vista compatta (dalla 0.101.0) ───
+// Righe di tabella più basse e testo un filo più piccolo: in officina e sul
+// portatile si vedono quasi il doppio delle righe. È una preferenza di chi
+// guarda, come il tema: resta in questo browser e non tocca i dati.
+// L'attributo sta su <html> come il tema, così vale anche per le finestre.
+const DENSITA_KEY = 'bomtrack_densita';
+let densita = 'comoda';
+function densitaLoad() {
+  try { if (localStorage.getItem(DENSITA_KEY) === 'compatta') densita = 'compatta'; } catch (e) { /* si resta comodi */ }
+  return densita;
+}
+function densitaApply() {
+  const r = typeof document !== 'undefined' && document.documentElement;
+  if (!r) return densita;
+  if (densita === 'compatta') r.setAttribute('data-densita', 'compatta');
+  else r.removeAttribute('data-densita');
+  return densita;
+}
+function densitaSet(d) {
+  densita = d === 'compatta' ? 'compatta' : 'comoda';
+  try { localStorage.setItem(DENSITA_KEY, densita); } catch (e) { /* niente da salvare */ }
+  densitaApply(); densitaButtonFill();
+  return densita;
+}
+function densitaToggle() {
+  densitaSet(densita === 'compatta' ? 'comoda' : 'compatta');
+  showToast(densita === 'compatta' ? 'Vista compatta' : 'Vista comoda');
+}
+function densitaButtonFill() {
+  const b = typeof document !== 'undefined' && document.getElementById('dens-btn');
+  if (!b) return;
+  const testo = densita === 'compatta' ? 'Vista compatta attiva · premi per la vista comoda' : 'Vista comoda · premi per la vista compatta';
+  b.setAttribute('title', testo);
+  b.setAttribute('aria-label', testo);
+  b.setAttribute('aria-pressed', densita === 'compatta' ? 'true' : 'false');
+  b.classList.toggle('active', densita === 'compatta');
+}
+
 if (typeof document !== 'undefined' && document.documentElement) {
   themeLoad(); themeApply(); themeButtonFill(); themeWatchSystem();
+  densitaLoad(); densitaApply(); densitaButtonFill();
 }

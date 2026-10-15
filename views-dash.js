@@ -153,22 +153,34 @@ function renderDash() {
       ${listExportButtons('dashExportSpec')}
     </div>
     <div class="cost-summary">
-      ${kpi(`Valore giacenza (${esc(cur())})`, fmtN(m.totale), 'purple')}
-      ${kpi(`Fermo da ${m.mesi} mesi`, fmtN(m.valoreFermo), m.valoreFermo > 0 ? 'orange' : '')}
-      ${kpi('Sotto scorta minima', String(m.sotto.length), m.sotto.length ? 'red' : '')}
-      ${kpi('Consegne scadute', String(m.righeScadute), m.righeScadute ? 'red' : '')}
+      ${kpi(`Valore giacenza (${esc(cur())})`, fmtN(m.totale), 'purple', { azione: "dashVaiStock('')", titolo: 'Apri il Magazzino' })}
+      ${kpi(`Fermo da ${m.mesi} mesi`, fmtN(m.valoreFermo), m.valoreFermo > 0 ? 'orange' : '', { azione: "dashScorri('dash-fermi')", titolo: 'Vai agli articoli fermi' })}
+      ${kpi('Sotto scorta minima', String(m.sotto.length), m.sotto.length ? 'red' : '', { azione: "dashVaiStock('sotto')", titolo: 'Apri il Magazzino filtrato sugli articoli sotto scorta' })}
+      ${kpi('Consegne scadute', String(m.righeScadute), m.righeScadute ? 'red' : '', { azione: "dashScorri('dash-scaduti')", titolo: 'Vai alle consegne scadute' })}
     </div>
     <div class="dash-grid">
       ${ripartizione('Valore per tipo', m.perTipo)}
       ${ripartizione('Valore per famiglia', m.perFamiglia)}
     </div>
-    <div class="dash-card"><div class="dash-head"><h4 class="settings-group-title">Articoli fermi (${m.fermi.length})</h4><div class="mgmt-tabs">${scelta}</div></div>
+    <div class="dash-card" id="dash-fermi"><div class="dash-head"><h4 class="settings-group-title">Articoli fermi (${m.fermi.length})</h4><div class="mgmt-tabs">${scelta}</div></div>
       <p class="dash-nota">Con giacenza e nessun movimento da ${m.mesi} mesi, dal più costoso. I ricevimenti non hanno una data propria: vale la data dell'ordine.</p>
       ${fermi}</div>
     <div class="dash-card"><h4 class="settings-group-title">Sotto scorta minima (${m.sotto.length})</h4>
       <p class="dash-nota">✓ quando quello che è in arrivo basta a tornare alla scorta.</p>${sotto}</div>
-    <div class="dash-card"><h4 class="settings-group-title">Consegne scadute per fornitore (${m.righeScadute})</h4>
+    <div class="dash-card" id="dash-scaduti"><h4 class="settings-group-title">Consegne scadute per fornitore (${m.righeScadute})</h4>
       <p class="dash-nota">Righe di ordini e ordini di lavoro non ancora ricevute, oltre la data confermata (o richiesta, se non confermata).</p>${scaduti}</div>`;
+}
+
+// Le card in testa (dalla 0.101.0): portano alla tabella che spiega il numero,
+// qui sotto o nel Magazzino già filtrato.
+function dashScorri(id) {
+  const el = typeof document !== 'undefined' && document.getElementById(id);
+  if (el && el.scrollIntoView) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+function dashVaiStock(stato) {
+  setView('stock');
+  const sel = document.getElementById(STOCK_PFX + '-state');
+  if (sel && sel.value !== (stato || '')) { sel.value = stato || ''; stockFilterChange(); }
 }
 
 function dashExportSpec() {

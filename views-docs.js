@@ -755,6 +755,10 @@ const docFilters = {
   odl: { q: '', status: '', supplierId: '', from: '', to: '' },
 };
 function docFiltersVuoti() { return { q: '', status: '', supplierId: '', from: '', to: '' }; }
+// Una voce di stato in più per gli ordini (dalla 0.101.0): gli ordini ancora da
+// ricevere, cioè gli stati di ORDER_INCOMING_STATES insieme. È quella su cui
+// porta la card «Ordini da evadere» del Riepilogo.
+const DOC_STATUS_EVADERE = '@evadere';
 // I campi di filtro dell'elenco, senza contenitore: li incolonna `wl-filters`
 // del telaio (worklist.js). In una colonna da 360px tre menu affiancati
 // sarebbero tre fessure — qui vanno uno sotto l'altro, larghi quanto la colonna.
@@ -764,6 +768,7 @@ function docFilterBar(kind, statusMap, shown, total) {
   return `<input type="text" class="search" id="${kind}f-q" value="${esc(f.q)}" placeholder="Cerca numero, oggetto, fornitore o riga..." oninput="docFilterInput('${kind}')">
     <select id="${kind}f-status" onchange="docFilterChange('${kind}')">
       <option value="">Tutti gli stati</option>
+      ${kind === 'order' ? `<option value="${DOC_STATUS_EVADERE}" ${f.status === DOC_STATUS_EVADERE ? 'selected' : ''}>Da evadere (inviati, confermati, parziali)</option>` : ''}
       ${Object.entries(statusMap).map(([k, v]) => `<option value="${k}" ${f.status === k ? 'selected' : ''}>${v}</option>`).join('')}
     </select>
     <select id="${kind}f-sup" onchange="docFilterChange('${kind}')">
@@ -815,7 +820,8 @@ function docSearchText(d) {
 function docFilterApply(kind, docs) {
   const f = docFilters[kind];
   return docs.filter(d => {
-    if (f.status && d.status !== f.status) return false;
+    if (f.status === DOC_STATUS_EVADERE) { if (!ORDER_INCOMING_STATES.includes(d.status)) return false; }
+    else if (f.status && d.status !== f.status) return false;
     if (f.supplierId === 'none' ? !!d.supplierId : (f.supplierId && d.supplierId !== f.supplierId)) return false;
     if (!inDateRange(d.date, f.from, f.to)) return false;
     if (!f.q) return true;
@@ -852,7 +858,7 @@ function docListExportSpec(kind) {
     slug: { rfq: 'richieste', order: 'ordini', odl: 'ordini_di_lavoro' }[kind],
     filtri: [
       ['Ricerca', f.q],
-      ['Stato', mappaStati[f.status] || ''],
+      ['Stato', f.status === DOC_STATUS_EVADERE ? 'Da evadere (inviati, confermati, parziali)' : (mappaStati[f.status] || '')],
       ['Fornitore', f.supplierId === 'none' ? 'senza fornitore' : (supplierName(f.supplierId) || '')],
       ['Data', dateRangeText(f.from, f.to)],
     ],

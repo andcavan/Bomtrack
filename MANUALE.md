@@ -1,6 +1,6 @@
 # Bomtrack — Manuale d'uso
 
-**Versione dell'app documentata: 0.100.0**
+**Versione dell'app documentata: 0.101.0**
 
 📖 **[Leggilo come pagina web](https://claude.ai/code/artifact/726a0963-2db0-4947-999b-d7b5beb91a0b)** — stesso testo, con indice laterale, filtro dei capitoli e tema chiaro/scuro. Comodo da tenere aperto di fianco all'app.
 
@@ -204,12 +204,13 @@ In alto, da sinistra a destra:
 | 🖨 **Stampa questa vista** | Stampa pulita della schermata — `Ctrl+P` |
 | 📖 **Manuale d'uso** | **Questo manuale.** Si apre in una scheda nuova, così resta consultabile mentre si lavora, senza perdere il documento aperto |
 | 🌗 **Cambia tema** | Gira su tre stati: *come il sistema*, *chiaro*, *scuro* |
+| ☰ **Vista compatta** | Righe di tabella più basse: si vedono quasi il doppio delle righe (→ *Il tema*, qui sotto) |
 | 🔑 **Cambia password** | La propria password |
 | **Esci** | Chiude la sessione |
 
 **Su uno schermo più stretto** l'intestazione resta su una riga sola e fa spazio da sé, un passo
 alla volta, solo quanto serve: prima spariscono il ruolo nella pillola e la data; poi scansiona, stampa,
-manuale, tema, password ed esci passano sotto il pulsante **⋯** (*Altri comandi*); poi le sezioni
+manuale, tema, vista compatta, password ed esci passano sotto il pulsante **⋯** (*Altri comandi*); poi le sezioni
 restano con la sola icona (il nome compare passandoci sopra); per ultimo, sul telefono, le sezioni
 stesse si aprono dal pulsante **☰**. I due menu si chiudono con `Esc`, con un clic fuori o
 scegliendo una voce.
@@ -301,6 +302,17 @@ Il pulsante 🌗 nell'intestazione gira su tre stati: **come il sistema** (quell
 **chiaro**, **scuro**. La scelta resta su questo browser e non viene condivisa con i colleghi:
 è una preferenza personale, non un dato aziendale. **In stampa la carta resta bianca** in tutti e
 tre i casi.
+
+**Vista compatta** (dalla 0.101.0). Il pulsante ☰ accanto al tema abbassa le righe di tutte le
+tabelle e degli elenchi, e rimpicciolisce un poco il testo e le card in testa: in officina, o su un
+portatile, si vedono quasi il doppio delle righe. Si spegne con lo stesso pulsante. Come il tema,
+resta in questo browser.
+
+**Le card in testa si cliccano** (dalla 0.101.0). Nel Riepilogo, nel Cruscotto e nel Magazzino le
+card con i numeri portano alla lista che li spiega, già filtrata: *Sotto scorta minima* mostra gli
+articoli sotto scorta, *Ordini da evadere* apre gli ordini a fornitore inviati, confermati o
+parziali, e così via. Nel Magazzino la card del filtro in uso resta evidenziata, e un secondo clic
+toglie il filtro.
 
 ---
 
@@ -1220,10 +1232,15 @@ In testa quattro **KPI**: *Articoli a magazzino* · *Sotto scorta minima* · *Co
 **Valore giacenza (€)** (esistente × costo unitario). Il valore ripartito per tipo e per famiglia,
 e gli articoli fermi da mesi, stanno nel **Cruscotto** (→ [cap. 5](#il-cruscotto)).
 
+Le card **filtrano la tabella** (dalla 0.101.0): *Sotto scorta minima* e *Con merce in arrivo*
+mettono il filtro di stato corrispondente, *Articoli a magazzino* lo toglie, *Valore giacenza* apre
+il Cruscotto. La card del filtro in uso resta evidenziata; un secondo clic lo toglie.
+
 **Le colonne, e come si calcolano.**
 
 | Colonna | Significato | Da dove viene |
 |---|---|---|
+| **Ubicazione** | Dove sta a scaffale | dalla scheda articolo (dalla 0.101.0) |
 | **Esistente** | Quello che c'è adesso a scaffale | ricevuto sugli ordini **+** movimenti |
 | **In arrivo** | Ordinato e non ancora entrato | ordini aperti |
 | **Impegnato** | Promesso ai piani aperti | fabbisogno dei piani aperti |
@@ -1235,8 +1252,8 @@ e gli articoli fermi da mesi, stanno nel **Cruscotto** (→ [cap. 5](#il-cruscot
 > registra un **movimento**.
 
 **Comandi.** **Riordina sotto scorta (N)** (compare solo se qualcosa va riordinato) ·
-**Presso terzi (N)** (compare solo se c'è qualcosa fuori) · **Esporta Excel** ·
-**Esporta PDF**. Nella barra filtri, **Colonne**.
+**Presso terzi (N)** (compare solo se c'è qualcosa fuori) · **Inventario** · **Etichette ▾**
+(articoli o ubicazioni) · **Esporta Excel** · **Esporta PDF**. Nella barra filtri, **Colonne**.
 
 ### Riordino sotto scorta
 
@@ -1255,12 +1272,13 @@ per fornitore**, con il prezzo del listino e la consegna a oggi più i giorni de
 l'ordine si rivede e si invia come ogni altro. Gli articoli senza fornitore restano in un gruppo a
 parte: si sistemano dal listino. Serve il diritto su *Richieste e ordini*.
 
-**Filtri.** Ricerca, tipo (Componente commerciale · Materia prima · Parte), famiglia,
-sottofamiglia, e il filtro di **stato**:
+**Filtri.** Ricerca (anche per ubicazione), tipo (Componente commerciale · Materia prima · Parte),
+famiglia, sottofamiglia, **ubicazione** (una, o *senza ubicazione*), e il filtro di **stato**:
 
 - *Sotto la scorta minima*
 - *Giacenza a zero*
 - *Con giacenza*
+- *Con merce in arrivo* (dalla 0.101.0)
 - *Libero negativo* — si è promesso più di quanto si abbia e si aspetti
 - *Presso terzi o in lavorazione*
 
@@ -1338,8 +1356,10 @@ esistente, in arrivo, impegnato, libero, e i pulsanti **Rettifica giacenza**, **
 e **Movimenti**. È il modo di fare l'inventario davanti allo scaffale, senza cercare il codice.
 
 **Stampare le etichette.**
-- **Etichette** nella barra del Magazzino: gli articoli che l'elenco mostra adesso, con i suoi
-  filtri.
+- **Etichette ▾ → Articoli elencati** nella barra del Magazzino: gli articoli che l'elenco mostra
+  adesso, con i suoi filtri.
+- **Etichette ▾ → Ubicazioni degli articoli elencati**: un'etichetta per ogni ubicazione, da
+  attaccare allo scaffale (→ *Le ubicazioni*, qui sotto).
 - **Etichetta QR** nel riquadro *Magazzino* della scheda articolo: una sola.
 - **Etichette QR della selezione** nel pannello laterale, quando si scelgono più articoli
   (→ [cap. 12](#12-pannello-laterale-e-selezione-multipla)).
@@ -1375,6 +1395,57 @@ stampare.
 > Nel QR c'è il **codice** dell'articolo o il **numero** dell'ordine, non un identificativo
 > interno: l'etichetta si legge anche a occhio e resta valida dopo un ripristino da backup.
 > Rinominare il codice di un articolo, però, rende vecchie le sue etichette: vanno ristampate.
+
+### Le ubicazioni
+
+Dalla 0.101.0 ogni articolo a magazzino può dire **dove sta**: il campo **Ubicazione a scaffale**
+nella scheda articolo, accanto a scorta minima e lotto. È un testo libero — `A-03-2`,
+`CASSETTIERA 4` — e si scrive sempre maiuscolo, senza spazi doppi: `a-03` e `A-03` sono lo stesso
+posto. Mentre si scrive, il campo propone le ubicazioni già usate. Un articolo ha **una**
+ubicazione.
+
+Non c'è un archivio delle ubicazioni da tenere: un'ubicazione esiste finché almeno un articolo la
+porta. Si vede nella colonna **Ubicazione** del Magazzino, nell'export, nella scheda articolo e
+sull'etichetta QR dell'articolo; il filtro *Ubicazione* mostra un posto solo, o gli articoli che
+un posto non ce l'hanno ancora.
+
+**Il QR dello scaffale.** *Etichette ▾ → Ubicazioni degli articoli elencati* stampa un'etichetta
+per ogni ubicazione. Inquadrata, apre la scheda dell'ubicazione: gli articoli che ci stanno, con
+l'esistente, ciascuno cliccabile, e il pulsante **Conta questa ubicazione** che avvia l'inventario
+di quel posto.
+
+> Con il cloud attivo, la colonna `location` va aggiunta al database: si rilancia
+> `supabase/schema.sql`, che la aggiunge senza toccare il resto.
+
+### L'inventario guidato
+
+**Inventario** nella barra del Magazzino (dalla 0.101.0) serve a contare il magazzino senza
+cercare un codice alla volta. Si sceglie **cosa contare**: gli articoli che il Magazzino elenca
+adesso (con i suoi filtri), un'ubicazione, o tutto. Gli articoli vengono messi in fila
+**nell'ordine delle ubicazioni** (A-2 prima di A-10), quelli senza ubicazione in fondo.
+
+**Si conta.** Per l'articolo in fila si scrive quanti ce ne sono e si preme **Conta** (o Invio):
+si passa al prossimo da contare. **Salta** lo lascia per dopo; un clic su una riga dell'elenco ci
+torna. Un campo vuoto non è uno zero: se non ce n'è nessuno si scrive **0**. Per non farsi guidare
+dal numero l'esistente non si vede, a meno di spuntare *Mostra l'esistente mentre conto*.
+
+**Con i QR.** Il campo in alto accetta il codice scritto o la pistola USB; **Fotocamera** accende
+il lettore e lo lascia acceso. Un'etichetta d'**articolo** porta a quell'articolo — se non era in
+fila ci entra —; un'etichetta d'**ubicazione** porta al primo articolo ancora da contare in quel
+posto.
+
+**Il riepilogo.** **Riepilogo differenze** mostra ogni articolo contato con *esistente*,
+*contato* e *differenza*, quanti hanno una differenza, quanti non sono stati contati e il valore
+delle differenze. Le righe con una differenza sono spuntate: si tolgono quelle da non registrare.
+**Registra** scrive una **Rettifica inventario** per ogni riga spuntata, con la nota proposta
+(*Inventario del …*). Gli articoli non contati restano come sono.
+
+> **Contare non tocca il magazzino**: finché non si registra non cambia niente. Il conteggio resta
+> in **questo browser**: si chiude con *Chiudi e continua dopo* e si riprende da **Inventario →
+> Riprendi**, anche dopo aver chiuso l'app. Un altro dispositivo non lo vede.
+>
+> La differenza si calcola **quando si registra**: se fra il conteggio e la registrazione entra o
+> esce qualcosa, finisce nella rettifica. Si registra a fine giro, non il giorno dopo.
 
 ---
 

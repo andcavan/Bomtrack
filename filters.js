@@ -76,6 +76,7 @@ const FILT_PANELS = {
       { id: 'stk-subfamily', label: 'Sottofamiglia', kind: 'select', dim: 'subfamily' },
       { id: 'stk-machine', label: 'Macchina', kind: 'select', dim: 'machine' },
       { id: 'stk-group', label: 'Gruppo', kind: 'select', dim: 'group' },
+      { id: 'stk-loc', label: 'Ubicazione', kind: 'select' },
       { id: 'stk-state', label: 'Stato', kind: 'select' },
     ],
   },

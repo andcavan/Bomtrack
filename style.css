@@ -1254,3 +1254,35 @@ tr.agenda-day td{border-top:1px solid var(--hairline)}
 .qr-video-box{background:#000;border-radius:var(--radius,8px);overflow:hidden;aspect-ratio:4/3;max-height:50vh;display:flex;align-items:center;justify-content:center}
 .qr-video-box video{width:100%;height:100%;object-fit:cover}
 .qr-svg{display:block;background:#fff}
+
+/* ─── 0.101.0: card che filtrano, vista compatta, inventario ─── */
+.kpi-card.kpi-click{cursor:pointer;transition:border-color .15s,box-shadow .15s}
+.kpi-card.kpi-click:hover{border-color:var(--accent)}
+.kpi-card.kpi-click:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.kpi-card.kpi-on{border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent);background:var(--accent-soft)}
+
+/* Vista compatta: righe più basse e testo un filo più piccolo, in tutte le
+   tabelle e negli elenchi a righe. Le card restano leggibili, solo più basse. */
+html[data-densita="compatta"] th{padding:6px 8px}
+html[data-densita="compatta"] td{padding:4px 8px;font-size:12px}
+html[data-densita="compatta"] .rfq-table th{padding:6px 8px}
+html[data-densita="compatta"] .rfq-table td,
+html[data-densita="compatta"] .price-table td,
+html[data-densita="compatta"] .dash-table td,
+html[data-densita="compatta"] .bom-compare td{padding:3px 6px}
+html[data-densita="compatta"] .mgmt-item{padding-top:4px;padding-bottom:4px}
+html[data-densita="compatta"] .mini-btn{padding:2px 5px}
+html[data-densita="compatta"] .kpi-card{padding:10px 10px}
+html[data-densita="compatta"] .kpi-label{margin-top:2px}
+html[data-densita="compatta"] .cost-summary{gap:8px;margin-bottom:12px}
+
+/* Inventario guidato */
+.inv-barra{display:flex;gap:8px;align-items:center;margin:4px 0 8px}
+.inv-video{max-height:32vh;margin-bottom:6px}
+.inv-corrente{border:1px solid var(--accent);border-radius:10px;padding:10px 12px;margin:8px 0;display:flex;flex-direction:column;gap:8px}
+.inv-art{display:flex;flex-direction:column;gap:2px}
+.inv-qty{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.inv-qty input{width:120px;font-size:18px;padding:6px 8px}
+.inv-lista{display:flex;flex-direction:column;gap:2px;max-height:32vh;overflow:auto}
+.inv-riga{cursor:pointer}
+.inv-riga.inv-attuale{background:var(--accent-soft)}

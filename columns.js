@@ -58,6 +58,7 @@ const COLUMNS = {
     { key: 'type', label: 'Tipo' },
     { key: 'family', label: 'Famiglia' },
     { key: 'uom', label: 'U.M.' },
+    { key: 'location', label: 'Ubicazione' },
     { key: 'onhand', label: 'Esistente' },
     { key: 'incoming', label: 'In arrivo' },
     { key: 'committed', label: 'Impegnato' },
