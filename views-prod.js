@@ -876,9 +876,89 @@ function odpChiudi(id) {
 }
 function odpAnnulla(id) {
   const o = getOdp(id); if (!o || !opGuard(id, 'ops')) return;
+  // Con materiale uscito si chiede quanto ne torna: senza, il materiale
+  // spariva dal prospetto «in lavorazione» e andava ricaricato a mano.
+  if (opResoProposto(o).length) { odpAnnullaModal(id); return; }
   askConfirm(`Annullare l'ordine ${o.number}?\nI movimenti già registrati restano: annullare non è cancellare.`, () => {
     o.status = 'annullato'; touch(o); saveDB(); renderOdp(); showToast('Ordine annullato');
   }, { title: 'Annulla ordine di produzione', ok: 'Annulla ordine' });
+}
+// ─── Il materiale che torna da un ordine annullato (dalla 0.100.0) ───
+// Quello uscito all'avvio della prima fase, nella parte che **non è stata
+// lavorata**: se la prima fase ha già lavorato 30 pezzi su 100, il materiale di
+// quei 30 è diventato truciolo o semilavorato e non torna come materiale. La
+// proposta è proporzionale ai pezzi non ancora passati dalla prima fase, e si
+// corregge riga per riga: chi ha il materiale in mano sa quanto ne è rimasto.
+//
+// Da un terzista torna con un **rientro** (`clIn`, intestato a lui): così il
+// prospetto «presso terzi» si azzera. Da casa con un **reso** di produzione.
+function opResoProposto(o) {
+  const prima = opPrima(o);
+  if (!prima) return [];
+  const uscito = opRegistrato(o, prima, 'out');
+  if (!uscito.size) return [];
+  // Già restituito con un reso precedente (un annullo riaperto e rifatto).
+  const reso = new Map();
+  opMovimentiDi(o.id).forEach(x => {
+    if (x.orderId === o.id && x.lineId === prima.id && (x.kind === 'reso' || x.kind === 'clIn') && x.itemId !== o.itemId) {
+      reso.set(x.itemId, (reso.get(x.itemId) || 0) + Math.abs(Number(x.qty) || 0));
+    }
+  });
+  const pezzi = Number(o.qty) || 0;
+  const quota = pezzi > 0 ? Math.max(0, 1 - opProcessati(o, prima) / pezzi) : 0;
+  const out = [];
+  uscito.forEach((q, itemId) => {
+    const resto = Math.max(0, q - (reso.get(itemId) || 0));
+    if (!(resto > 0.000001)) return;
+    const it = getItem(itemId);
+    out.push({ itemId, code: it ? it.code : '', name: it ? it.name : '', uom: it ? itemUom(it) : '',
+      uscito: resto, proposto: +(resto * quota).toFixed(4) });
+  });
+  return out;
+}
+function odpAnnullaModal(id) {
+  const o = getOdp(id); if (!o) return;
+  const righe = opResoProposto(o);
+  const prima = opPrima(o);
+  window.__opReso = righe.map(r => r.itemId);
+  const daTerzista = prima && prima.supplierId;
+  openModal(`<h3>${ico('blocked', 'tinted pill', '')} Annulla ${esc(o.number)}</h3>
+    <p>Dall'avvio della prima fase è uscito del materiale. Quanto ne torna ${daTerzista ? `da <strong>${esc(prima.supplierName || supplierName(prima.supplierId) || '')}</strong>` : 'a magazzino'}?</p>
+    <div style="display:flex;flex-direction:column;gap:6px">${righe.map((r, i) => `<div class="mgmt-item">
+      <span style="width:130px;font-family:var(--mono)">${esc(r.code)}</span>
+      <span style="flex:1">${esc(r.name)} <span class="empty-text" style="padding:0">uscito ${fmtQty(r.uscito)} ${esc(r.uom)}</span></span>
+      <input class="num" type="number" id="op-r-${i}" min="0" step="any" value="${esc(String(r.proposto))}" style="width:110px" aria-label="Quantità di ${esc(r.code)} che torna">
+      <span class="empty-text" style="padding:0;width:40px">${esc(r.uom)}</span>
+    </div>`).join('')}</div>
+    <p class="empty-text" style="text-align:left;padding:8px 0">La proposta è il materiale dei pezzi che la prima fase <strong>non ha ancora lavorato</strong> (${fmtQty(opResidua(o, prima))} su ${fmtQty(o.qty)}): quello dei pezzi già lavorati non è più materiale. ${daTerzista ? 'Torna con un <strong>rientro da conto lavoro</strong>, che azzera il prospetto presso il terzista.' : 'Torna con un <strong>reso da produzione</strong>.'} Lascia zero per non restituire niente.</p>
+    <div class="modal-actions">
+      <button class="btn-ghost" onclick="closeModal()">Non annullare</button>
+      <button class="add-btn-sm" onclick="odpAnnullaSave('${esc(id)}')">Annulla l'ordine</button>
+    </div>`, false, 'form');
+}
+// `righe` [{ itemId, qty }]: quanto torna, in positivo.
+function opAnnullaConReso(id, righe, note) {
+  if (!opGuard(id, 'ops')) return false;
+  const o = getOdp(id); if (!o) return false;
+  const prima = opPrima(o);
+  const daTerzista = prima && prima.supplierId;
+  let n = 0;
+  (righe || []).forEach(r => {
+    const q = Number(r.qty) || 0;
+    if (!(q > 0) || !prima) return;
+    const extra = { orderId: o.id, lineId: prima.id };
+    if (daTerzista) extra.supplierId = prima.supplierId;
+    if (addMovement(r.itemId, daTerzista ? 'clIn' : 'reso', q, note || `Reso da ${o.number} annullato`, extra)) n++;
+  });
+  o.status = 'annullato'; touch(o); saveDB();
+  return n;
+}
+function odpAnnullaSave(id) {
+  const righe = (window.__opReso || []).map((itemId, i) => ({ itemId, qty: Math.max(0, rawNum('op-r-' + i)) }));
+  const n = opAnnullaConReso(id, righe);
+  if (n === false) return;
+  closeModal(); renderOdp();
+  showToast(n ? `Ordine annullato, ${n === 1 ? '1 materiale tornato' : n + ' materiali tornati'} a magazzino` : 'Ordine annullato');
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -911,14 +991,15 @@ function opAvviaModal(id, faseId) {
     : 'Questa fase <strong>non muove il magazzino</strong>: i pezzi sono già fuori dallo scaffale da quando è partita la prima fase, e non sono ancora la parte finita. Dove stanno lo dice questa tabella, non una giacenza.';
   const corpo = righe.map((m, i) => `<div class="mgmt-item">
       <span style="width:110px;font-family:var(--mono)">${esc(m.code)}</span>
-      <span style="flex:1">${esc(m.name)} <span class="empty-text" style="padding:0">${fmtQty(m.perPezzo)} ${esc(m.uom)}/pz</span>${m.gia ? ` <span class="rfq-clavoro-tag">già ${fmtQty(m.gia)}</span>` : ''}</span>
-      <input class="num" type="number" id="op-q-${i}" min="0" step="any" value="${esc(String(+m.residuo.toFixed(4)))}" style="width:110px">
+      <span style="flex:1">${esc(m.name)} <span class="empty-text" style="padding:0">${fmtQty(m.perPezzo)} ${esc(m.uom)}/pz · a magazzino ${fmtQty(onHandOf(m.itemId))}</span>${m.gia ? ` <span class="rfq-clavoro-tag">già ${fmtQty(m.gia)}</span>` : ''}</span>
+      <input class="num" type="number" id="op-q-${i}" min="0" step="any" value="${esc(String(+m.residuo.toFixed(4)))}" style="width:110px" oninput="opAvviaAvviso()">
       <span class="empty-text" style="padding:0;width:40px">${esc(m.uom)}</span>
     </div>`).join('');
   openModal(`${opTestaModal(o, f, 'Avvia la fase ' + f.seq)}
     ${prima && !righe.length && (o.materials || []).length ? `<div class="rfq-warn">${ico('warning', 'tinted', '')} Il materiale di questo ordine è <strong>già uscito tutto</strong>.</div>` : ''}
     ${corpo ? `<h4 class="settings-group-title">Materiale che esce, dal ciclo della parte</h4>
-      <div style="display:flex;flex-direction:column;gap:6px">${corpo}</div>` : ''}
+      <div style="display:flex;flex-direction:column;gap:6px">${corpo}</div>
+      <div id="op-avviso">${avvisoSottoZeroHtml(righe.map(m => ({ itemId: m.itemId, qty: m.residuo })))}</div>` : ''}
     <p class="empty-text" style="text-align:left;padding:8px 0">${spiega}</p>
     <div class="modal-field"><label>Nota</label><input id="op-note" placeholder="es. lotto 12 / bolla 412" autocomplete="off"></div>
     <div class="modal-actions">
@@ -926,11 +1007,15 @@ function opAvviaModal(id, faseId) {
       <button class="add-btn-sm" onclick="opAvviaSave('${esc(id)}','${esc(faseId)}')">Avvia</button>
     </div>`, !!corpo, 'form');
 }
+function opAvviaRighe() { return (window.__opAvviaMat || []).map((itemId, i) => ({ itemId, qty: rawNum('op-q-' + i) })); }
+function opAvviaAvviso() { const el = document.getElementById('op-avviso'); if (el) el.innerHTML = avvisoSottoZeroHtml(opAvviaRighe()); }
 function opAvviaSave(id, faseId) {
-  const ids = window.__opAvviaMat || [];
-  const materiali = ids.map((itemId, i) => ({ itemId, qty: rawNum('op-q-' + i) }));
+  const materiali = opAvviaRighe();
+  const sotto = avvisoSottoZero(materiali);
   if (!opAvvia(id, faseId, { materiali, note: val('op-note') })) return;
-  closeModal(); renderOdp(); showToast('Fase avviata');
+  closeModal(); renderOdp();
+  if (sotto.length) showToast('Fase avviata, ma l\'esistente va sotto zero: ' + sotto.join('; '), 'error');
+  else showToast('Fase avviata');
 }
 function opDichiaraModal(id, faseId) {
   const x = opFaseDi(id, faseId); if (!x) return;

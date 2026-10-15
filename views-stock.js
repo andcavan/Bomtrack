@@ -59,6 +59,11 @@ const MOVEMENT_KINDS = {
   // per cui `clIn` non è un carico manuale. Tenerli distinti è ciò che lascia
   // leggere uno storico e sapere da dove viene ogni pezzo.
   versamento: 'Versamento di produzione',
+  // ── Il reso di produzione (dalla 0.100.0) ──
+  // Il materiale che torna a scaffale da un ordine di produzione **annullato**:
+  // era uscito come consumo, e non è stato consumato. Non è un carico manuale
+  // per la stessa ragione per cui non lo è il versamento: l'ordine c'è.
+  reso: 'Reso da produzione',
 };
 // I tipi che muovono materiale verso un terzista e indietro. Portano un
 // fornitore, e senza quello il prospetto non saprebbe da chi andare a riprendere
@@ -139,7 +144,7 @@ function stockIndex() {
   _stockIdx = idx;
   return idx;
 }
-function invalidateStock() { _stockIdx = null; _commitIdx = null; _prelIdx = null; _clIdx = null; }
+function invalidateStock() { _stockIdx = null; _commitIdx = null; _prelIdx = null; _clIdx = null; _scaffaleIdx = null; }
 function stockOf(itemId) { return stockIndex().get(itemId) || { onHand: 0, incoming: 0, arrivi: [] }; }
 function onHandOf(itemId) { return stockOf(itemId).onHand; }
 function incomingOf(itemId) { return stockOf(itemId).incoming; }
@@ -200,7 +205,7 @@ function commitIndex() {
     (db.plans || []).forEach(p => {
       if (p.active === false || !(p.lines || []).length) return;
       const prel = prelevatiIndex().get(p.id);
-      mrpExplode(p.lines).buy.forEach(e => {
+      mrpExplodePlan(p).buy.forEach(e => {
         const gia = (prel && prel.get(e.item.id)) || 0;
         // Tutto prelevato: il piano su questo articolo non promette più niente.
         if (!(e.qty - gia > 0.000001)) return;
@@ -209,11 +214,132 @@ function commitIndex() {
         l.push({ planId: p.id, number: p.number || '', title: p.title || '',
           qty: e.qty - gia, lordo: e.qty, prelevato: gia, due: e.due || '' });
       });
+      // Le parti pronte che il piano prende dallo scaffale (scaffaleIndex): sono
+      // promesse a lui, e un altro piano non deve contarle come libere.
+      const sc = scaffaleIndex().get(p.id);
+      if (sc) sc.impegno.forEach((q, itemId) => {
+        if (!(q > 0.000001)) return;
+        let l = idx.get(itemId);
+        if (!l) { l = []; idx.set(itemId, l); }
+        l.push({ planId: p.id, number: p.number || '', title: p.title || '',
+          qty: q, lordo: q, prelevato: 0, due: '' });
+      });
     });
   }
   _commitIdx = idx;
   return idx;
 }
+
+// ─── Le parti già pronte riducono il fabbisogno ───
+// Fino alla 0.99 l'esplosione scendeva sempre fino al materiale: un piano
+// comprava il tondo e lanciava le fasi anche per parti che stavano già a
+// scaffale. Ora, prima di fabbricare una parte, il piano prende quelle pronte.
+//
+// Lo scaffale è uno solo e i piani sono tanti, quindi va **spartito**, e la
+// spartizione deve essere la stessa ogni volta che qualcuno la chiede: non può
+// dipendere da quale piano si sta guardando. Si fa una volta per tutti i piani
+// aperti, in ordine di **urgenza** (la consegna più vicina prima, poi la data
+// del piano, poi il numero): chi deve consegnare prima prende prima.
+//
+// Cosa è disponibile per una parte:
+//   esistente − scorta minima − i pezzi che ODP di un piano hanno versato
+//   e che quel piano non ha ancora usato
+// L'ultimo termine tiene fuori dalla spartizione i pezzi **fabbricati per un
+// piano**: sono il suo «da fabbricare» già fatto, e se un altro piano più
+// urgente se li prendesse il primo si ritroverebbe a rifarli.
+//
+// E quello che un piano ha **già consumato** dallo scaffale (un montaggio, il
+// prelievo di un ODP che usa la parte come materiale) conta per lui come preso:
+// è uscito dall'esistente, e senza questo il piano lo rifabbricherebbe — lo
+// stesso doppio conteggio che `prelevatiIndex` evita sul materiale.
+//
+// → piano → { quota: Map(parte → quanto può prendere), impegno: Map(parte →
+//   quanto toglie allo scaffale e non ha ancora consumato) }
+let _scaffaleIdx = null;
+function planUrgenza(p) {
+  const date = (p.lines || []).map(l => l.dueDate || p.dueDate || '').filter(Boolean).sort();
+  return date[0] || '9999-12-31';
+}
+function scaffaleIndex() {
+  if (_scaffaleIdx) return _scaffaleIdx;
+  const idx = new Map();
+  _scaffaleIdx = idx;                   // prima del calcolo: niente rientri
+  if (typeof mrpExplode !== 'function') return idx;
+  const piani = (db.plans || []).filter(p => p.active !== false && (p.lines || []).length)
+    .sort((a, b) => planUrgenza(a).localeCompare(planUrgenza(b))
+      || String(a.date || '').localeCompare(String(b.date || ''))
+      || String(a.number || '').localeCompare(String(b.number || '')));
+  // Versato dagli ODP di ciascun piano, per parte.
+  const versato = new Map();
+  if (typeof opVersato === 'function') {
+    (db.prodOrders || []).forEach(o => {
+      if (!o.planId || o.status === 'annullato') return;
+      const v = opVersato(o); if (!(v > 0)) return;
+      let m = versato.get(o.planId);
+      if (!m) { m = new Map(); versato.set(o.planId, m); }
+      m.set(o.itemId, (m.get(o.itemId) || 0) + v);
+    });
+  }
+  const aperti = new Set(piani.map(p => p.id));
+  // Quanto di una parte resta in mano al piano che l'ha fatta, e quanto il
+  // piano ha consumato dallo scaffale comune (oltre i suoi).
+  const propri = (planId, itemId) => Math.max(0, ((versato.get(planId) || new Map()).get(itemId) || 0) - prelevatoPer(itemId, planId));
+  const dalComune = (planId, itemId) => Math.max(0, prelevatoPer(itemId, planId) - ((versato.get(planId) || new Map()).get(itemId) || 0));
+  const comune = new Map();
+  const comuneDi = itemId => {
+    if (!comune.has(itemId)) {
+      let riservati = 0;
+      aperti.forEach(pid => { riservati += propri(pid, itemId); });
+      const it = getItem(itemId);
+      comune.set(itemId, Math.max(0, onHandOf(itemId) - safetyStockOf(it) - riservati));
+    }
+    return comune.get(itemId);
+  };
+  piani.forEach(p => {
+    const preso = new Map(), consumato = new Map(), budget = new Map();
+    const scaffale = { prendi(itemId, q) {
+      if (!budget.has(itemId)) {
+        const c = dalComune(p.id, itemId);
+        consumato.set(itemId, c);
+        budget.set(itemId, c + comuneDi(itemId));
+      }
+      const t = Math.min(q, budget.get(itemId));
+      if (!(t > 0)) return 0;
+      budget.set(itemId, budget.get(itemId) - t);
+      preso.set(itemId, (preso.get(itemId) || 0) + t);
+      return t;
+    } };
+    mrpExplode(p.lines, { scaffale });
+    const impegno = new Map();
+    preso.forEach((t, itemId) => {
+      const dalloScaffale = Math.max(0, t - (consumato.get(itemId) || 0));
+      comune.set(itemId, Math.max(0, comuneDi(itemId) - dalloScaffale));
+      impegno.set(itemId, dalloScaffale);
+    });
+    idx.set(p.id, { quota: preso, impegno });
+  });
+  return idx;
+}
+// Lo scaffale di un piano, pronto per mrpExplode: la quota che la spartizione
+// gli ha dato, consumata nello stesso ordine in cui la spartizione l'ha
+// assegnata — la discesa è la stessa, quindi le parti finiscono negli stessi
+// rami.
+function mrpScaffale(planId) {
+  const sc = planId ? scaffaleIndex().get(planId) : null;
+  if (!sc || !sc.quota.size) return null;
+  const resto = new Map(sc.quota);
+  return { prendi(itemId, q) {
+    const t = Math.min(q, resto.get(itemId) || 0);
+    if (!(t > 0)) return 0;
+    resto.set(itemId, resto.get(itemId) - t);
+    return t;
+  } };
+}
+function mrpOpzPiano(planId) { return { scaffale: mrpScaffale(planId) }; }
+// L'esplosione di un piano **com'è davvero**: al netto delle parti pronte che
+// gli toccano. È quella che usano tutte le viste di un piano; la lorda resta per
+// costi e anteprime.
+function mrpExplodePlan(p) { return mrpExplode((p && p.lines) || [], mrpOpzPiano(p && p.id)); }
 // Il materiale già uscito dal magazzino **per un piano**: piano → articolo →
 // quantità. Conta i movimenti che portano l'id di un documento del piano (ODP,
 // ODL, ordine di conto lavoro): lo `scarico` e l'uscita a conto lavoro tolgono,
@@ -226,6 +352,9 @@ function prelevatiIndex() {
   [].concat(db.prodOrders || [], db.workOrders || [], db.orders || []).forEach(d => {
     if (d.planId && d.status !== 'annullato') docPiano.set(d.id, d.planId);
   });
+  // Anche le dichiarazioni di montaggio (produzione.js): i componenti che
+  // scaricano escono per il loro piano.
+  (db.productions || []).forEach(d => { if (d.planId) docPiano.set(d.id, d.planId); });
   const idx = new Map();
   (db.movements || []).forEach(m => {
     if (!m.itemId || !m.orderId) return;
@@ -348,6 +477,32 @@ function addMovement(itemId, kind, qty, note, extra) {
     // esattamente i suoi movimenti, non tutti quelli della fase.
     declId: e.declId || null };
   return Store.insert('movements', rec);
+}
+
+// ─── Un prelievo che va sotto zero (dalla 0.100.0) ───
+// L'avvio di un ODP, un montaggio, uno scarico o un'uscita a conto lavoro
+// scritti a mano non guardavano quanto c'era: l'esistente poteva diventare
+// negativo senza che nessuno se ne accorgesse. Non si blocca — la merce può
+// essere davvero uscita prima che qualcuno registrasse l'arrivo, e rifiutare il
+// gesto vorrebbe dire non registrarla affatto — ma si dice, prima e dopo.
+// `righe` è [{ itemId, qty }] con la quantità che **esce**, in positivo.
+function avvisoSottoZero(righe) {
+  const perArticolo = new Map();
+  (righe || []).forEach(r => {
+    const q = Number(r.qty) || 0;
+    if (r.itemId && q > 0) perArticolo.set(r.itemId, (perArticolo.get(r.itemId) || 0) + q);
+  });
+  const out = [];
+  perArticolo.forEach((q, itemId) => {
+    const it = getItem(itemId); if (!it || !hasStock(it)) return;
+    const c = onHandOf(itemId);
+    if (q > c + 0.000001) out.push(`${it.code}: ne escono ${fmtQty(q)}, a magazzino ce ne sono ${fmtUom(c, itemUom(it))}`);
+  });
+  return out;
+}
+function avvisoSottoZeroHtml(righe) {
+  const a = avvisoSottoZero(righe);
+  return a.length ? `<div class="rfq-warn">${ico('warning', 'tinted', '')} L'esistente va sotto zero: ${a.map(esc).join('; ')}. Si può registrare lo stesso, ma qualcosa non torna — un arrivo non registrato, o un conteggio da rifare.</div>` : '';
 }
 
 // ─── Materiale presso i terzisti ───
@@ -578,7 +733,7 @@ function stockAdjustModal(itemId) {
 // `versamento` perché si registra solo da un ordine di produzione — offrirlo
 // qui vorrebbe dire poter fabbricare un carico di produzione senza nessun
 // documento che lo spieghi.
-const MOVEMENT_MANUAL_KINDS = Object.keys(MOVEMENT_KINDS).filter(k => k !== 'clStep' && k !== 'versamento');
+const MOVEMENT_MANUAL_KINDS = Object.keys(MOVEMENT_KINDS).filter(k => k !== 'clStep' && k !== 'versamento' && k !== 'reso');
 const MOVEMENT_HINTS = {
   rettifica: 'Scrivi quanti ce ne sono <strong>davvero</strong>: viene registrata la differenza rispetto all&rsquo;esistente calcolato.',
   scarico: 'Scrivi quanti ne <strong>escono</strong>: verranno sottratti.',
@@ -615,11 +770,13 @@ function saveStockAdjust(itemId) {
   const uscita = kind === 'scarico' || kind === 'clOut';
   const delta = kind === 'rettifica' ? (inserita - onHandOf(it.id)) : (uscita ? -inserita : inserita);
   if (!delta) { showToast('Nessuna differenza da registrare'); closeModal(); return; }
+  const sotto = uscita ? avvisoSottoZero([{ itemId: it.id, qty: inserita }]) : [];
   addMovement(it.id, kind, delta, val('mv-note'), { supplierId, orderId: val('mv-ord') });
   closeModal();
   if (typeof renderCatalogs === 'function') renderCatalogs();
   // Il toast passa già da esc(): qui l'unità va concatenata cruda, non da fmtUom.
-  showToast(`Giacenza aggiornata: ${fmtQty(onHandOf(it.id))} ${itemUom(it)}`.trim());
+  if (sotto.length) showToast(`Registrato, ma l'esistente va sotto zero: ${sotto.join('; ')}`, 'error');
+  else showToast(`Giacenza aggiornata: ${fmtQty(onHandOf(it.id))} ${itemUom(it)}`.trim());
 }
 
 function stockMovementsModal(itemId) {
@@ -880,6 +1037,7 @@ function saveClFromOdl(docId, lineId, verso) {
   const kind = window.__clKind || (uscita ? 'clOut' : 'clIn');
   const passaggio = kind === 'clStep';
   const ids = window.__clRighe || [];
+  const sotto = uscita && kind === 'clOut' ? avvisoSottoZero(ids.map((itemId, i) => ({ itemId, qty: rawNum('cl-q-' + i) }))) : [];
   let n = 0;
   ids.forEach((itemId, i) => {
     const q = rawNum('cl-q-' + i);
@@ -902,6 +1060,7 @@ function saveClFromOdl(docId, lineId, verso) {
   // Si ridisegna la vista che ha aperto la scheda, non tutte e due.
   if (activeView === 'odl' && typeof renderOdl === 'function') renderOdl();
   else if (typeof renderOrders === 'function') renderOrders();
+  if (sotto.length) { showToast('Registrato, ma l\'esistente va sotto zero: ' + sotto.join('; '), 'error'); return; }
   showToast(passaggio
     ? (uscita ? 'Pezzi mandati al terzista' : 'Pezzi ritirati dal terzista')
     : (uscita

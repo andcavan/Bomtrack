@@ -135,7 +135,7 @@ function jobCoverage(jobId) {
   piani.forEach(p => {
     const righeP = (p.lines || []).map(l => ({ itemId: l.itemId, qty: l.qty,
       dueDate: l.dueDate || p.dueDate || base.entro }));
-    const exp = mrpExplode(righeP);
+    const exp = mrpExplode(righeP, mrpOpzPiano(p.id));
     if (exp.cycle) base.cycle = true;
     exp.buy.forEach(e => {
       const cur = per.get(e.item.id);

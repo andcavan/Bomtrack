@@ -2,6 +2,23 @@
 
 Le revisioni seguono il versionamento semantico `0.MINOR.PATCH`: **MINOR** per nuove funzionalità, **PATCH** per correzioni. La versione in cima è quella in `APP_VERSION` (`core.js`) e mostrata nell'header dell'app.
 
+### 0.100.0 — 2026-10-15
+
+**Il magazzino segue il montaggio, le parti a scaffale e gli annulli.** Il montaggio di un assieme non scaricava i componenti, le parti già a scaffale si rifacevano, un ODP annullato lasciava fuori il materiale uscito e un prelievo oltre la giacenza passava in silenzio.
+
+**Nuovo**
+- **Dichiara montaggio**: nuova scheda **Da montare** nel piano, una riga per assieme con quantità, date, montati e restanti. La finestra propone i componenti diretti (con lo scarto della distinta) per i pezzi montati, mostra la giacenza, si corregge a mano e registra un *Consumo di produzione* per componente, legato alla dichiarazione (`db.productions`). Eliminare la dichiarazione toglie anche gli scarichi. Il montaggio dichiarato abbassa l'impegno del piano e porta la tappa a *fatto* in programma e avanzamento.
+- **Parti a scaffale**: l'esplosione del piano prende prima le parti fabbricate che sono già a magazzino e fa produrre (e comprare materiale) solo per il resto. Le prende in ordine di urgenza dei piani aperti, dall'esistente meno la scorta minima, lasciando a ciascun piano i pezzi che i suoi ODP hanno versato e non sono ancora montati; le prese si impegnano. Si vedono nella scheda *Da fabbricare* sotto **Dal magazzino** (`scaffaleIndex`, `mrpExplodePlan` in `views-stock.js`).
+- **Annullare un ODP rende il materiale**: se l'ordine aveva già prelevato, **Annulla** propone di rimettere a magazzino quello uscito, in proporzione ai pezzi della prima fase non ancora lavorati. Nuovo movimento **Reso da produzione** (o *Rientro da conto lavoro* se la prima fase era dal terzista), legato all'ordine.
+- **Avviso sotto zero**: rettifica, uscita a conto lavoro, avvio della prima fase di un ODP e montaggio dicono prima di registrare se l'esistente va sotto zero, e lo ricordano dopo. Il movimento si registra comunque.
+
+**Da sapere**
+- Prima di questa versione il montaggio non scaricava niente: le parti e i commerciali degli assiemi già montati sono ancora nell'esistente, e ora i piani li considerano disponibili. Conviene controllare la lista *Dal magazzino* dei piani aperti e rettificare l'inventario dove serve. Sui dati di esempio FAB-2026-002 prende 10 codici da scaffale, versati da FAB-2026-001.
+- Gantt e data fattibile restano sulla distinta intera. I sottoassiemi si dichiarano sulla loro riga: il montaggio di un assieme non scarica gli assiemi che contiene.
+
+**Verifica**
+- `test/montaggio-scaffale.test.js` (nuovo, 21 casi): scarico dei componenti con lo scarto, eliminazione, impegno, parti a scaffale con priorità e quote fra piani, scorta minima, reso proporzionale e dal terzista, avvisi sotto zero. `test/avanzamento.test.js`: montaggio dichiarato.
+
 ### 0.99.0 — 2026-10-15
 
 **Codici QR su etichette e documenti.** Per trovare un articolo davanti allo scaffale, o un ordine con il foglio in mano, si cercava il codice a tastiera.

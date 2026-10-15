@@ -61,7 +61,7 @@ function avzModello(planId, lineId) {
   const odp = docs.prodOrders.filter(vivo);
   // Cosa il piano deve ancora documentare, al netto di giacenza e arrivi: un
   // acquisto senza ordine che non va comprato è coperto, non in ritardo.
-  const exp = mrpExplode(plan.lines);
+  const exp = mrpExplodePlan(plan);
   const daComprare = new Set(exp.buy.map(e => mrpBuyRow(e, true, plan.id)).filter(r => r.qtyOrder > 0).map(r => r.item.id));
   const daFabbricare = new Set(exp.make.map(e => mrpMakeRow(e, plan.id)).filter(r => r.qtyOrder > 0).map(r => r.item.id));
 
@@ -70,7 +70,7 @@ function avzModello(planId, lineId) {
   flat.forEach(({ node: n, livello }) => {
     const base = { node: n, item: n.item, livello, critico: critici.has(n) };
     if (n.kind === 'buy') righe.push(Object.assign(base, avzAcquisto(n, ordini, richieste, daComprare, oggi)));
-    else if (n.kind === 'asm') righe.push(Object.assign(base, avzMontaggio(n, odp, oggi)));
+    else if (n.kind === 'asm') righe.push(Object.assign(base, avzMontaggio(n, odp, oggi, plan.id)));
     else {
       const suoi = odp.filter(o => o.itemId === n.item.id);
       if (!n.steps.length) righe.push(Object.assign(base, avzSenzaTappe(n, suoi, daFabbricare, oggi)));
@@ -198,11 +198,19 @@ function avzSenzaTappe(n, suoi, daFabbricare, oggi) {
 }
 // Il montaggio: si segue solo se l'assieme ha un ordine di produzione. Senza,
 // non c'è niente che lo registri, e la riga lo dice invece di inventarlo.
-function avzMontaggio(n, odp, oggi) {
+// Dalla 0.100.0 il montaggio si dichiara anche senza ODP (produzione.js): i
+// pezzi montati dichiarati sul piano dicono a che punto è.
+function avzMontaggio(n, odp, oggi, planId) {
   const suoi = odp.filter(o => o.itemId === n.item.id);
   if (suoi.length) return avzDaOdp(n, suoi, 'asm', schedNodeLabel(n), true, oggi);
+  const montati = planId ? Math.min(prodottiDi(planId, n.item.id), n.qty) : 0;
+  if (montati > 0) {
+    const stato = avzStato(montati, n.qty, true, false, n.start, n.end, '', oggi);
+    return { tipo: 'asm', label: schedNodeLabel(n), start: n.start, end: n.end, attesa: '', fatto: montati, totale: n.qty,
+      pct: n.qty ? Math.min(1, montati / n.qty) : 0, stato, docs: [], nota: `Montati ${fmtQtyIt(montati)} di ${fmtQtyIt(n.qty)}` };
+  }
   return { tipo: 'asm', label: schedNodeLabel(n), start: n.start, end: n.end, attesa: '', fatto: 0, totale: 0, pct: 0,
-    stato: 'previsto', docs: [], nota: n.end && oggi > n.end ? 'Data passata: il montaggio non ha un documento che lo registri' : 'Il montaggio non ha un documento che lo registri' };
+    stato: 'previsto', docs: [], nota: n.end && oggi > n.end ? 'Data passata: nessun montaggio dichiarato' : 'Nessun montaggio dichiarato: si dichiara nel piano, scheda «Da montare»' };
 }
 function avzDaOdp(n, suoi, tipo, label, serve, oggi) {
   const docs = [];

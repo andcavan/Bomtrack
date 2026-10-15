@@ -56,12 +56,19 @@
 //      settembre» non ha risposta senza un periodo.
 //   3. Non si promette nulla che non si dia: capacità **infinita**, dichiarata.
 //      Il prospetto mostra il sovraccarico, non lo sposta.
-function mrpExplode(lines) {
+// `opz.scaffale` (dalla 0.100.0) è la quota di parti già pronte a magazzino che
+// questo piano può usare, nella forma di `mrpScaffale()`: una parte presa da lì
+// non si fabbrica, e sotto di lei non si scende — niente materiale da
+// comprare, niente fasi da commissionare per pezzi che esistono già. Senza
+// opzione l'esplosione è lorda, com'è sempre stata: la usano la costificazione
+// e le anteprime, dove la giacenza non c'entra.
+function mrpExplode(lines, opz) {
   // Gli accumulatori viaggiano in un oggetto solo: `mrpDescend` ne aveva già
   // sette di parametri posizionali, e l'ottavo sarebbe stato quello che si
   // sbaglia a passare.
   const acc = { buy: new Map(), make: new Map(), phases: new Map(), load: new Map(),
-    asm: new Map(), intOps: new Map(), cycle: false };
+    asm: new Map(), intOps: new Map(), stock: new Map(), cycle: false,
+    scaffale: (opz && opz.scaffale) || null };
   (lines || []).forEach(l => mrpDescend(l.itemId, Number(l.qty) || 0, new Set(), acc, l.dueDate || ''));
   const perCodice = m => Array.from(m.values()).sort((a, b) => String(a.item.code).localeCompare(String(b.item.code)));
   // Le fasi si ordinano per parte e poi per posizione nel ciclo: l'ordine delle
@@ -70,8 +77,10 @@ function mrpExplode(lines) {
     String(a.item.code).localeCompare(String(b.item.code)) || a.opIndex - b.opIndex);
   // `asm` e `intOps` (assiemi da montare, fasi interne) portano solo date: li
   // legge l'agenda del piano, nessun conto di quantità passa da lì.
+  // `stock` sono le parti prese dal magazzino invece che fabbricate.
   return { buy: perCodice(acc.buy), make: perCodice(acc.make), phases: perFase(acc.phases),
-    load: Array.from(acc.load.values()), asm: perCodice(acc.asm), intOps: perFase(acc.intOps), cycle: acc.cycle };
+    load: Array.from(acc.load.values()), asm: perCodice(acc.asm), intOps: perFase(acc.intOps),
+    stock: perCodice(acc.stock), cycle: acc.cycle };
 }
 // Le date sono stringhe ISO `YYYY-MM-DD`: si confrontano bene così come sono, e
 // una vuota non deve mai vincere su una valorizzata.
@@ -120,6 +129,14 @@ function mrpDescend(itemId, qty, ancestors, acc, due) {
     // commerciale. Il ciclo resta salvato, ma non si scende — quel materiale
     // e quelle lavorazioni li mette il fornitore, non noi.
     if (partSourcing(it) === 'buy') { mrpAdd(acc.buy, it, qty, due); return; }
+    // Pezzi già pronti a scaffale: si prendono prima di fabbricarne. Quello che
+    // resta si fabbrica, e solo per quello si scende nel ciclo.
+    const presi = acc.scaffale ? acc.scaffale.prendi(it.id, qty) : 0;
+    if (presi > 0) {
+      mrpAdd(acc.stock, it, presi, due);
+      qty -= presi;
+      if (!(qty > 0.000001)) return;
+    }
     // Il ciclo si programma a ritroso dalla data in cui la parte serve: ogni
     // fase ha il suo inizio e la sua fine, e il materiale serve all'inizio
     // della prima. Le ore di una fase interna stanno nella settimana in cui la
@@ -368,7 +385,7 @@ function schedFlat(node, livello, out) {
 function schedDisponibilita(planId, lines) {
   const oggi = schedOggi();
   const lordo = new Map();
-  mrpExplode(lines).buy.forEach(e => lordo.set(e.item.id, e.qty));
+  mrpExplode(lines, mrpOpzPiano(planId)).buy.forEach(e => lordo.set(e.item.id, e.qty));
   const arrivi = new Map();
   (typeof righeDaRicevere === 'function' ? righeDaRicevere() : []).forEach(({ l, data, residuo }) => {
     if (!l.itemId) return;
@@ -689,7 +706,7 @@ function mrpBuyRow(entry, netMode, planId) {
 function mrpLoadEntries(plans) {
   const map = new Map();
   (plans || []).forEach(p => {
-    mrpExplode(p.lines).load.forEach(e => {
+    mrpExplodePlan(p).load.forEach(e => {
       const k = e.workCenterId + '|' + e.week;
       let t = map.get(k);
       if (!t) { t = { workCenterId: e.workCenterId, week: e.week, hours: 0, voci: [] }; map.set(k, t); }
@@ -1145,7 +1162,7 @@ function mrpPhaseRowsNette(planId, phases) {
   }).filter(r => r.qty > 0);
 }
 function mrpPhaseRows(plan) {
-  return mrpPhaseRowsNette(plan.id, mrpExplode(plan.lines).phases);
+  return mrpPhaseRowsNette(plan.id, mrpExplodePlan(plan).phases);
 }
 // ─── Dalle fasi alle tratte ───
 // Un ordine di lavoro non si commissiona fase per fase: le fasi **consecutive**
@@ -1260,8 +1277,8 @@ function mrpMakeRow(entry, planId) {
     noPrice: !(costOf(it.id).total > 0),
   };
 }
-function mrpMakeRows(plan) { return mrpExplode(plan.lines).make.map(e => mrpMakeRow(e, plan.id)); }
-function mrpBuyRows(plan, netMode) { return mrpExplode(plan.lines).buy.map(e => mrpBuyRow(e, netMode, plan.id)); }
+function mrpMakeRows(plan) { return mrpExplodePlan(plan).make.map(e => mrpMakeRow(e, plan.id)); }
+function mrpBuyRows(plan, netMode) { return mrpExplodePlan(plan).buy.map(e => mrpBuyRow(e, netMode, plan.id)); }
 // `.map(mrpBuyRow)` passerebbe l'indice dell'array come secondo argomento, e
 // dalla seconda riga in poi il netto si accenderebbe da solo. Le viste passano
 // sempre da qui.
@@ -1547,7 +1564,7 @@ function planRowKey(r) { return r.phaseKey || (r.isMake ? r.makeKey : r.item.id)
 // stanno nella stessa mappa perché la modale ne ha una sola.
 function planRowIndex(plan) {
   const map = new Map();
-  const exp = mrpExplode(plan.lines);
+  const exp = mrpExplodePlan(plan);
   mrpRowsOf(exp.buy, plan.id).forEach(r => map.set(r.item.id, r));
   // Le fasi entrano come **tratte**: è la tratta che diventa una riga di
   // documento, e la chiave è quella della sua prima fase.
@@ -2055,7 +2072,7 @@ function planListRows() {
 }
 function renderPlanEdit(id) {
   const p = getPlan(id);
-  const exp = mrpExplode(p.lines);
+  const exp = mrpExplodePlan(p);
   const buy = mrpRowsOf(exp.buy, id);
   const fasi = exp.phases.map(mrpPhaseRow);
   // Dove ogni riga è già finita: si legge dai documenti del piano, una volta
@@ -2175,6 +2192,15 @@ function renderPlanEdit(id) {
         <div class="mrp-section">
           <div class="cycle-section-head"><h3>${ico('factory', 'tinted pill', '')} Da fabbricare</h3></div>
           ${mrpMakeTable(exp.make, id)}
+        </div>
+        ${exp.stock.length ? `<div class="mrp-section">
+          <div class="cycle-section-head"><h3>${ico('package', 'tinted pill', '')} Dal magazzino</h3></div>
+          ${mrpStockTable(exp.stock)}
+        </div>` : ''}` },
+      { id: 'asm', label: 'Da montare', n: exp.asm.length, html: `
+        <div class="mrp-section">
+          <div class="cycle-section-head"><h3>${ico('wrench', 'tinted pill', '')} Da montare</h3></div>
+          ${mrpAsmTable(exp.asm, id)}
         </div>` },
       { id: 'agenda', label: 'Programma', html: `<div class="mrp-section">${planAgendaHtml(p)}</div>` },
       { id: 'gantt', label: 'Gantt', html: `<div class="mrp-section">${planGanttHtml(p, feas)}</div>` },
@@ -2261,7 +2287,7 @@ const AGENDA_TIPI = {
 const AGENDA_STATI = { fatto: 'fatto', richiesto: 'richiesto', ritardo: 'in ritardo', 'da fare': 'da fare', previsto: 'previsto' };
 function planAgenda(plan) {
   const oggi = oggiISO();
-  const exp = mrpExplode(plan.lines);
+  const exp = mrpExplodePlan(plan);
   const gia = planDocumentedKeys(plan.id);
   const out = [];
   const stato = (data, refs, docKinds) => {
@@ -2662,6 +2688,59 @@ function mrpMakeTable(make, planId) {
       <th scope="col"></th></tr></thead>
     <tbody>${rows}</tbody></table></div>`;
 }
+// ─── Le parti prese dallo scaffale (dalla 0.100.0) ───
+// Non si fabbricano: ci sono già. Si dicono comunque, o il «da fabbricare» più
+// corto del previsto sembrerebbe un errore.
+function mrpStockTable(stock) {
+  const rows = stock.map(e => `<tr>
+      <td style="font-family:var(--mono)">${codeLink(e.item.id, e.item.code)}</td>
+      <td>${esc(e.item.name)}</td>
+      <td>${esc(e.item.uom || '')}</td>
+      <td style="font-family:var(--mono);text-align:right">${fmtQty(e.qty)}</td>
+      <td style="font-family:var(--mono);text-align:right">${fmtQty(onHandOf(e.item.id))}</td></tr>`).join('');
+  return `<p class="empty-text" style="text-align:left;padding:0 0 8px">Parti già pronte a magazzino che questo piano usa invece di fabbricarle: sotto di loro non si compra materiale e non si lancia niente. Lo scaffale si spartisce fra i piani aperti in ordine di consegna, e le parti fabbricate per un piano restano a lui.</p>
+    <div class="table-wrap"><table>
+    <thead><tr><th scope="col">Codice</th><th scope="col">Parte</th><th scope="col">U.M.</th>
+      <th scope="col" style="text-align:right" title="Pezzi che il piano prende dallo scaffale">Presi</th>
+      <th scope="col" style="text-align:right">Esistente</th></tr></thead>
+    <tbody>${rows}</tbody></table></div>`;
+}
+// ─── Gli assiemi da montare (dalla 0.100.0) ───
+// Il montaggio si dichiara qui, come la produzione di una parte: quanti ne sono
+// stati montati, e i componenti diretti escono dal magazzino (produzione.js).
+function mrpAsmTable(asm, planId) {
+  if (!asm.length) return '<div class="empty-text">Nessun assieme da montare in questo piano.</div>';
+  const puoScrivere = canWriteShop('docs');
+  const rows = asm.map(e => {
+    const fatti = prodottiDi(planId, e.item.id);
+    const resta = daFare(planId, e.item.id, e.qty);
+    const nComp = montaggioComponenti(e.item, 1).stock.length;
+    const statoFatti = fatti <= 0 ? '<span class="empty-text" style="padding:0">—</span>'
+      : resta > 0 ? `<span class="mrp-warn">${fmtQty(fatti)}</span>` : `<span class="price-best">${fmtQty(fatti)}</span>`;
+    const azione = puoScrivere
+      ? `<button class="mini-btn" title="Dichiara il montaggio: i componenti escono dal magazzino" onclick="montaggioModal('${planId}','${e.item.id}',${e.qty})">${ico('wrench', 'tinted', 'Montaggio')}</button>`
+      : '';
+    return `<tr>
+      <td style="font-family:var(--mono)">${codeLink(e.item.id, e.item.code)}</td>
+      <td>${esc(e.item.name)}<span class="bom-type-tag tt-${e.item.type}" style="margin-left:6px">${typeShort(e.item.type)}</span></td>
+      <td style="font-family:var(--mono);text-align:right">${fmtQty(e.qty)}</td>
+      <td>${e.start && e.due && e.start < e.due ? `${fmtDateIt(e.start)} → ${fmtDateIt(e.due)}` : (e.due ? fmtDateIt(e.due) : '—')}</td>
+      <td style="text-align:right">${nComp}</td>
+      <td style="font-family:var(--mono);text-align:right">${statoFatti}</td>
+      <td style="font-family:var(--mono);text-align:right">${resta > 0 ? fmtQty(resta) : '<span class="price-best">montati</span>'}</td>
+      <td class="row-actions" style="text-align:right">${azione}</td></tr>`;
+  }).join('');
+  return `<p class="empty-text" style="text-align:left;padding:0 0 8px">Dichiarare un montaggio <strong>scarica i componenti diretti</strong> dell'assieme che stanno a magazzino — commerciali, parti, materiali — come consumo di produzione per questo piano. I sottoassiemi si dichiarano ciascuno per sé.</p>
+    <div class="table-wrap"><table>
+    <thead><tr><th scope="col">Codice</th><th scope="col">Assieme</th>
+      <th scope="col" style="text-align:right">Q.tà</th>
+      <th scope="col" title="Inizio e fine del montaggio, a ritroso dalla consegna">Montaggio</th>
+      <th scope="col" style="text-align:right" title="Componenti diretti che si tengono a magazzino">Componenti</th>
+      <th scope="col" style="text-align:right">Montati</th>
+      <th scope="col" style="text-align:right">Restano</th>
+      <th scope="col"></th></tr></thead>
+    <tbody>${rows}</tbody></table></div>`;
+}
 // Le quantità esplose sono float (scarti e frazioni): si mostrano senza zeri
 // inutili. La formattazione — e l'unità che le va accanto — stanno in core.js:
 // fmtQty / fmtUom / fmtPer.
@@ -2669,7 +2748,7 @@ function mrpMakeTable(make, planId) {
 // ─── Export ───
 function exportMrpExcel(id) {
   const p = getPlan(id); if (!p) return;
-  const exp = mrpExplode(p.lines);
+  const exp = mrpExplodePlan(p);
   const buy = mrpRowsOf(exp.buy, id);
   // Nel netto l'esportazione porta anche le colonne che spiegano il numero:
   // un foglio con solo "15" non permette a nessuno di rifare il conto.
@@ -2714,7 +2793,7 @@ function exportMrpExcel(id) {
 }
 function exportMrpPDF(id) {
   const p = getPlan(id); if (!p) return;
-  const exp = mrpExplode(p.lines);
+  const exp = mrpExplodePlan(p);
   const buy = mrpRowsOf(exp.buy, id);
   const jsPDF = requirePdf(); if (!jsPDF) return;
   const doc = new jsPDF();

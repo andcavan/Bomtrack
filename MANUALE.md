@@ -1,6 +1,6 @@
 # Bomtrack — Manuale d'uso
 
-**Versione dell'app documentata: 0.99.0**
+**Versione dell'app documentata: 0.100.0**
 
 📖 **[Leggilo come pagina web](https://claude.ai/code/artifact/726a0963-2db0-4947-999b-d7b5beb91a0b)** — stesso testo, con indice laterale, filtro dei capitoli e tema chiaro/scuro. Comodo da tenere aperto di fianco all'app.
 
@@ -1270,7 +1270,7 @@ sottofamiglia, e il filtro di **stato**:
 movimento**, **Quantità**, (per il conto lavoro) **Terzista** e **Ordine di conto lavoro**,
 **Nota**, e il pulsante **Registra**. Ogni tipo porta il suo suggerimento contestuale.
 
-**I sette tipi di movimento:**
+**Gli otto tipi di movimento:**
 
 | Tipo | Effetto sulla giacenza | Quando si usa |
 |---|---|---|
@@ -1281,9 +1281,11 @@ movimento**, **Quantità**, (per il conto lavoro) **Terzista** e **Ordine di con
 | **Rientro da conto lavoro** | **+** somma | il pezzo finito che torna |
 | **Passaggio di lavorazione** | **nessuno** | il pezzo va da un terzista al successivo |
 | **Versamento di produzione** | **+** somma | il pezzo finito all'ultima fase di un ordine di produzione |
+| **Reso da produzione** | **+** somma | il materiale che torna a scaffale da un ordine di produzione annullato |
 
-Gli ultimi due **non si scelgono a mano** dalla rettifica: il passaggio si registra dalla riga di
-un ODL, il versamento da un ordine di produzione (→ [cap. 22](#22-ordini-di-produzione-odp)). Un
+Gli ultimi tre **non si scelgono a mano** dalla rettifica: il passaggio si registra dalla riga di
+un ODL, il versamento da un ordine di produzione (→ [cap. 22](#22-ordini-di-produzione-odp)), il reso
+annullando un ordine di produzione. Un
 versamento senza un ordine dietro sarebbe un carico che nessuno spiega — per quello c'è il *Carico
 manuale*.
 
@@ -1292,6 +1294,13 @@ luogo a quantità invariata**. Contarlo come carico e poi come scarico farebbe c
 un semilavorato che a scaffale non c'è mai stato, e il codice prodotto si caricherebbe una volta
 per ogni terzista che l'ha toccato. Il passaggio si registra solo dalla riga di un ODL, e porta
 due fornitori: *dove va* e *da dove viene*.
+
+**Se l'esistente va sotto zero** (dalla 0.100.0). Una rettifica, un'uscita a conto lavoro,
+l'avvio di un ordine di produzione o un montaggio che fanno uscire più di quanto c'è a scaffale
+**si registrano lo stesso** — il pezzo è uscito davvero, e il conto sbagliato è quello di prima —
+ma la finestra lo dice prima di registrare (*«ne escono X, a magazzino ce ne sono Y»*) e, dopo, un
+avviso ricorda che l'esistente è negativo. È il segno che manca un carico, un versamento o un
+inventario.
 
 **La finestra «Movimenti»** mostra lo storico dell'articolo, con la possibilità di eliminare una
 riga sbagliata.
@@ -1453,7 +1462,8 @@ In alto, sempre visibili, stanno le righe **Da produrre** e i **KPI**. Il resto 
 |---|---|---|
 | **Da acquistare (N)** | La lista consolidata del materiale | Genera richieste · Genera ordini |
 | **Conto lavoro (N)** | Le fasi *Da far lavorare fuori* | Genera richieste · Genera ordini di lavoro |
-| **Da fabbricare (N)** | Le parti a produzione interna, con l'avanzamento | Genera ordini di produzione |
+| **Da fabbricare (N)** | Le parti a produzione interna, con l'avanzamento; sotto, quelle prese **dal magazzino** | Genera ordini di produzione |
+| **Da montare (N)** | Gli assiemi del piano, con i montaggi dichiarati | **Dichiara montaggio** su ogni riga |
 | **Programma** | L'agenda del piano in ordine di data | — |
 | **Gantt** | Il programma disegnato, riga per riga | — |
 | **Carico** | Le ore che questo piano chiede ai centri | — |
@@ -1594,7 +1604,8 @@ La sezione **Programma** mette in fila tutte le date del piano, giorno per giorn
 | **Ordinare** | ordinare entro | c'è un ordine a fornitore emesso dal piano (una sola richiesta d'offerta lo segna «richiesto») |
 | **Inviare al terzista** | invio della tratta | c'è un ordine di lavoro o un ordine di produzione |
 | **Lanciare in produzione** | inizio della prima fase | c'è un ordine di produzione |
-| **Rientro dal terzista** · **Fase interna** · **Montaggio** · **Consegna** | la loro data | non hanno un documento: sono «previsti» |
+| **Montaggio** | la sua data | i montaggi dichiarati nella scheda *Da montare* coprono la quantità |
+| **Rientro dal terzista** · **Fase interna** · **Consegna** | la loro data | non hanno un documento: sono «previsti» |
 
 Una voce oltre la sua data e non fatta è **in ritardo**. **☐ Solo da fare** lascia le voci ancora
 da emettere. Esporta in Excel e PDF, una riga per voce.
@@ -1642,12 +1653,12 @@ montaggio. Su ogni riga:
 | Acquisto | righe degli ordini a fornitore | il ricevuto copre l'ordinato |
 | Fase interna | fasi dell'ordine di produzione | la fase è chiusa |
 | Tratta dal terzista | fasi dell'ODP, e rientrati dell'ordine di lavoro | la fase è chiusa, o tutto è rientrato |
-| Montaggio | l'ordine di produzione dell'assieme, se c'è | l'ordine è completato |
+| Montaggio | l'ordine di produzione dell'assieme, se c'è; se no i montaggi dichiarati nel piano | l'ordine è completato, o i montati coprono la quantità |
 
 **Gli stati.** *In ritardo* se la data del programma è passata, o se l'arrivo atteso cade dopo; *in
 corso* se il lavoro è cominciato (o l'ordine al fornitore è inviato); *da fare* se non è cominciato
 ed è ancora in tempo; *da magazzino* se non serve un documento perché esistente e in arrivo bastano;
-*previsto* quando non c'è niente che lo registri, come un montaggio senza ordine di produzione. Un
+*previsto* quando non c'è niente che lo registri, come un montaggio non ancora dichiarato. Un
 ODP lanciato ma non avviato è *da fare*: il documento c'è, il lavoro no.
 
 **In testa** la consegna richiesta, la data fattibile e il margine, i conteggi per stato e, se ci
@@ -1673,7 +1684,52 @@ quello che i suoi documenti hanno già prelevato**: quando un ordine di produzio
 lavoro del piano fa uscire il materiale, l'esistente scende e l'impegno scende della stessa quantità.
 La merce uscita non si conta due volte, e il piano non chiede di ricomprare quello che ha appena
 usato. Un ordine **annullato** non riduce l'impegno: il materiale uscito manca, e il piano lo deve
-ancora avere.
+ancora avere — a meno che, annullandolo, il materiale sia stato **reso** a magazzino (→
+[cap. 22](#22-ordini-di-produzione-odp)): allora torna nell'esistente e il piano lo ritrova lì.
+
+### Le parti a scaffale (dalla 0.100.0)
+
+Una **parte** che si fabbrica e che c'è già a magazzino **non si rifà**. L'esplosione del piano,
+scendendo nella distinta, prende prima quello che c'è a scaffale e fabbrica solo il resto: se ne
+servono 10 e ce ne sono 4, il piano fa produrre 6 pezzi e compra il materiale per 6. Le parti prese
+dal magazzino compaiono nella scheda **Da fabbricare**, sotto il titolo **Dal magazzino**, con la
+quantità presa.
+
+Quanto un piano può prendere lo decide l'ordine dei piani: **chi serve prima prende prima** (data
+di consegna più vicina, poi data del piano, poi numero). Si parte dall'esistente meno la scorta
+minima; i pezzi che un ordine di produzione di un piano aperto ha versato e quel piano non ha
+ancora montato **restano suoi** e gli altri piani non li vedono. Le parti prese **si impegnano**
+come i commerciali, e l'impegno scende quando il montaggio le scarica.
+
+Vale per le parti, non per i commerciali (che passano dal fabbisogno netto, come prima) né per gli
+assiemi (che non stanno a magazzino).
+
+### Il montaggio (dalla 0.100.0)
+
+La scheda **Da montare** elenca gli assiemi del piano — macchine, gruppi, sottogruppi — con la
+quantità, le date di montaggio, i componenti, quanti ne sono già stati **montati** e quanti
+**restano**. **Dichiara montaggio** apre la finestra:
+
+- in testa quanti ne servono, quanti montati e quanti restano, e lo storico delle dichiarazioni;
+- si scrive **quanti assiemi** si sono montati: le righe dei **componenti diretti** (parti e
+  commerciali, con lo scarto della distinta) si ricalcolano, ciascuna con quello che c'è a
+  magazzino, e si possono correggere a mano;
+- se qualcosa va sotto zero lo dice, ma registra lo stesso;
+- **Registra** scrive un **consumo di produzione** per ogni componente, legato a quel montaggio.
+
+Gli **assiemi dentro l'assieme** non si scaricano: non stanno a magazzino, si dichiarano a loro
+volta sulla loro riga. Una dichiarazione si **elimina** dallo storico, e con lei i suoi scarichi.
+Il montaggio dichiarato fa scendere l'impegno del piano come gli altri prelievi, e porta il
+montaggio a *fatto* nel programma e nell'avanzamento.
+
+> **Da sapere passando alla 0.100.0.** Prima il montaggio non scaricava niente: le parti versate e
+> i commerciali ricevuti per gli assiemi già fatti sono ancora nell'esistente. Con le parti a
+> scaffale il piano li considera disponibili e può proporre di fabbricarne meno. Conviene guardare
+> la lista **Dal magazzino** dei piani aperti e, se l'esistente non è vero, fare una **rettifica
+> inventario**.
+>
+> Il **Gantt** e la **data fattibile** restano calcolati sulla distinta intera, senza togliere
+> quello che si prende a scaffale.
 
 **Piano aperto e piano chiuso.** Finché un piano è **aperto**, impegna. Un piano che non serve più
 si **chiude**, e la sua quota torna libera per gli altri. Un piano chiuso non sparisce: resta
@@ -1917,6 +1973,15 @@ una lavorazione da commissionare, non due.
   terzi*, ed è per questo che il prospetto le tiene separate invece di fonderle.
 - **Annullare non è eliminare**: un ordine annullato smette di coprire la parte nel fabbisogno, ma
   i movimenti già registrati restano. Eliminarlo invece toglie anche quelli, e la scheda lo avvisa.
+- **Annullare con il reso** (dalla 0.100.0): se l'ordine aveva già fatto uscire il materiale,
+  **Annulla** apre una finestra che propone di **rimetterlo a magazzino** — tutto quello uscito se
+  nessun pezzo è stato lavorato, in proporzione ai pezzi non ancora lavorati della prima fase se
+  qualcuno lo è. Le quantità si correggono; a zero non si rende niente. Il reso è un movimento
+  **Reso da produzione** (o un **Rientro da conto lavoro** dal terzista, se la prima fase era
+  esterna), legato all'ordine. I pezzi già lavorati restano fuori: sono scarto o semilavorato, e si
+  sistemano con una rettifica.
+- **All'avvio della prima fase** la finestra mostra, per ogni codice del ciclo, quanto c'è a
+  magazzino, e avvisa se l'uscita lo porta sotto zero.
 
 ---
 
