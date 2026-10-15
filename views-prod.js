@@ -1169,6 +1169,8 @@ function odpDocSpec(o) {
   }
   return {
     titolo: `Ordine di produzione ${o.number}`,
+    // Solo il PDF lo disegna (pdfListHead); l'Excel non ha dove metterlo.
+    qr: o.number ? qrLink('odp', o.number) : '',
     slug: 'odp_' + String(o.number || '').replace(/[^\w-]/g, '_'),
     filtri: [['Parte', `${o.code || ''} ${o.name || ''}`.trim()],
       ['Pezzi', `${fmtQty(o.qty)} ${o.uom || ''}`],

@@ -27,7 +27,7 @@
 // La versione la tiene allineata `test/pwa.test.js` a quella di core.js:
 // dimenticarla vorrebbe dire spedire una versione nuova che i browser già
 // visitati continuano a servire dalla cache vecchia, per sempre.
-const VERSIONE = '0.98.1';
+const VERSIONE = '0.99.0';
 const CACHE = 'bomtrack-v' + VERSIONE;
 
 // Tutto ciò che serve a disegnare la prima schermata. L'elenco ricalca
@@ -45,6 +45,9 @@ const FILE = [
   './vendor/jspdf.umd.min.js',
   './vendor/jspdf.plugin.autotable.min.js',
   './vendor/xlsx.full.min.js',
+  // Codici QR (dalla 0.99.0): disegno e lettura
+  './vendor/qrcode.js',
+  './vendor/jsQR.js',
   // Gli script dell'app, nell'ordine di index.html
   './icons.js',
   './theme.js',
@@ -78,6 +81,7 @@ const FILE = [
   './columns.js',
   './filters.js',
   './inspector.js',
+  './qr.js',
   './import-export.js',
   // Il manuale si consulta mentre si lavora, e in officina la rete è
   // esattamente ciò che manca quando serve consultarlo.

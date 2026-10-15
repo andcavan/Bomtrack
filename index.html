@@ -54,6 +54,9 @@
 <script src="vendor/jspdf.umd.min.js"></script>
 <script src="vendor/jspdf.plugin.autotable.min.js"></script>
 <script src="vendor/xlsx.full.min.js"></script>
+<!-- Codici QR: uno li disegna, l'altro li legge dove il browser non sa farlo (qr.js) -->
+<script src="vendor/qrcode.js"></script>
+<script src="vendor/jsQR.js"></script>
 </head>
 <body>
 
@@ -122,6 +125,8 @@
     <!-- I comandi di contorno: in riga quando c'è spazio, sotto «⋯» quando non c'è. `data-etichetta` è il testo della voce nel menu -->
     <button class="btn-outline btn-icon header-menu-btn" id="extra-menu-btn" onclick="headerMenu('extra')" title="Altri comandi" aria-label="Altri comandi" aria-haspopup="true" aria-expanded="false" aria-controls="header-extra"><svg class="ico tinted ic-more" aria-hidden="true"><use href="#ic-more"></use></svg></button>
     <div class="header-extra" id="header-extra">
+      <!-- Il lettore QR (qr.js): in riga quando c'è spazio, primo del menu «⋯» al telefono -->
+      <button class="btn-outline btn-icon" onclick="qrScanModal()" title="Scansiona un codice QR" aria-label="Scansiona un codice QR" data-etichetta="Scansiona QR"><svg class="ico tinted ic-qr" aria-hidden="true"><use href="#ic-qr"></use></svg></button>
       <button class="btn-outline btn-icon" onclick="printView()" title="Stampa questa vista (Ctrl+P)" aria-label="Stampa" data-etichetta="Stampa"><svg class="ico tinted ic-printer" aria-hidden="true"><use href="#ic-printer"></use></svg></button>
       <!-- Il manuale sta accanto a index.html e si apre in una scheda sua: si consulta mentre si lavora, senza perdere il documento aperto -->
       <button class="btn-outline btn-icon" onclick="openManual()" title="Manuale d'uso" aria-label="Manuale d'uso" data-etichetta="Manuale d'uso"><svg class="ico tinted ic-book" aria-hidden="true"><use href="#ic-book"></use></svg></button>
@@ -282,6 +287,7 @@
       <h2 class="section-title"><svg class="ico ic-package tinted pill" aria-hidden="true"><use href="#ic-package"></use></svg> Magazzino</h2>
       <span id="stk-cl-btn"></span>
       <span id="stk-riordino-btn"></span>
+      <button class="btn-outline" onclick="qrEtichetteMagazzino()" title="Etichette con codice QR degli articoli elencati"><svg class="ico ic-qr tinted" aria-hidden="true"><use href="#ic-qr"></use></svg> Etichette</button>
       <!-- «Esporta ▾»: lo stesso markup di menuEsporta() in shell.js -->
       <details class="dd dd-export"><summary class="btn-outline"><svg class="ico ic-download tinted" aria-hidden="true"><use href="#ic-download"></use></svg> Esporta <span class="dd-caret" aria-hidden="true">▾</span></summary>
         <div class="dd-menu" role="menu">
@@ -483,6 +489,7 @@
 <!-- ULTIMO, sempre: in fondo a questo file c'è init(), che avvia l'app. Uno
      script messo dopo non esiste ancora quando l'avvio disegna la prima vista,
      e la prima chiamata lo scopre con un errore. -->
+<script src="qr.js"></script>
 <script src="import-export.js"></script>
 </body>
 </html>

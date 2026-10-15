@@ -269,6 +269,7 @@ function inspectorMultiHtml(reg, scelti) {
     scrivibile && favoribili ? cmd('close', 'Togli dai preferiti', `bulkFavorite([${lista}], false)`) : '',
     cmd('sheet', 'Esporta la selezione in Excel', `exportListXlsx(${inspectorExportSpec(ids)})`),
     cmd('file', 'Esporta la selezione in PDF', `exportListPdf(${inspectorExportSpec(ids)})`),
+    cmd('qr', 'Etichette QR della selezione', `qrEtichetteModal([${lista}])`),
     scrivibile ? cmd('trash', `Elimina ${scelti.length - usati > 0 ? scelti.length - usati : 0} articoli`, `bulkDelete([${lista}])`, { danger: true }) : '',
   ].filter(Boolean).join('');
 

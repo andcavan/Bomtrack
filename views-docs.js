@@ -1695,6 +1695,9 @@ function exportOrderPDF(id) {
   const sup = o.supplierId ? getSupplier(o.supplierId) : null;
   const hasSup = (o.lines || []).some(l => lineSupInfo(o.supplierId, l));
   const doc = new jsPDF({ orientation: 'landscape' });
+  // Il QR in alto a destra apre la scheda rapida dell'ordine (qr.js): chi riceve
+  // la merce inquadra la copia stampata e registra il ricevimento da lì.
+  if (o.number) qrPdfDraw(doc, qrLink('oda', o.number), doc.internal.pageSize.getWidth() - 14 - 22, 5, 22);
   doc.setFontSize(15); doc.setTextColor(30); doc.text(`Ordine di acquisto / Purchase Order — ${o.number}`, 14, 16);
   doc.setFontSize(9); doc.setTextColor(90);
   doc.text(`Data / Date: ${fmtDateIt(o.date) || fmtDateIt(nowISO())}`, 14, 22);
@@ -2096,6 +2099,8 @@ function exportOdlPDF(id) {
   const co = db.settings.company || {};
   const sup = o.supplierId ? getSupplier(o.supplierId) : null;
   const doc = new jsPDF({ orientation: 'landscape' });
+  // Come sull'ordine d'acquisto: il QR apre la scheda rapida dell'ODL.
+  if (o.number) qrPdfDraw(doc, qrLink('odl', o.number), doc.internal.pageSize.getWidth() - 14 - 22, 5, 22);
   doc.setFontSize(15); doc.setTextColor(30); doc.text(`Ordine di lavoro / Subcontract Order — ${o.number}`, 14, 16);
   doc.setFontSize(9); doc.setTextColor(90);
   doc.text(`Data / Date: ${fmtDateIt(o.date) || fmtDateIt(nowISO())}`, 14, 22);

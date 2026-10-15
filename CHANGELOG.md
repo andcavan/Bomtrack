@@ -2,6 +2,25 @@
 
 Le revisioni seguono il versionamento semantico `0.MINOR.PATCH`: **MINOR** per nuove funzionalità, **PATCH** per correzioni. La versione in cima è quella in `APP_VERSION` (`core.js`) e mostrata nell'header dell'app.
 
+### 0.99.0 — 2026-10-15
+
+**Codici QR su etichette e documenti.** Per trovare un articolo davanti allo scaffale, o un ordine con il foglio in mano, si cercava il codice a tastiera.
+
+**Nuovo**
+- **Etichette QR degli articoli**: **Etichette** nella barra del Magazzino (gli articoli elencati, con i filtri), **Etichetta QR** nel riquadro Magazzino della scheda articolo, **Etichette QR della selezione** nel pannello laterale. Formati foglio A4 3×8 (70×37) e 2×7 (99×38), rotolo 50×30 e 62×29; copie per articolo; etichette già usate sul foglio da saltare. PDF con i QR vettoriali.
+- **QR in alto a destra** nei PDF dell'ordine di produzione, dell'ordine a fornitore e dell'ordine di lavoro.
+- **Scheda rapida** aperta dal QR: per l'articolo giacenza, impegnato e libero con Rettifica, Scheda completa e Movimenti; per l'ODP la fase corrente con Avvia o Dichiara; per ODA e ODL le righe con il ricevuto e **Ricevi tutto** (con conferma). I pulsanti aprono le finestre che l'app ha già, con le stesse guardie di ruolo.
+- **Scansiona** nell'intestazione (al telefono sotto ⋯): fotocamera dentro l'app (lettore del browser, o jsQR dove manca) e un campo che accetta il codice scritto o il testo di una pistola USB.
+- **Gestione → Impostazioni → Etichette QR**: l'indirizzo dell'app da mettere nei QR (vuoto = quello da cui è aperta) e il formato predefinito.
+
+**Da sapere**
+- Il QR contiene il **codice** dell'articolo o il **numero** dell'ordine (`…#/q/art/MAT-ACC-LAM-001`), non l'id interno; se il codice non si trova si prova come id. Rinominare un codice rende vecchie le sue etichette.
+- Con l'app aperta dal disco il QR non ha un indirizzo da dare al telefono: si legge solo con Scansiona, e la finestra delle etichette lo dice.
+- Due librerie nuove in `vendor/`, invariate e con l'impronta in `vendor/LEGGIMI.md`: `qrcode.js` (qrcode-generator 1.4.4, MIT) e `jsQR.js` (jsQR 1.4.0, Apache-2.0).
+
+**Verifica**
+- `test/qr.test.js` (nuovo): indirizzo che va e torna uguale anche con caratteri speciali, ricerca per codice, numero e id, QR disegnato e riletto con jsQR, etichette (copie, foglio iniziato, rotolo), arrivo da `#/q/…` a sessione aperta, ruoli, impostazioni. `test/pwa.test.js`: le due librerie in cache.
+
 ### 0.98.1 — 2026-10-14
 
 **Correzioni ai conti di magazzino.** Un controllo dei calcoli di giacenza, impegno e scorta ha trovato un doppio conteggio e tre comportamenti sbagliati.

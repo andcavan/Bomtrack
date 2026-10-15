@@ -1,6 +1,6 @@
 # Bomtrack — Manuale d'uso
 
-**Versione dell'app documentata: 0.98.1**
+**Versione dell'app documentata: 0.99.0**
 
 📖 **[Leggilo come pagina web](https://claude.ai/code/artifact/726a0963-2db0-4947-999b-d7b5beb91a0b)** — stesso testo, con indice laterale, filtro dei capitoli e tema chiaro/scuro. Comodo da tenere aperto di fianco all'app.
 
@@ -200,6 +200,7 @@ In alto, da sinistra a destra:
 | **Orologio** | Data e ora correnti |
 | **Pillola utente** | Chi è connesso, con il suo colore |
 | 🔎 **Cerca ovunque** | Ricerca globale — `Ctrl+K` |
+| ▦ **Scansiona QR** | Apre la fotocamera e legge un'etichetta o il QR di un documento (→ [cap. 17](#17-magazzino), *Le etichette QR*) |
 | 🖨 **Stampa questa vista** | Stampa pulita della schermata — `Ctrl+P` |
 | 📖 **Manuale d'uso** | **Questo manuale.** Si apre in una scheda nuova, così resta consultabile mentre si lavora, senza perdere il documento aperto |
 | 🌗 **Cambia tema** | Gira su tre stati: *come il sistema*, *chiaro*, *scuro* |
@@ -207,7 +208,7 @@ In alto, da sinistra a destra:
 | **Esci** | Chiude la sessione |
 
 **Su uno schermo più stretto** l'intestazione resta su una riga sola e fa spazio da sé, un passo
-alla volta, solo quanto serve: prima spariscono il ruolo nella pillola e la data; poi stampa,
+alla volta, solo quanto serve: prima spariscono il ruolo nella pillola e la data; poi scansiona, stampa,
 manuale, tema, password ed esci passano sotto il pulsante **⋯** (*Altri comandi*); poi le sezioni
 restano con la sola icona (il nome compare passandoci sopra); per ultimo, sul telefono, le sezioni
 stesse si aprono dal pulsante **☰**. I due menu si chiudono con `Esc`, con un clic fuori o
@@ -965,6 +966,7 @@ cui sta per agire:
 - *Segna come non più utilizzabili* / *Rendi di nuovo utilizzabili*
 - *Segna preferiti (N)* / *Togli dai preferiti*
 - Esporta la selezione in **Excel** o **PDF**
+- **Etichette QR della selezione** (→ [cap. 17](#17-magazzino), *Le etichette QR*)
 - *Elimina N articoli*
 
 **Da sapere.** Con il pannello aperto **la colonna dei pulsanti sparisce dall'elenco**: i suoi
@@ -1318,6 +1320,52 @@ movimenti. Quando si scrive *ricevuto 50* su una riga d'ordine, quei 50 entrano 
 
 > ⚠️ **Cancellare un ordine già ricevuto toglie la sua merce dal magazzino.** È coerente, ma chi
 > cancella un ordine vecchio va avvisato.
+
+### Le etichette QR
+
+Ogni articolo può avere un'etichetta con un **codice QR** da attaccare allo scaffale o al
+contenitore. Inquadrata con il telefono, apre Bomtrack sulla **scheda rapida** dell'articolo:
+esistente, in arrivo, impegnato, libero, e i pulsanti **Rettifica giacenza**, **Scheda completa**
+e **Movimenti**. È il modo di fare l'inventario davanti allo scaffale, senza cercare il codice.
+
+**Stampare le etichette.**
+- **Etichette** nella barra del Magazzino: gli articoli che l'elenco mostra adesso, con i suoi
+  filtri.
+- **Etichetta QR** nel riquadro *Magazzino* della scheda articolo: una sola.
+- **Etichette QR della selezione** nel pannello laterale, quando si scelgono più articoli
+  (→ [cap. 12](#12-pannello-laterale-e-selezione-multipla)).
+
+Nella finestra si scelgono il **formato** (foglio A4 3×8 da 70×37 mm, foglio A4 2×7 da 99×38 mm,
+rotolo 50×30 o 62×29 mm per le stampanti termiche), le **copie** di ogni articolo e quante
+etichette del foglio sono **già usate**, così un foglio iniziato non si butta. Esce un PDF: va
+stampato al **100%**, non «adatta alla pagina», o le etichette non cadono nelle caselle.
+
+**Anche i documenti hanno il loro QR**, in alto a destra nel PDF dell'**ordine di produzione**,
+dell'**ordine a fornitore** e dell'**ordine di lavoro**. Inquadrato, apre la scheda rapida del
+documento:
+
+| Documento | Cosa mostra | Cosa offre |
+|---|---|---|
+| **ODP** | la fase su cui è fermo, quanti pezzi ha fatto, o perché non può partire | **Avvia la fase** o **Dichiara avanzamento**, e *Apri l'ordine* |
+| **ODA / ODL** | fornitore, stato, ogni riga con *ricevuto / ordinato* | **Ricevi tutto** (chiede conferma), e *Apri l'ordine* |
+
+I pulsanti aprono le **stesse finestre** dell'app, con le stesse regole: chi ha un ruolo in sola
+lettura vede i numeri ma non i comandi.
+
+**Scansiona.** Il pulsante con il QR nell'intestazione (al telefono, sotto **⋯**) apre la
+fotocamera dentro l'app. Sotto c'è un campo di testo: accetta il codice scritto a mano
+(`MAT-ACC-LAM-001`, `ODP-2026-012`) e il testo di una **pistola lettore USB**, che lo «digita» e
+preme Invio.
+
+**L'indirizzo dentro il QR.** Il telefono deve sapere dove aprire l'app. Bomtrack usa l'indirizzo
+da cui è aperta, oppure quello scritto in *Gestione → Impostazioni → Etichette QR*. Se l'app è
+aperta **dal disco** (doppio click su `index.html`) un indirizzo non c'è: le etichette funzionano
+lo stesso con **Scansiona**, ma non con la fotocamera del telefono, e la finestra lo dice prima di
+stampare.
+
+> Nel QR c'è il **codice** dell'articolo o il **numero** dell'ordine, non un identificativo
+> interno: l'etichetta si legge anche a occhio e resta valida dopo un ripristino da backup.
+> Rinominare il codice di un articolo, però, rende vecchie le sue etichette: vanno ristampate.
 
 ---
 
@@ -2130,6 +2178,15 @@ nell'import da Excel vengono registrate automaticamente.
 Il calendario serve alla programmazione a ritroso del fabbisogno: fasi interne e montaggi si
 contano in giorni lavorativi; le date d'ordine e d'invio che cadono su un giorno chiuso si
 anticipano al lavorativo precedente. Il santo patrono si scrive fra le chiusure.
+
+**Etichette QR**
+
+| Campo | Di serie |
+|---|---|
+| Indirizzo dell'app nei QR | vuoto: quello da cui l'app è aperta |
+| Formato etichette | Foglio A4 · 3×8 (70×37 mm) |
+
+L'indirizzo deve iniziare con `http://` o `https://` (→ [cap. 17](#17-magazzino), *Le etichette QR*).
 
 ### ⬆️ Import · 💾 Backup
 

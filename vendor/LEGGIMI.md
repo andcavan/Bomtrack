@@ -1,6 +1,6 @@
 # Librerie di terze parti
 
-Le tre librerie che servono agli export, tenute qui dentro invece che su un CDN.
+Le tre librerie che servono agli export, e dalla 0.99.0 le due dei codici QR, tenute qui dentro invece che su un CDN.
 Nessuna è modificata: sono i file ufficiali, scaricati e committati così com'erano.
 
 | File | Versione | Origine |
@@ -8,11 +8,15 @@ Nessuna è modificata: sono i file ufficiali, scaricati e committati così com'e
 | `xlsx.full.min.js` | **0.20.3** | `https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js` |
 | `jspdf.umd.min.js` | 2.5.1 | `https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js` |
 | `jspdf.plugin.autotable.min.js` | 3.8.2 | `https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js` |
+| `qrcode.js` | 1.4.4 | pacchetto npm `qrcode-generator@1.4.4`, file `qrcode.js` (MIT, Kazuhiko Arase) |
+| `jsQR.js` | 1.4.0 | pacchetto npm `jsqr@1.4.0`, file `dist/jsQR.js` (Apache-2.0) |
 
 Impronte SHA-256 dei file, per poterli riverificare:
 
 ```
 xlsx.full.min.js                cc015130aa8521e7f088f88898eba949ccdcbfb38df0bd129b44b7273c3a6f41
+qrcode.js                       18ae399f81182bc9de916e9c77b195df20cc58d6f2d55a62b085a299f1bf1780
+jsQR.js                         bc40c8a15196236b2314db0856f72ca0b49980cd5413b8c852a7349f5fee0859
 ```
 
 Su Windows quell'impronta corrisponde **solo** perché `.gitattributes` esclude
@@ -39,6 +43,12 @@ di funzionare offline. Con le librerie su un CDN questo era vero solo dopo che
 qualcuno l'aveva aperta almeno una volta con la rete: su un PC in officina senza
 collegamento i pulsanti di export erano muti. Dentro il repo non c'è più un
 terzo dominio da cui dipendere né di cui fidarsi.
+
+**I due dei QR.** `qrcode.js` disegna i codici (etichette, PDF dei documenti);
+`jsQR.js` li legge dalla fotocamera nei browser che non hanno un lettore loro
+(`BarcodeDetector` c'è in Chrome su Android, non in Safari né in Firefox). Stanno
+qui per la stessa ragione delle altre: le etichette si stampano anche dal PC
+dell'officina senza rete.
 
 ## Come si aggiornano
 

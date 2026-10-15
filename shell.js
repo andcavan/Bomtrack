@@ -360,6 +360,9 @@ function scriviHash(v) {
 }
 function onHashChange() {
   if (!currentUser) return;                 // fuori sessione l'indirizzo non comanda niente
+  // `#/q/…` arriva da un codice QR (qr.js): una scheda sopra la vista, non una vista.
+  const q = qrDaHash();
+  if (q) { qrPulisciHash(); qrApri(q); return; }
   const v = viewDaHash();
   if (v && v !== activeView) setView(v);    // già lì: non si fa niente, e il giro si chiude
 }

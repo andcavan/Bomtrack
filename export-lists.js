@@ -163,6 +163,9 @@ function pdfListHead(doc, spec) {
   doc.text('Filtri: ' + listFiltersText(spec), 14, L.yFiltri);
   doc.setTextColor(130);
   doc.text(`${new Date().toLocaleString('it-IT')}${currentUser && currentUser.name ? ' · ' + currentUser.name : ''} · ${listRows(spec)} righe`, 14, L.yData);
+  // Il documento che ha un QR (l'ordine di produzione) lo porta in alto a
+  // destra, su ogni pagina: il foglio che gira in officina apre la sua scheda.
+  if (spec.qr && typeof qrPdfDraw === 'function') qrPdfDraw(doc, spec.qr, doc.internal.pageSize.getWidth() - 14 - 20, 5, 20);
 }
 
 function exportListPdf(spec) {

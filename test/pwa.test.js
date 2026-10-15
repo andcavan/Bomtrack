@@ -55,7 +55,7 @@ describe('Service worker — l\'elenco dei file', () => {
 
   it('mette in cache le librerie di export', () => {
     const inCache = new Set(fileDelWorker());
-    ['vendor/jspdf.umd.min.js', 'vendor/jspdf.plugin.autotable.min.js', 'vendor/xlsx.full.min.js']
+    ['vendor/jspdf.umd.min.js', 'vendor/jspdf.plugin.autotable.min.js', 'vendor/xlsx.full.min.js', 'vendor/qrcode.js', 'vendor/jsQR.js']
       .forEach(f => assert.ok(inCache.has(f), 'manca ' + f));
   });
 });

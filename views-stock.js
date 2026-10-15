@@ -525,6 +525,7 @@ function stockPanelHtml(it) {
       <div style="display:flex;gap:8px;flex-wrap:wrap">
         <button class="btn-outline" onclick="stockAdjustModal('${it.id}')">${ico('scale', 'tinted', '')} Rettifica giacenza</button>
         <button class="btn-outline" onclick="stockMovementsModal('${it.id}')">${ico('clock', 'tinted', '')} Movimenti (${movementsOf(it.id).length})</button>
+        <button class="btn-outline" onclick="qrEtichetteModal(['${it.id}'])">${ico('qr', 'tinted', '')} Etichetta QR</button>
       </div>
     </div></div>`;
 }
