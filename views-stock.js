@@ -742,7 +742,7 @@ function stockAdjustModal(itemId) {
         <input type="number" id="mv-qty" step="any" value="${attuale}"></div>
     </div>
     <div class="modal-grid" id="mv-cl-box" style="display:none">
-      <div class="modal-field"><label>Terzista</label><select id="mv-sup">
+      <div class="modal-field"><label>Terzista</label><select id="mv-sup" class="sel-cerca">
         <option value="">— scegli —</option>
         ${(db.suppliers || []).filter(x => x.active !== false).sort((a, b) => String(a.name).localeCompare(String(b.name)))
     .map(x => `<option value="${esc(x.id)}">${esc(x.name)}</option>`).join('')}

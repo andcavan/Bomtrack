@@ -2,6 +2,17 @@
 
 Le revisioni seguono il versionamento semantico `0.MINOR.PATCH`: **MINOR** per nuove funzionalità, **PATCH** per correzioni. La versione in cima è quella in `APP_VERSION` (`core.js`) e mostrata nell'header dell'app.
 
+### 0.102.0 — 2026-10-15
+
+**I fornitori si cercano scrivendo.** Nei menu dei fornitori, che sono decine, si cercava scorrendo.
+
+**Nuovo**
+- Ogni campo fornitore o terzista diventa un campo in cui si scrive: la lista si apre al clic e si filtra mentre si digita (maiuscole e accenti non contano, più parole in qualunque ordine, prima chi comincia così). Frecce e Invio per scegliere, Esc per lasciare com'era. Vale per richiesta, ordine e ordine di lavoro, listino della scheda articolo, listino fornitori, righe e fasi dei cicli, fornitori dei centri di lavoro, rettifica di magazzino, filtri degli elenchi documenti e scelta da catalogo.
+- `combo.js` (nuovo): un `select.sel-cerca` resta nella pagina, nascosto, con id, valore e `onchange`; il campo gli scrive il valore e gli manda `change`. Un MutationObserver trasforma i menu appena compaiono e tiene allineato il campo quando il menu cambia voci o si blocca (documento bloccato).
+
+**Verifica**
+- `test/combo.test.js` (nuovo, 14 casi): il filtro, i campi marcati, e in Chromium (`test/combo-browser.js`) lista intera e filtrata, Invio che arriva al documento, Esc, nessun risultato, documento bloccato, filtro dell'elenco con le frecce.
+
 ### 0.101.1 — 2026-10-15
 
 **Nomi dei file esportati.** Un controllo dei nomi con cui l'app salva PDF ed Excel ha trovato due difetti e un'incoerenza.

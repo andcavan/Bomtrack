@@ -1,6 +1,6 @@
 # Bomtrack — Manuale d'uso
 
-**Versione dell'app documentata: 0.101.1**
+**Versione dell'app documentata: 0.102.0**
 
 📖 **[Leggilo come pagina web](https://claude.ai/code/artifact/726a0963-2db0-4947-999b-d7b5beb91a0b)** — stesso testo, con indice laterale, filtro dei capitoli e tema chiaro/scuro. Comodo da tenere aperto di fianco all'app.
 
@@ -307,6 +307,15 @@ tre i casi.
 tabelle e degli elenchi, e rimpicciolisce un poco il testo e le card in testa: in officina, o su un
 portatile, si vedono quasi il doppio delle righe. Si spegne con lo stesso pulsante. Come il tema,
 resta in questo browser.
+
+**I fornitori si cercano scrivendo** (dalla 0.102.0). Ogni campo in cui si sceglie un fornitore o
+un terzista — nei documenti (richiesta, ordine, ordine di lavoro), nel listino della scheda
+articolo, nei cicli, nei centri di lavoro, nella rettifica di magazzino e nei filtri degli elenchi
+— è un campo in cui si scrive: un clic apre la lista intera, e mentre si digita restano solo i
+fornitori che corrispondono. Maiuscole e accenti non contano, e più parole valgono in qualunque
+ordine: `rid bonf` trova *Bonfiglioli Riduttori*. Prima vengono quelli che **cominciano** con
+quello che si è scritto. Si sceglie con un clic, o con le frecce e **Invio**; **Esc** chiude la
+lista e lascia il fornitore di prima. Su un documento bloccato il campo è bloccato anche lui.
 
 **Le card in testa si cliccano** (dalla 0.101.0). Nel Riepilogo, nel Cruscotto e nel Magazzino le
 card con i numeri portano alla lista che li spiega, già filtrata: *Sotto scorta minima* mostra gli

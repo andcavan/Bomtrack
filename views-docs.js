@@ -771,7 +771,7 @@ function docFilterBar(kind, statusMap, shown, total) {
       ${kind === 'order' ? `<option value="${DOC_STATUS_EVADERE}" ${f.status === DOC_STATUS_EVADERE ? 'selected' : ''}>Da evadere (inviati, confermati, parziali)</option>` : ''}
       ${Object.entries(statusMap).map(([k, v]) => `<option value="${k}" ${f.status === k ? 'selected' : ''}>${v}</option>`).join('')}
     </select>
-    <select id="${kind}f-sup" onchange="docFilterChange('${kind}')">
+    <select id="${kind}f-sup" class="sel-cerca" onchange="docFilterChange('${kind}')">
       <option value="">Tutti i fornitori</option>
       <option value="none" ${f.supplierId === 'none' ? 'selected' : ''}>— senza fornitore —</option>
       ${sups.map(s => `<option value="${s.id}" ${f.supplierId === s.id ? 'selected' : ''}>${esc(s.name)}</option>`).join('')}
@@ -1041,7 +1041,7 @@ function catalogPickerModal(onAddIds, opts) {
       <select id="pick-type" onchange="pickFilter()"><option value="">Tutti i tipi</option>${typeOpts}</select>
       <select id="pick-fam" onchange="pickFamilyChange()"><option value="">Tutte le famiglie</option>${famOpts}</select>
       <select id="pick-sub" onchange="pickFilter()"><option value="">Tutte le sottofamiglie</option></select>
-      <select id="pick-sup" onchange="pickFilter()"><option value="">Tutti i fornitori</option>${db.suppliers.map(s => `<option value="${s.id}">${esc(s.name)}</option>`).join('')}</select>
+      <select id="pick-sup" class="sel-cerca" onchange="pickFilter()"><option value="">Tutti i fornitori</option>${db.suppliers.map(s => `<option value="${s.id}">${esc(s.name)}</option>`).join('')}</select>
     </div>
     <div class="rfq-pick-list" id="pick-list">${scelte || `<div class="empty-text">${cfg.vuoto || 'Catalogo vuoto.'}</div>`}</div>
     <div class="empty-text" id="pick-empty" style="display:none">Nessun articolo con questi filtri.</div>
@@ -1153,7 +1153,7 @@ function renderRfqEdit(id) {
     <div class="rfq-head">
       <div class="modal-field"><label>Titolo / oggetto</label><input class="lock-contract" value="${esc(r.title || '')}" onchange="rfqSetField('${id}','title',this.value)"></div>
       <div class="rfq-head-row">
-        <div class="modal-field"><label>Fornitore</label><select class="lock-contract" onchange="rfqSetSupplier('${id}',this.value)">${supplierOptions(r.supplierId)}</select></div>
+        <div class="modal-field"><label>Fornitore</label><select class="lock-contract sel-cerca" onchange="rfqSetSupplier('${id}',this.value)">${supplierOptions(r.supplierId)}</select></div>
         <div class="modal-field"><label>Data</label><input type="date" class="lock-contract" value="${(r.date || '').slice(0, 10)}" onchange="rfqSetField('${id}','date',this.value)"></div>
         <div class="modal-field"><label>Stato</label><select onchange="rfqSetField('${id}','status',this.value)">
           ${Object.entries(RFQ_STATUS).map(([k, v]) => `<option value="${k}" ${r.status === k ? 'selected' : ''}>${v}</option>`).join('')}
@@ -1645,7 +1645,7 @@ function renderOrderEdit(id) {
     <div class="rfq-head">
       <div class="modal-field"><label>Titolo / oggetto</label><input class="lock-contract" value="${esc(o.title || '')}" onchange="ordSetField('${id}','title',this.value)"></div>
       <div class="rfq-head-row">
-        <div class="modal-field"><label>Fornitore</label><select class="lock-contract" onchange="ordSetSupplier('${id}',this.value)">${supplierOptions(o.supplierId)}</select></div>
+        <div class="modal-field"><label>Fornitore</label><select class="lock-contract sel-cerca" onchange="ordSetSupplier('${id}',this.value)">${supplierOptions(o.supplierId)}</select></div>
         <div class="modal-field"><label>Data ordine</label><input type="date" class="lock-contract" value="${(o.date || '').slice(0, 10)}" onchange="ordSetField('${id}','date',this.value)"></div>
         <div class="modal-field"><label>Stato</label><select onchange="ordSetField('${id}','status',this.value)">
           ${Object.entries(ORDER_STATUS).map(([k, v]) => `<option value="${k}" ${o.status === k ? 'selected' : ''}>${v}</option>`).join('')}
@@ -2045,7 +2045,7 @@ function renderOdlEdit(id) {
     <div class="rfq-head">
       <div class="modal-field"><label>Titolo / oggetto</label><input class="lock-contract" value="${esc(o.title || '')}" onchange="odlSetField('${id}','title',this.value)"></div>
       <div class="rfq-head-row">
-        <div class="modal-field"><label>Terzista</label><select class="lock-contract" onchange="odlSetSupplier('${id}',this.value)">${supplierOptions(o.supplierId)}</select></div>
+        <div class="modal-field"><label>Terzista</label><select class="lock-contract sel-cerca" onchange="odlSetSupplier('${id}',this.value)">${supplierOptions(o.supplierId)}</select></div>
         <div class="modal-field"><label>Data ordine</label><input type="date" class="lock-contract" value="${(o.date || '').slice(0, 10)}" onchange="odlSetField('${id}','date',this.value)"></div>
         <div class="modal-field"><label>Stato</label><select onchange="odlSetField('${id}','status',this.value)">
           ${Object.entries(ORDER_STATUS).map(([k, v]) => `<option value="${k}" ${o.status === k ? 'selected' : ''}>${v}</option>`).join('')}

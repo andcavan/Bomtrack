@@ -119,7 +119,7 @@ function priceListBody(id) {
     return `<tr class="${attiva ? 'price-active' : ''}">
       <td class="pl-flag">${attiva ? '<span title="Prezzo in uso nella costificazione">✓</span>' : ''}${best ? '<span class="price-best" title="Quotazione più bassa">↓</span>' : ''}</td>
       <td class="pl-sup">
-        <select ${ro} onchange="priceSetField('${r.id}','supplierId',this.value)">${supplierOptions(r.supplierId || '')}</select>
+        <select class="sel-cerca" ${ro} onchange="priceSetField('${r.id}','supplierId',this.value)">${supplierOptions(r.supplierId || '')}</select>
         <div class="pl-sub">
           <input class="pl-code" value="${esc(r.code || '')}" placeholder="codice fornitore" title="Codice dell'articolo presso il fornitore" ${ro} onchange="priceSetField('${r.id}','code',this.value)">
           <input class="pl-desc" value="${esc(r.desc || '')}" placeholder="descrizione fornitore" title="Descrizione dell'articolo presso il fornitore" ${ro} onchange="priceSetField('${r.id}','desc',this.value)">
@@ -238,7 +238,7 @@ function renderPriceListView() {
     </div>
     <div class="catalog-filters">
       <input type="text" class="search" id="plv-search" placeholder="Cerca articolo, fornitore o codice fornitore..." value="${esc(_plv.q)}" oninput="plvSearchInput(this.value)">
-      <select id="plv-sup" onchange="plvSet('sup', this.value)" title="Fornitore">
+      <select id="plv-sup" class="sel-cerca" onchange="plvSet('sup', this.value)" title="Fornitore">
         <option value="">Tutti i fornitori</option>
         ${(db.suppliers || []).map(s => `<option value="${esc(s.id)}" ${s.id === _plv.sup ? 'selected' : ''}>${esc(s.name)}</option>`).join('')}
       </select>
@@ -1443,7 +1443,7 @@ function cycleOpsTable(opRows) {
     return `<div class="cycle-row cycle-op-row">
       <span class="cycle-phase">${cyclePhaseNumber(k)}</span>
       <span class="cycle-name">${cycleRowLabel(r)}</span>
-      <select class="cycle-sup" title="Interna, o conto lavoro se si sceglie un fornitore" onchange="onCycleRowSupplierChange(${i})" id="cyc-sup-${i}">${wcSupplierOptions(getWorkCenter(r.workCenterId), r.supplierId || '')}</select>
+      <select class="cycle-sup sel-cerca" title="Interna, o conto lavoro se si sceglie un fornitore" onchange="onCycleRowSupplierChange(${i})" id="cyc-sup-${i}">${wcSupplierOptions(getWorkCenter(r.workCenterId), r.supplierId || '')}</select>
       <select onchange="onCycleRowModeChange(${i})" id="cyc-opmode-${i}">
         <option value="fisso" ${!orario ? 'selected' : ''}>Fisso</option>
         <option value="orario" ${orario ? 'selected' : ''}>Orario</option>
@@ -1685,7 +1685,7 @@ function addCycleOpRow() {
   box.innerHTML = `<div class="cycle-picker-box">
     <div class="modal-grid">
       <div class="modal-field"><label>Centro di lavoro</label><select id="cyc-wc" onchange="onCycleOpWcChange()">${wcOptionsNoRate(null)}</select></div>
-      <div class="modal-field"><label>Interna / Conto lavoro</label><select id="cyc-opsup" onchange="onCycleOpModeChange()">${wcSupplierOptions(wc, '')}</select></div>
+      <div class="modal-field"><label>Interna / Conto lavoro</label><select id="cyc-opsup" class="sel-cerca" onchange="onCycleOpModeChange()">${wcSupplierOptions(wc, '')}</select></div>
     </div>
     <div class="modal-grid">
       <div class="modal-field"><label>Costo</label><select id="cyc-opmode" onchange="onCycleOpModeChange()">
