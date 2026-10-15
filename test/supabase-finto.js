@@ -118,6 +118,8 @@ function avviaSupabaseFinto(opts) {
       } catch (e) {
         const msg = String(e.message || '');
         const testo = (/ERROR:\s+(.*)/.exec(msg) || [])[1] || msg;
+        // Come PostgREST quando la funzione non esiste (schema vecchio).
+        if (/function .* does not exist/.test(msg)) return rispondi(res, 404, { code: 'PGRST202', message: `Could not find the function public.${rpc[1]} in the schema cache`, details: null, hint: null });
         const permesso = /non scrive|permission denied|row-level security/.test(msg);
         return rispondi(res, permesso ? 403 : 400, { code: permesso ? '42501' : 'P0001', message: testo, details: null, hint: null });
       }

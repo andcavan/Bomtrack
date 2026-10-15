@@ -97,6 +97,9 @@ async function cloudHttp(percorso, opz) {
   try { dati = testo ? JSON.parse(testo) : null; } catch (e) { dati = testo; }
   if (!r.ok) {
     const msg = (dati && (dati.error_description || dati.msg || dati.message || dati.error)) || ('HTTP ' + r.status);
+    // PGRST202: la funzione chiamata non c'è. Succede quando sul progetto è
+    // stato eseguito uno schema.sql più vecchio dell'app.
+    if (dati && dati.code === 'PGRST202') throw cloudErrore('server', 'Lo schema del progetto Supabase non è aggiornato: riesegui supabase/schema.sql di questa versione nel SQL Editor', { stato: r.status });
     if (r.status === 401) throw cloudErrore('accesso', msg, { stato: r.status });
     if (r.status === 403 || (dati && dati.code === '42501')) throw cloudErrore('permesso', msg, { stato: r.status });
     throw cloudErrore('server', msg, { stato: r.status });

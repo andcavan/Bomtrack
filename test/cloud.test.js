@@ -301,6 +301,10 @@ describe('Archivio condiviso — più PC contro Supabase (finto, con Postgres ve
     assert.equal(srv.db.sql(`select notes from items where id = '${ID.item}'`), 'dopo il rinnovo');
   });
 
+  passo('uno schema più vecchio dell\'app lo dice, invece dell\'errore di PostgREST', async () => {
+    await assert.rejects(A.eval(`cloudRpc('funzione_che_non_esiste', {})`), /riesegui supabase\/schema\.sql/);
+  });
+
   passo('un utente sospeso dall\'amministratore non entra più', async () => {
     A.eval(`{ const u = getUser('${bruno}'); u.active = false; touch(u); saveDB(); }`);
     await giro(A);
