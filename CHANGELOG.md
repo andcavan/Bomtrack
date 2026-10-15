@@ -2,6 +2,22 @@
 
 Le revisioni seguono il versionamento semantico `0.MINOR.PATCH`: **MINOR** per nuove funzionalità, **PATCH** per correzioni. La versione in cima è quella in `APP_VERSION` (`core.js`) e mostrata nell'header dell'app.
 
+### 0.101.1 — 2026-10-15
+
+**Nomi dei file esportati.** Un controllo dei nomi con cui l'app salva PDF ed Excel ha trovato due difetti e un'incoerenza.
+
+**Corretto**
+- **Caratteri non ammessi nel nome**: gli export degli elenchi non pulivano lo slug. Il confronto di due distinte mette nel nome i codici articolo, scritti dall'utente: un codice con `/` o `:` faceva fallire o troncare il salvataggio, e gli spazi spezzavano il nome. Ora `listExportName` passa da `nomeFileSicuro` e gli spazi diventano trattini.
+- **Data delle etichette QR**: il file usava la data di Greenwich (`toISOString`), quindi fra mezzanotte e le due prendeva il giorno prima. Ora usa la data del PC come tutti gli altri export.
+- **Ordine di produzione**: il PDF e l'Excel si chiamavano `bomtrack_odp_ODP-2026-004_2026-10-15`, a differenza di ODA e ODL che si chiamano col numero e il fornitore. Ora `ODP-2026-004_PRT-001` (numero e codice della parte).
+- Le etichette QR prendono il prefisso `bomtrack_` come gli altri export.
+
+**Documentazione**
+- MANUALE: la tabella di tutti i nomi dei file; le chiavi `bomtrack_densita` e `bomtrack_inventario` (0.101.0) nell'elenco di quello che resta nel browser.
+
+**Verifica**
+- `test/export-lists.test.js`: codice con barra, due punti e spazi nel nome; nome dell'ODP. `test/qr.test.js`: nuovo nome delle etichette.
+
 ### 0.101.0 — 2026-10-15
 
 **Inventario guidato, ubicazioni, card che filtrano, vista compatta.** Per contare il magazzino si cercava un codice alla volta, un QR nominava un articolo ma non un posto, le card in testa alle viste erano solo numeri, e le tabelle lunghe stavano in poche righe per schermo.

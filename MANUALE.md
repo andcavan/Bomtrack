@@ -1,6 +1,6 @@
 # Bomtrack — Manuale d'uso
 
-**Versione dell'app documentata: 0.101.0**
+**Versione dell'app documentata: 0.101.1**
 
 📖 **[Leggilo come pagina web](https://claude.ai/code/artifact/726a0963-2db0-4947-999b-d7b5beb91a0b)** — stesso testo, con indice laterale, filtro dei capitoli e tema chiaro/scuro. Comodo da tenere aperto di fianco all'app.
 
@@ -2466,7 +2466,24 @@ contiene quel file.
 | **PDF** | Testata azienda e numero di pagina su ogni pagina |
 | **Excel** | **Autofiltro** sull'intestazione, i numeri come numeri e **le date come date** — quindi si ordinano e si filtrano per periodo dentro Excel, non come testo |
 
-Nome del file: `bomtrack_<sezione>_<data>.xlsx` o `.pdf`.
+Nome del file: `bomtrack_<sezione>_<data>.xlsx` o `.pdf`. Il nome si pulisce da solo dei
+caratteri che Windows non accetta (`/ \ : * ? " < > |`) e gli spazi diventano trattini: un
+confronto fra `TUBO Ø40/2` e un altro codice esce come `bomtrack_confronto_TUBO-Ø40-2_…`.
+
+**I nomi dei file, tutti insieme** (dalla 0.101.1):
+
+| Cosa | Nome del file |
+|---|---|
+| Elenchi, cruscotto, programma, avanzamento, ciclo, confronto | `bomtrack_<sezione>_<data>` |
+| Richiesta d'offerta, ordine a fornitore, ordine di lavoro | `<numero>_<fornitore>`, es. `ODA-2026-003_Bonfiglioli Riduttori S.p.A.pdf` |
+| Ordine di produzione | `<numero>_<codice parte>`, es. `ODP-2026-004_PRT-001.pdf` |
+| Distinta costificata | `Distinta_<codice>` |
+| Fabbisogno di un piano | `Fabbisogno_<numero piano>` |
+| Etichette QR | `bomtrack_etichette_qr_<data>.pdf` |
+| Anagrafiche da Gestione, impostazioni, backup | `bomtrack_acquisti_<data>`, `bomtrack_impostazioni_<data>`, `bomtrack_backup_<data>.json` |
+
+I documenti che partono verso un fornitore portano il numero, non la data: è il numero che si cerca
+nella posta. La data è sempre quella del PC, non quella di Greenwich.
 
 > Il pannello laterale, con più righe selezionate, esporta **solo la selezione**.
 
@@ -2949,11 +2966,13 @@ Senza IndexedDB le prime due stanno in `localStorage`, come `bomtrack_v1` e
 | `bomtrack_theme` | Il tema scelto |
 | `bomtrack_session` | La sessione aperta |
 | `bomtrack_columns` | Le colonne nascoste, per vista |
+| `bomtrack_densita` | La vista compatta, se accesa |
+| `bomtrack_inventario` | L'inventario in corso, finché non si registra o si annulla |
 | `bomtrack_archivio_nome` | Il nome della cartella d'archivio scelta su questo PC |
 | `bomtrack_backup_cartella_nome` | Il nome della cartella del backup automatico scelta su questo PC |
 | *(chiave email)* | L'email ricordata da «Ricordami su questo PC» |
 
-Le ultime sei sono **preferenze personali di questa macchina**, non dati aziendali: non entrano
+Le ultime otto sono **preferenze personali di questa macchina**, non dati aziendali: non entrano
 nel backup e non si condividono. Le due cartelle, archivio e backup, stanno fra queste di proposito: ogni PC ha la
 sua, e importarla da un backup imporrebbe a tutti la lettera di unità del primo che l'ha scelta.
 

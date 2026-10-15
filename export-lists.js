@@ -46,7 +46,16 @@ function listFiltersText(spec) {
 }
 // Stessa convenzione degli export che c'erano già (`bomtrack_acquisti_<data>`):
 // i file di più estrazioni si mettono in ordine da soli in una cartella.
-function listExportName(spec, ext) { return `bomtrack_${spec.slug}_${oggiISO()}.${ext}`; }
+// Lo slug può contenere un codice articolo scritto dall'utente (il confronto
+// distinte): una barra o due punti farebbero fallire il salvataggio, e uno
+// spazio spezzerebbe il nome. Dalla 0.101.1 passa da nomeFileSicuro.
+// Un documento singolo (`spec.nomeFile`, l'ODP) si chiama invece come i suoi
+// fratelli ODA e ODL: numero e riferimento, senza prefisso né data.
+function listExportName(spec, ext) {
+  if (spec.nomeFile) return nomeFileSicuro(spec.nomeFile, 'documento') + '.' + ext;
+  const slug = nomeFileSicuro(spec.slug, 'elenco').replace(/\s+/g, '-');
+  return `bomtrack_${slug}_${oggiISO()}.${ext}`;
+}
 
 // ─── Excel ───
 // Il foglio dati comincia dall'intestazione, in riga 1. La tentazione è

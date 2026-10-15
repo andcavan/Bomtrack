@@ -162,7 +162,7 @@ describe('QR — le etichette', () => {
     assert.equal(s.pagine, 2, '5 saltate + 21 etichette = 26, oltre le 24 di un foglio');
     assert.deepEqual(s.formato, [210, 297]);
     assert.ok(s.testi.includes('M1') && s.testi.includes('A1'));
-    assert.match(s.salvato, /^etichette_qr_\d{4}-\d{2}-\d{2}\.pdf$/);
+    assert.match(s.salvato, /^bomtrack_etichette_qr_\d{4}-\d{2}-\d{2}\.pdf$/);
   });
   it('sul rotolo un\'etichetta per pagina, e "salta" non vale', () => {
     const a = app();

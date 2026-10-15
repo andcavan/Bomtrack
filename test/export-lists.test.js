@@ -317,6 +317,19 @@ describe('Il contorno del file', () => {
     assert.ok(/^bomtrack_magazzino_\d{4}-\d{2}-\d{2}\.xlsx$/.test(nome), nome);
   });
 
+  it('un codice con barre, due punti o spazi non rompe il nome del file (0.101.1)', () => {
+    const a = app();
+    const nome = a.eval('listExportName({ slug: "confronto_TUBO Ø40/2_A:B" }, "pdf")');
+    assert.ok(/^bomtrack_confronto_TUBO-Ø40-2_A-B_\d{4}-\d{2}-\d{2}\.pdf$/.test(nome), nome);
+  });
+
+  it('l\'ordine di produzione si chiama come ODA e ODL: numero e codice (0.101.1)', () => {
+    const a = app();
+    const nome = a.eval(`listExportName(odpDocSpec({ id: 'x', number: 'ODP-2026-004', code: 'PRT-001', name: 'Fiancata',
+      qty: 2, uom: 'pz', status: 'bozza', phases: [], materials: [] }), 'pdf')`);
+    assert.equal(nome, 'ODP-2026-004_PRT-001.pdf');
+  });
+
   it('il foglio Estrazione registra azienda, filtri e righe', () => {
     const a = app();
     a.eval('db.settings.company = { name: "Meccanica Rossi" }; saveDB();');

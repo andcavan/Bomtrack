@@ -217,7 +217,9 @@ function qrEtichettePdf(voci, opz) {
       doc.splitTextToSize(String(riga), tw).forEach(r => { if (ty <= maxY) { doc.text(r, tx, ty); ty += 3; } });
     });
   });
-  doc.save(`etichette_qr_${new Date().toISOString().slice(0, 10)}.pdf`);
+  // La data di qui, non quella di Greenwich: fra mezzanotte e le due il file
+  // prendeva il giorno prima. E il prefisso degli altri export dell'app.
+  doc.save(`bomtrack_etichette_qr_${oggiISO()}.pdf`);
   showToast(elenco.length === 1 ? '1 etichetta pronta' : elenco.length + ' etichette pronte');
   return true;
 }

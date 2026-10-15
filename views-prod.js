@@ -1257,6 +1257,8 @@ function odpDocSpec(o) {
     // Solo il PDF lo disegna (pdfListHead); l'Excel non ha dove metterlo.
     qr: o.number ? qrLink('odp', o.number) : '',
     slug: 'odp_' + String(o.number || '').replace(/[^\w-]/g, '_'),
+    // Come ODA e ODL: «ODP-2026-001_PRT-001.pdf» (dalla 0.101.1).
+    nomeFile: [o.number || 'ODP', o.code || ''].filter(Boolean).join('_'),
     filtri: [['Parte', `${o.code || ''} ${o.name || ''}`.trim()],
       ['Pezzi', `${fmtQty(o.qty)} ${o.uom || ''}`],
       ['Serve per', o.dueDate ? fmtDateIt(o.dueDate) : ''],
