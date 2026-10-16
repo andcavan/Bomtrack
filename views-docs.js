@@ -1197,10 +1197,12 @@ function renderRfqEdit(id) {
 // L'operazione è esplicita: non si tocca il costo di un articolo di nascosto.
 function rfqPriceBar(r) {
   if (!canWrite('catalog')) return '';
-  const nuove = rfqPriceCandidates(r).length;
+  const candidate = rfqPriceCandidates(r);
+  const nuove = candidate.length;
+  // Già registrati e ancora allo stesso prezzo: quelli cambiati stanno fra le nuove.
   const già = (r.lines || []).filter(l => {
     const it = l.itemId ? getItem(l.itemId) : null;
-    return hasPriceList(it) && priceRows(it).some(p => p.rfqId === r.id && p.lineId === l.id);
+    return hasPriceList(it) && !candidate.includes(l) && !!rfqQuoteRow(it, r, l);
   }).length;
   if (!nuove && !già) return '';
   return `<div class="rfq-export-bar">

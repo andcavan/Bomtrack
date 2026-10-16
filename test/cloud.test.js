@@ -424,6 +424,51 @@ describe('Archivio condiviso — due colleghi sulla stessa cosa', () => {
     assert.equal(srv.db.sql(`select count(distinct number) from orders where id in ('${U(600)}', '${ORD2}')`), '2');
     await giro(A);
     assert.equal(A.eval(`Store.getById('orders', '${U(600)}').number`), n, 'quello di Anna resta com\'era');
+  });
+
+  // 0.105.2: le due quotazioni nascevano con id diversi, il server rifiutava la
+  // seconda per l'indice unico, e l'invio di Bruno restava bloccato per sempre.
+  passo('due colleghi registrano a listino la stessa offerta: una quotazione, e l\'invio va avanti', async () => {
+    const RFQ = U(610), RL = U(611), C1 = U(8), S1 = U(1);
+    A.eval(`Store.insert('rfqs', { id: '${RFQ}', number: 'RFQ-2026-050', status: 'ricevuta', date: '2026-10-16', supplierId: '${S1}', active: true,
+      lines: [{ id: '${RL}', itemId: '${C1}', code: 'CMM-001', description: 'Cuscinetto', uom: 'pz', qty: 10, price: 9.5 }] })`);
+    await giro(A); await giro(B);
+    A.eval(`rfqRecordPrices('${RFQ}')`);
+    B.eval(`rfqRecordPrices('${RFQ}')`);
+    await giro(A);
+    avvisi(B);
+    assert.equal(await giro(B), true, 'l\'invio di Bruno non si blocca');
+    await giro(B); await giro(A);
+    assert.equal(B.eval('Store.hasPendingChanges()'), false);
+    assert.equal(srv.db.sql(`select count(*) from item_prices where rfq_id = '${RFQ}'`), '1');
+    for (const a of [A, B]) assert.equal(a.eval(`getItem('${C1}').priceList.filter(p => p.rfqId === '${RFQ}').length`), 1);
+  });
+
+  // 0.105.2: il flag della semina non ha una colonna, e un articolo arrivato
+  // dal server ne è senza: a ogni ricarica ogni PC aggiungeva un'altra copia
+  // della quotazione a mano.
+  passo('un articolo arrivato dal server non si semina di nuovo, e le copie già seminate spariscono', async () => {
+    const C1 = U(8), S1 = U(1);
+    const manuali = a => a.eval(`getItem('${C1}').priceList.filter(p => !p.rfqId).length`);
+    const sulServer = () => srv.db.sql(`select count(*) from item_prices where item_id = '${C1}' and rfq_id is null`);
+    // Due copie della stessa quotazione a mano, come le lasciava la semina.
+    A.eval(`{ const it = getItem('${C1}');
+      const copia = () => stampNew({ id: gid(), supplierId: '${S1}', price: 12, minQty: '', leadDays: '', code: '', desc: '', date: '2026-03-01', rfqId: null, note: '' });
+      it.priceList.push(copia(), copia()); touch(it); saveDB(); }`);
+    await giro(A); await giro(B);
+    const prima = Number(sulServer());
+    assert.ok(prima >= 2);
+    // Bruno riapre l'app.
+    const B2 = loadApp({ silent: true, storage: B.storage });
+    B2.ctx.fetch = fetch;
+    B2.eval(`Store.load(); cloudAvvio(); globalThis.__avvisi = []; showToast = m => __avvisi.push(m); currentUser = getUser('${bruno}'); Store.setActor(currentUser.id);`);
+    assert.equal(manuali(B2), prima - 1, 'una copia in meno, e nessuna semina nuova');
+    await giro(B2); await giro(A);
+    assert.equal(sulServer(), String(prima - 1), 'la copia tolta sparisce anche dal server');
+    assert.equal(manuali(A), prima - 1);
+    B2.eval('Store.load()');
+    assert.equal(manuali(B2), prima - 1, 'e ricaricando non ricompare niente');
+    B = B2;
     await srv.chiudi();
   });
 });
@@ -685,6 +730,10 @@ describe('Archivio condiviso — i colleghi si creano dall\'app', () => {
     srv.funzioneMuta = true;
     await assert.rejects(A.eval(`cloudUtenti({ azione: 'reimposta', id: '${nuovo}' })`), /bomtrack-utenti non risponde/);
     srv.funzioneMuta = false;
+    // Il codice d'esempio di Supabase al posto di quello di Bomtrack.
+    srv.funzioneDiEsempio = true;
+    await assert.rejects(A.eval(`cloudUtenti({ azione: 'reimposta', id: '${nuovo}' })`), /non con il codice di Bomtrack/);
+    srv.funzioneDiEsempio = false;
     assert.equal(A.eval('cloudSolaLettura()'), false);
     await srv.chiudi();
   });

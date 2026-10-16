@@ -396,14 +396,34 @@ function priceDelRow(rowId) {
 // ─── Dalla richiesta di offerta al listino ───
 // Le righe da catalogo con un prezzo compilato diventano quotazioni. Una riga
 // già registrata non si duplica: la coppia richiesta + riga è la chiave.
+// Se dopo la registrazione il prezzo sulla richiesta cambia (un errore di
+// battitura, un'offerta rivista), la quotazione si aggiorna invece di restare
+// al prezzo vecchio senza che niente lo dica.
+function rfqQuoteRow(it, r, l) { return priceRows(it).find(p => p.rfqId === r.id && p.lineId === l.id) || null; }
 function rfqPriceCandidates(r) {
   if (!r || !r.supplierId) return [];
   return (r.lines || []).filter(l => {
     if (!l.itemId || l.price === '' || l.price == null) return false;
     const it = getItem(l.itemId);
     if (!hasPriceList(it)) return false;
-    return !priceRows(it).some(p => p.rfqId === r.id && p.lineId === l.id);
+    const fatta = rfqQuoteRow(it, r, l);
+    return !fatta || Number(fatta.price) !== (Number(l.price) || 0);
   });
+}
+// L'id della quotazione nasce dalla richiesta e dalla riga, uguale su ogni PC:
+// due colleghi che registrano la stessa offerta prima di essersi visti
+// scrivono la stessa quotazione, non due che il server rifiuta (c'è un indice
+// unico su articolo + richiesta + riga) bloccando l'invio di chi arriva dopo.
+function rfqQuoteId(rfqId, lineId) {
+  const testo = String(rfqId) + '|' + String(lineId);
+  let h = '';
+  [0x811c9dc5, 0x01000193, 0x9e3779b9, 0x85ebca6b].forEach(seme => {
+    let x = seme >>> 0;
+    for (let i = 0; i < testo.length; i++) { x ^= testo.charCodeAt(i); x = Math.imul(x, 0x01000193) >>> 0; }
+    h += x.toString(16).padStart(8, '0');
+  });
+  // Forma di un uuid v4: la colonna sul server è di quel tipo.
+  return `${h.slice(0, 8)}-${h.slice(8, 12)}-4${h.slice(13, 16)}-${'89ab'[parseInt(h[16], 16) & 3]}${h.slice(17, 20)}-${h.slice(20, 32)}`;
 }
 function rfqRecordPrices(id) {
   if (!roleGuard('catalog')) return;
@@ -412,18 +432,33 @@ function rfqRecordPrices(id) {
   const righe = rfqPriceCandidates(r);
   if (!righe.length) { showToast('Nessun prezzo nuovo da registrare', 'error'); return; }
   const data = (r.date || oggiISO()).slice(0, 10);
+  let nuove = 0, aggiornate = 0;
   righe.forEach(l => {
     const it = getItem(l.itemId);
-    const si = rfqLineSupInfo(r, l);
-    it.priceList.push(stampNew({
-      id: gid(), supplierId: r.supplierId, price: Number(l.price) || 0,
-      minQty: '', leadDays: '', code: (si && si.code) || '', desc: (si && si.desc) || '',
-      date: data, rfqId: r.id, lineId: l.id, note: '',
-    }));
+    const prezzo = Number(l.price) || 0;
+    const fatta = rfqQuoteRow(it, r, l);
+    if (fatta) {
+      fatta.price = prezzo;
+      // Quella in uso porta il prezzo nel costo: si riapplica, come quando lo
+      // si corregge dal listino (priceSetField).
+      if (it.activePriceId === fatta.id) applyPriceRow(it, fatta);
+      aggiornate++;
+    } else {
+      const si = rfqLineSupInfo(r, l);
+      it.priceList.push(stampNew({
+        id: rfqQuoteId(r.id, l.id), supplierId: r.supplierId, price: prezzo,
+        minQty: '', leadDays: '', code: (si && si.code) || '', desc: (si && si.desc) || '',
+        date: data, rfqId: r.id, lineId: l.id, note: '',
+      }));
+      nuove++;
+    }
     touch(it);
   });
   saveDB(); renderRfq(); renderCatalogs();
-  showToast(righe.length + (righe.length === 1 ? ' prezzo registrato a listino' : ' prezzi registrati a listino'));
+  const parti = [];
+  if (nuove) parti.push(nuove + (nuove === 1 ? ' prezzo registrato' : ' prezzi registrati'));
+  if (aggiornate) parti.push(aggiornate + (aggiornate === 1 ? ' prezzo aggiornato' : ' prezzi aggiornati'));
+  showToast(parti.join(', ') + ' a listino');
 }
 
 function usageModal(id) {

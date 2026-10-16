@@ -115,6 +115,7 @@ function avviaSupabaseFinto(opts) {
     if (u.pathname === '/functions/v1/bomtrack-utenti' && req.method === 'POST') {
       if (srv.senzaFunzioni) return rispondi(res, 404, { code: 'NOT_FOUND', message: 'Requested function was not found' });
       if (srv.funzioneMuta) { res.destroy(); return; }
+      if (srv.funzioneDiEsempio) return rispondi(res, 200, { message: 'Hello undefined!' });
       const id = chi(req);
       if (!id || id === 'scaduto') return rispondi(res, 401, { msg: 'Invalid JWT' });
       const io = db.sql(`select role || ' ' || coalesce(active, true) from profiles where id = '${id}'`);

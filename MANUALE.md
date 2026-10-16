@@ -1,6 +1,6 @@
 # Bomtrack — Manuale d'uso
 
-**Versione dell'app documentata: 0.105.1**
+**Versione dell'app documentata: 0.105.2**
 
 📖 **[Leggilo come pagina web](https://claude.ai/code/artifact/726a0963-2db0-4947-999b-d7b5beb91a0b)** — stesso testo, con indice laterale, filtro dei capitoli e tema chiaro/scuro. Comodo da tenere aperto di fianco all'app.
 
@@ -918,7 +918,9 @@ quotazione si modifica** e si mette in uso.
 
 - **Vale per tutto**: commerciali, materie prime **e parti** acquistate.
 - **Le richieste di offerta alimentano il listino**: il pulsante **Registra a listino** di una RFQ
-  trasforma i prezzi tornati in quotazioni, con il riferimento alla richiesta da cui vengono.
+  trasforma i prezzi tornati in quotazioni, con il riferimento alla richiesta da cui vengono. Se
+  dopo averli registrati correggi un prezzo sulla richiesta, il pulsante torna attivo e la
+  quotazione si **aggiorna** (non se ne aggiunge un'altra); se è quella in uso, il costo la segue.
 - **Il prezzo che entra nella costificazione si sceglie esplicitamente.** Più quotazioni possono
   convivere; una sola è quella in uso. Il Riepilogo segnala quanto si risparmierebbe scegliendo
   ovunque la più bassa.

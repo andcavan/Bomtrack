@@ -185,12 +185,17 @@ async function cloudRpc(fn, argomenti) {
 async function cloudUtenti(corpo) {
   const ritorno = typeof location !== 'undefined' && /^https?:/.test(location.protocol || '') ? location.origin + location.pathname : undefined;
   const chiama = async () => cloudHttp('/functions/v1/bomtrack-utenti', { token: await cloudToken(), corpo: Object.assign({ ritorno }, corpo) });
-  try { return await chiama(); }
+  let r;
+  try { r = await chiama(); }
   catch (e) {
     if (e.cloud !== 'accesso' || !cloudSessione()) throw e;
     await cloudRinnova();
-    return chiama();
+    r = await chiama();
   }
+  // Una funzione con quel nome ma con un altro codice (il «Hello world» che
+  // Supabase propone creandola) risponde 200 senza link.
+  if (!r || typeof r.link !== 'string' || !r.link) throw cloudErrore('server', 'La funzione bomtrack-utenti risponde, ma non con il codice di Bomtrack: in Supabase, Edge Functions, aprila, sostituisci tutto il codice con il file supabase/functions/bomtrack-utenti/index.ts e premi Deploy');
+  return r;
 }
 async function cloudAggiornaPassword(password) {
   return cloudHttp('/auth/v1/user', { metodo: 'PUT', token: await cloudToken(), corpo: { password } });

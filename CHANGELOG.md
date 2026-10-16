@@ -2,6 +2,17 @@
 
 Le revisioni seguono il versionamento semantico `0.MINOR.PATCH`: **MINOR** per nuove funzionalità, **PATCH** per correzioni. La versione in cima è quella in `APP_VERSION` (`core.js`) e mostrata nell'header dell'app.
 
+### 0.105.2 — 2026-10-16
+
+**Correzioni**
+- **Quotazioni doppie nel listino con l'archivio condiviso.** Al caricamento, un articolo comprato con un prezzo ma senza il segno «listino già creato» riceveva una quotazione a mano ricavata dal prezzo. Quel segno resta sul PC e non va sul server: ogni PC, a ogni download e a ogni ricarica dopo una modifica di un collega, aggiungeva un'altra copia della stessa quotazione. Con l'archivio condiviso la semina non si fa più, e le copie identiche già create si tolgono da sole alla prossima apertura, anche dal server. Resta quella in uso.
+- **Due colleghi che registravano a listino la stessa richiesta d'offerta** prima di essersi sincronizzati bloccavano per sempre l'invio di chi arrivava secondo (il server rifiuta la stessa offerta due volte). Ora la quotazione ha lo stesso id su ogni PC, e le due registrazioni sono la stessa.
+- **Un prezzo corretto sulla richiesta dopo averlo registrato** restava al valore vecchio nel listino, con il pulsante spento. Ora il pulsante torna attivo e la quotazione si aggiorna; se è quella in uso, il costo la segue.
+- **La funzione `bomtrack-utenti` con il codice d'esempio di Supabase** dava una finestra con il link vuoto. Ora l'app dice che il codice della funzione va sostituito.
+
+**Verifica**
+- `test/cloud.test.js`: due PC registrano la stessa offerta; un articolo arrivato dal server non si semina e le copie spariscono anche dal server; la funzione con il codice d'esempio. `test/pricelist.test.js`: il prezzo corretto aggiorna la quotazione e il costo in uso, l'id stabile.
+
 ### 0.105.1 — 2026-10-16
 
 **Correzioni**

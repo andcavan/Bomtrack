@@ -584,6 +584,26 @@ const CAL_FESTIVI_IT = ['01-01', '01-06', '04-25', '05-01', '06-02', '08-15', '1
 function calDefault() {
   return { workDays: [1, 2, 3, 4, 5], holidays: CAL_FESTIVI_IT.slice(), easter: true, closures: [] };
 }
+// Le copie lasciate da quella semina ripetuta (fino alla 0.105.1): stessa
+// quotazione a mano, identica in tutto tranne l'id. Resta quella in uso, se è
+// fra le copie, altrimenti la prima. Le quotazioni da una richiesta d'offerta
+// non c'entrano: quelle non sono mai state seminate.
+function togliQuotazioniDoppie(it) {
+  const viste = new Map();
+  const via = new Set();
+  const chiave = r => JSON.stringify([r.supplierId || null, Number(r.price) || 0, r.priceUom || '',
+    r.minQty == null ? '' : String(r.minQty), r.leadDays == null ? '' : String(r.leadDays),
+    r.code || '', r.desc || '', r.date || '', r.note || '']);
+  it.priceList.forEach(r => {
+    if (r.rfqId) return;
+    const k = chiave(r);
+    const prima = viste.get(k);
+    if (!prima) { viste.set(k, r); return; }
+    if (r.id === it.activePriceId) { via.add(prima.id); viste.set(k, r); }
+    else via.add(r.id);
+  });
+  if (via.size) it.priceList = it.priceList.filter(r => !via.has(r.id));
+}
 function migrateDB() {
   // Normalizzazioni legacy (idempotenti, sempre eseguite)
   if (!db.suppliers) db.suppliers = [];
@@ -930,8 +950,14 @@ function migrateDB() {
         // Anche un prezzo senza fornitore diventa una quotazione "a mano": ora
         // che i prezzi si toccano solo dal listino, altrimenti resterebbe un
         // valore nella costificazione che nessuna schermata può più correggere.
+        //
+        // Nell'archivio condiviso mai: il flag resta su questo PC (non ha una
+        // colonna), e un articolo che arriva dal server ne è senza. La semina
+        // ripartiva su ogni PC, a ogni download e a ogni ricarica dopo una
+        // modifica altrui, e il listino si riempiva di copie della stessa
+        // quotazione. Un archivio arriva sul server già seminato.
         const prezzo = it.type === 'acquistato' ? it.purchasePrice : it.unitCost;
-        if (it.supplierId || Number(prezzo) > 0) {
+        if (!modoCondiviso && (it.supplierId || Number(prezzo) > 0)) {
           const riga = stampNew({
             id: newId(), supplierId: it.supplierId || null, price: Number(prezzo) || 0,
             minQty: '', leadDays: '', code: it.supplierCode || '', desc: it.supplierDesc || '',
@@ -942,6 +968,7 @@ function migrateDB() {
         }
         it.priceListSeeded = true;
       }
+      if (modoCondiviso) togliQuotazioniDoppie(it);
     }
     // Approvvigionamento della parte: si produce in casa o si compra. Ha preso il
     // posto del vecchio modo di calcolo (costMode), che rispondeva alla stessa
