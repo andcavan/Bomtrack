@@ -921,3 +921,90 @@ language sql stable security definer set search_path = public as $$
     'ora', clock_timestamp())
 $$;
 grant execute on function public.archivio_stato() to authenticated;
+
+-- ─── Numeri e codici si prendono dal server (dalla 0.104.0) ──
+-- Con l'archivio condiviso un PC senza collegamento consulta soltanto: chi
+-- crea un documento o un articolo è per forza in linea, e il numero o il
+-- codice lo chiede qui prima di usarlo. Così due colleghi che creano insieme
+-- un ordine non si trovano mai lo stesso ODA-2026-014.
+--
+-- `contatori`: l'ultimo numero dato per ciascuna serie annuale («ODA-2026-»).
+-- La riga si blocca durante l'aggiornamento, e due richieste contemporanee
+-- escono una dopo l'altra con numeri diversi. Il contatore non scende mai sotto
+-- il numero più alto già presente nella tabella dei documenti né sotto quello
+-- che il PC ha in locale (`minimo`): un archivio caricato da un backup, o un
+-- documento ancora in coda, non vengono scavalcati.
+create table if not exists public.contatori (
+  serie text primary key,
+  ultimo int not null
+);
+-- `codici_impegnati`: i codici articolo appena presi, nell'ora in cui
+-- l'articolo che li porta potrebbe non essere ancora arrivato in `items`.
+-- Un codice è libero se nessun articolo lo porta e nessun altro utente l'ha
+-- impegnato nell'ultima ora. Il confronto ignora maiuscole e spazi, come
+-- itemCodeKey() nell'app.
+create table if not exists public.codici_impegnati (
+  chiave text primary key,
+  codice text not null,
+  utente uuid not null,
+  quando timestamptz not null default now()
+);
+-- Nessuna policy: le due tabelle si toccano solo dalle funzioni qui sotto.
+alter table public.contatori enable row level security;
+alter table public.codici_impegnati enable row level security;
+
+-- Riserva `quanti` numeri consecutivi della serie e restituisce il primo.
+-- La serie è «SIGLA-ANNO-»; la sigla decide la tabella, e serve il diritto di
+-- scriverci (un lettore non prenota numeri).
+create or replace function public.riserva_numeri(prefisso text, quanti int default 1, minimo int default 0)
+returns int language plpgsql security definer set search_path = public as $$
+declare tab text; col text := 'number'; massimo int; primo int;
+begin
+  tab := case split_part(prefisso, '-', 1)
+    when 'RFQ' then 'rfqs' when 'ODA' then 'orders' when 'ODL' then 'work_orders'
+    when 'ODP' then 'production_orders' when 'FAB' then 'production_plans' when 'COM' then 'jobs'
+    when 'MT' then 'item_revisions' end;
+  if tab = 'item_revisions' then col := 'eco_number'; end if;   -- le modifiche tecniche MT-…
+  if tab is null or prefisso !~ '^[A-Z]{2,3}-[0-9]{4}-$' or quanti is null or quanti < 1 or quanti > 500 then
+    raise exception 'serie non valida: %', prefisso;
+  end if;
+  if not public.puo_scrivere_tabella(tab) then
+    raise exception 'il ruolo non scrive %', tab using errcode = '42501';
+  end if;
+  execute format('select coalesce(max(substr(%I, %s)::int), 0) from public.%I where %I ~ %L',
+                 col, length(prefisso) + 1, tab, col, '^' || prefisso || '[0-9]{1,9}$') into massimo;
+  insert into public.contatori as c (serie, ultimo)
+    values (prefisso, greatest(massimo, coalesce(minimo, 0)) + quanti)
+    on conflict (serie) do update set ultimo = greatest(c.ultimo, massimo, coalesce(minimo, 0)) + quanti
+    returning c.ultimo - quanti + 1 into primo;
+  return primo;
+end $$;
+grant execute on function public.riserva_numeri(text, int, int) to authenticated;
+
+-- Impegna i codici articolo di `codici` ([{"codice": …, "item": id facoltativo}])
+-- e restituisce quelli già presi: da un articolo diverso da `item`, o da un
+-- altro utente nell'ultima ora. Gli altri restano impegnati a nome di chi chiama.
+create or replace function public.impegna_codici(codici jsonb)
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare x jsonb; k text; preso boolean; presi jsonb := '[]'::jsonb;
+begin
+  if not public.puo_scrivere_tabella('items') then
+    raise exception 'il ruolo non scrive items' using errcode = '42501';
+  end if;
+  delete from public.codici_impegnati where quando < now() - interval '1 hour';
+  for x in select * from jsonb_array_elements(coalesce(codici, '[]'::jsonb)) loop
+    k := lower(btrim(coalesce(x->>'codice', '')));
+    continue when k = '';
+    preso := exists (select 1 from public.items i
+                      where lower(btrim(i.code)) = k and (x->>'item' is null or i.id::text <> x->>'item'));
+    if not preso then
+      insert into public.codici_impegnati as c (chiave, codice, utente, quando)
+        values (k, btrim(x->>'codice'), auth.uid(), now())
+        on conflict (chiave) do update set quando = now() where c.utente = excluded.utente;
+      preso := not found;
+    end if;
+    if preso then presi := presi || to_jsonb(x->>'codice'); end if;
+  end loop;
+  return presi;
+end $$;
+grant execute on function public.impegna_codici(jsonb) to authenticated;

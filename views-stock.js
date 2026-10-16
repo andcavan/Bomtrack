@@ -1495,14 +1495,18 @@ function riordinoProposte() {
 // Una bozza d'ordine per fornitore, con le righe scelte. Le righe senza
 // fornitore restano fuori: un ordine senza intestatario non si manda a
 // nessuno, e il modale lo dice prima. Torna gli ordini creati.
-function riordinoGenera(itemIds) {
-  if (!roleGuard('docs')) return [];
+function riordinoPerFornitore(itemIds) {
   const scelti = new Set(itemIds || []);
   const perFornitore = new Map();
   riordinoProposte().filter(p => scelti.has(p.it.id) && p.supplierId).forEach(p => {
     if (!perFornitore.has(p.supplierId)) perFornitore.set(p.supplierId, []);
     perFornitore.get(p.supplierId).push(p);
   });
+  return perFornitore;
+}
+function riordinoGenera(itemIds) {
+  if (!roleGuard('docs')) return [];
+  const perFornitore = riordinoPerFornitore(itemIds);
   const oggi = oggiISO();
   const creati = [];
   perFornitore.forEach((ps, supplierId) => {
@@ -1557,10 +1561,13 @@ function riordinoModal() {
 function riordinoConferma() {
   const ids = Array.prototype.map.call(document.querySelectorAll('.riordino-sel'), el => (el.checked ? el.value : null)).filter(Boolean);
   if (!ids.length) { showToast('Nessun articolo scelto', 'error'); return; }
-  const creati = riordinoGenera(ids);
-  closeModal();
-  if (!creati.length) return;
-  showToast(creati.length === 1 ? `Creato l'ordine ${creati[0].number} in bozza` : `Creati ${creati.length} ordini in bozza: ${creati.map(o => o.number).join(', ')}`);
-  setView('orders');
-  openOrderEdit(creati[0].id);
+  if (!roleGuard('docs')) return;
+  return conNumeri({ ODA: riordinoPerFornitore(ids).size }, () => {
+    const creati = riordinoGenera(ids);
+    closeModal();
+    if (!creati.length) return;
+    showToast(creati.length === 1 ? `Creato l'ordine ${creati[0].number} in bozza` : `Creati ${creati.length} ordini in bozza: ${creati.map(o => o.number).join(', ')}`);
+    setView('orders');
+    openOrderEdit(creati[0].id);
+  });
 }

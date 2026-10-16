@@ -427,3 +427,144 @@ describe('Archivio condiviso — due colleghi sulla stessa cosa', () => {
     await srv.chiudi();
   });
 });
+
+describe('Archivio condiviso — numeri e codici li dà il server', () => {
+  if (!pg.disponibile()) {
+    it('saltato: BOMTRACK_PG non impostata (vedi test/pg.js)', () => {});
+    return;
+  }
+  const { avviaSupabaseFinto } = require('./supabase-finto.js');
+  let fila = Promise.resolve();
+  const passo = (nome, fn) => it(nome, () => { const p = fila.then(fn); fila = p.catch(() => {}); return p; });
+  let srv, A, B, anna, bruno;
+  const giro = a => a.eval('cloudGiro()');
+  const avvisi = a => a.ctx.__avvisi.splice(0);
+  const anno = new Date().getFullYear();
+  const pc = (seed) => {
+    const st = makeStorage();
+    st.setItem('bomtrack_cloud', JSON.stringify({ url: srv.url, chiave: srv.chiave, allineato: false }));
+    const a = loadApp({ silent: true, storage: st });
+    a.ctx.fetch = fetch;
+    if (seed) a.seedStorage(seed);
+    a.eval('Store.load(); cloudAvvio(); globalThis.__avvisi = []; showToast = m => __avvisi.push(m);');
+    return a;
+  };
+
+  passo('due PC sullo stesso archivio', async () => {
+    srv = await avviaSupabaseFinto();
+    anna = srv.crea('a@x.it', 'pa', 'Anna');
+    bruno = srv.crea('b@x.it', 'pb', 'Bruno');
+    const db = dbCloudCompleto();
+    // La serie dell'anno in corso parte da un ordine che c'è già.
+    db.orders[0].number = `ODA-${anno}-007`;
+    db.workOrders[0].number = `ODL-${anno}-001`;
+    db.users.push({ id: U(801), name: 'Bruno', email: 'b@x.it', role: 'admin', active: true, createdAt: '2026-03-01T08:00:00.000Z', updatedAt: '2026-03-01T08:00:00.000Z' });
+    A = pc(db);
+    const e = await A.eval(`cloudAccediConPassword('a@x.it', 'pa').then(() => cloudDopoAccesso())`);
+    await A.eval(`cloudCaricaArchivio(${JSON.stringify(e.stato)})`);
+    A.eval(`currentUser = getUser('${anna}'); Store.setActor(currentUser.id);`);
+    B = pc();
+    await B.eval(`cloudAccediConPassword('b@x.it', 'pb').then(() => cloudDopoAccesso())`);
+    await B.eval('cloudScaricaArchivio()');
+    B.eval(`currentUser = getUser('${bruno}'); Store.setActor(currentUser.id);`);
+    await giro(A); await giro(B);
+  });
+
+  passo('senza collegamento si consulta soltanto, e si torna a lavorare quando il server risponde', async () => {
+    assert.equal(A.eval(`canWrite('docs')`), true);
+    srv.spento = true;
+    await giro(A);
+    assert.equal(A.eval(`cloudSolaLettura()`), true);
+    assert.equal(A.eval(`canWrite('docs')`), false, 'nessuna area si scrive');
+    assert.equal(A.eval(`canWriteRuolo('docs')`), true, 'il ruolo resta quello');
+    const prima = A.eval('db.orders.length');
+    avvisi(A);
+    A.eval('newOrder()');
+    assert.equal(A.eval('db.orders.length'), prima, 'nessun ordine nasce');
+    assert.match(avvisi(A).join(), /si consulta soltanto/);
+    srv.spento = false;
+    await giro(A);
+    assert.equal(A.eval(`canWrite('docs')`), true);
+  });
+
+  passo('un PC appena avviato aspetta la prima risposta del server prima di scrivere', async () => {
+    const st = makeStorage();
+    A.storage._map.forEach((v, k) => st.setItem(k, v));
+    const C = loadApp({ silent: true, storage: st });
+    C.ctx.fetch = fetch;
+    C.eval(`Store.load(); cloudAvvio(); currentUser = getUser('${anna}');`);
+    assert.equal(C.eval(`canWrite('docs')`), false);
+    await giro(C);
+    assert.equal(C.eval(`canWrite('docs')`), true);
+  });
+
+  passo('due colleghi che creano un ordine insieme hanno due numeri diversi, dopo quello che c\'era', async () => {
+    const [na, nb] = [A.eval('db.orders.length'), B.eval('db.orders.length')];
+    avvisi(A); avvisi(B);
+    await Promise.all([A.eval('newOrder()'), B.eval('newOrder()')]);
+    assert.equal(avvisi(A).concat(avvisi(B)).join(' | '), '');
+    const oa = A.eval(`db.orders[db.orders.length - 1].number`), ob = B.eval(`db.orders[db.orders.length - 1].number`);
+    assert.equal(A.eval('db.orders.length'), na + 1);
+    assert.equal(B.eval('db.orders.length'), nb + 1);
+    assert.notEqual(oa, ob);
+    assert.deepEqual([oa, ob].sort(), [`ODA-${anno}-008`, `ODA-${anno}-009`]);
+    await giro(A); await giro(B); await giro(A);
+    assert.equal(srv.db.sql(`select count(distinct number) from orders where number like 'ODA-${anno}-%'`), '3');
+  });
+
+  passo('un documento con più numeri li prende tutti insieme, consecutivi', async () => {
+    const n = await A.eval(`conNumeri({ ODL: 3 }, () => [nextOdlNumber(), nextOdlNumber(), nextOdlNumber()])`);
+    const altro = await B.eval(`conNumeri({ ODL: 1 }, () => nextOdlNumber())`);
+    assert.equal(Array.from(n).join(), [`ODL-${anno}-002`, `ODL-${anno}-003`, `ODL-${anno}-004`].join());
+    assert.equal(altro, `ODL-${anno}-005`, 'il collega continua da dove ha lasciato il server');
+    assert.equal(A.eval(`Object.keys(_numeriRiservati).length`), 0, 'i numeri non usati non restano in giro');
+  });
+
+  passo('un codice articolo preso da un collega non si dà due volte, anche prima che il suo articolo arrivi', async () => {
+    const famiglia = U(4), sotto = U(5);
+    const codice = A.eval(`genFamilyCode('materiale', '${famiglia}', '${sotto}')`);
+    assert.equal(B.eval(`genFamilyCode('materiale', '${famiglia}', '${sotto}')`), codice, 'i due PC propongono lo stesso');
+    assert.deepEqual(Array.from(await A.eval(`cloudImpegnaCodici([{ codice: '${codice}' }])`)), [], 'il primo lo prende');
+    // Bruno salva il suo articolo con il codice automatico: il server dice di
+    // no, e il codice si ricalcola saltando quello di Anna.
+    const it = { id: U(900), type: 'materiale', familyId: famiglia, subFamilyId: sotto, name: 'Barra tonda', code: codice, active: true };
+    B.eval(`globalThis.__it = ${JSON.stringify(it)}`);
+    avvisi(B);
+    await B.eval(`conCodiceImpegnato(__it, () => genItemCode(__it), () => Store.insert('items', __it))`);
+    const dato = B.eval(`Store.getById('items', '${U(900)}').code`);
+    assert.notEqual(dato, codice);
+    assert.match(avvisi(B).join(), /l'aveva appena preso un collega/);
+    // Un codice scritto a mano non si cambia da solo: si chiede di sceglierne un altro.
+    B.eval(`globalThis.__it2 = { id: '${U(901)}', type: 'materiale', name: 'Altra', code: '${codice.toLowerCase()} ', active: true }`);
+    const r = await B.eval(`conCodiceImpegnato(__it2, null, () => Store.insert('items', __it2))`);
+    assert.equal(r, null);
+    assert.equal(B.eval(`!!Store.getById('items', '${U(901)}')`), false);
+    assert.match(avvisi(B).join(), /scegline un altro/);
+    // Il codice di un articolo che esiste è suo: rimpegnarlo per lo stesso articolo va.
+    await giro(B);
+    assert.deepEqual(Array.from(await B.eval(`cloudImpegnaCodici([{ codice: '${dato}', item: '${U(900)}' }])`)), []);
+    assert.deepEqual(Array.from(await A.eval(`cloudImpegnaCodici([{ codice: '${dato}' }])`)), [dato], 'per un altro no');
+  });
+
+  passo('l\'import del catalogo impegna i suoi codici e salta quelli dei colleghi', async () => {
+    // Un prefisso che nessuno ha ancora usato: il primo codice lo prende Bruno.
+    const prossimo = A.eval(`genFamilyCode('materiale', '${U(4)}', null)`);
+    assert.deepEqual(Array.from(await B.eval(`cloudImpegnaCodici([{ codice: '${prossimo}' }])`)), []);
+    const righe = [{ 'Descrizione *': 'Barra da import', Macrofamiglia: 'Acciaio', UM: 'm' },
+      { Codice: 'MANUALE-1', 'Descrizione *': 'Con codice', UM: 'pz' }];
+    const rep = await A.eval(`catImportaImpegnando({ scope: 'buy', byName: ${JSON.stringify({ 'Materie prime': righe })} })`);
+    assert.equal(rep.errors.length, 0, rep.errors.join());
+    const nuovo = A.eval(`db.items.find(i => i.name === 'Barra da import').code`);
+    assert.notEqual(nuovo, prossimo, 'il codice impegnato dal collega si salta');
+    assert.equal(Array.from(await B.eval(`cloudImpegnaCodici([{ codice: '${nuovo}' }, { codice: 'manuale-1' }])`)).join(), [nuovo, 'manuale-1'].join(),
+      'e quelli dell\'import sono impegnati');
+    assert.equal(A.eval('_cloud.pausa'), 0);
+  });
+
+  passo('un lettore non prenota numeri', async () => {
+    srv.db.sql(`set session_replication_role = replica; update profiles set role = 'lettore' where id = '${bruno}';`);
+    await assert.rejects(B.eval(`cloudRpc('riserva_numeri', { prefisso: 'ODA-${anno}-', quanti: 1, minimo: 0 })`), /non scrive/);
+    await assert.rejects(B.eval(`cloudRpc('riserva_numeri', { prefisso: 'XYZ; drop', quanti: 1, minimo: 0 })`), /non valida|non scrive/);
+    await srv.chiudi();
+  });
+});

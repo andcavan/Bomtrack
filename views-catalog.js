@@ -1988,12 +1988,16 @@ function saveNewItem() {
       }
     }
   }
-  Store.insert('items', it);
-  closeModal(); renderCatalogs(); savedToast(src ? 'Copia creata' : 'Articolo creato');
-  // Un articolo appena creato non ha modo di ricevere un prezzo: la scheda non
-  // lo chiede più. Il listino si apre da solo, ma solo se non è già arrivato
-  // dalla copia — lì il prezzo c'è già.
-  if (hasPriceList(it) && !priceRows(it).length) priceListModal(it.id);
+  // Con l'archivio condiviso il codice si impegna sul server prima di salvare:
+  // se un collega l'ha appena preso, quello automatico si ricalcola.
+  return conCodiceImpegnato(it, itemCodeAuto ? () => genItemCode(it) : null, () => {
+    Store.insert('items', it);
+    closeModal(); renderCatalogs(); savedToast(src ? 'Copia creata' : 'Articolo creato');
+    // Un articolo appena creato non ha modo di ricevere un prezzo: la scheda non
+    // lo chiede più. Il listino si apre da solo, ma solo se non è già arrivato
+    // dalla copia — lì il prezzo c'è già.
+    if (hasPriceList(it) && !priceRows(it).length) priceListModal(it.id);
+  });
 }
 // La scheda articolo ricorda chi si sta modificando: chiusa, non deve
 // ricordarlo più — itemDraftFromForm legge questa variabile.
@@ -2021,9 +2025,15 @@ function saveItemEdit(id) {
   if (codErr) { showToast(codErr, 'error'); return; }
   const dupErr = validateItemCode(val('it-code'), id, it.code);
   if (dupErr) { showToast(dupErr, 'error'); return; }
-  readItemForm(it);
-  touch(it);
-  saveDB(); closeModal(); renderCatalogs(); savedToast('Articolo aggiornato');
+  const fare = () => {
+    readItemForm(it);
+    touch(it);
+    saveDB(); closeModal(); renderCatalogs(); savedToast('Articolo aggiornato');
+  };
+  // Solo un codice cambiato va impegnato: quello che l'articolo ha già è suo.
+  const nuovo = val('it-code');
+  if (!nuovo || itemCodeKey(nuovo) === itemCodeKey(it.code) || itemLockState(it).structLocked) return fare();
+  return conCodiceImpegnato({ id: it.id, code: nuovo }, null, fare);
 }
 function delItem(id) {
   if (!roleGuard('catalog')) return;

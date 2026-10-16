@@ -2,6 +2,22 @@
 
 Le revisioni seguono il versionamento semantico `0.MINOR.PATCH`: **MINOR** per nuove funzionalità, **PATCH** per correzioni. La versione in cima è quella in `APP_VERSION` (`core.js`) e mostrata nell'header dell'app.
 
+### 0.104.0 — 2026-10-16
+
+**Con l'archivio condiviso numeri e codici li dà il server.** Prima ogni PC calcolava il prossimo numero dal suo archivio, e due colleghi che creavano un ordine insieme prendevano lo stesso ODA; la 0.103.2 lo rinumerava dopo. Ora il numero si chiede al server e si segna come preso prima che il documento nasca. **Va rieseguito `supabase/schema.sql`.**
+
+**Nuovo**
+- **Senza collegamento si consulta soltanto.** Con l'archivio condiviso, quando il server non risponde (e all'avvio, fino alla prima risposta) l'app è in sola lettura: un banner lo dice, i comandi per creare spariscono, le guardie bloccano il resto. Si riprova ogni 5 secondi e si torna a lavorare da soli. Esportare e fare un backup restano possibili. Le modifiche già in coda partono al ritorno, come prima.
+- **I numeri dei documenti dal server**: richieste, ordini, ordini di lavoro e di produzione, piani, commesse e modifiche tecniche MT. Un contatore per serie e per anno, che non scende mai sotto il numero più alto già presente (sul server o in coda su questo PC). Chi genera più documenti insieme (da un piano, dal riordino, da una richiesta divisa) prende tutti i numeri in una chiamata. Un numero preso e non usato resta un buco nella serie.
+- **I codici articolo impegnati prima di salvare**, dalla scheda e dall'import Excel. Un codice preso da un collega da meno di un'ora, anche se il suo articolo non è ancora arrivato, non si dà: quello automatico si ricalcola saltandolo, quello scritto a mano va cambiato.
+- Senza archivio condiviso non cambia niente: numeri e codici si calcolano sul PC, subito, come sempre.
+
+**Schema**
+- Tabelle `contatori` e `codici_impegnati` (RLS attiva, nessuna policy: si toccano solo dalle funzioni) e le funzioni `riserva_numeri(prefisso, quanti, minimo)` e `impegna_codici(codici)`, che controllano il diritto di scrivere la tabella dei documenti o degli articoli.
+
+**Verifica**
+- `test/cloud.test.js`: sola lettura senza server e all'avvio; due ordini creati insieme da due PC; numeri consecutivi per più documenti; un codice preso dal collega saltato o rifiutato; l'import che impegna i suoi codici; un lettore che non prenota. Il Supabase finto passa gli interi come interi, come PostgREST.
+
 ### 0.103.2 — 2026-10-16
 
 **Correzioni all'archivio condiviso**, da un controllo dei casi in cui due colleghi lavorano sulla stessa cosa. Tre erano rotti, provati contro Postgres prima di correggerli.

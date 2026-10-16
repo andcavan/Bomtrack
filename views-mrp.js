@@ -1347,26 +1347,25 @@ function planDocGroups(rows, kind) {
 // ─── Piani: CRUD ───
 function getPlan(id) { return (db.plans || []).find(p => p.id === id); }
 // Progressivo per anno: FAB-<anno>-NNN
-function nextPlanNumber() {
-  const prefix = `FAB-${new Date().getFullYear()}-`;
-  const seqs = (db.plans || []).filter(p => (p.number || '').startsWith(prefix))
-    .map(p => parseInt((p.number || '').slice(prefix.length), 10) || 0);
-  return prefix + String((seqs.length ? Math.max(...seqs) : 0) + 1).padStart(3, '0');
-}
+function nextPlanNumber() { return numeroProgressivo('FAB'); }
 function newPlan() {
   if (!roleGuard('docs')) return;
-  const p = Store.insert('plans', { id: gid(), number: nextPlanNumber(), title: '', date: oggiISO(),
-    notes: '', lines: [], active: true });
-  currentPlanId = p.id; mrpView = 'edit'; renderMrp();
+  return conNumeri({ FAB: 1 }, () => {
+    const p = Store.insert('plans', { id: gid(), number: nextPlanNumber(), title: '', date: oggiISO(),
+      notes: '', lines: [], active: true });
+    currentPlanId = p.id; mrpView = 'edit'; renderMrp();
+  });
 }
 function duplicatePlan(id) {
   if (!roleGuard('docs')) return;
   const src = getPlan(id); if (!src) return;
-  const p = Store.insert('plans', { id: gid(), number: nextPlanNumber(), title: (src.title || src.number) + ' (copia)',
-    date: oggiISO(), notes: src.notes || '',
-    lines: (src.lines || []).map(l => ({ id: gid(), itemId: l.itemId, qty: l.qty })), active: true });
-  currentPlanId = p.id; mrpView = 'edit'; renderMrp();
-  showToast('Piano ' + p.number + ' creato dalla copia');
+  return conNumeri({ FAB: 1 }, () => {
+    const p = Store.insert('plans', { id: gid(), number: nextPlanNumber(), title: (src.title || src.number) + ' (copia)',
+      date: oggiISO(), notes: src.notes || '',
+      lines: (src.lines || []).map(l => ({ id: gid(), itemId: l.itemId, qty: l.qty })), active: true });
+    currentPlanId = p.id; mrpView = 'edit'; renderMrp();
+    showToast('Piano ' + p.number + ' creato dalla copia');
+  });
 }
 function delPlan(id) {
   if (!roleGuard('docs')) return;
@@ -1778,7 +1777,7 @@ function planCreateDocs() {
   // stare accanto alla scrittura, non solo nell'interfaccia.
   const gia = planDocumentedKeys(p.id);
   const bloccato = chiave => planBloccata(gia.get(chiave), kind);
-  const creati = [];
+  const gruppi = [];
   let scartate = 0;
   sel.forEach((chiavi, chiaveGruppo) => {
     // La chiave del gruppo può portare la passata (ordini di lavoro): il
@@ -1787,18 +1786,26 @@ function planCreateDocs() {
     const supplierId = String(chiaveGruppo).split('#')[0];
     const ammesse = chiavi.filter(k => { if (bloccato(k)) { scartate++; return false; } return true; });
     const righe = ammesse.map(k => index.get(k)).filter(Boolean);
-    if (!righe.length) return;
-    // Un ordine di produzione è **di una parte sola**: da un gruppo ne escono
-    // tanti quante sono le righe, non uno solo con dentro tutto. È l'unica
-    // differenza strutturale fra questo tipo e gli altri tre.
+    if (righe.length) gruppi.push({ supplierId, righe });
+  });
+  if (!gruppi.length) {
+    showToast(scartate ? 'Quelle righe sono già in un documento di questo tipo' : 'Nessun documento generato', 'error');
+    return;
+  }
+  // Un ordine di produzione è **di una parte sola**: da un gruppo ne escono
+  // tanti quante sono le righe, non uno solo con dentro tutto. È l'unica
+  // differenza strutturale fra questo tipo e gli altri tre.
+  const quanti = kind === 'odp' ? gruppi.reduce((n, g) => n + g.righe.length, 0) : gruppi.length;
+  return conNumeri({ [PLAN_DOC_SERIE[kind]]: quanti }, () => planCreateDocsFatto(p, kind, gruppi));
+}
+const PLAN_DOC_SERIE = { rfq: 'RFQ', order: 'ODA', odl: 'ODL', odp: 'ODP' };
+function planCreateDocsFatto(p, kind, gruppi) {
+  const creati = [];
+  gruppi.forEach(({ supplierId, righe }) => {
     if (kind === 'odp') { righe.forEach(r => creati.push(planNewOdp(p, r))); return; }
     creati.push(kind === 'rfq' ? planNewRfq(p, supplierId, righe)
       : (kind === 'odl' ? planNewOdl(p, supplierId, righe) : planNewOrder(p, supplierId, righe)));
   });
-  if (!creati.length) {
-    showToast(scartate ? 'Quelle righe sono già in un documento di questo tipo' : 'Nessun documento generato', 'error');
-    return;
-  }
   saveDB(); closeModal();
   // Un documento solo: si apre. Più d'uno: si va all'elenco, non c'è una scelta
   // sensata su quale aprire per primo.

@@ -420,6 +420,9 @@ function showReadOnlyBanner(panel, area) {
   b.className = 'ro-banner';
   // innerHTML e non textContent: il testo porta un'icona, e i due pezzi che
   // vengono dai dati passano da esc() come ovunque.
-  b.innerHTML = `${ico('eye', 'tinted', '')} Sola lettura — il ruolo "${esc(roleLabel(currentUser && currentUser.role))}" non modifica ${esc(AREA_LABELS[area])}.`;
+  // Il ruolo scriverebbe: manca il collegamento all'archivio condiviso.
+  b.innerHTML = canWriteRuolo(area)
+    ? `${ico('cloud', 'tinted', '')} Sola lettura — senza collegamento all'archivio condiviso si consulta soltanto. Si torna a lavorare appena il server risponde.`
+    : `${ico('eye', 'tinted', '')} Sola lettura — il ruolo "${esc(roleLabel(currentUser && currentUser.role))}" non modifica ${esc(AREA_LABELS[area])}.`;
   panel.insertBefore(b, panel.firstChild);
 }

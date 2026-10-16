@@ -1100,12 +1100,7 @@ function opAnnullaDichiarazioneAsk(declId) {
 // piano è il caso normale: un urgente, un ricambio, una prova. Si sceglie la
 // parte fra quelle che un **ciclo** ce l'hanno — le altre aprirebbero un ordine
 // senza nessuna successione da seguire.
-function nextOdpNumber() {
-  const prefix = `ODP-${new Date().getFullYear()}-`;
-  const seqs = (db.prodOrders || []).filter(o => (o.number || '').startsWith(prefix))
-    .map(o => parseInt((o.number || '').slice(prefix.length), 10) || 0);
-  return prefix + String((seqs.length ? Math.max(...seqs) : 0) + 1).padStart(3, '0');
-}
+function nextOdpNumber() { return numeroProgressivo('ODP'); }
 // La fabbrica unica: dal fabbisogno e dalla mano passano di qui entrambe, così
 // un ordine scritto a mano non è una seconda specie di ordine.
 function odpNew(part, qty, dueDate, extra) {
@@ -1196,10 +1191,13 @@ function odpNewSave(partId) {
   const part = getItem(partId); if (!part || !roleGuard('docs')) return;
   const qty = rawNum('odp-new-qty');
   if (!(qty > 0)) { showToast('Serve una quantità maggiore di zero', 'error'); return; }
-  const o = odpNew(part, qty, val('odp-new-due'));
-  db.prodOrders.push(o); saveDB();
-  closeModal(); currentOdpId = o.id; odpView = 'edit'; renderOdp();
-  showToast(`Ordine di produzione ${o.number} creato`);
+  const due = val('odp-new-due');
+  return conNumeri({ ODP: 1 }, () => {
+    const o = odpNew(part, qty, due);
+    db.prodOrders.push(o); saveDB();
+    closeModal(); currentOdpId = o.id; odpView = 'edit'; renderOdp();
+    showToast(`Ordine di produzione ${o.number} creato`);
+  });
 }
 function openOdlFromOdp(odlId) { setView('odl'); openOdlEdit(odlId); }
 function openOdpFromOdl(odpId) { setView('odp'); openOdpEdit(odpId); }
@@ -1343,11 +1341,11 @@ function opGeneraOdlAsk(id, faseId) {
   const { o, f } = x;
   const fasi = opRunFasi(o, f);
   const quali = fasi.length === 1 ? `la fase ${f.seq}` : `le fasi ${fasi[0].seq}-${fasi[fasi.length - 1].seq}`;
-  askConfirm(`Commissionare ${quali} a ${f.supplierName || supplierName(f.supplierId) || 'questo terzista'}?\n${fmtQty(opDaFare(o, f))} pezzi di ${o.code || ''}.`, () => {
+  askConfirm(`Commissionare ${quali} a ${f.supplierName || supplierName(f.supplierId) || 'questo terzista'}?\n${fmtQty(opDaFare(o, f))} pezzi di ${o.code || ''}.`, () => conNumeri({ ODL: 1 }, () => {
     const odl = opGeneraOdl(id, faseId); if (!odl) { renderOdp(); return; }
     renderOdp();
     showToast(`Ordine di lavoro ${odl.number} creato`, 'success');
-  }, { title: 'Genera ordine di lavoro', ok: 'Genera', safe: true });
+  }), { title: 'Genera ordine di lavoro', ok: 'Genera', safe: true });
 }
 // Il rimando che l'ordine di lavoro disegna al posto dei suoi comandi di conto
 // lavoro. Il magazzino ha **un padrone solo** per le parti coperte da un ordine

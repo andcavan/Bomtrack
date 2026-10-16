@@ -88,7 +88,7 @@ const SEED = () => {
     // corso (quello del timer) fa tornare subito il secondo: il profilo di
     // Bruno arriva a uno dei giri dopo. Si aspetta lui, non un numero di giri.
     await A.evaluate(async () => {
-      for (let i = 0; i < 40 && !db.users.some(x => x.email === 'b@x.it'); i++) {
+      for (let i = 0; i < 80 && !db.users.some(x => x.email === 'b@x.it'); i++) {
         await cloudGiro();
         await new Promise(r => setTimeout(r, 250));
       }

@@ -44,6 +44,7 @@ function avviaSupabaseFinto(opts) {
   };
   const letterale = v => {
     if (v === null || v === undefined) return 'null';
+    if (typeof v === 'number' && Number.isFinite(v)) return String(v);   // come PostgREST: un intero resta un intero
     const s = typeof v === 'string' ? v : JSON.stringify(v);
     let tag = 'q';
     while (s.includes('$' + tag + '$')) tag += 'q';

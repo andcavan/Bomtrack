@@ -21,9 +21,13 @@
 //    quando non c'è niente in sospeso e nessuno sta scrivendo in una scheda o
 //    in un campo: un ridisegno in mezzo a un ordine a metà perderebbe il
 //    lavoro. Si riprova al giro dopo.
-//  - Senza rete si lavora come prima. Le modifiche aspettano, e la fotografia
-//    dell'ultimo invio riuscito è salvata: anche chiudendo la finestra non si
-//    perdono, e partono al prossimo avvio.
+//  - Senza collegamento si consulta soltanto (dalla 0.104.0): canWrite() dice
+//    di no a tutti, e un banner lo spiega. Numeri dei documenti e codici degli
+//    articoli li assegna il server prima di usarli (conNumeri,
+//    conCodiceImpegnato), e un PC al buio non potrebbe chiederli. Le modifiche
+//    rimaste in coda da prima aspettano, e la fotografia dell'ultimo invio
+//    riuscito è salvata: anche chiudendo la finestra non si perdono, e partono
+//    al ritorno della rete.
 //
 // ── Niente librerie ──
 // supabase-js non serve: l'app usa quattro indirizzi di Auth e tre funzioni
@@ -42,6 +46,7 @@ const CLOUD_SESS_KEY = 'bomtrack_cloud_sessione';   // la sessione di Supabase A
 const CLOUD_BASE_KEY = 'bomtrack_cloud_base';       // la fotografia dell'ultimo invio riuscito
 const CLOUD_GIRO_MS = 25000;
 const CLOUD_ATTESA_MS = 1500;
+const CLOUD_RIPROVA_MS = 5000;   // senza collegamento: ogni quanto si riprova
 // Il pull riparte da un po' prima dell'ultimo: una transazione lunga può
 // scrivere un synced_at più vecchio di un pull già fatto (schema.sql).
 const CLOUD_MARGINE_MS = 5000;
@@ -54,7 +59,15 @@ function cloudScrivi(k, v) {
   try { if (v == null) localStorage.removeItem(k); else localStorage.setItem(k, JSON.stringify(v)); return true; }
   catch (e) { return false; }
 }
-function cloudConfig() { const c = cloudLeggi(CLOUD_KEY); return c && c.url && c.chiave ? c : null; }
+let _cloudConfigTesto = null, _cloudConfigLetta = null;
+function cloudConfig() {
+  // Si rilegge solo se il testo è cambiato: canWrite() passa di qui spesso.
+  let t = null;
+  try { t = localStorage.getItem(CLOUD_KEY); } catch (e) { t = null; }
+  if (t !== _cloudConfigTesto) { _cloudConfigTesto = t; _cloudConfigLetta = cloudLeggi(CLOUD_KEY); }
+  const c = _cloudConfigLetta;
+  return c && c.url && c.chiave ? Object.assign({}, c) : null;
+}
 function cloudAttivo() { return !!cloudConfig(); }
 function cloudAggiornaConfig(campi) { const c = cloudConfig(); if (c) cloudScrivi(CLOUD_KEY, Object.assign(c, campi)); }
 // Indirizzo pulito: niente barra finale, niente percorso dopo il dominio.
@@ -90,8 +103,10 @@ async function cloudHttp(percorso, opz) {
   try {
     r = await fetch(c.url + percorso, { method: o.metodo || 'POST', headers, body: o.corpo === undefined ? undefined : JSON.stringify(o.corpo) });
   } catch (e) {
+    cloudCollegato(false);
     throw cloudErrore('rete', 'Server non raggiungibile');
   }
+  cloudCollegato(true);   // ha risposto: anche un errore vuol dire che c'è
   const testo = await r.text();
   let dati = null;
   try { dati = testo ? JSON.parse(testo) : null; } catch (e) { dati = testo; }
@@ -349,6 +364,9 @@ const _cloud = {
   messaggio: '', ultimo: null, respinti: [], baseNonSalvata: false, impostazioniAvvisate: false,
   senzaBase: new Set(),   // record ripristinati: si rimandano senza versione di partenza
   doppiAvvisati: new Set(),
+  collegato: false,       // l'ultima chiamata al server ha avuto risposta
+  pausa: 0,               // > 0: niente giri (un import sta impegnando i suoi codici)
+  numeri: Promise.resolve(),   // le prenotazioni di numeri, una alla volta
 };
 function cloudPronto() {
   const c = cloudConfig();
@@ -371,6 +389,7 @@ function cloudProgramma(ms) {
 }
 async function cloudGiro() {
   if (!cloudPronto()) return false;
+  if (_cloud.pausa) { cloudProgramma(1000); return false; }
   if (_cloud.inCorso) { _cloud.ancora = true; return false; }
   _cloud.inCorso = true;
   try {
@@ -411,7 +430,7 @@ async function cloudInviaLotto() {
   const { changes, mark } = preso;
   if (!Object.keys(changes || {}).length) return;
   const c = cloudConfig();
-  const { payload, impostazioniTenute } = cloudPayload(changes, c.soglia || null, canWrite('manage'));
+  const { payload, impostazioniTenute } = cloudPayload(changes, c.soglia || null, canWriteRuolo('manage'));
   const sogliaNuova = new Date(Date.now() - CLOUD_MARGINE_FIGLI_MS).toISOString();
   if (impostazioniTenute && !_cloud.impostazioniAvvisate) {
     _cloud.impostazioniAvvisate = true;
@@ -592,7 +611,11 @@ function cloudAvvisaRespinti(respinti) {
     : `${n} modifiche non sono entrate: un collega aveva salvato versioni più recenti, che ora vedi qui`, 'error');
 }
 function cloudGestisciErrore(e) {
-  if (e && e.cloud === 'rete') { cloudSegna('offline', 'Senza rete: le modifiche partono al ritorno'); return; }
+  if (e && e.cloud === 'rete') {
+    cloudSegna('offline', 'Senza collegamento: si consulta soltanto finché non torna');
+    cloudProgramma(CLOUD_RIPROVA_MS);   // si riprova presto: intanto non si lavora
+    return;
+  }
   if (e && e.cloud === 'accesso') {
     cloudSegna('accesso', 'Sessione scaduta');
     showToast('Sessione dell\'archivio condiviso scaduta: accedi di nuovo', 'error');
@@ -604,6 +627,112 @@ function cloudGestisciErrore(e) {
   // Postgres non dice niente a chi lo legge, la via d'uscita sì.
   if (e && e.codice === '23503') { cloudSegna('errore', 'Una modifica cita un elemento che non c\'è più sul server. Se il problema resta, usa «Scarta e riscarica»'); return; }
   cloudSegna('errore', (e && e.message) || String(e));
+}
+
+// ═══════════════════════════════════════════════════════════
+//  Senza collegamento si consulta (dalla 0.104.0)
+// ═══════════════════════════════════════════════════════════
+const CLOUD_SOLA_LETTURA_MSG = 'Senza collegamento all\'archivio condiviso si consulta soltanto: si torna a lavorare appena il server risponde';
+// Il PC lavora sull'archivio condiviso (non su una copia sua).
+function cloudCondiviso() { const c = cloudConfig(); return !!(c && c.allineato); }
+// Sola lettura finché il server non ha risposto: anche all'avvio, per il
+// tempo del primo giro.
+// canWrite() la chiede a ogni riga disegnata: senza rileggere localStorage
+// ogni volta, se la risposta è già «collegato».
+function cloudSolaLettura() { return !_cloud.collegato && cloudCondiviso(); }
+function cloudCollegato(si) {
+  if (_cloud.collegato === si) return;
+  _cloud.collegato = si;
+  if (!cloudCondiviso()) return;
+  // Si ridisegna la vista: banner, pulsanti e campi seguono canWrite(). Non
+  // in mezzo a una scheda o a un campo: lì bastano le guardie dei gesti.
+  if (typeof currentUser !== 'undefined' && currentUser && typeof activeView !== 'undefined' && activeView
+      && typeof setView === 'function' && cloudPuoApplicare()) setView(activeView);
+}
+// Un errore nel chiedere un numero o un codice: senza rete è la sola lettura,
+// altrimenti si dice che cosa ha risposto il server.
+function cloudErroreRiserva(e, cosa) {
+  if (e && e.cloud === 'rete') {
+    cloudGestisciErrore(e);
+    showToast(CLOUD_SOLA_LETTURA_MSG, 'error');
+    return;
+  }
+  console.error('Archivio condiviso:', e);
+  showToast(`Il server non ha dato ${cosa}: ${cloudMsgErrore(e)}`, 'error');
+}
+
+// ── I numeri dei documenti ──
+// prefisso («ODA-2026-») → numeri riservati sul server e non ancora usati.
+// numeroProgressivo() (core.js) li prende da qui.
+const _numeriRiservati = {};
+// Riserva sul server i numeri che servono, poi esegue `fare`, che li usa
+// attraverso le solite next…Number(). `richiesta` è { sigla: quanti }, con le
+// sigle di SERIE_DOCUMENTI. Senza archivio condiviso `fare` gira subito e in
+// modo sincrono, come sempre; con l'archivio torna una promessa, e se il server
+// non risponde il documento non nasce. Un numero riservato e poi non usato
+// (un documento che alla fine non si crea) resta un buco nella serie: è il
+// prezzo di non poter mai dare lo stesso numero due volte.
+function conNumeri(richiesta, fare) {
+  const sigle = Object.keys(richiesta || {}).filter(s => richiesta[s] > 0);
+  if (!cloudCondiviso() || !sigle.length) return fare();
+  const giro = _cloud.numeri.then(async () => {
+    const prefissi = sigle.map(seriePrefisso);
+    try {
+      for (let i = 0; i < sigle.length; i++) {
+        const quanti = richiesta[sigle[i]];
+        const minimo = serieMassimo(prefissi[i], SERIE_DOCUMENTI[sigle[i]]());
+        const primo = Number(await cloudRpc('riserva_numeri', { prefisso: prefissi[i], quanti, minimo }));
+        if (!(primo > 0)) throw cloudErrore('server', 'risposta inattesa');
+        _numeriRiservati[prefissi[i]] = Array.from({ length: quanti }, (_, k) => primo + k);
+      }
+    } catch (e) {
+      prefissi.forEach(p => { delete _numeriRiservati[p]; });
+      cloudErroreRiserva(e, 'il numero del documento');
+      return null;
+    }
+    try { return fare(); }
+    finally { prefissi.forEach(p => { delete _numeriRiservati[p]; }); }
+  });
+  _cloud.numeri = giro.catch(() => {});
+  return giro;
+}
+
+// ── I codici degli articoli ──
+// Le chiavi (itemCodeKey) dei codici che il server ha detto già presi: la
+// generazione automatica le salta (codicePresoAltrove in core.js) anche prima
+// che l'articolo del collega arrivi qui.
+const _codiciAltrui = new Set();
+// [{ codice, item }] → i codici rifiutati. Gli altri restano impegnati a nome
+// di questo utente per un'ora, il tempo che il suo articolo arrivi al server.
+async function cloudImpegnaCodici(lista) {
+  const presi = await cloudRpc('impegna_codici', { codici: lista });
+  (presi || []).forEach(c => _codiciAltrui.add(itemCodeKey(c)));
+  return presi || [];
+}
+// Impegna il codice di `it` prima di salvarlo, poi esegue `fare`. Se un collega
+// l'ha appena preso: con `rigenera` (il codice era automatico) se ne calcola un
+// altro e si riprova, e alla fine si dice quale è stato dato; senza, si
+// chiede di sceglierne un altro. Sincrono senza archivio condiviso.
+function conCodiceImpegnato(it, rigenera, fare) {
+  if (!cloudCondiviso() || !it || !it.code) return fare();
+  return (async () => {
+    const iniziale = it.code;
+    for (let tentativi = 0; tentativi < 8; tentativi++) {
+      let presi;
+      try { presi = await cloudImpegnaCodici([{ codice: it.code, item: it.id || null }]); }
+      catch (e) { cloudErroreRiserva(e, 'il codice dell\'articolo'); return null; }
+      if (!presi.length) {
+        const fatto = fare();
+        if (it.code !== iniziale) showToast(`Il codice ${iniziale} l'aveva appena preso un collega: l'articolo ha il codice ${it.code}`);
+        return fatto;
+      }
+      const nuovo = rigenera ? rigenera() : '';
+      if (!nuovo || itemCodeKey(nuovo) === itemCodeKey(it.code)) break;
+      it.code = nuovo;
+    }
+    showToast(`Il codice ${it.code} l'ha appena preso un collega: scegline un altro`, 'error');
+    return null;
+  })();
 }
 
 // ── L'indicatore nell'intestazione ──
@@ -641,6 +770,7 @@ function cloudAvvio() {
   if (typeof window !== 'undefined' && typeof window.addEventListener === 'function' && !_cloud.ascolta) {
     _cloud.ascolta = true;
     window.addEventListener('online', () => cloudProgramma(0));
+    window.addEventListener('offline', () => { cloudCollegato(false); cloudSegna('offline', 'Senza collegamento: si consulta soltanto finché non torna'); });
     window.addEventListener('focus', () => cloudProgramma(0));
     document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') cloudProgramma(0); });
   }
@@ -652,6 +782,7 @@ function cloudParti() {
   cloudProgramma(0);
 }
 function cloudFerma() {
+  _cloud.collegato = false;
   clearInterval(_cloud.intervallo); _cloud.intervallo = null;
   clearTimeout(_cloud.timer); _cloud.timer = null;
   cloudSegna('spento');
@@ -836,7 +967,7 @@ function cloudBlocca(ev) {
 function cloudPannello() {
   const c = cloudConfig();
   const dentro = typeof currentUser !== 'undefined' && !!currentUser;
-  const admin = dentro && canWrite('manage');
+  const admin = dentro && canWriteRuolo('manage');
   if (!c) {
     if (dentro && !admin) { showToast('Il collegamento all\'archivio condiviso lo configura un amministratore', 'error'); return; }
     openModal(`<h3>${ico('cloud', 'tinted pill', '')} Collega l'archivio condiviso</h3>

@@ -532,7 +532,7 @@ function settingsInfoAoa() {
 // ─── Esporta ───
 function exportSettingsXlsx() {
   // Il foglio Utenti elenca nomi, email e ruoli: come il backup, solo agli amministratori
-  if (!roleGuard('manage')) return;
+  if (!roleGuardRuolo('manage')) return;
   if (!requireXlsx()) return;
   const wb = XLSX.utils.book_new();
   settingsSheets().forEach(sh => {
@@ -1141,7 +1141,7 @@ function backupAutoHandle() {
 // Va chiamata da un clic. Scelta la cartella, il primo backup parte subito:
 // è la prova, sotto gli occhi di chi l'ha appena configurato, che funziona.
 function backupAutoScegli() {
-  if (!roleGuard('manage')) return Promise.resolve(false);
+  if (!roleGuardRuolo('manage')) return Promise.resolve(false);
   if (!archivioSupportato()) {
     showToast('Questo browser non consente di collegare una cartella: servono Chrome o Edge', 'error');
     return Promise.resolve(false);
@@ -1165,7 +1165,7 @@ function backupAutoScegli() {
     });
 }
 function backupAutoDisattiva() {
-  if (!roleGuard('manage')) return Promise.resolve(false);
+  if (!roleGuardRuolo('manage')) return Promise.resolve(false);
   try { localStorage.removeItem(BACKUP_AUTO_NOME_KEY); } catch (e) { /* niente da rompere */ }
   _backupAuto = { stato: null }; _backupAutoScritto = '';
   return _archivioTx('readwrite', st => st.delete(BACKUP_AUTO_KEY)).catch(() => null).then(() => {
@@ -1224,7 +1224,7 @@ function backupAutoEsegui(chiedi, forza) {
 }
 // Il pulsante «Riprendi» del Riepilogo e «Salva ora» della scheda Backup.
 function backupAutoOra() {
-  if (!roleGuard('manage')) return Promise.resolve(null);
+  if (!roleGuardRuolo('manage')) return Promise.resolve(null);
   return backupAutoEsegui(true, true).then(e => {
     if (e.stato === 'ok') showToast('Backup salvato in ' + backupAutoNome());
     else if (e.stato === 'pausa') showToast('Il browser non ha concesso di scrivere nella cartella dei backup', 'error');
@@ -1414,7 +1414,7 @@ function renderArchivioCondiviso() {
 }
 function exportBackup() {
   // Il backup contiene tutto, utenti e hash compresi: solo agli amministratori
-  if (!roleGuard('manage')) return;
+  if (!roleGuardRuolo('manage')) return;
   const blob = new Blob([Store.exportSnapshot()], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');

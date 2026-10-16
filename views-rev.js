@@ -127,12 +127,7 @@ const ECO_TIPI = {
   fornitore: 'Cambio di fornitore o componente',
   costo: 'Riduzione dei costi',
 };
-function nextEcoNumber() {
-  const prefix = `MT-${new Date().getFullYear()}-`;
-  const seqs = (db.revisions || []).filter(r => String(r.ecoNumber || '').startsWith(prefix))
-    .map(r => parseInt(String(r.ecoNumber).slice(prefix.length), 10) || 0);
-  return prefix + String((seqs.length ? Math.max(...seqs) : 0) + 1).padStart(3, '0');
-}
+function nextEcoNumber() { return numeroProgressivo('MT'); }
 // L'articolo e tutto ciò che lo contiene, a qualunque livello: un piano aperto
 // sulla macchina è toccato da una modifica a una sua vite.
 function ecoAntenati(itemId) {
@@ -333,7 +328,11 @@ function releaseRevisionModal(itemId) {
 function releaseRevisionConfirm(itemId) {
   if (!roleGuard('bom')) return;
   const it = getItem(itemId || currentBomId); if (!it) return;
-  const rec = releaseRevision(it.id, val('rev-motivo'), { tipo: val('rev-tipo') });
+  const motivo = val('rev-motivo'), tipo = val('rev-tipo');
+  return conNumeri({ MT: 1 }, () => releaseRevisionFatto(it, motivo, tipo));
+}
+function releaseRevisionFatto(it, motivo, tipo) {
+  const rec = releaseRevision(it.id, motivo, { tipo });
   if (!rec) { showToast('Questo articolo non ha una distinta da rilasciare', 'error'); return; }
   closeModal();
   // Si ridisegna la vista da cui si è partiti, non quella dell'altro tipo.

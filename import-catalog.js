@@ -485,7 +485,7 @@ function importCatalogSheets(byName, scope, opts) {
   const o = opts || {};
   const rep = { scope, dryRun: !!o.dryRun, sheets: [], missing: [], foreign: [], legacy: false,
     errors: [], warnings: [], createdSuppliers: 0, createdFamilies: 0, createdSubFamilies: 0,
-    createdUoms: [], preview: [] };
+    createdUoms: [], preview: [], nuoviCodici: [] };
   const ctx = { rep, scope, seen: new Map(), touched: new Map() };
   const norm = {};
   Object.keys(byName || {}).forEach(n => { norm[normHeader(n)] = byName[n]; });
@@ -577,6 +577,7 @@ function catApplyItemRow(row, def, ctx, ln, st) {
   let it = code ? getItemByCode(code) : null;
   if (it && it.type !== type) { err(`il codice "${esc(code)}" è già di ${typeLabel(it.type)}: il tipo di un articolo non si cambia da un foglio`); return; }
   const isNew = !it;
+  if (isNew && code && codicePresoAltrove(code)) { err(`codice "${esc(code)}" appena preso da un collega sull'archivio condiviso`); return; }
   if (isNew) {
     it = { id: gid(), type, active: true };
     if (isAssembly(type)) { it.components = []; it.operations = []; }
@@ -751,6 +752,7 @@ function catApplyItemRow(row, def, ctx, ln, st) {
     stampNew(it);
     db.items.push(it);
     codeIndexAdd(it);
+    rep.nuoviCodici.push(it.code);
     st.created++;
     if (rep.preview.length < 20) rep.preview.push(`${it.code} — ${it.name}`);
   } else { touch(it); st.updated++; }
@@ -937,6 +939,7 @@ function catRunImport(dryRun) {
   const pending = window.__lastCatalogImport;
   if (!pending) { showToast('Nessun file da importare', 'error'); return; }
   if (!roleGuard('catalog')) return;
+  if (!dryRun && cloudCondiviso()) return catImportaImpegnando(pending);
   let rep;
   try {
     rep = importCatalogSheets(pending.byName, pending.scope, { dryRun });
@@ -946,6 +949,33 @@ function catRunImport(dryRun) {
     return;
   }
   showCatalogReport(rep);
+}
+// Con l'archivio condiviso i codici nuovi si impegnano sul server prima di
+// scrivere: una prova a vuoto dice quali sarebbero, il server dice quali sono
+// già di un collega, e si riprova finché non ne resta nessuno conteso. I codici
+// automatici si ricalcolano da soli (codicePresoAltrove), quelli scritti nel
+// foglio diventano errori della loro riga. Intanto i giri di sincronizzazione
+// aspettano: un articolo arrivato fra la prova e l'import vero cambierebbe i
+// codici automatici rispetto a quelli impegnati.
+async function catImportaImpegnando(pending) {
+  _cloud.pausa++;
+  try {
+    for (let giro = 0; giro < 6; giro++) {
+      const prova = importCatalogSheets(pending.byName, pending.scope, { dryRun: true });
+      const presi = prova.nuoviCodici.length ? await cloudImpegnaCodici(prova.nuoviCodici.map(codice => ({ codice }))) : [];
+      if (presi.length) continue;
+      const rep = importCatalogSheets(pending.byName, pending.scope, {});
+      showCatalogReport(rep);
+      return rep;
+    }
+    showToast('I codici continuano a essere presi da qualcun altro: riprova fra poco', 'error');
+  } catch (e) {
+    if (e && e.cloud) cloudErroreRiserva(e, 'i codici degli articoli');
+    else { console.error(e); showToast('Import non riuscito: ' + e.message, 'error'); }
+  } finally {
+    _cloud.pausa--;
+  }
+  return null;
 }
 // «Saltate», non «vuote»: in `skipped` finiscono tre cose diverse — la riga
 // davvero vuota, quella senza un tipo riconoscibile e quella che appartiene

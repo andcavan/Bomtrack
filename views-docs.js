@@ -903,12 +903,7 @@ function renderRfq() {
 }
 
 // Progressivo per anno: RFQ-<anno>-NNN
-function nextRfqNumber() {
-  const prefix = `RFQ-${new Date().getFullYear()}-`;
-  const seqs = db.rfqs.filter(r => (r.number || '').startsWith(prefix))
-    .map(r => parseInt((r.number || '').slice(prefix.length), 10) || 0);
-  return prefix + String((seqs.length ? Math.max(...seqs) : 0) + 1).padStart(3, '0');
-}
+function nextRfqNumber() { return numeroProgressivo('RFQ'); }
 
 function rfqListRows() {
   const list = docFilterApply('rfq', db.rfqs.slice().sort((a, b) => (b.number || '').localeCompare(a.number || '')));
@@ -928,11 +923,13 @@ function rfqListRows() {
 }
 function newRfq() {
   if (!roleGuard('docs')) return;
-  const r = Store.insert('rfqs', { id: gid(), number: nextRfqNumber(), title: '', date: oggiISO(),
-    status: 'bozza', notes: '', notesInternal: '', supplierId: null, planId: null,
-    transport: db.settings.transportDefault || '', payment: db.settings.paymentDefault || '',
-    lines: [], active: true });
-  docLeave('rfq'); currentRfqId = r.id; rfqView = 'edit'; renderRfq();
+  return conNumeri({ RFQ: 1 }, () => {
+    const r = Store.insert('rfqs', { id: gid(), number: nextRfqNumber(), title: '', date: oggiISO(),
+      status: 'bozza', notes: '', notesInternal: '', supplierId: null, planId: null,
+      transport: db.settings.transportDefault || '', payment: db.settings.paymentDefault || '',
+      lines: [], active: true });
+    docLeave('rfq'); currentRfqId = r.id; rfqView = 'edit'; renderRfq();
+  });
 }
 // Aprire un documento chiude quello di prima: `docLeave` salva cio' che era in
 // sospeso, come faceva l'uscita verso l'elenco. Senza, saltare da una riga
@@ -1429,11 +1426,7 @@ function ordAutoStatus(o) {
   else if (ordered > 0 && received >= ordered) o.status = 'evaso';
   else o.status = 'parziale';
 }
-function nextOrderNumber() {
-  const prefix = `ODA-${new Date().getFullYear()}-`;
-  const seqs = db.orders.filter(o => (o.number || '').startsWith(prefix)).map(o => parseInt((o.number || '').slice(prefix.length), 10) || 0);
-  return prefix + String((seqs.length ? Math.max(...seqs) : 0) + 1).padStart(3, '0');
-}
+function nextOrderNumber() { return numeroProgressivo('ODA'); }
 
 function renderOrders() {
   const host = document.getElementById('view-orders');
@@ -1476,14 +1469,23 @@ function orderListRows() {
 }
 function newOrder() {
   if (!roleGuard('docs')) return;
-  const o = Store.insert('orders', { id: gid(), number: nextOrderNumber(), title: '', date: oggiISO(),
-    status: 'bozza', supplierId: null, transport: db.settings.transportDefault || '', payment: db.settings.paymentDefault || '',
-    rfqId: null, planId: null, supplierConfirmation: '', notes: '', notesInternal: '', lines: [], active: true });
-  docLeave('order'); currentOrderId = o.id; orderView = 'edit'; renderOrders();
+  return conNumeri({ ODA: 1 }, () => {
+    const o = Store.insert('orders', { id: gid(), number: nextOrderNumber(), title: '', date: oggiISO(),
+      status: 'bozza', supplierId: null, transport: db.settings.transportDefault || '', payment: db.settings.paymentDefault || '',
+      rfqId: null, planId: null, supplierConfirmation: '', notes: '', notesInternal: '', lines: [], active: true });
+    docLeave('order'); currentOrderId = o.id; orderView = 'edit'; renderOrders();
+  });
 }
 function orderFromRfq(rfqId) {
   if (!roleGuard('docs')) return;
   const r = getRfq(rfqId); if (!r) return;
+  // Quanti numeri servono si sa prima: un ODA per la merce (o per una
+  // richiesta senza lavorazioni), un ODL per ogni passata.
+  const conFase = (r.lines || []).filter(l => !!l.phaseKey);
+  const nOda = conFase.length < (r.lines || []).length || !conFase.length ? 1 : 0;
+  return conNumeri({ ODA: nOda, ODL: new Set(conFase.map(clPassataDiRiga)).size }, () => orderFromRfqFatto(r));
+}
+function orderFromRfqFatto(r) {
   const sup = r.supplierId ? getSupplier(r.supplierId) : null;
   const o = stampNew({ id: gid(), number: nextOrderNumber(),
     title: r.title || ('Da ' + r.number), date: oggiISO(), status: 'bozza',
@@ -1812,12 +1814,7 @@ function odlTotal(o) { return totaleRighe(o.lines); }
 // Progressivo per anno: ODL-<anno>-NNN. Numerazione **sua**: un ODL e un ODA
 // dello stesso giorno non devono avere lo stesso numero, o al telefono col
 // terzista non si capisce di quale documento si stia parlando.
-function nextOdlNumber() {
-  const prefix = `ODL-${new Date().getFullYear()}-`;
-  const seqs = (db.workOrders || []).filter(o => (o.number || '').startsWith(prefix))
-    .map(o => parseInt((o.number || '').slice(prefix.length), 10) || 0);
-  return prefix + String((seqs.length ? Math.max(...seqs) : 0) + 1).padStart(3, '0');
-}
+function nextOdlNumber() { return numeroProgressivo('ODL'); }
 
 function renderOdl() {
   const host = document.getElementById('view-odl'); if (!host) return;
@@ -1861,10 +1858,12 @@ function odlListRows() {
 }
 function newOdl() {
   if (!roleGuard('docs')) return;
-  const o = Store.insert('workOrders', { id: gid(), number: nextOdlNumber(), title: '', date: oggiISO(),
-    status: 'bozza', supplierId: null, transport: db.settings.transportDefault || '', payment: db.settings.paymentDefault || '',
-    rfqId: null, planId: null, jobId: null, supplierConfirmation: '', notes: '', notesInternal: '', lines: [], active: true });
-  docLeave('odl'); currentOdlId = o.id; odlView = 'edit'; renderOdl();
+  return conNumeri({ ODL: 1 }, () => {
+    const o = Store.insert('workOrders', { id: gid(), number: nextOdlNumber(), title: '', date: oggiISO(),
+      status: 'bozza', supplierId: null, transport: db.settings.transportDefault || '', payment: db.settings.paymentDefault || '',
+      rfqId: null, planId: null, jobId: null, supplierConfirmation: '', notes: '', notesInternal: '', lines: [], active: true });
+    docLeave('odl'); currentOdlId = o.id; odlView = 'edit'; renderOdl();
+  });
 }
 function openOdlEdit(id) { docLeave('odl'); currentOdlId = id; odlView = 'edit'; renderOdl(); }
 function odlBackToList() { docBackToList('odl'); }

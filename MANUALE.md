@@ -1,6 +1,6 @@
 # Bomtrack — Manuale d'uso
 
-**Versione dell'app documentata: 0.103.2**
+**Versione dell'app documentata: 0.104.0**
 
 📖 **[Leggilo come pagina web](https://claude.ai/code/artifact/726a0963-2db0-4947-999b-d7b5beb91a0b)** — stesso testo, con indice laterale, filtro dei capitoli e tema chiaro/scuro. Comodo da tenere aperto di fianco all'app.
 
@@ -2646,7 +2646,8 @@ quella condivisa.
 | **Le password** | Conservate qui come hash | Le tiene Supabase; Bomtrack non le vede |
 | **Nuovo utente** | L'amministratore lo crea con una password iniziale | L'amministratore lo **invita** da Supabase, e la password se la sceglie la persona |
 | **Il backup** | L'unica copia che esiste | Resta, e serve ancora: fuori dal servizio |
-| **Senza rete** | Non serve mai | Si continua a lavorare; le modifiche partono al ritorno |
+| **Senza rete** | Non serve mai | Si consulta soltanto; si torna a lavorare appena il server risponde |
+| **Numeri dei documenti e codici** | Li calcola il PC | Li dà il server: due colleghi non prendono mai lo stesso |
 
 ### Mettere in piedi il progetto (l'amministratore, una volta)
 
@@ -2710,9 +2711,45 @@ La **nuvola** nell'intestazione dice a che punto è; cliccandola si apre lo stat
 |---|---|
 | verde, senza scritte | Tutto inviato e ricevuto |
 | **Invio…** · **Da inviare** | Sta mandando, o ha qualcosa in coda |
-| **Senza rete** | Il server non si raggiunge: si lavora lo stesso, e la coda parte al ritorno. Resta anche chiudendo la finestra |
+| **Senza rete** | Il server non si raggiunge: **si consulta soltanto** (vedi sotto). Quello che era già in coda parte al ritorno, anche dopo aver chiuso la finestra |
 | **Errore di sincronizzazione** | Il server ha rifiutato l'invio: il motivo è nello stato |
 | **Accesso scaduto** | Va rifatto l'accesso; i dati del PC restano |
+
+### Senza collegamento si consulta
+
+Con l'archivio condiviso **si lavora solo collegati**. Quando il server non risponde (manca la
+rete, il progetto è sospeso) l'app passa in **sola lettura**: si apre tutto, si cerca, si stampa e
+si esporta, ma non si crea e non si modifica niente. Un banner in cima a ogni vista lo dice, e i
+pulsanti per creare spariscono. L'app riprova da sola ogni pochi secondi, e appena il server
+risponde si torna a lavorare senza fare niente. Anche all'avvio, per il tempo della prima
+risposta, la vista resta in sola lettura.
+
+Il motivo è nel paragrafo che segue: numeri e codici li assegna il server, e un PC al buio non
+potrebbe chiederli. In più, una modifica fatta al buio arriverebbe ai colleghi chissà quando,
+magari su un documento che nel frattempo hanno cambiato loro.
+
+### Numeri e codici li dà il server
+
+**I numeri dei documenti** (richieste, ordini, ordini di lavoro e di produzione, piani, commesse,
+modifiche tecniche MT) non li calcola più il PC: quando premi **+ Nuovo ordine** l'app chiede al
+server il prossimo numero della serie, il server lo segna come preso, e solo allora l'ordine
+nasce. Due colleghi che creano un ordine nello stesso istante ricevono due numeri diversi, sempre.
+Chi genera più documenti insieme (da un piano, dal riordino sotto scorta, da una richiesta divisa
+in ordine d'acquisto e ordini di lavoro) prende tutti i numeri in una volta.
+
+Un numero preso e poi non usato (un documento che alla fine non nasce, o che si elimina) lascia
+un **buco** nella serie: è il prezzo di non dare mai lo stesso numero due volte. La serie non
+riparte mai sotto il numero più alto che c'è già.
+
+**I codici degli articoli** si impegnano sul server al salvataggio. Se un collega ha appena preso
+lo stesso codice, anche se il suo articolo non è ancora arrivato qui:
+
+- un codice **automatico** si ricalcola da solo saltando il suo, e l'app dice quale è stato dato;
+- un codice **scritto a mano** non si cambia di nascosto: l'app chiede di sceglierne un altro.
+
+Anche l'**import del catalogo da Excel** impegna i codici degli articoli nuovi prima di scriverli.
+Quelli automatici si ricalcolano allo stesso modo; una riga con un codice scritto nel foglio e
+appena preso da un collega finisce fra gli errori dell'import.
 
 ### Chi vince quando due persone toccano la stessa cosa
 
@@ -2723,7 +2760,7 @@ La **nuvola** nell'intestazione dice a che punto è; cliccandola si apre lo stat
 | **Distinta base, ciclo e lavorazioni di un articolo** | Seguono l'articolo: **si tiene intera** quella di chi ha salvato per primo. Metà distinta di uno e metà dell'altro sarebbe un prodotto che nessuno ha progettato |
 | **Cancellazione contro modifica** | Vince la **cancellazione**: un articolo mezzo cancellato non esiste |
 | **Cancellazione contro uso** (uno elimina un fornitore, l'altro intanto lo mette in un ordine) | Vince **chi usa**, come in locale, dove non si elimina ciò che è citato. Il fornitore torna, e chi l'aveva eliminato riceve un avviso |
-| **Lo stesso numero di documento** (due ordini creati nello stesso momento) | Il **più recente si rinumera** da solo, se è ancora una bozza nata da poco, e chi l'ha creato riceve un avviso col numero nuovo. Se non è più una bozza, l'app avvisa e basta: un ordine già spedito non cambia numero di nascosto |
+| **Lo stesso numero di documento** | Non succede più: il numero lo dà il server (vedi sopra). Resta una rete di sicurezza per i documenti creati prima della 0.104.0 o con uno schema non aggiornato: il **più recente si rinumera** da solo, se è ancora una bozza nata da poco, altrimenti l'app avvisa |
 
 > **La regola pratica**: mettersi d'accordo su chi tiene in mano una distinta. Non perché l'app si
 > rompa (non si rompe, e avvisa), ma perché su una distinta il lavoro di due persone non si

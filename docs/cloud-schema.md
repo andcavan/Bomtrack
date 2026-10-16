@@ -674,6 +674,29 @@ al giro successivo **meno un margine**: una transazione lunga può scrivere un
 `synced_at` più vecchio di un pull già fatto, e rileggere una riga non costa
 niente.
 
+**Numeri e codici (dalla 0.104.0).** Con l'archivio condiviso un PC senza
+collegamento consulta soltanto (`cloudSolaLettura`, dentro `canWrite`), e chi
+crea è sempre in linea. Per questo numeri e codici si chiedono al server prima
+di usarli:
+
+- `riserva_numeri(prefisso, quanti, minimo)` → il primo di `quanti` numeri
+  consecutivi della serie `«SIGLA-ANNO-»` (RFQ, ODA, ODL, ODP, FAB, COM, MT).
+  Il contatore sta in `contatori`, una riga per serie bloccata durante
+  l'aggiornamento, e non scende mai sotto il massimo della tabella né sotto
+  `minimo` (il massimo locale del client, che copre i documenti ancora in
+  coda). Serve il diritto di scrivere la tabella della serie. Lato client,
+  `conNumeri({ ODA: 2 }, fare)` riserva e poi esegue `fare`, che li consuma
+  con le solite `next…Number()`;
+- `impegna_codici([{ codice, item }])` → i codici già presi: da un articolo
+  diverso da `item`, o impegnati da un altro utente nell'ultima ora
+  (`codici_impegnati`). Il confronto ignora maiuscole e spazi. Lato client
+  `conCodiceImpegnato` e l'import del catalogo; i codici rifiutati finiscono
+  in `_codiciAltrui`, che la generazione automatica salta.
+
+Le due tabelle hanno RLS senza policy: le toccano solo le due funzioni
+(`security definer`). La rinumerazione dopo il pull (`cloudNumeriDoppi`) resta
+come rete di sicurezza.
+
 **Accesso (dalla 0.83.0).** RLS attiva su ogni tabella, con la matrice
 dell'app scritta dove non si può aggirare. Due registri, e le policy si
 generano da quelli:
