@@ -77,7 +77,7 @@ function avviaSupabaseFinto(opts) {
       return res.end();
     }
     if (srv.spento) { req.socket.destroy(); return; }
-    const api = u.pathname.startsWith('/auth/v1/') || u.pathname.startsWith('/rest/v1/');
+    const api = u.pathname.startsWith('/auth/v1/') || u.pathname.startsWith('/rest/v1/') || u.pathname.startsWith('/functions/v1/');
     if (api && req.headers.apikey !== chiave) return rispondi(res, 401, { message: 'Invalid API key' });
     const corpo = api && req.method !== 'GET' ? await leggiCorpo(req) : {};
     if (api) registro.push({ metodo: req.method, percorso: u.pathname, corpo });
@@ -106,6 +106,37 @@ function avviaSupabaseFinto(opts) {
     if (u.pathname === '/auth/v1/logout') return rispondi(res, 204);
     if (u.pathname === '/auth/v1/settings') return rispondi(res, 200, { external: { email: true } });
     if (u.pathname === '/auth/v1/recover') return rispondi(res, 200, {});
+
+    // ── La funzione degli utenti (supabase/functions/bomtrack-utenti) ──
+    // Lo stesso contratto della funzione vera: solo un amministratore attivo;
+    // l'utente nasce dal trigger come lettore sospeso, e ruolo e stato li
+    // scrive l'amministratore **come sé stesso**, sotto policy e guardia. Il
+    // link porta una sessione del collega, come quello di Supabase.
+    if (u.pathname === '/functions/v1/bomtrack-utenti' && req.method === 'POST') {
+      if (srv.senzaFunzioni) return rispondi(res, 404, { code: 'NOT_FOUND', message: 'Requested function was not found' });
+      const id = chi(req);
+      if (!id || id === 'scaduto') return rispondi(res, 401, { msg: 'Invalid JWT' });
+      const io = db.sql(`select role || ' ' || coalesce(active, true) from profiles where id = '${id}'`);
+      if (io !== 'admin true') return rispondi(res, 403, { error: 'Solo un amministratore gestisce gli utenti' });
+      const ritorno = corpo.ritorno || srv.url + '/';
+      const link = (x, tipo) => { const t = sessione(x); return `${ritorno}#access_token=${t.access_token}&refresh_token=${t.refresh_token}&expires_in=3600&type=${tipo}`; };
+      if (corpo.azione === 'invita') {
+        const email = String(corpo.email || '').trim().toLowerCase();
+        if (utenti.has(email)) return rispondi(res, 409, { error: 'Questa email ha già un utente: per farlo rientrare genera un link per reimpostare la password' });
+        const nuovo = srv.crea(email, crypto.randomBytes(8).toString('hex'), corpo.nome);
+        try {
+          db.come(id).sql(`update profiles set name = ${letterale(corpo.nome)}, role = ${letterale(corpo.ruolo)}, active = true, updated_at = now(), updated_by = '${id}' where id = '${nuovo}';`);
+        } catch (e) { return rispondi(res, 400, { error: 'Utente creato, ma il ruolo non è stato assegnato' }); }
+        return rispondi(res, 200, { link: link(perId(nuovo), 'invite'), id: nuovo });
+      }
+      if (corpo.azione === 'reimposta') {
+        const lui = perId(corpo.id);
+        if (!lui) return rispondi(res, 404, { error: 'Utente non trovato' });
+        if (db.sql(`select role from profiles where id = '${lui.id}'`) === 'admin' && lui.id !== id) return rispondi(res, 403, { error: 'La password di un altro amministratore non si reimposta da qui' });
+        return rispondi(res, 200, { link: link(lui, 'recovery') });
+      }
+      return rispondi(res, 400, { error: 'Azione sconosciuta' });
+    }
 
     // ── RPC ──
     const rpc = /^\/rest\/v1\/rpc\/([a-z_]+)$/.exec(u.pathname);

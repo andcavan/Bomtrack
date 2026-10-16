@@ -605,3 +605,82 @@ describe('Archivio condiviso — numeri e codici li dà il server', () => {
     await srv.chiudi();
   });
 });
+
+describe('Archivio condiviso — i colleghi si creano dall\'app', () => {
+  if (!pg.disponibile()) {
+    it('saltato: BOMTRACK_PG non impostata (vedi test/pg.js)', () => {});
+    return;
+  }
+  const { avviaSupabaseFinto } = require('./supabase-finto.js');
+  let fila = Promise.resolve();
+  const passo = (nome, fn) => it(nome, () => { const p = fila.then(fn); fila = p.catch(() => {}); return p; });
+  let srv, A, anna, nuovo;
+  const giro = a => a.eval('cloudGiro()');
+
+  passo('l\'amministratore crea un collega: nasce col suo ruolo, attivo, e riceve un link', async () => {
+    srv = await avviaSupabaseFinto();
+    anna = srv.crea('a@x.it', 'pa', 'Anna');
+    const st = makeStorage();
+    st.setItem('bomtrack_cloud', JSON.stringify({ url: srv.url, chiave: srv.chiave, allineato: false }));
+    A = loadApp({ silent: true, storage: st });
+    A.ctx.fetch = fetch;
+    A.seedStorage(dbCloudCompleto());
+    A.eval('Store.load(); cloudAvvio();');
+    const e = await A.eval(`cloudAccediConPassword('a@x.it', 'pa').then(() => cloudDopoAccesso())`);
+    await A.eval(`cloudCaricaArchivio(${JSON.stringify(e.stato)})`);
+    A.eval(`currentUser = getUser('${anna}'); Store.setActor(currentUser.id);`);
+    await giro(A);
+    const r = await A.eval(`cloudUtenti({ azione: 'invita', email: 'C@x.it', nome: 'Carla', ruolo: 'acquisti' })`);
+    nuovo = r.id;
+    assert.match(r.link, /type=invite/);
+    assert.equal(srv.db.sql(`select name || ' ' || role || ' ' || active from profiles where id = '${nuovo}'`), 'Carla acquisti true');
+    assert.equal(srv.db.sql(`select coalesce(raw_user_meta_data->>'role', '-') from auth.users where id = '${nuovo}'`), '-', 'il ruolo non passa dai metadati');
+    await giro(A);
+    assert.equal(A.eval(`getUser('${nuovo}').role`), 'acquisti', 'e arriva nella gestione utenti');
+    // Con il link, Carla entra già attiva.
+    const tok = /access_token=([^&]+)/.exec(r.link)[1];
+    const st2 = makeStorage();
+    st2.setItem('bomtrack_cloud', JSON.stringify({ url: srv.url, chiave: srv.chiave, allineato: false }));
+    const C = loadApp({ silent: true, storage: st2 });
+    C.ctx.fetch = fetch;
+    C.eval(`cloudSalvaSessione({ access_token: '${tok}', expires_in: 3600 })`);
+    const ec = await C.eval('cloudDopoAccesso()');
+    assert.equal(ec.stato.profilo.active, true);
+    assert.equal(ec.stato.profilo.role, 'acquisti');
+  });
+
+  passo('una email che ha già un utente non si crea due volte', async () => {
+    await assert.rejects(A.eval(`cloudUtenti({ azione: 'invita', email: 'c@x.it', nome: 'Carla bis', ruolo: 'lettore' })`), /già un utente/);
+  });
+
+  passo('il link per reimpostare la password: per un collega sì, per un altro amministratore no', async () => {
+    const r = await A.eval(`cloudUtenti({ azione: 'reimposta', id: '${nuovo}' })`);
+    assert.match(r.link, /type=recovery/);
+    const altro = srv.crea('d@x.it', 'pd', 'Dario');
+    srv.db.sql(`set session_replication_role = replica; update profiles set role = 'admin', active = true where id = '${altro}';`);
+    await assert.rejects(A.eval(`cloudUtenti({ azione: 'reimposta', id: '${altro}' })`), /altro amministratore/);
+  });
+
+  passo('chi non è amministratore non crea utenti', async () => {
+    const tok = srv.crea('e@x.it', 'pe', 'Elena');
+    srv.db.sql(`set session_replication_role = replica; update profiles set role = 'progettazione', active = true where id = '${tok}';`);
+    const st = makeStorage();
+    st.setItem('bomtrack_cloud', JSON.stringify({ url: srv.url, chiave: srv.chiave, allineato: true }));
+    const E = loadApp({ silent: true, storage: st });
+    E.ctx.fetch = fetch;
+    await E.eval(`cloudAccediConPassword('e@x.it', 'pe')`);
+    await assert.rejects(E.eval(`cloudUtenti({ azione: 'invita', email: 'f@x.it', nome: 'F', ruolo: 'admin' })`), /Solo un amministratore/);
+  });
+
+  passo('l\'ultimo amministratore attivo non si declassa nemmeno passando dall\'API', async () => {
+    srv.db.sql(`set session_replication_role = replica; update profiles set active = false where role = 'admin' and id <> '${anna}';`);
+    assert.throws(() => srv.db.come(anna).sql(`update profiles set role = 'lettore' where id = '${anna}';`), /almeno un amministratore/);
+  });
+
+  passo('una funzione non pubblicata lo dice, con dove guardare', async () => {
+    srv.senzaFunzioni = true;
+    await assert.rejects(A.eval(`cloudUtenti({ azione: 'reimposta', id: '${nuovo}' })`), /non è pubblicata/);
+    srv.senzaFunzioni = false;
+    await srv.chiudi();
+  });
+});

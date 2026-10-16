@@ -114,6 +114,8 @@ async function cloudHttp(percorso, opz) {
     const msg = (dati && (dati.error_description || dati.msg || dati.message || dati.error)) || ('HTTP ' + r.status);
     // PGRST202: la funzione chiamata non c'è. Succede quando sul progetto è
     // stato eseguito uno schema.sql più vecchio dell'app.
+    // La funzione degli utenti non pubblicata (Supabase risponde 404).
+    if (r.status === 404 && percorso.startsWith('/functions/')) throw cloudErrore('server', 'La funzione bomtrack-utenti non è pubblicata sul progetto Supabase: vedi il manuale, «Pubblicare la funzione degli utenti»', { stato: 404 });
     if (dati && dati.code === 'PGRST202') throw cloudErrore('server', 'Lo schema del progetto Supabase non è aggiornato: riesegui supabase/schema.sql di questa versione nel SQL Editor', { stato: r.status });
     if (r.status === 401) throw cloudErrore('accesso', msg, { stato: r.status });
     if (r.status === 403 || (dati && dati.code === '42501')) throw cloudErrore('permesso', msg, { stato: r.status });
@@ -166,6 +168,19 @@ async function cloudToken() {
 // che il server lo considera scaduto: si rinnova una volta e si riprova.
 async function cloudRpc(fn, argomenti) {
   const chiama = async () => cloudHttp('/rest/v1/rpc/' + fn, { token: await cloudToken(), corpo: argomenti || {} });
+  try { return await chiama(); }
+  catch (e) {
+    if (e.cloud !== 'accesso' || !cloudSessione()) throw e;
+    await cloudRinnova();
+    return chiama();
+  }
+}
+// La funzione degli utenti (supabase/functions/bomtrack-utenti): crea un
+// collega o genera un link per reimpostargli la password. Come cloudRpc, un
+// token rifiutato si rinnova una volta.
+async function cloudUtenti(corpo) {
+  const ritorno = typeof location !== 'undefined' && /^https?:/.test(location.protocol || '') ? location.origin + location.pathname : undefined;
+  const chiama = async () => cloudHttp('/functions/v1/bomtrack-utenti', { token: await cloudToken(), corpo: Object.assign({ ritorno }, corpo) });
   try { return await chiama(); }
   catch (e) {
     if (e.cloud !== 'accesso' || !cloudSessione()) throw e;

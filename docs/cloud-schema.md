@@ -544,6 +544,18 @@ funzionante è `timetrack-supabase` (`migrations/schema.sql`, `supabase/function
 | `db.users` da `Store.load()` | `select * from profiles` |
 | `canWrite(area)` / `roleGuard(area)` | restano **invariati**, raddoppiati da policy RLS per ruolo |
 
+**Dalla 0.105.0** `addUser()` con l'archivio condiviso chiama la funzione
+`supabase/functions/bomtrack-utenti` (`cloudUtenti` in `cloud.js`): `invita`
+crea l'utente Auth con `generateLink({ type: 'invite' })` e restituisce il link,
+`reimposta` genera quello di recupero. A differenza del precedente di timetrack,
+il ruolo **non** viaggia nei metadati dell'utente Auth: il trigger
+`profilo_da_utente` lo fa nascere lettore sospeso, e ruolo e stato li scrive la
+funzione **con il token dell'amministratore**, sotto RLS e `profiles_guardia`.
+Così una registrazione lasciata aperta non può chiedersi da sola un ruolo. La
+funzione risponde solo a un amministratore attivo e non genera il link di
+recupero di un altro amministratore. `profiles_guardia` impedisce anche di
+declassare o sospendere l'ultimo amministratore attivo.
+
 Schema delle policy: scritto in `supabase/schema.sql` dalla 0.83.0 — vedi
 «Accesso» nella sezione sullo schema SQL. La matrice è quella di `ROLE_WRITE`
 in `core.js`, applicata tabella per tabella.

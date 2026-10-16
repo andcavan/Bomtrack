@@ -829,6 +829,14 @@ begin
      and (new.role is distinct from old.role or new.active is distinct from old.active or new.id <> old.id) then
     raise exception 'solo la gestione utenti cambia ruolo e stato di un profilo';
   end if;
+  -- L'ultimo amministratore attivo non si declassa e non si sospende (dalla
+  -- 0.105.0): l'app lo impedisce già, qui vale anche per chi passa dall'API.
+  if old.role = 'admin' and old.active is not false
+     and (new.role is distinct from 'admin' or new.active is false)
+     and not exists (select 1 from public.profiles p
+                      where p.id <> old.id and p.role = 'admin' and p.active is not false) then
+    raise exception 'deve restare almeno un amministratore attivo';
+  end if;
   return new;
 end $$;
 drop trigger if exists profiles_guardia on public.profiles;

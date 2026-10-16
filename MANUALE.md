@@ -1,6 +1,6 @@
 # Bomtrack — Manuale d'uso
 
-**Versione dell'app documentata: 0.104.1**
+**Versione dell'app documentata: 0.105.0**
 
 📖 **[Leggilo come pagina web](https://claude.ai/code/artifact/726a0963-2db0-4947-999b-d7b5beb91a0b)** — stesso testo, con indice laterale, filtro dei capitoli e tema chiaro/scuro. Comodo da tenere aperto di fianco all'app.
 
@@ -2394,8 +2394,9 @@ il record e chi l'ha aggiornato per ultimo**, con data e ora.
 >
 > I permessi diventano reali con l'archivio condiviso, perché lì vivono sul server e non su
 > questo PC: la matrice qui sopra è quella che il server applica
-> (→ [cap. 31](#31-larchivio-condiviso-supabase)). Lì i colleghi non si creano da questa
-> scheda: si invitano da Supabase, e qui si assegnano ruolo e stato.
+> (→ [cap. 31](#31-larchivio-condiviso-supabase)). Lì un collega si crea da questa scheda con
+> nome, email e ruolo, e riceve un link per scegliere la password; la chiave genera un link per
+> reimpostarla.
 
 ---
 
@@ -2644,7 +2645,7 @@ quella condivisa.
 | **L'accesso** | Separa le responsabilità, non protegge i dati | Autenticazione vera: email e password di Supabase |
 | **I ruoli** | Chi apre gli strumenti di sviluppo li aggira | Li applica il server: una scrittura non permessa viene rifiutata |
 | **Le password** | Conservate qui come hash | Le tiene Supabase; Bomtrack non le vede |
-| **Nuovo utente** | L'amministratore lo crea con una password iniziale | L'amministratore lo **invita** da Supabase, e la password se la sceglie la persona |
+| **Nuovo utente** | L'amministratore lo crea con una password iniziale | L'amministratore lo crea dall'app e gli gira un **link**: la password se la sceglie la persona |
 | **Il backup** | L'unica copia che esiste | Resta, e serve ancora: fuori dal servizio |
 | **Senza rete** | Non serve mai | Si consulta soltanto; si torna a lavorare appena il server risponde |
 | **Numeri dei documenti e codici** | Li calcola il PC | Li dà il server: due colleghi non prendono mai lo stesso |
@@ -2671,6 +2672,12 @@ quella condivisa.
    colleghi. Mettilo anche in Supabase, in **Authentication → URL Configuration → Site URL**: è lì
    che riportano gli inviti e il recupero della password.
 
+9. **Pubblica la funzione degli utenti**, per creare i colleghi dall'app: in Supabase **Edge
+   Functions → Deploy a new function → Via Editor**, nome `bomtrack-utenti`, incolla tutto il file
+   `supabase/functions/bomtrack-utenti/index.ts` e premi **Deploy**. Va ripubblicata quando una
+   versione nuova la cambia (lo dice il changelog). Nello stesso pannello, in **Authentication →
+   URL Configuration → Redirect URLs**, aggiungi l'indirizzo dell'app: è lì che riportano i link.
+
 > **L'app va aperta da un indirizzo web** (`https://…`), non con un doppio clic sul file: un link
 > d'invito non può tornare a un file sul disco di qualcuno.
 
@@ -2681,13 +2688,25 @@ Le password non passano: ognuno usa quella di Supabase.
 
 ### Aggiungere un collega
 
-1. In Supabase: **Authentication → Users → Invite user**, con la sua email.
-2. Il collega apre il link dell'email, sceglie la password e si ritrova in Bomtrack. È
-   **sospeso**: la schermata d'accesso gli dice di chiedere all'amministratore.
-3. Tu lo trovi in *Gestione → Utenti* come **Lettore sospeso**: gli dai il ruolo (✏) e lo
-   riattivi (✓).
-4. Il collega accede. Al primo accesso il suo PC **scarica l'archivio condiviso**: se ci aveva dei
-   dati suoi, vengono sostituiti, e prima glielo si dice.
+1. In *Gestione → Utenti* scrivi nome, email e ruolo e premi **Crea e genera link**. Il collega
+   nasce già **attivo**, con quel ruolo.
+2. Si apre il **link d'invito**: copialo e mandalo tu al collega (WhatsApp, Teams, email). Nessuna
+   email parte da sola. Il link vale una volta e scade in circa un giorno.
+3. Il collega apre il link, sceglie la password e si ritrova in Bomtrack. Al primo accesso il suo
+   PC **scarica l'archivio condiviso**: se ci aveva dei dati suoi, vengono sostituiti, e prima
+   glielo si dice.
+
+**Una password dimenticata**: la chiave accanto al collega genera un **link per reimpostarla**,
+da girargli allo stesso modo. Chi apre quel link entra come lui, quindi va mandato solo a lui. Per
+un altro amministratore la chiave non funziona: lui usa **Password dimenticata?** dalla schermata
+d'accesso, così nessun amministratore può entrare al posto di un altro.
+
+**Senza la funzione pubblicata** (passo 9 qui sopra) l'app lo dice, e il collega si invita
+ancora dal pannello di Supabase: **Authentication → Users → Invite user**. In quel caso nasce
+**lettore sospeso**, e in *Gestione → Utenti* gli dai il ruolo (✏) e lo riattivi (✓).
+
+**L'ultimo amministratore attivo** non si declassa e non si sospende: lo impedisce l'app e lo
+impedisce il server.
 
 Il collega che usa un altro PC può anche aprire il **link di collegamento** che gli mandi tu:
 l'app chiede se collegarsi a quel progetto, mostrandone l'indirizzo, e poi chiede l'accesso.

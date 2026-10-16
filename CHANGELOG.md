@@ -2,6 +2,21 @@
 
 Le revisioni seguono il versionamento semantico `0.MINOR.PATCH`: **MINOR** per nuove funzionalità, **PATCH** per correzioni. La versione in cima è quella in `APP_VERSION` (`core.js`) e mostrata nell'header dell'app.
 
+### 0.105.0 — 2026-10-16
+
+**I colleghi si creano dall'app.** Prima un collega si invitava dal pannello di Supabase, nasceva lettore sospeso e poi gli si davano ruolo e stato. Ora, in *Gestione → Utenti*, l'amministratore scrive nome, email e ruolo e riceve un link d'invito da girare. **Va pubblicata la funzione `supabase/functions/bomtrack-utenti`** (manuale, cap. 31, passo 9) e **va rieseguito `supabase/schema.sql`**.
+
+**Nuovo**
+- **Crea e genera link**: il collega nasce attivo, con il suo ruolo; aprendo il link sceglie la password. Nessuna email parte da sola.
+- **Link per reimpostare la password** (la chiave accanto al collega). Non vale per un altro amministratore, che usa «Password dimenticata?»: nessuno può entrare al posto di un altro amministratore.
+- La funzione `bomtrack-utenti` gira su Supabase con la chiave di servizio, che non arriva mai al browser, e risponde solo a un amministratore attivo. Il ruolo **non** passa dai metadati dell'utente (che chi si registra da solo può scrivere): il profilo nasce lettore sospeso dal trigger, e ruolo e stato li scrive l'amministratore con il suo accesso, sotto le stesse policy di ogni altra modifica.
+
+**Sicurezza**
+- **L'ultimo amministratore attivo** non si declassa e non si sospende nemmeno passando dall'API: prima lo impediva solo l'app.
+
+**Verifica**
+- `test/cloud.test.js`: creare un collega (ruolo, stato, nessun ruolo nei metadati, accesso col link), l'email già usata, il link di reimpostazione e il suo divieto per un altro amministratore, un non amministratore respinto, l'ultimo amministratore, la funzione non pubblicata. Il Supabase finto riproduce il contratto della funzione.
+
 ### 0.104.1 — 2026-10-16
 
 **Numeri e codici senza buchi.** Nella 0.104.0 un numero riservato e non usato restava un buco nella serie. **Va rieseguito `supabase/schema.sql`.**

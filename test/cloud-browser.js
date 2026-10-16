@@ -87,12 +87,17 @@ const SEED = () => {
     // Il giro riceve solo quando non ha niente da inviare, e un giro già in
     // corso (quello del timer) fa tornare subito il secondo: il profilo di
     // Bruno arriva a uno dei giri dopo. Si aspetta lui, non un numero di giri.
-    await A.evaluate(async () => {
+    r.attesaB = await A.evaluate(async () => {
       for (let i = 0; i < 80 && !db.users.some(x => x.email === 'b@x.it'); i++) {
         await cloudGiro();
         await new Promise(r => setTimeout(r, 250));
       }
+      // Se non arriva, perché: lo dice il fallimento invece di un TypeError.
+      return db.users.some(x => x.email === 'b@x.it') ? 'ok' : JSON.stringify({ stato: _cloud.stato, msg: _cloud.messaggio,
+        coda: Store.hasPendingChanges(), applica: cloudPuoApplicare(), attivo: document.activeElement && document.activeElement.id,
+        pannello: typeof panelTop === 'function' && !!panelTop(), utenti: db.users.map(u => u.email) });
     });
+    if (r.attesaB !== 'ok') throw new Error('Il profilo di Bruno non arriva ad Anna: ' + r.attesaB);
     await A.evaluate(() => { setView('manage'); setMgmtTab('users'); });
     r.utentiA = await A.$$eval('.mgmt-item-name', v => v.map(x => x.textContent.trim()));
     await foto(A, '5-utenti');

@@ -67,15 +67,22 @@ function renderUsers() {
       <span class="doc-badge ${susp ? 'st-sospeso' : 'st-attivo'}">${susp ? 'Sospeso' : 'Attivo'}</span>
       <div class="mgmt-item-actions">
         <button class="mini-btn" onclick="editUserModal('${u.id}')" title="Modifica">${ico('edit', 'tinted', 'Modifica')}</button>
-        ${cloud ? '' : `<button class="mini-btn" onclick="resetUserPasswordModal('${u.id}')" title="Imposta password">${ico('key', 'tinted', 'Imposta password')}</button>`}
+        ${cloud
+          ? `<button class="mini-btn" onclick="cloudLinkPassword('${u.id}')" title="Link per reimpostare la password">${ico('key', 'tinted', 'Link per reimpostare la password')}</button>`
+          : `<button class="mini-btn" onclick="resetUserPasswordModal('${u.id}')" title="Imposta password">${ico('key', 'tinted', 'Imposta password')}</button>`}
         <button class="mini-btn" onclick="toggleUserActive('${u.id}')" title="${susp ? 'Riattiva' : 'Sospendi'}">${susp ? ico('check', 'tinted', 'Riattiva') : ico('pause', 'tinted', 'Sospendi')}</button>
         ${cloud ? '' : `<button class="mini-btn danger" onclick="delUser('${u.id}')" title="Elimina">${ico('trash', 'tinted', 'Elimina')}</button>`}
       </div></div>`;
   }).join('') || '<div class="empty-text">Nessun utente.</div>';
+  // Con l'archivio condiviso il collega si crea qui e riceve un link, che gli
+  // giri tu: l'utente lo crea la funzione bomtrack-utenti sul server.
   const nuovo = cloud
-    ? `<div class="cloud-section" style="margin-top:10px"><div style="flex:1">
-        <strong>${ico('mail', 'tinted', '')} Un nuovo collega si invita da Supabase</strong>
-        <p>Nel pannello di Supabase: <strong>Authentication → Users → Invite user</strong>, con la sua email. Riceve il link, sceglie la password e compare qui come <strong>Lettore sospeso</strong>: gli assegni il ruolo e lo riattivi. Per toglierlo, sospendilo.</p></div></div>`
+    ? `<div class="mgmt-form">
+      <input id="nu-name" placeholder="Nome e cognome">
+      <input id="nu-email" placeholder="Email (sarà il suo accesso)">
+      <select id="nu-role">${roleOptions('progettazione')}</select>
+      <button class="add-btn-sm" id="nu-crea" onclick="cloudNuovoUtente()">+ Crea e genera link</button></div>
+      <p class="empty-text" style="text-align:left;padding:6px 0 0">${ico('mail', 'tinted', '')} Il collega nasce già con il suo ruolo; il link d'invito lo giri tu (WhatsApp, Teams, email) e scade in circa un giorno. Aprendolo sceglie la password. La chiave ${ico('key', 'tinted', '')} genera un link per reimpostarla. Per togliere un collega, sospendilo.</p>`
     : '';
   if (cloud) return `<div class="mgmt-panel"><div class="mgmt-list">${list}</div>${nuovo}
     <p class="empty-text" style="text-align:left;padding:6px 0 0">${ruoliHtml()}</p></div>`;
@@ -97,9 +104,53 @@ function ruoliHtml() {
       <strong>Progettazione</strong>: articoli e distinte ·
       <strong>Lettore</strong>: sola lettura.`;
 }
+// ─── Utenti con l'archivio condiviso (dalla 0.105.0) ───
+async function cloudNuovoUtente() {
+  if (!roleGuard('manage')) return;
+  const nome = val('nu-name'), email = val('nu-email').toLowerCase(), ruolo = val('nu-role') || 'lettore';
+  if (!nome) { showToast('Nome richiesto', 'error'); return; }
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { showToast('Email non valida', 'error'); return; }
+  if (findUserByEmail(email)) { showToast('Email già usata da un altro utente', 'error'); return; }
+  const btn = document.getElementById('nu-crea');
+  if (btn) { btn.disabled = true; btn.textContent = 'Creazione…'; }
+  try {
+    const r = await cloudUtenti({ azione: 'invita', email, nome, ruolo });
+    cloudLinkModal(`Utente ${nome} creato`, r.link,
+      `Manda questo link a ${esc(nome)}: aprendolo sceglie la password ed entra come <strong>${esc(roleLabel(ruolo))}</strong>.`);
+    ['nu-name', 'nu-email'].forEach(k => { const el = document.getElementById(k); if (el) el.value = ''; });
+    cloudProgramma(0);   // il profilo nuovo arriva al prossimo giro
+  } catch (e) {
+    showToast(cloudMsgErrore(e), 'error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '+ Crea e genera link'; }
+  }
+}
+async function cloudLinkPassword(id) {
+  if (!roleGuard('manage')) return;
+  const u = getUser(id); if (!u) return;
+  askConfirm(`Generare un link per reimpostare la password di ${u.name}?\nChi lo apre sceglie una password nuova ed entra come ${u.name}: giralo solo a lui.`, async () => {
+    try {
+      const r = await cloudUtenti({ azione: 'reimposta', id });
+      cloudLinkModal(`Link per ${u.name}`, r.link, `Manda questo link a ${esc(u.name)}: aprendolo sceglie una password nuova.`);
+    } catch (e) { showToast(cloudMsgErrore(e), 'error'); }
+  }, { title: 'Reimposta password', ok: 'Genera link', safe: true });
+}
+function cloudLinkModal(titolo, link, spiega) {
+  openModal(`<h3>${ico('key', 'tinted pill', '')} ${esc(titolo)}</h3>
+    <p>${spiega} Scade in circa un giorno, e vale una volta sola.</p>
+    <div style="display:flex;gap:6px"><input id="cl-utente-link" readonly value="${esc(link)}" style="flex:1" onclick="this.select()">
+      <button class="add-btn-sm" onclick="cloudCopiaLinkUtente()">Copia</button></div>
+    <div class="modal-actions"><button class="add-btn-sm" onclick="closeModal()">Fatto</button></div>`);
+}
+function cloudCopiaLinkUtente() {
+  const el = document.getElementById('cl-utente-link'); if (!el) return;
+  const fatto = () => showToast('Link copiato');
+  if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(el.value).then(fatto, () => { el.select(); document.execCommand('copy'); fatto(); });
+  else { el.select(); document.execCommand('copy'); fatto(); }
+}
 function addUser() {
   if (!roleGuard('manage')) return;
-  if (cloudInUso()) { showToast('Con l\'archivio condiviso i colleghi si invitano da Supabase', 'error'); return; }
+  if (cloudInUso()) return cloudNuovoUtente();
   const name = val('nu-name'), email = val('nu-email');
   const pwd = document.getElementById('nu-password').value;
   if (!name) { showToast('Nome richiesto', 'error'); return; }
