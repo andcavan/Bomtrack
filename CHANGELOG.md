@@ -2,6 +2,14 @@
 
 Le revisioni seguono il versionamento semantico `0.MINOR.PATCH`: **MINOR** per nuove funzionalità, **PATCH** per correzioni. La versione in cima è quella in `APP_VERSION` (`core.js`) e mostrata nell'header dell'app.
 
+### 0.105.1 — 2026-10-16
+
+**Correzioni**
+- **«Server non raggiungibile» generando un link.** Quando la funzione `bomtrack-utenti` non è pubblicata, o si ferma all'avvio, Supabase risponde senza le intestazioni che il browser chiede, e l'app lo scambiava per la rete assente: diceva «server non raggiungibile» e passava in sola lettura. Ora dice che è la funzione a non rispondere e dove guardare (Edge Functions e i suoi Logs), e l'app resta collegata.
+
+**Verifica**
+- `test/cloud.test.js`: una funzione che non risponde dà il suo messaggio e non mette l'app in sola lettura.
+
 ### 0.105.0 — 2026-10-16
 
 **I colleghi si creano dall'app.** Prima un collega si invitava dal pannello di Supabase, nasceva lettore sospeso e poi gli si davano ruolo e stato. Ora, in *Gestione → Utenti*, l'amministratore scrive nome, email e ruolo e riceve un link d'invito da girare. **Va pubblicata la funzione `supabase/functions/bomtrack-utenti`** (manuale, cap. 31, passo 9) e **va rieseguito `supabase/schema.sql`**.

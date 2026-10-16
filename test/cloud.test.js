@@ -681,6 +681,11 @@ describe('Archivio condiviso — i colleghi si creano dall\'app', () => {
     srv.senzaFunzioni = true;
     await assert.rejects(A.eval(`cloudUtenti({ azione: 'reimposta', id: '${nuovo}' })`), /non è pubblicata/);
     srv.senzaFunzioni = false;
+    // Senza le intestazioni CORS il browser vede solo un errore di rete.
+    srv.funzioneMuta = true;
+    await assert.rejects(A.eval(`cloudUtenti({ azione: 'reimposta', id: '${nuovo}' })`), /bomtrack-utenti non risponde/);
+    srv.funzioneMuta = false;
+    assert.equal(A.eval('cloudSolaLettura()'), false);
     await srv.chiudi();
   });
 });

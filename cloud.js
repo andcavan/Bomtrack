@@ -103,6 +103,10 @@ async function cloudHttp(percorso, opz) {
   try {
     r = await fetch(c.url + percorso, { method: o.metodo || 'POST', headers, body: o.corpo === undefined ? undefined : JSON.stringify(o.corpo) });
   } catch (e) {
+    // La funzione degli utenti che manca o che si ferma all'avvio risponde
+    // senza le intestazioni CORS: il browser lo fa passare per un errore di
+    // rete. Il database però c'è, e l'app non va messa in sola lettura.
+    if (percorso.startsWith('/functions/')) throw cloudErrore('server', 'La funzione bomtrack-utenti non risponde: controlla in Supabase, Edge Functions, che sia pubblicata con questo nome esatto e guarda i suoi Logs');
     cloudCollegato(false);
     throw cloudErrore('rete', 'Server non raggiungibile');
   }

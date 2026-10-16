@@ -1,6 +1,6 @@
 # Bomtrack — Manuale d'uso
 
-**Versione dell'app documentata: 0.105.0**
+**Versione dell'app documentata: 0.105.1**
 
 📖 **[Leggilo come pagina web](https://claude.ai/code/artifact/726a0963-2db0-4947-999b-d7b5beb91a0b)** — stesso testo, con indice laterale, filtro dei capitoli e tema chiaro/scuro. Comodo da tenere aperto di fianco all'app.
 
@@ -2677,6 +2677,9 @@ quella condivisa.
    `supabase/functions/bomtrack-utenti/index.ts` e premi **Deploy**. Va ripubblicata quando una
    versione nuova la cambia (lo dice il changelog). Nello stesso pannello, in **Authentication →
    URL Configuration → Redirect URLs**, aggiungi l'indirizzo dell'app: è lì che riportano i link.
+   Se l'app risponde «la funzione bomtrack-utenti non risponde», la funzione non c'è con quel nome
+   esatto oppure si ferma all'avvio: guardala in **Edge Functions**, e nei suoi **Logs** c'è il
+   motivo.
 
 > **L'app va aperta da un indirizzo web** (`https://…`), non con un doppio clic sul file: un link
 > d'invito non può tornare a un file sul disco di qualcuno.

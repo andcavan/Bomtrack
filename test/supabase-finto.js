@@ -114,6 +114,7 @@ function avviaSupabaseFinto(opts) {
     // link porta una sessione del collega, come quello di Supabase.
     if (u.pathname === '/functions/v1/bomtrack-utenti' && req.method === 'POST') {
       if (srv.senzaFunzioni) return rispondi(res, 404, { code: 'NOT_FOUND', message: 'Requested function was not found' });
+      if (srv.funzioneMuta) { res.destroy(); return; }
       const id = chi(req);
       if (!id || id === 'scaduto') return rispondi(res, 401, { msg: 'Invalid JWT' });
       const io = db.sql(`select role || ' ' || coalesce(active, true) from profiles where id = '${id}'`);
