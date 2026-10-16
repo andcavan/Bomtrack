@@ -520,13 +520,22 @@ end $$;
 -- payload = {
 --   "upsert":   { tabella: [righe di dbVersoCloud] },
 --   "remove":   { tabella: [id] },
---   "settings": { "data": {...}, "updated_at": "...", "updated_by": "..." }   -- facoltativo
+--   "settings": { "data": {...}, "updated_at": "...", "updated_by": "..." },  -- facoltativo
+--   "base":     { tabella: { id: updated_at } }                                -- facoltativo
 -- }
 -- Tutto in una transazione: se una riga viola un vincolo, non entra niente.
 --
 -- Regole:
 --  - root e row: last-write-wins su updated_at. Una riga più vecchia di quella
 --    che c'è non passa, e torna in `rejected` — l'app deve dirlo all'utente.
+--  - base: per le righe che il client ha modificato partendo da una versione
+--    nota, l'updated_at di quella versione. Se intanto sul server la riga è
+--    cambiata (un collega l'ha salvata dopo), la modifica è fatta su una copia
+--    vecchia: passerebbe per più recente e cancellerebbe in silenzio quella del
+--    collega. Viene respinta, come una più vecchia. Il confronto è al
+--    millesimo: le date che il server scrive da sé (now()) hanno i
+--    microsecondi, quelle che il browser rimanda no. Senza `base` vale il solo
+--    last-write-wins (client di prima della 0.103.2).
 --  - replace: per ogni padre **accettato** in questo invio, l'insieme dei figli
 --    si sostituisce con quello inviato, vuoto compreso. Il client manda sempre
 --    l'insieme completo di ogni padre che invia (dbVersoCloud lo fa). Un padre
@@ -634,10 +643,14 @@ begin
                           where t.tab = %2$L and t.id = s.id::text
                             and t.deleted_at >= coalesce(s.updated_at, '-infinity'::timestamptz))
         on conflict (id) do update set %3$s
-          where public.%1$I.updated_at is null
-             or excluded.updated_at >= public.%1$I.updated_at
+          where (public.%1$I.updated_at is null
+                 or excluded.updated_at >= public.%1$I.updated_at)
+            and ($2 is null or not ($2 ? public.%1$I.id::text)
+                 or date_trunc('milliseconds', public.%1$I.updated_at)
+                    = date_trunc('milliseconds', ($2->>public.%1$I.id::text)::timestamptz)
+                 or public.%1$I.updated_at is not distinct from excluded.updated_at)
       $q$, reg.tab, reg.tab, agg)
-      using righe;
+      using righe, payload->'base'->reg.tab;
       -- Chi è passato: le righe che ora portano l'updated_at inviato. Una
       -- respinta (più vecchia, o sotto una lapide) ne ha un altro, o non c'è.
       execute format(

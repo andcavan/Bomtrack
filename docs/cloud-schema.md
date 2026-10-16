@@ -637,11 +637,20 @@ cosa lo decide l'app:
 ```json
 { "upsert": { "tabella": [righe di dbVersoCloud] },
   "remove": { "tabella": [id] },
-  "settings": { "data": {}, "updated_at": "…", "updated_by": "…" } }
+  "settings": { "data": {}, "updated_at": "…", "updated_by": "…" },
+  "base": { "items": { "<uuid>": "2026-10-16T07:00:00.000Z" } } }
 ```
 
 - radici e figlie per riga: last-write-wins su `updated_at`; chi perde torna in
   `rejected` e l'app lo deve dire;
+- `base` (facoltativo, dalla 0.103.2): `{ tabella: { id: updated_at } }`, la
+  versione da cui il client è partito per le radici che già conosceva. Se sul
+  server la riga è intanto cambiata, la modifica è fatta su una copia vecchia
+  e viene respinta come una più vecchia: senza, vincerebbe intera e
+  cancellerebbe in silenzio quella del collega. Confronto al millesimo;
+- un riferimento che non regge (`23503`) l'app lo ripara e rimanda il lotto:
+  vince chi usa — un record eliminato ma ancora citato torna, una
+  cancellazione di un record citato si ritira (`cloudRiparaRiferimento`);
 - figlie `replace`: per ogni padre accettato l'insieme si sostituisce con
   quello inviato, vuoto compreso — il client manda sempre l'insieme intero;
 - `remove`: cancella e lascia una lapide in `sync_tombstones`; la lapide cede

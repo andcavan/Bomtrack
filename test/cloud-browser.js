@@ -84,9 +84,15 @@ const SEED = () => {
     r.sospesoB = await B.textContent('#login-error');
     await foto(B, '6-sospeso');
     // Anna lo vede arrivare in Gestione → Utenti, gli dà un ruolo e lo attiva.
-    // Il giro riceve solo quando non ha niente da inviare: se trova ancora in
-    // coda l'invio precedente, il profilo di Bruno arriva al giro dopo.
-    await A.evaluate(async () => { for (let i = 0; i < 5 && !db.users.some(x => x.email === 'b@x.it'); i++) await cloudGiro(); });
+    // Il giro riceve solo quando non ha niente da inviare, e un giro già in
+    // corso (quello del timer) fa tornare subito il secondo: il profilo di
+    // Bruno arriva a uno dei giri dopo. Si aspetta lui, non un numero di giri.
+    await A.evaluate(async () => {
+      for (let i = 0; i < 40 && !db.users.some(x => x.email === 'b@x.it'); i++) {
+        await cloudGiro();
+        await new Promise(r => setTimeout(r, 250));
+      }
+    });
     await A.evaluate(() => { setView('manage'); setMgmtTab('users'); });
     r.utentiA = await A.$$eval('.mgmt-item-name', v => v.map(x => x.textContent.trim()));
     await foto(A, '5-utenti');

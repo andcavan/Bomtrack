@@ -2073,6 +2073,28 @@ const Store = {
   // Il record era già nella fotografia dell'ultimo invio? Un padre nuovo
   // manda tutte le sue righe; uno già noto solo quelle cambiate.
   inBase(coll, id) { return !!(_baseIds && _baseIds.get(coll) && _baseIds.get(coll).has(id)); },
+  // La versione da cui è partita la modifica: l'updatedAt del record nella
+  // fotografia (la firma lo porta in testa). Il server la confronta con la
+  // sua, per non lasciar passare una modifica fatta su una copia vecchia.
+  baseUpdatedAt(coll, id) {
+    const m = _baseIds && _baseIds.get(coll);
+    const firma = m && m.get(id);
+    return firma ? String(firma).split('|')[0] || null : null;
+  },
+  // Toglie dalla fotografia un record o una riga figlia: la sua cancellazione
+  // non risulta più da mandare. Serve quando il server la rifiuta (un collega
+  // lo usa ancora) e il record deve tornare dal server.
+  dimenticaInBase(coll, id, figlio) {
+    if (figlio) { const m = _baseChildren && _baseChildren.get(coll + '|' + figlio); if (m) m.delete(id); return; }
+    const m = _baseIds && _baseIds.get(coll);
+    if (m) m.delete(id);
+    // E le sue righe: senza padre nella fotografia risulterebbero tolte una
+    // per una, e il server le cancellerebbe al record che resta.
+    if (_baseChildren) _baseChildren.forEach((righe, k) => {
+      if (k.split('|')[0] !== coll) return;
+      righe.forEach((padre, r) => { if (padre === id) righe.delete(r); });
+    });
+  },
   importSnapshot(json) {
     const data = typeof json === 'string' ? JSON.parse(json) : json;
     const err = validateSnapshot(data);

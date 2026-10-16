@@ -312,3 +312,118 @@ describe('Archivio condiviso — più PC contro Supabase (finto, con Postgres ve
     await srv.chiudi();
   });
 });
+
+// ═══════════════════════════════════════════════════════════
+//  Due colleghi sulla stessa cosa (0.103.2)
+// ═══════════════════════════════════════════════════════════
+// I casi in cui il last-write-wins da solo perdeva dati o bloccava la coda.
+describe('Archivio condiviso — due colleghi sulla stessa cosa', () => {
+  if (!pg.disponibile()) {
+    it('saltato: BOMTRACK_PG non impostata (vedi test/pg.js)', () => {});
+    return;
+  }
+  const { avviaSupabaseFinto } = require('./supabase-finto.js');
+  let fila = Promise.resolve();
+  const passo = (nome, fn) => it(nome, () => { const p = fila.then(fn); fila = p.catch(() => {}); return p; });
+  let srv, A, B, anna, bruno;
+  const giro = a => a.eval('cloudGiro()');
+  const avvisi = a => a.ctx.__avvisi.splice(0);
+  const pc = (seed) => {
+    const st = makeStorage();
+    st.setItem('bomtrack_cloud', JSON.stringify({ url: srv.url, chiave: srv.chiave, allineato: false }));
+    const a = loadApp({ silent: true, storage: st });
+    a.ctx.fetch = fetch;
+    if (seed) a.seedStorage(seed);
+    a.eval('Store.load(); cloudAvvio(); globalThis.__avvisi = []; showToast = m => __avvisi.push(m);');
+    return a;
+  };
+  const SUP = U(500), ORD2 = U(501);
+
+  passo('due PC sullo stesso archivio', async () => {
+    srv = await avviaSupabaseFinto();
+    anna = srv.crea('a@x.it', 'pa', 'Anna');
+    bruno = srv.crea('b@x.it', 'pb', 'Bruno');
+    const db = dbCloudCompleto();
+    db.users.push({ id: U(801), name: 'Bruno', email: 'b@x.it', role: 'admin', active: true, createdAt: '2026-03-01T08:00:00.000Z', updatedAt: '2026-03-01T08:00:00.000Z' });
+    A = pc(db);
+    const e = await A.eval(`cloudAccediConPassword('a@x.it', 'pa').then(() => cloudDopoAccesso())`);
+    await A.eval(`cloudCaricaArchivio(${JSON.stringify(e.stato)})`);
+    A.eval(`currentUser = getUser('${anna}'); Store.setActor(currentUser.id);`);
+    B = pc();
+    await B.eval(`cloudAccediConPassword('b@x.it', 'pb').then(() => cloudDopoAccesso())`);
+    await B.eval('cloudScaricaArchivio()');
+    B.eval(`currentUser = getUser('${bruno}'); Store.setActor(currentUser.id);`);
+    assert.equal(B.eval('db.items.length'), 5);
+  });
+
+  passo('chi salva da una copia vecchia non cancella in silenzio la modifica del collega', async () => {
+    A.eval(`Store.update('items', '${ID.item}', { unitCost: 9.99 })`);
+    await giro(A);
+    // Bruno non ha ancora ricevuto: la sua scheda è quella di prima.
+    B.eval(`Store.update('items', '${ID.item}', { notes: 'nota di Bruno' })`);
+    avvisi(B);
+    await giro(B);
+    assert.equal(srv.db.sql(`select unit_cost from items where id = '${ID.item}'`), '9.99', 'la modifica di Anna resta');
+    assert.match(avvisi(B).join(), /non è entrata/, 'e Bruno lo sa');
+    await giro(B);
+    assert.equal(B.eval(`Store.getById('items', '${ID.item}').unitCost`), 9.99, 'e vede la versione che ha vinto');
+    // Dalla versione giusta, la sua modifica passa.
+    B.eval(`Store.update('items', '${ID.item}', { notes: 'nota di Bruno' })`);
+    await giro(B);
+    assert.equal(srv.db.sql(`select notes || ' ' || unit_cost from items where id = '${ID.item}'`), 'nota di Bruno 9.99');
+    await giro(A);
+  });
+
+  passo('un fornitore eliminato da un collega ma usato qui torna, e la coda non si blocca', async () => {
+    A.eval(`Store.insert('suppliers', { id: '${SUP}', name: 'Nuovo fornitore', active: true })`);
+    await giro(A); await giro(B);
+    A.eval(`Store.remove('suppliers', '${SUP}')`);
+    await giro(A);
+    // Bruno non ha ancora ricevuto la cancellazione, e lo usa.
+    B.eval(`{ const o = Store.getById('orders', '${ID.ord}'); o.supplierId = '${SUP}'; touch(o); saveDB(); }`);
+    avvisi(B);
+    assert.equal(await giro(B), true, 'l\'invio va');
+    assert.match(avvisi(B).join(), /Nuovo fornitore.*ripristinato/);
+    assert.equal(srv.db.sql(`select name from suppliers where id = '${SUP}'`), 'Nuovo fornitore');
+    assert.equal(srv.db.sql(`select supplier_id from orders where id = '${ID.ord}'`), SUP);
+    assert.equal(B.eval('Store.hasPendingChanges()'), false);
+    await giro(A);
+    assert.equal(A.eval(`!!Store.getById('suppliers', '${SUP}')`), true, 'torna anche ad Anna');
+  });
+
+  passo('qui si elimina un fornitore che un collega ha appena usato: l\'eliminazione si ritira', async () => {
+    const SUP2 = U(502);
+    A.eval(`Store.insert('suppliers', { id: '${SUP2}', name: 'Terzista', active: true })`);
+    await giro(A); await giro(B);
+    A.eval(`{ const o = Store.getById('orders', '${ID.ord}'); o.supplierId = '${SUP2}'; touch(o); saveDB(); }`);
+    await giro(A);
+    // Bruno non lo sa ancora: per lui il fornitore non è usato da nessuno.
+    B.eval(`Store.remove('suppliers', '${SUP2}')`);
+    avvisi(B);
+    assert.equal(await giro(B), true);
+    assert.match(avvisi(B).join(), /eliminazione è stata annullata/);
+    assert.equal(srv.db.sql(`select name from suppliers where id = '${SUP2}'`), 'Terzista', 'sul server resta');
+    await giro(B);
+    assert.equal(B.eval(`!!Store.getById('suppliers', '${SUP2}')`), true, 'e torna a Bruno');
+    assert.equal(B.eval('Store.hasPendingChanges()'), false);
+  });
+
+  passo('due ordini nuovi con lo stesso numero: il più recente si rinumera', async () => {
+    await giro(A); await giro(B);
+    const n = A.eval('nextOrderNumber()');
+    assert.equal(B.eval('nextOrderNumber()'), n, 'i due PC propongono lo stesso numero');
+    A.eval(`Store.insert('orders', { id: '${U(600)}', number: nextOrderNumber(), status: 'bozza', date: '2026-10-16', supplierId: null, lines: [], active: true })`);
+    await giro(A);
+    B.eval(`Store.insert('orders', { id: '${ORD2}', number: nextOrderNumber(), status: 'bozza', date: '2026-10-16', supplierId: null, lines: [], active: true })`);
+    avvisi(B);
+    await giro(B);   // invia il suo, poi riceve quello di Anna
+    const numB = B.eval(`Store.getById('orders', '${ORD2}').number`);
+    assert.notEqual(numB, n, 'quello di Bruno, nato dopo, cambia numero');
+    assert.match(avvisi(B).join(), /stesso numero/);
+    await giro(B);
+    assert.equal(srv.db.sql(`select count(distinct number) from orders where id in ('${U(600)}', '${ORD2}')`), '2');
+    await giro(A);
+    assert.equal(A.eval(`Store.getById('orders', '${U(600)}').number`), n, 'quello di Anna resta com\'era');
+    await srv.chiudi();
+  });
+});

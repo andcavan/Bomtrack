@@ -102,7 +102,7 @@ async function cloudHttp(percorso, opz) {
     if (dati && dati.code === 'PGRST202') throw cloudErrore('server', 'Lo schema del progetto Supabase non è aggiornato: riesegui supabase/schema.sql di questa versione nel SQL Editor', { stato: r.status });
     if (r.status === 401) throw cloudErrore('accesso', msg, { stato: r.status });
     if (r.status === 403 || (dati && dati.code === '42501')) throw cloudErrore('permesso', msg, { stato: r.status });
-    throw cloudErrore('server', msg, { stato: r.status });
+    throw cloudErrore('server', msg, { stato: r.status, codice: dati && dati.code, dettagli: dati && dati.details });
   }
   return dati;
 }
@@ -190,7 +190,7 @@ async function cloudEsci() {
 //  - le impostazioni le scrive solo chi ha la gestione: altrimenti il server
 //    rifiuterebbe l'intero lotto. Restano su questo PC, e lo si dice.
 function cloudPayload(changes, soglia, puoImpostazioni) {
-  const upsert = {}, remove = {};
+  const upsert = {}, remove = {}, base = {};
   let impostazioniTenute = false;
   const aggiungi = (dove, t, righe) => { if (righe.length) dove[t] = (dove[t] || []).concat(righe); };
   Object.keys(changes || {}).forEach(c => {
@@ -204,7 +204,13 @@ function cloudPayload(changes, soglia, puoImpostazioni) {
       const righe = dbVersoCloud({ [c]: recs });
       Object.keys(righe).forEach(t => {
         let r = righe[t];
-        if (t === def.table) r.forEach(x => { x.pos = posizioni.get(x.id); });
+        if (t === def.table) r.forEach(x => {
+          x.pos = posizioni.get(x.id);
+          // La versione da cui è partita la modifica: se sul server intanto è
+          // cambiata, la modifica è fatta su una copia vecchia e va respinta.
+          const b = _cloud.senzaBase.has(x.id) ? null : Store.baseUpdatedAt(c, x.id);
+          if (b) (base[t] = base[t] || {})[x.id] = b;
+        });
         else {
           const k = Object.keys(figli).find(a => figli[a].table === t);
           if (k && figli[k].merge === 'row') {
@@ -221,6 +227,7 @@ function cloudPayload(changes, soglia, puoImpostazioni) {
   const payload = {};
   if (Object.keys(upsert).length) payload.upsert = upsert;
   if (Object.keys(remove).length) payload.remove = remove;
+  if (Object.keys(base).length) payload.base = base;
   if (changes && changes.settings) {
     if (puoImpostazioni) {
       payload.settings = { data: Store.getSettings(), updated_at: nowISO(), updated_by: Store.getActor() };
@@ -228,7 +235,7 @@ function cloudPayload(changes, soglia, puoImpostazioni) {
   }
   return { payload, impostazioniTenute };
 }
-function cloudPayloadVuoto(p) { return !p.upsert && !p.remove && !p.settings; }
+function cloudPayloadVuoto(p) { return !p.upsert && !p.remove && !p.settings; }  // `base` da sola non è un invio
 
 // ── La fotografia salvata ──
 function cloudSalvaBase() {
@@ -340,6 +347,8 @@ const _cloud = {
   inCorso: false, ancora: false, timer: null, intervallo: null,
   stato: 'spento',        // spento · ok · invio · attesa · offline · errore · accesso
   messaggio: '', ultimo: null, respinti: [], baseNonSalvata: false, impostazioniAvvisate: false,
+  senzaBase: new Set(),   // record ripristinati: si rimandano senza versione di partenza
+  doppiAvvisati: new Set(),
 };
 function cloudPronto() {
   const c = cloudConfig();
@@ -379,6 +388,19 @@ async function cloudGiro() {
   }
 }
 async function cloudInvia() {
+  // Un lotto che il server rifiuta per un riferimento (un collega ha eliminato
+  // qualcosa che qui si usa ancora, o qui si elimina qualcosa che un collega
+  // usa) si ripara e si rimanda: altrimenti resterebbe in testa alla coda per
+  // sempre, e niente — nemmeno il lavoro dopo — partirebbe più.
+  for (let riparazioni = 0; ; riparazioni++) {
+    try { return await cloudInviaLotto(); }
+    catch (e) {
+      if (riparazioni < 5 && e && e.codice === '23503' && await cloudRiparaRiferimento(e)) continue;
+      throw e;
+    }
+  }
+}
+async function cloudInviaLotto() {
   let preso = Store.takeChanges();
   if (!preso.changes) {
     // Fotografia sconosciuta (un ripristino, un archivio sostituito): il
@@ -401,8 +423,85 @@ async function cloudInvia() {
     if (r && Array.isArray(r.rejected) && r.rejected.length) cloudAvvisaRespinti(r.rejected);
   }
   Store.markSynced(mark);
+  _cloud.senzaBase.clear();
   cloudAggiornaConfig({ soglia: sogliaNuova });
   cloudSalvaBase();
+}
+// Dove sta in locale una riga di una tabella del server: la collezione, e
+// l'array figlio se non è una radice.
+function cloudDove(tab) {
+  for (const c of Object.keys(SCHEMA)) {
+    if (SCHEMA[c].table === tab) return { coll: c };
+    const figli = SCHEMA[c].children || {};
+    for (const k of Object.keys(figli)) if (figli[k].table === tab) return { coll: c, figlio: k, rowId: figli[k].rowId };
+  }
+  return null;
+}
+function cloudNomeDi(rec) { return rec ? (rec.number || rec.code || rec.name || rec.title || '') : ''; }
+// Quale riferimento non regge lo dice il messaggio di Postgres, ma non con
+// quale id: con RLS attiva il DETAIL arriva senza valori («Key is not present
+// in table "suppliers"»). Si sa la tabella, e basta. In entrambi i casi vince
+// chi **usa**: è la regola dell'app, che non lascia eliminare ciò che è citato.
+//  - «insert or update on table … / is not present in table "T"»: un collega
+//    ha eliminato qualcosa di T che qui si usa ancora. Le lapidi del server
+//    dicono che cosa: quelle che questo PC ha ancora si rimandano datate
+//    adesso, più recenti della lapide, e il server le ripristina.
+//  - «update or delete on table "T"»: qui si elimina qualcosa di T che un
+//    collega usa. Le cancellazioni di T si ritirano, e i record tornano dal
+//    server con una ricezione da capo.
+// Restituisce true se ha riparato qualcosa e il lotto va rimandato.
+async function cloudRiparaRiferimento(e) {
+  const msg = String(e.message || ''), det = String(e.dettagli || '');
+  const mancante = /is not present in table "([a-z_]+)"/.exec(det);
+  if (/^insert or update on table/.test(msg) && mancante) {
+    const dove = cloudDove(mancante[1]);
+    if (!dove) return false;
+    const c = cloudConfig();
+    const since = c.since ? new Date(Date.parse(c.since) - CLOUD_MARGINE_MS).toISOString() : null;
+    const r = await cloudRpc('pull_changes', { since });
+    const eliminati = ((r && r.removed && r.removed[mancante[1]]) || []).map(String);
+    // Solo quelli che il lotto cita davvero: il vincolo ha il nome di serie di
+    // Postgres, «<tabella>_<colonna>_fkey», e dice quale colonna guardare.
+    const v = /on table "([a-z_]+)" violates foreign key constraint "([a-z0-9_]+)"/.exec(msg);
+    let citati = null;
+    if (v && v[2].startsWith(v[1] + '_') && v[2].endsWith('_fkey')) {
+      const col = v[2].slice(v[1].length + 1, -5);
+      const { payload } = cloudPayload(Store.takeChanges().changes || {}, null, true);
+      citati = new Set(((payload.upsert || {})[v[1]] || []).map(x => x[col]).filter(Boolean).map(String));
+    }
+    const tolti = new Set(eliminati.filter(id => !citati || citati.has(id)));
+    const nomi = [];
+    (Store.getAll(dove.coll) || []).forEach(rec => {
+      if (!dove.figlio) {
+        if (!tolti.has(String(rec.id))) return;
+        touch(rec); _cloud.senzaBase.add(rec.id); nomi.push(cloudNomeDi(rec));
+        return;
+      }
+      (rec[dove.figlio] || []).forEach(riga => {
+        if (!riga || !tolti.has(String(riga[dove.rowId]))) return;
+        riga.updatedAt = nowISO(); touch(rec); _cloud.senzaBase.add(rec.id); nomi.push(cloudNomeDi(rec));
+      });
+    });
+    if (!nomi.length) return false;
+    saveDB();
+    showToast(`Un collega aveva eliminato ${nomi.length === 1 ? '«' + nomi[0] + '»' : nomi.length + ' elementi'}, ma qui è ancora usato: è stato ripristinato`, 'error');
+    return true;
+  }
+  const eliminato = /^update or delete on table "([a-z_]+)"/.exec(msg);
+  if (eliminato) {
+    const dove = cloudDove(eliminato[1]);
+    if (!dove) return false;
+    const ch = (Store.takeChanges().changes || {})[dove.coll] || {};
+    const ids = dove.figlio ? ((ch.removeChildren || {})[dove.figlio] || []) : (ch.remove || []);
+    if (!ids.length) return false;
+    ids.forEach(id => Store.dimenticaInBase(dove.coll, id, dove.figlio));
+    cloudAggiornaConfig({ since: null });
+    showToast(ids.length === 1
+      ? 'Un elemento che hai eliminato è ancora usato da un collega: l\'eliminazione è stata annullata, e torna fra poco'
+      : `${ids.length} elementi che hai eliminato sono ancora usati da un collega: le eliminazioni sono state annullate`, 'error');
+    return true;
+  }
+  return false;
 }
 async function cloudRicevi() {
   const c = cloudConfig();
@@ -417,8 +516,50 @@ async function cloudRicevi() {
   finally { _cloud.applicando = false; }
   cloudAggiornaConfig({ since: r.now });
   cloudSalvaBase();
-  if (n) cloudDopoArrivo();
+  if (n) { cloudNumeriDoppi(db); cloudDopoArrivo(); }
   return n;
+}
+// ── Numeri doppi ──
+// I progressivi (ODA-2026-145) li calcola ogni PC sul suo archivio: due
+// colleghi che creano un ordine nello stesso giro di sincronizzazione prendono
+// lo stesso numero. Quando i due documenti si incontrano, il più recente si
+// rinumera — lo fa il PC di chi l'ha creato, così non lo fanno in due — se è
+// ancora una bozza nata da poco: un ordine già spedito al fornitore non cambia
+// numero di nascosto, e quello lo si dice e basta.
+const CLOUD_NUMERATI = { rfqs: 'nextRfqNumber', orders: 'nextOrderNumber', workOrders: 'nextOdlNumber',
+  prodOrders: 'nextOdpNumber', plans: 'nextPlanNumber', jobs: 'nextJobNumber' };
+const CLOUD_NUOVO_MS = 24 * 3600 * 1000;
+function cloudNumeriDoppi(d) {
+  if (typeof currentUser === 'undefined' || !currentUser) return [];
+  const cambiati = [], avvisi = [];
+  const g = typeof globalThis !== 'undefined' ? globalThis : window;
+  Object.keys(CLOUD_NUMERATI).forEach(c => {
+    const prossimo = g[CLOUD_NUMERATI[c]];
+    const perNumero = new Map();
+    (d[c] || []).forEach(x => { if (x && x.number) { if (!perNumero.has(x.number)) perNumero.set(x.number, []); perNumero.get(x.number).push(x); } });
+    perNumero.forEach((docs, num) => {
+      if (docs.length < 2) return;
+      docs.sort((a, b) => String(a.createdAt || '').localeCompare(String(b.createdAt || '')) || String(a.id).localeCompare(String(b.id)));
+      docs.slice(1).forEach(x => {
+        if (x.createdBy !== currentUser.id) return;
+        const giovane = Date.now() - Date.parse(x.createdAt || 0) < CLOUD_NUOVO_MS;
+        const bozza = !x.status || x.status === 'bozza' || (c === 'jobs' && x.status === 'aperta');
+        if (giovane && bozza && typeof prossimo === 'function') {
+          x.number = prossimo(); touch(x);
+          cambiati.push(num + ' → ' + x.number);
+        } else if (!_cloud.doppiAvvisati.has(x.id)) {
+          _cloud.doppiAvvisati.add(x.id);
+          avvisi.push(num);
+        }
+      });
+    });
+  });
+  if (cambiati.length) {
+    saveDB();
+    showToast((cambiati.length === 1 ? 'Un collega aveva preso lo stesso numero: il tuo documento ora è ' : 'Numeri presi anche da un collega, rinumerati: ') + cambiati.join(', '), 'error');
+  }
+  if (avvisi.length) showToast('Lo stesso numero è su due documenti, uno tuo e uno di un collega: ' + avvisi.join(', ') + '. Controlla quale tenere', 'error');
+  return cambiati;
 }
 // Arrivato qualcosa: l'utente di sessione può essere cambiato (ruolo,
 // sospensione) e la vista va ridisegnata.
@@ -459,6 +600,9 @@ function cloudGestisciErrore(e) {
     return;
   }
   console.error('Archivio condiviso:', e);
+  // Un riferimento che l'app non è riuscita a riparare: il messaggio di
+  // Postgres non dice niente a chi lo legge, la via d'uscita sì.
+  if (e && e.codice === '23503') { cloudSegna('errore', 'Una modifica cita un elemento che non c\'è più sul server. Se il problema resta, usa «Scarta e riscarica»'); return; }
   cloudSegna('errore', (e && e.message) || String(e));
 }
 

@@ -1,6 +1,6 @@
 # Bomtrack — Manuale d'uso
 
-**Versione dell'app documentata: 0.103.1**
+**Versione dell'app documentata: 0.103.2**
 
 📖 **[Leggilo come pagina web](https://claude.ai/code/artifact/726a0963-2db0-4947-999b-d7b5beb91a0b)** — stesso testo, con indice laterale, filtro dei capitoli e tema chiaro/scuro. Comodo da tenere aperto di fianco all'app.
 
@@ -2719,9 +2719,11 @@ La **nuvola** nell'intestazione dice a che punto è; cliccandola si apre lo stat
 | Cosa | Cosa succede |
 |---|---|
 | **Aggiunte a un elenco**: quotazioni di listino, righe di documento, movimenti, righe di piano, sottofamiglie | **Convivono.** Due colleghi che registrano due quotazioni sullo stesso articolo non sono in conflitto: restano entrambe |
-| **Distinta base, ciclo e lavorazioni di un articolo** | **L'ultimo che salva sostituisce tutto.** Metà distinta di uno e metà dell'altro sarebbe un prodotto che nessuno ha progettato |
-| **Lo stesso record modificato da due persone** | Vince **la modifica più recente**. Chi aveva salvato una versione più vecchia riceve un avviso, e vede comparire quella che ha vinto |
+| **Lo stesso record modificato da due persone** (un articolo, la sua distinta, la testata di un ordine) | Vince **chi salva per primo**. Il secondo stava lavorando su una copia che nel frattempo era cambiata: la sua modifica non entra, riceve un avviso e vede comparire quella del collega, su cui può rifare la sua. Senza questo controllo avrebbe cancellato in silenzio il lavoro dell'altro |
+| **Distinta base, ciclo e lavorazioni di un articolo** | Seguono l'articolo: **si tiene intera** quella di chi ha salvato per primo. Metà distinta di uno e metà dell'altro sarebbe un prodotto che nessuno ha progettato |
 | **Cancellazione contro modifica** | Vince la **cancellazione**: un articolo mezzo cancellato non esiste |
+| **Cancellazione contro uso** (uno elimina un fornitore, l'altro intanto lo mette in un ordine) | Vince **chi usa**, come in locale, dove non si elimina ciò che è citato. Il fornitore torna, e chi l'aveva eliminato riceve un avviso |
+| **Lo stesso numero di documento** (due ordini creati nello stesso momento) | Il **più recente si rinumera** da solo, se è ancora una bozza nata da poco, e chi l'ha creato riceve un avviso col numero nuovo. Se non è più una bozza, l'app avvisa e basta: un ordine già spedito non cambia numero di nascosto |
 
 > **La regola pratica**: mettersi d'accordo su chi tiene in mano una distinta. Non perché l'app si
 > rompa (non si rompe, e avvisa), ma perché su una distinta il lavoro di due persone non si

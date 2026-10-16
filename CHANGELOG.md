@@ -2,6 +2,17 @@
 
 Le revisioni seguono il versionamento semantico `0.MINOR.PATCH`: **MINOR** per nuove funzionalità, **PATCH** per correzioni. La versione in cima è quella in `APP_VERSION` (`core.js`) e mostrata nell'header dell'app.
 
+### 0.103.2 — 2026-10-16
+
+**Correzioni all'archivio condiviso**, da un controllo dei casi in cui due colleghi lavorano sulla stessa cosa. Tre erano rotti, provati contro Postgres prima di correggerli.
+- **Una modifica fatta su una copia vecchia cancellava in silenzio quella del collega.** Anna cambia il costo di un articolo; Bruno, che ha la scheda aperta da prima, salva una nota: la sua versione era più recente e vinceva intera, costo vecchio compreso, senza avvisi per nessuno. Ora ogni invio dice da quale versione è partito, e il server la respinge se intanto è cambiata: Bruno riceve l'avviso e la versione di Anna. Vale anche per distinta, ciclo e lavorazioni, che viaggiano con l'articolo. **Va rieseguito `supabase/schema.sql`**; finché non lo si fa vale il comportamento di prima.
+- **Un riferimento a un record eliminato bloccava la coda per sempre.** Se un collega eliminava un fornitore mentre qui lo si metteva in un ordine (o il contrario), il server rifiutava l'invio, e con lui ogni modifica successiva: la nuvola restava rossa e non arrivava più niente. Ora l'app capisce quale tabella non regge, fa vincere chi usa (la regola che vale anche in locale: non si elimina ciò che è citato) e rimanda il lotto: il record eliminato torna, o la cancellazione si ritira.
+- **Due documenti creati nello stesso momento prendevano lo stesso numero.** Ora, quando si incontrano, il più recente si rinumera sul PC di chi l'ha creato, se è ancora una bozza nata da poco; altrimenti l'app avvisa.
+
+**Verifica**
+- `test/cloud.test.js`: i tre casi, con due PC contro il Supabase finto. Il Supabase finto ora passa il codice e il dettaglio degli errori di Postgres come PostgREST.
+- `test/cloud-browser.js`: aspetta il profilo del collega invece di contare i giri, che sotto carico tornavano subito.
+
 ### 0.103.1 — 2026-10-15
 
 **Correzioni**

@@ -121,7 +121,10 @@ function avviaSupabaseFinto(opts) {
         // Come PostgREST quando la funzione non esiste (schema vecchio).
         if (/function .* does not exist/.test(msg)) return rispondi(res, 404, { code: 'PGRST202', message: `Could not find the function public.${rpc[1]} in the schema cache`, details: null, hint: null });
         const permesso = /non scrive|permission denied|row-level security/.test(msg);
-        return rispondi(res, permesso ? 403 : 400, { code: permesso ? '42501' : 'P0001', message: testo, details: null, hint: null });
+        // Come PostgREST: il codice SQLSTATE e il DETAIL di Postgres.
+        const dettagli = (/DETAIL:\s+(.*)/.exec(msg) || [])[1] || null;
+        const codice = permesso ? '42501' : /violates foreign key constraint/.test(msg) ? '23503' : /violates unique constraint/.test(msg) ? '23505' : 'P0001';
+        return rispondi(res, permesso ? 403 : 400, { code: codice, message: testo, details: dettagli, hint: null });
       }
     }
     if (api) return rispondi(res, 404, { message: 'non previsto dal finto: ' + u.pathname });
