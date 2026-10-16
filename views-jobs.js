@@ -477,6 +477,7 @@ function jobApplyField(id, field, value) {
 function delJob(id) {
   if (!roleGuard('docs')) return;
   const j = getJob(id); if (!j) return;
+  if (!guardiaDocumentoUltimo(j, jobList(), 'Annullala invece di eliminarla.')) return;
   const piani = jobPlans(id);
   const { rfqs, orders, workOrders } = jobDocs(id);
   // Non si cancella una commessa che regge del lavoro: si lascerebbero piani e

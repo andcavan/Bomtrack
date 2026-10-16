@@ -468,6 +468,7 @@ function docDel(k, id, before, extraWarn) {
   const K = docKind(k);
   if (!roleGuard('docs')) return;
   const doc = K.get(id); if (!doc) return;
+  if (!guardiaDocumentoUltimo(doc, db[K.coll], k === 'rfq' ? 'Chiudila invece di eliminarla.' : 'Annullalo invece di eliminarlo.')) return;
   const warn = doc.status === 'bozza' ? ''
     : `\nAttenzione: risulta ${docStatusLabel(K, doc)}${extraWarn ? extraWarn(doc) : ''}.`;
   askConfirm(`Eliminare ${K.pronome} ${K.nome.toLowerCase()} ${doc.number}?${warn}`, () => {

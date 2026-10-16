@@ -13,7 +13,7 @@
 // Revisione in esecuzione, mostrata accanto al logo. Va tenuta allineata alla
 // voce in cima a CHANGELOG.md (l'app si copia a mano tra PC: sapere
 // quale revisione sta girando su una postazione è l'unico modo per capirlo).
-const APP_VERSION = '0.104.0';
+const APP_VERSION = '0.104.1';
 
 let currentUser = null;      // utente della sessione (null = schermata di accesso)
 let currentBomId = null;     // articolo prodotto attualmente aperto nelle Distinte
@@ -743,8 +743,9 @@ function numeriPresiAltrove(prefisso) {
 const SERIE_DOCUMENTI = {
   RFQ: () => db.rfqs || [], ODA: () => db.orders || [], ODL: () => db.workOrders || [],
   ODP: () => db.prodOrders || [], FAB: () => db.plans || [], COM: () => db.jobs || [],
-  MT: () => (db.revisions || []).map(r => ({ number: r.ecoNumber })),   // le modifiche tecniche
+  MT: () => (db.revisions || []).map(r => ({ id: r.id, number: r.ecoNumber })),   // le modifiche tecniche
 };
+const SERIE_COLLEZIONE = { RFQ: 'rfqs', ODA: 'orders', ODL: 'workOrders', ODP: 'prodOrders', FAB: 'plans', COM: 'jobs', MT: 'revisions' };
 function seriePrefisso(sigla) { return `${sigla}-${new Date().getFullYear()}-`; }
 function serieMassimo(prefisso, lista) {
   return (lista || []).reduce((m, d) => {
@@ -758,6 +759,42 @@ function numeroProgressivo(sigla) {
   const n = riservati && riservati.length ? riservati.shift() : serieMassimo(prefisso, SERIE_DOCUMENTI[sigla]()) + 1;
   return prefisso + String(n).padStart(3, '0');
 }
+// ─── Niente buchi: si elimina solo l'ultimo della serie ───
+// Un documento o un codice in mezzo alla serie, eliminato, lascerebbe un buco
+// nella numerazione. Si elimina solo l'ultimo, il cui numero torna al
+// prossimo; gli altri si annullano, si chiudono o si segnano obsoleti.
+function serieDiNumero(s) {
+  const m = /^(.*?)(\d+)$/.exec(String(s == null ? '' : s).trim());
+  return m ? { prefisso: m[1].toLowerCase(), n: parseInt(m[2], 10) } : null;
+}
+function documentoUltimo(doc, lista) {
+  const x = serieDiNumero(doc && doc.number);
+  if (!x) return true;
+  return !(lista || []).some(d => {
+    if (d === doc || d.id === doc.id) return false;
+    const s = serieDiNumero(d.number);
+    return s && s.prefisso === x.prefisso && s.n > x.n;
+  });
+}
+function guardiaDocumentoUltimo(doc, lista, invece) {
+  if (documentoUltimo(doc, lista)) return true;
+  showToast(`${doc.number} non è l'ultimo della serie: eliminandolo resterebbe un buco nella numerazione. ${invece}`, 'error');
+  return false;
+}
+// I sottogruppi contano a scendere (da 999), tutti gli altri a salire: l'ultimo
+// è quello più in là nella propria direzione. `via`: gli id che se ne vanno
+// insieme a questo (un'eliminazione di più articoli).
+function articoloUltimo(it, via) {
+  const x = serieDiNumero(it && it.code);
+  if (!x) return true;
+  const giu = it.type === 'sottogruppo';
+  return !(db.items || []).some(o => {
+    if (o.id === it.id || (via && via.has(o.id)) || (o.type === 'sottogruppo') !== giu) return false;
+    const s = serieDiNumero(o.code);
+    return s && s.prefisso === x.prefisso && (giu ? s.n < x.n : s.n > x.n);
+  });
+}
+const ARTICOLO_NON_ULTIMO = c => `Il codice ${c} non è l'ultimo della sua serie: eliminandolo resterebbe un buco nella codifica. Segnalo come obsoleto invece di eliminarlo.`;
 // Codice per famiglia: materie prime, commerciali e parti non legate a una macchina
 function genFamilyCode(type, familyId, subFamilyId) {
   let base = '';

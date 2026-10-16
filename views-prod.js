@@ -639,6 +639,7 @@ function odpSetField(id, field, value) {
 }
 function delOdp(id) {
   const o = getOdp(id); if (!o || !roleGuard('docs')) return;
+  if (!guardiaDocumentoUltimo(o, db.prodOrders, 'Annullalo invece di eliminarlo.')) return;
   const mov = (db.movements || []).filter(m => m.orderId === id).length;
   const avviso = mov ? `\n\n⚠ Ha ${mov} ${mov === 1 ? 'movimento' : 'movimenti'} di magazzino: eliminandolo la merce torna com'era prima.` : '';
   askConfirm(`Eliminare l'ordine di produzione ${o.number}?${avviso}`, () => {

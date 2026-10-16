@@ -1370,6 +1370,7 @@ function duplicatePlan(id) {
 function delPlan(id) {
   if (!roleGuard('docs')) return;
   const p = getPlan(id); if (!p) return;
+  if (!guardiaDocumentoUltimo(p, db.plans, 'Chiudilo invece di eliminarlo.')) return;
   askConfirm(`Eliminare il piano ${p.number}?`, () => {
     if (currentPlanId === id) { currentPlanId = null; mrpView = 'list'; }
     removeConUndo('plans', id, `Piano ${p.number} eliminato`, renderMrp);

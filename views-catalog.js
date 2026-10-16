@@ -2051,6 +2051,7 @@ function delItem(id) {
     showToast('Articolo già movimentato (magazzino, cicli, documenti o piani): non può essere eliminato. Segnalo come obsoleto per impedirne il riuso.', 'error');
     return;
   }
+  if (!articoloUltimo(it)) { showToast(ARTICOLO_NON_ULTIMO(it.code), 'error'); return; }
   askConfirm(`Eliminare "${it.name}"?`, () => {
     if (currentBomId === id) currentBomId = null;
     removeConUndo('items', id, `"${it.name}" eliminato`, renderCatalogs);
@@ -2105,14 +2106,29 @@ function bulkDelete(ids) {
   // facendo fallire l'intero invio.
   const inUso = it => usedBy(it.id).length > 0 || isItemUsedAnywhere(it.id);
   const usati = items.filter(inUso);
-  const liberi = items.filter(it => !inUso(it));
+  // Senza buchi nella codifica: se ne vanno solo quelli in coda alla propria
+  // serie, contando che anche gli altri scelti se ne vanno.
+  const candidati = items.filter(it => !inUso(it));
+  const via = new Set(candidati.map(it => it.id));
+  let liberi = candidati;
+  for (;;) {
+    const restano = liberi.filter(it => articoloUltimo(it, via));
+    if (restano.length === liberi.length) break;
+    liberi = restano;
+    via.clear(); liberi.forEach(it => via.add(it.id));
+  }
+  const inMezzo = candidati.length - liberi.length;
   if (!liberi.length) {
-    showToast(`${usati.length === 1 ? 'L\'articolo è usato' : 'Sono tutti usati'} in distinte, documenti o magazzino: rimuovili prima, o segnali come obsoleti.`, 'error');
+    showToast(usati.length
+      ? `${usati.length === 1 ? 'L\'articolo è usato' : 'Sono tutti usati'} in distinte, documenti o magazzino: rimuovili prima, o segnali come obsoleti.`
+      : (inMezzo === 1 ? ARTICOLO_NON_ULTIMO(candidati[0].code) : 'Nessuno di questi codici è l\'ultimo della sua serie: eliminandoli resterebbero buchi nella codifica. Segnali come obsoleti invece di eliminarli.'), 'error');
     return;
   }
-  const avviso = usati.length
+  const avviso = (usati.length
     ? `\n\n${usati.length} ${usati.length === 1 ? 'articolo resta' : 'articoli restano'} dov'${usati.length === 1 ? 'è' : 'erano'}: ${usati.length === 1 ? 'è usato' : 'sono usati'} in distinte, documenti o magazzino.`
-    : '';
+    : '') + (inMezzo
+    ? `\n\n${inMezzo} ${inMezzo === 1 ? 'articolo resta' : 'articoli restano'}: ${inMezzo === 1 ? 'non è l\'ultimo' : 'non sono gli ultimi'} della serie, e ${inMezzo === 1 ? 'il suo codice lascerebbe' : 'i loro codici lascerebbero'} un buco. ${inMezzo === 1 ? 'Segnalo' : 'Segnali'} come obsolet${inMezzo === 1 ? 'o' : 'i'}.`
+    : '');
   askConfirm(`Eliminare ${liberi.length} ${liberi.length === 1 ? 'articolo' : 'articoli'}?${avviso}`, () => {
     const cestinati = [];
     liberi.forEach(it => {

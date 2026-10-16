@@ -2,13 +2,25 @@
 
 Le revisioni seguono il versionamento semantico `0.MINOR.PATCH`: **MINOR** per nuove funzionalità, **PATCH** per correzioni. La versione in cima è quella in `APP_VERSION` (`core.js`) e mostrata nell'header dell'app.
 
+### 0.104.1 — 2026-10-16
+
+**Numeri e codici senza buchi.** Nella 0.104.0 un numero riservato e non usato restava un buco nella serie. **Va rieseguito `supabase/schema.sql`.**
+- Un numero preso per un documento che non nasce torna al server (`libera_numeri`), e il prossimo che chiede lo riprende per primo, anche se intanto un collega è andato avanti (`numeri_liberi`). Il contatore fisso è sostituito dagli impegni: il prossimo numero è il più alto fra documenti e impegni aperti, così eliminare l'ultimo documento libera il suo numero. Un impegno si chiude da sé quando il documento arriva sul server, e scade dopo sette giorni se il PC non lo manda mai.
+- Il PC passa come minimo solo i documenti ancora in coda, non tutti quelli che ha: un documento che un collega ha appena eliminato non fa più saltare un numero.
+- **Si elimina solo l'ultimo della serie**, anche senza archivio condiviso: un documento in mezzo si annulla (ordini, ODL, ODP, commesse) o si chiude (richieste, piani), un articolo in mezzo alla sua codifica si segna obsoleto. L'eliminazione in blocco toglie quelli in coda e dice quanti restano e perché.
+- Un codice articolo impegnato e non usato torna libero (`libera_codici`): dopo un salvataggio che non va in porto e dopo un import, per i codici delle righe scartate. I codici visti presi da un collega si dimenticano a ogni giro, così uno restituito si riprende.
+
+**Verifica**
+- `test/serie-senza-buchi.test.js` (nuovo): l'ultimo documento e l'ultimo codice, i sottogruppi a scendere, l'eliminazione in blocco.
+- `test/cloud.test.js`: il numero non usato che torna al collega, il buco riempito dal prossimo, il numero dell'ultimo documento eliminato, il codice restituito. Il Supabase finto risponde in JSON anche per le funzioni che tornano un intero o un elenco, come PostgREST.
+
 ### 0.104.0 — 2026-10-16
 
 **Con l'archivio condiviso numeri e codici li dà il server.** Prima ogni PC calcolava il prossimo numero dal suo archivio, e due colleghi che creavano un ordine insieme prendevano lo stesso ODA; la 0.103.2 lo rinumerava dopo. Ora il numero si chiede al server e si segna come preso prima che il documento nasca. **Va rieseguito `supabase/schema.sql`.**
 
 **Nuovo**
 - **Senza collegamento si consulta soltanto.** Con l'archivio condiviso, quando il server non risponde (e all'avvio, fino alla prima risposta) l'app è in sola lettura: un banner lo dice, i comandi per creare spariscono, le guardie bloccano il resto. Si riprova ogni 5 secondi e si torna a lavorare da soli. Esportare e fare un backup restano possibili. Le modifiche già in coda partono al ritorno, come prima.
-- **I numeri dei documenti dal server**: richieste, ordini, ordini di lavoro e di produzione, piani, commesse e modifiche tecniche MT. Un contatore per serie e per anno, che non scende mai sotto il numero più alto già presente (sul server o in coda su questo PC). Chi genera più documenti insieme (da un piano, dal riordino, da una richiesta divisa) prende tutti i numeri in una chiamata. Un numero preso e non usato resta un buco nella serie.
+- **I numeri dei documenti dal server**: richieste, ordini, ordini di lavoro e di produzione, piani, commesse e modifiche tecniche MT. Un contatore per serie e per anno, che non scende mai sotto il numero più alto già presente (sul server o in coda su questo PC). Chi genera più documenti insieme (da un piano, dal riordino, da una richiesta divisa) prende tutti i numeri in una chiamata. (Corretto nella 0.104.1: un numero preso e non usato restava un buco.)
 - **I codici articolo impegnati prima di salvare**, dalla scheda e dall'import Excel. Un codice preso da un collega da meno di un'ora, anche se il suo articolo non è ancora arrivato, non si dà: quello automatico si ricalcola saltandolo, quello scritto a mano va cambiato.
 - Senza archivio condiviso non cambia niente: numeri e codici si calcolano sul PC, subito, come sempre.
 

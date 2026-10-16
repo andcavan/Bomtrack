@@ -396,6 +396,9 @@ async function cloudGiro() {
     await cloudInvia();
     if (!Store.hasPendingChanges()) await cloudRicevi();
     _cloud.ultimo = new Date();
+    // I codici visti presi da un collega valgono un giro: se intanto li ha
+    // restituiti tornano liberi, e se li tiene ancora il server lo ridice.
+    _codiciAltrui.clear();
     cloudSegna(Store.hasPendingChanges() ? 'attesa' : 'ok');
     return true;
   } catch (e) {
@@ -669,9 +672,9 @@ const _numeriRiservati = {};
 // attraverso le solite next…Number(). `richiesta` è { sigla: quanti }, con le
 // sigle di SERIE_DOCUMENTI. Senza archivio condiviso `fare` gira subito e in
 // modo sincrono, come sempre; con l'archivio torna una promessa, e se il server
-// non risponde il documento non nasce. Un numero riservato e poi non usato
-// (un documento che alla fine non si crea) resta un buco nella serie: è il
-// prezzo di non poter mai dare lo stesso numero due volte.
+// non risponde il documento non nasce. I numeri riservati e non usati (un
+// documento che alla fine non nasce) si restituiscono subito: il prossimo che
+// chiede li riprende, e la serie non ha buchi.
 function conNumeri(richiesta, fare) {
   const sigle = Object.keys(richiesta || {}).filter(s => richiesta[s] > 0);
   if (!cloudCondiviso() || !sigle.length) return fare();
@@ -680,21 +683,36 @@ function conNumeri(richiesta, fare) {
     try {
       for (let i = 0; i < sigle.length; i++) {
         const quanti = richiesta[sigle[i]];
-        const minimo = serieMassimo(prefissi[i], SERIE_DOCUMENTI[sigle[i]]());
-        const primo = Number(await cloudRpc('riserva_numeri', { prefisso: prefissi[i], quanti, minimo }));
-        if (!(primo > 0)) throw cloudErrore('server', 'risposta inattesa');
-        _numeriRiservati[prefissi[i]] = Array.from({ length: quanti }, (_, k) => primo + k);
+        // Il server conosce già i documenti arrivati: qui conta solo quelli
+        // ancora in coda. Contarli tutti farebbe saltare il numero di un
+        // documento che un collega ha appena eliminato e che qui c'è ancora.
+        const coll = SERIE_COLLEZIONE[sigle[i]];
+        const minimo = serieMassimo(prefissi[i], SERIE_DOCUMENTI[sigle[i]]().filter(d => !Store.baseUpdatedAt(coll, d.id)));
+        const numeri = await cloudRpc('riserva_numeri', { prefisso: prefissi[i], quanti, minimo });
+        if (!Array.isArray(numeri) || numeri.length !== quanti) throw cloudErrore('server', 'risposta inattesa');
+        _numeriRiservati[prefissi[i]] = numeri.map(Number);
       }
     } catch (e) {
-      prefissi.forEach(p => { delete _numeriRiservati[p]; });
+      await cloudRestituisciNumeri(prefissi);
       cloudErroreRiserva(e, 'il numero del documento');
       return null;
     }
     try { return fare(); }
-    finally { prefissi.forEach(p => { delete _numeriRiservati[p]; }); }
+    finally { await cloudRestituisciNumeri(prefissi); }
   });
   _cloud.numeri = giro.catch(() => {});
   return giro;
+}
+// Quello che `fare` non ha usato torna al server. Senza rete restano impegnati
+// fino alla scadenza: meglio un buco che un numero dato due volte.
+async function cloudRestituisciNumeri(prefissi) {
+  for (const p of prefissi) {
+    const avanzati = _numeriRiservati[p] || [];
+    delete _numeriRiservati[p];
+    if (!avanzati.length) continue;
+    try { await cloudRpc('libera_numeri', { prefisso: p, numeri: avanzati }); }
+    catch (e) { console.error('Archivio condiviso: numeri non restituiti', p, avanzati, e); }
+  }
 }
 
 // ── I codici degli articoli ──
@@ -709,6 +727,13 @@ async function cloudImpegnaCodici(lista) {
   (presi || []).forEach(c => _codiciAltrui.add(itemCodeKey(c)));
   return presi || [];
 }
+// Restituisce codici impegnati e poi non usati. Senza risposta scadono da soli
+// dopo un'ora.
+async function cloudLiberaCodici(codici) {
+  if (!codici || !codici.length) return;
+  try { await cloudRpc('libera_codici', { codici }); }
+  catch (e) { console.error('Archivio condiviso: codici non restituiti', codici, e); }
+}
 // Impegna il codice di `it` prima di salvarlo, poi esegue `fare`. Se un collega
 // l'ha appena preso: con `rigenera` (il codice era automatico) se ne calcola un
 // altro e si riprova, e alla fine si dice quale è stato dato; senza, si
@@ -722,7 +747,11 @@ function conCodiceImpegnato(it, rigenera, fare) {
       try { presi = await cloudImpegnaCodici([{ codice: it.code, item: it.id || null }]); }
       catch (e) { cloudErroreRiserva(e, 'il codice dell\'articolo'); return null; }
       if (!presi.length) {
-        const fatto = fare();
+        let fatto;
+        // Un salvataggio che non va in porto restituisce il codice: un collega
+        // lo prende al posto di saltarlo.
+        try { fatto = fare(); }
+        catch (e) { cloudLiberaCodici([it.code]); throw e; }
         if (it.code !== iniziale) showToast(`Il codice ${iniziale} l'aveva appena preso un collega: l'articolo ha il codice ${it.code}`);
         return fatto;
       }

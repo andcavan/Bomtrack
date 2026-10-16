@@ -926,17 +926,24 @@ grant execute on function public.archivio_stato() to authenticated;
 -- Con l'archivio condiviso un PC senza collegamento consulta soltanto: chi
 -- crea un documento o un articolo è per forza in linea, e il numero o il
 -- codice lo chiede qui prima di usarlo. Così due colleghi che creano insieme
--- un ordine non si trovano mai lo stesso ODA-2026-014.
+-- un ordine non si trovano mai lo stesso ODA-2026-014, e la serie non ha buchi.
 --
--- `contatori`: l'ultimo numero dato per ciascuna serie annuale («ODA-2026-»).
--- La riga si blocca durante l'aggiornamento, e due richieste contemporanee
--- escono una dopo l'altra con numeri diversi. Il contatore non scende mai sotto
--- il numero più alto già presente nella tabella dei documenti né sotto quello
--- che il PC ha in locale (`minimo`): un archivio caricato da un backup, o un
--- documento ancora in coda, non vengono scavalcati.
-create table if not exists public.contatori (
-  serie text primary key,
-  ultimo int not null
+-- `numeri_impegnati`: i numeri dati e non ancora visti nella tabella dei
+-- documenti (il documento è in viaggio). Il prossimo numero è il più alto fra
+-- documenti, impegni e quello che il PC ha in locale (`minimo`, i documenti
+-- ancora in coda), più uno: eliminare l'ultimo documento libera il suo numero.
+-- `numeri_liberi`: i numeri impegnati e poi restituiti perché il documento non
+-- è nato, quando nel frattempo un collega ne aveva preso uno più alto. Il
+-- prossimo che chiede li riprende per primi: è così che non restano buchi.
+-- Un impegno mai chiuso (un PC spento a metà) scade dopo sette giorni.
+drop function if exists public.riserva_numeri(text, int, int);
+drop table if exists public.contatori;   -- la prima stesura della 0.104.0
+create table if not exists public.numeri_impegnati (
+  serie text not null, numero int not null, utente uuid, quando timestamptz not null default now(),
+  primary key (serie, numero)
+);
+create table if not exists public.numeri_liberi (
+  serie text not null, numero int not null, primary key (serie, numero)
 );
 -- `codici_impegnati`: i codici articolo appena presi, nell'ora in cui
 -- l'articolo che li porta potrebbe non essere ancora arrivato in `items`.
@@ -949,37 +956,112 @@ create table if not exists public.codici_impegnati (
   utente uuid not null,
   quando timestamptz not null default now()
 );
--- Nessuna policy: le due tabelle si toccano solo dalle funzioni qui sotto.
-alter table public.contatori enable row level security;
+-- Nessuna policy: le tabelle si toccano solo dalle funzioni qui sotto.
+alter table public.numeri_impegnati enable row level security;
+alter table public.numeri_liberi enable row level security;
 alter table public.codici_impegnati enable row level security;
 
--- Riserva `quanti` numeri consecutivi della serie e restituisce il primo.
--- La serie è «SIGLA-ANNO-»; la sigla decide la tabella, e serve il diritto di
--- scriverci (un lettore non prenota numeri).
-create or replace function public.riserva_numeri(prefisso text, quanti int default 1, minimo int default 0)
-returns int language plpgsql security definer set search_path = public as $$
-declare tab text; col text := 'number'; massimo int; primo int;
+-- La tabella e la colonna di una serie «SIGLA-ANNO-», controllando che chi
+-- chiama possa scriverci (un lettore non prenota numeri). Ritorna i numeri già
+-- usati dai documenti della serie.
+create or replace function public.numeri_serie_usati(prefisso text) returns setof int
+language plpgsql stable security definer set search_path = public as $$
+declare tab text; col text := 'number';
 begin
   tab := case split_part(prefisso, '-', 1)
     when 'RFQ' then 'rfqs' when 'ODA' then 'orders' when 'ODL' then 'work_orders'
     when 'ODP' then 'production_orders' when 'FAB' then 'production_plans' when 'COM' then 'jobs'
     when 'MT' then 'item_revisions' end;
   if tab = 'item_revisions' then col := 'eco_number'; end if;   -- le modifiche tecniche MT-…
-  if tab is null or prefisso !~ '^[A-Z]{2,3}-[0-9]{4}-$' or quanti is null or quanti < 1 or quanti > 500 then
+  if tab is null or prefisso !~ '^[A-Z]{2,3}-[0-9]{4}-$' then
     raise exception 'serie non valida: %', prefisso;
   end if;
   if not public.puo_scrivere_tabella(tab) then
     raise exception 'il ruolo non scrive %', tab using errcode = '42501';
   end if;
-  execute format('select coalesce(max(substr(%I, %s)::int), 0) from public.%I where %I ~ %L',
-                 col, length(prefisso) + 1, tab, col, '^' || prefisso || '[0-9]{1,9}$') into massimo;
-  insert into public.contatori as c (serie, ultimo)
-    values (prefisso, greatest(massimo, coalesce(minimo, 0)) + quanti)
-    on conflict (serie) do update set ultimo = greatest(c.ultimo, massimo, coalesce(minimo, 0)) + quanti
-    returning c.ultimo - quanti + 1 into primo;
-  return primo;
+  return query execute format('select substr(%I, %s)::int from public.%I where %I ~ %L',
+    col, length(prefisso) + 1, tab, col, '^' || prefisso || '[0-9]{1,9}$');
+end $$;
+revoke execute on function public.numeri_serie_usati(text) from public, anon, authenticated;
+
+-- Riserva `quanti` numeri della serie e li restituisce in ordine: prima quelli
+-- restituiti da altri (i buchi), poi i successivi al più alto. Una richiesta
+-- alla volta per serie (il lucchetto), così due colleghi non escono mai con lo
+-- stesso numero.
+create or replace function public.riserva_numeri(prefisso text, quanti int default 1, minimo int default 0)
+returns int[] language plpgsql security definer set search_path = public as $$
+declare usati int[]; alto int; presi int[] := '{}'; n int;
+begin
+  if quanti is null or quanti < 1 or quanti > 500 then raise exception 'quantità non valida: %', quanti; end if;
+  usati := array(select public.numeri_serie_usati(prefisso));
+  perform pg_advisory_xact_lock(hashtext('bomtrack-numeri:' || prefisso));
+  -- Gli impegni chiusi (il documento è arrivato) o scaduti non contano più.
+  delete from public.numeri_impegnati
+   where serie = prefisso and (numero = any(usati) or quando < now() - interval '7 days');
+  alto := greatest(coalesce((select max(x) from unnest(usati) x), 0),
+                   coalesce((select max(numero) from public.numeri_impegnati where serie = prefisso), 0),
+                   coalesce(minimo, 0));
+  -- Un numero restituito ormai usato, o più alto di tutto il resto, non è un buco.
+  delete from public.numeri_liberi
+   where serie = prefisso and (numero = any(usati) or numero > alto
+         or numero in (select numero from public.numeri_impegnati where serie = prefisso));
+  for n in select numero from public.numeri_liberi where serie = prefisso order by numero limit quanti loop
+    delete from public.numeri_liberi where serie = prefisso and numero = n;
+    presi := presi || n;
+  end loop;
+  while coalesce(array_length(presi, 1), 0) < quanti loop
+    alto := alto + 1;
+    presi := presi || alto;
+  end loop;
+  insert into public.numeri_impegnati (serie, numero, utente, quando)
+    select prefisso, x, auth.uid(), now() from unnest(presi) x;
+  return presi;
 end $$;
 grant execute on function public.riserva_numeri(text, int, int) to authenticated;
+
+-- Restituisce i numeri impegnati e non usati (il documento alla fine non è
+-- nato): tornano disponibili, e il prossimo che chiede li riprende.
+drop function if exists public.libera_numeri(text, int[]);
+create or replace function public.libera_numeri(prefisso text, numeri int[])
+returns int language plpgsql security definer set search_path = public as $$
+declare usati int[]; n int;
+begin
+  usati := array(select public.numeri_serie_usati(prefisso));
+  perform pg_advisory_xact_lock(hashtext('bomtrack-numeri:' || prefisso));
+  with tolti as (
+    delete from public.numeri_impegnati
+     where serie = prefisso and numero = any(coalesce(numeri, '{}')) and utente is not distinct from auth.uid()
+    returning numero)
+  insert into public.numeri_liberi (serie, numero)
+    select prefisso, numero from tolti where not (numero = any(usati))
+    on conflict do nothing;
+  get diagnostics n = row_count;
+  return n;
+end $$;
+grant execute on function public.libera_numeri(text, int[]) to authenticated;
+
+-- Il documento è arrivato: il suo numero non è più un impegno ma un fatto.
+-- Senza chiuderlo qui, eliminare l'ultimo documento non libererebbe il suo
+-- numero, perché l'impegno lo terrebbe occupato fino alla scadenza.
+create or replace function public.numeri_chiudi_impegno() returns trigger
+language plpgsql security definer set search_path = public as $$
+declare v text;
+begin
+  v := to_jsonb(new)->>(case when TG_TABLE_NAME = 'item_revisions' then 'eco_number' else 'number' end);
+  if v ~ '^[A-Z]{2,3}-[0-9]{4}-[0-9]{1,9}$' then
+    delete from public.numeri_impegnati
+     where serie = substring(v from '^([A-Z]{2,3}-[0-9]{4}-)') and numero = substring(v from '([0-9]+)$')::int;
+  end if;
+  return null;
+end $$;
+do $$
+declare t text;
+begin
+  foreach t in array array['rfqs', 'orders', 'work_orders', 'production_orders', 'production_plans', 'jobs', 'item_revisions'] loop
+    execute format('drop trigger if exists numeri_chiudi_impegno on public.%I', t);
+    execute format('create trigger numeri_chiudi_impegno after insert or update on public.%I for each row execute function public.numeri_chiudi_impegno()', t);
+  end loop;
+end $$;
 
 -- Impegna i codici articolo di `codici` ([{"codice": …, "item": id facoltativo}])
 -- e restituisce quelli già presi: da un articolo diverso da `item`, o da un
@@ -1008,3 +1090,18 @@ begin
   return presi;
 end $$;
 grant execute on function public.impegna_codici(jsonb) to authenticated;
+
+-- Restituisce codici impegnati e non usati: un collega può prenderli subito,
+-- invece di saltarli e lasciare un buco nella codifica.
+drop function if exists public.libera_codici(jsonb);
+create or replace function public.libera_codici(codici jsonb)
+returns int language plpgsql security definer set search_path = public as $$
+declare n int;
+begin
+  delete from public.codici_impegnati
+   where utente = auth.uid()
+     and chiave in (select lower(btrim(v)) from jsonb_array_elements_text(coalesce(codici, '[]'::jsonb)) v);
+  get diagnostics n = row_count;
+  return n;
+end $$;
+grant execute on function public.libera_codici(jsonb) to authenticated;

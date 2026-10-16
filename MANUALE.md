@@ -1,6 +1,6 @@
 # Bomtrack — Manuale d'uso
 
-**Versione dell'app documentata: 0.104.0**
+**Versione dell'app documentata: 0.104.1**
 
 📖 **[Leggilo come pagina web](https://claude.ai/code/artifact/726a0963-2db0-4947-999b-d7b5beb91a0b)** — stesso testo, con indice laterale, filtro dei capitoli e tema chiaro/scuro. Comodo da tenere aperto di fianco all'app.
 
@@ -2737,15 +2737,26 @@ nasce. Due colleghi che creano un ordine nello stesso istante ricevono due numer
 Chi genera più documenti insieme (da un piano, dal riordino sotto scorta, da una richiesta divisa
 in ordine d'acquisto e ordini di lavoro) prende tutti i numeri in una volta.
 
-Un numero preso e poi non usato (un documento che alla fine non nasce, o che si elimina) lascia
-un **buco** nella serie: è il prezzo di non dare mai lo stesso numero due volte. La serie non
-riparte mai sotto il numero più alto che c'è già.
+**La serie non ha buchi.** Un numero preso per un documento che alla fine non nasce torna subito
+al server, e il prossimo che crea un documento lo riprende, anche se nel frattempo un collega è
+andato avanti. La serie non riparte mai sotto il numero più alto che c'è già.
+
+**Si elimina solo l'ultimo** documento della serie, e il suo numero torna al prossimo. Gli altri
+non si eliminano: ordini, ordini di lavoro e di produzione e commesse si **annullano**, richieste
+d'offerta e piani si **chiudono**, e il numero resta occupato. Lo stesso per gli articoli: si
+elimina solo l'ultimo codice della sua serie (per i sottogruppi, che contano a scendere, il più
+basso); gli altri si segnano **obsoleti**. Un codice senza numero in fondo non fa parte di una
+serie e si elimina come sempre. La regola vale anche senza archivio condiviso.
 
 **I codici degli articoli** si impegnano sul server al salvataggio. Se un collega ha appena preso
 lo stesso codice, anche se il suo articolo non è ancora arrivato qui:
 
 - un codice **automatico** si ricalcola da solo saltando il suo, e l'app dice quale è stato dato;
 - un codice **scritto a mano** non si cambia di nascosto: l'app chiede di sceglierne un altro.
+
+Un codice impegnato e poi non usato (un salvataggio che non va in porto, una riga d'import
+scartata) torna libero subito, e un collega lo prende invece di saltarlo: nemmeno la codifica ha
+buchi.
 
 Anche l'**import del catalogo da Excel** impegna i codici degli articoli nuovi prima di scriverli.
 Quelli automatici si ricalcolano allo stesso modo; una riga con un codice scritto nel foglio e

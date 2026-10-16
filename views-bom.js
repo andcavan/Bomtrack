@@ -823,6 +823,7 @@ function deleteCurrentMachine() {
     showToast('Articolo già movimentato (magazzino, cicli, documenti o piani): non può essere eliminato. Segnalo come obsoleto per impedirne il riuso.', 'error');
     return;
   }
+  if (!articoloUltimo(it)) { showToast(ARTICOLO_NON_ULTIMO(it.code), 'error'); return; }
   askConfirm(`Eliminare "${it.name}" e la sua distinta?`, () => {
     currentBomId = null;
     removeConUndo('items', it.id, `"${it.name}" eliminato`, renderBom);

@@ -679,21 +679,25 @@ collegamento consulta soltanto (`cloudSolaLettura`, dentro `canWrite`), e chi
 crea è sempre in linea. Per questo numeri e codici si chiedono al server prima
 di usarli:
 
-- `riserva_numeri(prefisso, quanti, minimo)` → il primo di `quanti` numeri
-  consecutivi della serie `«SIGLA-ANNO-»` (RFQ, ODA, ODL, ODP, FAB, COM, MT).
-  Il contatore sta in `contatori`, una riga per serie bloccata durante
-  l'aggiornamento, e non scende mai sotto il massimo della tabella né sotto
-  `minimo` (il massimo locale del client, che copre i documenti ancora in
-  coda). Serve il diritto di scrivere la tabella della serie. Lato client,
-  `conNumeri({ ODA: 2 }, fare)` riserva e poi esegue `fare`, che li consuma
-  con le solite `next…Number()`;
+- `riserva_numeri(prefisso, quanti, minimo)` → `quanti` numeri della serie
+  `«SIGLA-ANNO-»` (RFQ, ODA, ODL, ODP, FAB, COM, MT), in ordine: prima quelli
+  in `numeri_liberi` (restituiti mentre un collega andava avanti), poi i
+  successivi al più alto fra documenti, impegni aperti (`numeri_impegnati`) e
+  `minimo` (il massimo dei documenti ancora in coda sul client). Un lucchetto
+  per serie (`pg_advisory_xact_lock`) mette in fila le richieste. Un impegno si
+  chiude quando il documento arriva (trigger `numeri_chiudi_impegno`) e scade
+  dopo sette giorni. Serve il diritto di scrivere la tabella della serie. Lato
+  client, `conNumeri({ ODA: 2 }, fare)` riserva, esegue `fare` (che consuma i
+  numeri con le solite `next…Number()`) e restituisce con `libera_numeri`
+  quelli non usati: la serie non ha buchi;
 - `impegna_codici([{ codice, item }])` → i codici già presi: da un articolo
   diverso da `item`, o impegnati da un altro utente nell'ultima ora
   (`codici_impegnati`). Il confronto ignora maiuscole e spazi. Lato client
   `conCodiceImpegnato` e l'import del catalogo; i codici rifiutati finiscono
-  in `_codiciAltrui`, che la generazione automatica salta.
+  in `_codiciAltrui`, che la generazione automatica salta fino al giro dopo.
+  Quelli impegnati e non usati tornano con `libera_codici`.
 
-Le due tabelle hanno RLS senza policy: le toccano solo le due funzioni
+Le tabelle hanno RLS senza policy: le toccano solo le due funzioni
 (`security definer`). La rinumerazione dopo il pull (`cloudNumeriDoppi`) resta
 come rete di sicurezza.
 

@@ -959,12 +959,19 @@ function catRunImport(dryRun) {
 // codici automatici rispetto a quelli impegnati.
 async function catImportaImpegnando(pending) {
   _cloud.pausa++;
+  // Tutto ciò che si è impegnato strada facendo: alla fine quello che l'import
+  // non ha usato torna libero, o resterebbe un buco nella codifica.
+  const impegnati = new Set();
+  let usati = [];
   try {
     for (let giro = 0; giro < 6; giro++) {
       const prova = importCatalogSheets(pending.byName, pending.scope, { dryRun: true });
       const presi = prova.nuoviCodici.length ? await cloudImpegnaCodici(prova.nuoviCodici.map(codice => ({ codice }))) : [];
+      const rifiutati = new Set(presi.map(itemCodeKey));
+      prova.nuoviCodici.forEach(c => { if (!rifiutati.has(itemCodeKey(c))) impegnati.add(c); });
       if (presi.length) continue;
       const rep = importCatalogSheets(pending.byName, pending.scope, {});
+      usati = rep.nuoviCodici;
       showCatalogReport(rep);
       return rep;
     }
@@ -974,6 +981,8 @@ async function catImportaImpegnando(pending) {
     else { console.error(e); showToast('Import non riuscito: ' + e.message, 'error'); }
   } finally {
     _cloud.pausa--;
+    const tenuti = new Set(usati.map(itemCodeKey));
+    await cloudLiberaCodici([...impegnati].filter(c => !tenuti.has(itemCodeKey(c))));
   }
   return null;
 }

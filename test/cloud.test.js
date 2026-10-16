@@ -520,6 +520,35 @@ describe('Archivio condiviso — numeri e codici li dà il server', () => {
     assert.equal(A.eval(`Object.keys(_numeriRiservati).length`), 0, 'i numeri non usati non restano in giro');
   });
 
+  passo('un numero riservato e non usato torna libero: la serie non ha buchi', async () => {
+    const prossimo = `ODA-${anno}-` + String(await A.eval(`cloudRpc('riserva_numeri', { prefisso: 'ODA-${anno}-', quanti: 1, minimo: 0 })`).then(n => n[0])).padStart(3, '0');
+    await A.eval(`cloudRpc('libera_numeri', { prefisso: 'ODA-${anno}-', numeri: [${Number(prossimo.slice(-3))}] })`);
+    // Un documento che alla fine non nasce: il numero preso torna indietro da sé.
+    assert.equal(await A.eval(`conNumeri({ ODA: 1 }, () => null)`), null);
+    assert.equal(await B.eval(`conNumeri({ ODA: 1 }, () => nextOrderNumber())`), prossimo, 'il collega prende proprio quello');
+  });
+
+  passo('un buco lasciato mentre un collega andava avanti si riempie con il prossimo', async () => {
+    const pre = `ODA-${anno}-`;
+    const [a] = Array.from(await A.eval(`cloudRpc('riserva_numeri', { prefisso: '${pre}', quanti: 1, minimo: 0 })`));
+    const [b] = Array.from(await B.eval(`cloudRpc('riserva_numeri', { prefisso: '${pre}', quanti: 1, minimo: 0 })`));
+    assert.equal(b, a + 1);
+    await A.eval(`cloudRpc('libera_numeri', { prefisso: '${pre}', numeri: [${a}] })`);
+    const dopo = Array.from(await A.eval(`cloudRpc('riserva_numeri', { prefisso: '${pre}', quanti: 2, minimo: 0 })`));
+    assert.deepEqual(dopo.join(), [a, b + 1].join(), 'prima il buco, poi dopo il più alto');
+    await A.eval(`cloudRpc('libera_numeri', { prefisso: '${pre}', numeri: [${dopo.join(',')}] })`);
+    await B.eval(`cloudRpc('libera_numeri', { prefisso: '${pre}', numeri: [${b}] })`);
+  });
+
+  passo('eliminato l\'ultimo documento, il suo numero torna al prossimo', async () => {
+    await B.eval(`newJob()`);
+    const j = B.eval('db.jobs[db.jobs.length - 1]');
+    await giro(B);
+    B.eval(`Store.remove('jobs', '${j.id}')`);
+    await giro(B);
+    assert.equal(await A.eval(`conNumeri({ COM: 1 }, () => nextJobNumber())`), j.number);
+  });
+
   passo('un codice articolo preso da un collega non si dà due volte, anche prima che il suo articolo arrivi', async () => {
     const famiglia = U(4), sotto = U(5);
     const codice = A.eval(`genFamilyCode('materiale', '${famiglia}', '${sotto}')`);
@@ -559,6 +588,14 @@ describe('Archivio condiviso — numeri e codici li dà il server', () => {
     assert.equal(Array.from(await B.eval(`cloudImpegnaCodici([{ codice: '${nuovo}' }, { codice: 'manuale-1' }])`)).join(), [nuovo, 'manuale-1'].join(),
       'e quelli dell\'import sono impegnati');
     assert.equal(A.eval('_cloud.pausa'), 0);
+  });
+
+  passo('un codice impegnato e restituito lo prende subito un collega', async () => {
+    const c = 'PROVA-LIBERA-1';
+    assert.deepEqual(Array.from(await A.eval(`cloudImpegnaCodici([{ codice: '${c}' }])`)), []);
+    assert.equal(Array.from(await B.eval(`cloudImpegnaCodici([{ codice: '${c}' }])`)).join(), c);
+    await A.eval(`cloudLiberaCodici(['${c}'])`);
+    assert.deepEqual(Array.from(await B.eval(`cloudImpegnaCodici([{ codice: '${c}' }])`)), []);
   });
 
   passo('un lettore non prenota numeri', async () => {

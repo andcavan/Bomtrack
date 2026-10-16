@@ -45,6 +45,8 @@ function avviaSupabaseFinto(opts) {
   const letterale = v => {
     if (v === null || v === undefined) return 'null';
     if (typeof v === 'number' && Number.isFinite(v)) return String(v);   // come PostgREST: un intero resta un intero
+    // Un elenco di soli numeri è un int[] (libera_numeri); il resto è jsonb.
+    if (Array.isArray(v) && v.length && v.every(x => Number.isInteger(x))) return `ARRAY[${v.join(',')}]::int[]`;
     const s = typeof v === 'string' ? v : JSON.stringify(v);
     let tag = 'q';
     while (s.includes('$' + tag + '$')) tag += 'q';
@@ -113,7 +115,7 @@ function avviaSupabaseFinto(opts) {
       if (!id) return rispondi(res, 401, { code: 'PGRST301', message: 'No suitable key or wrong key type' });
       const argomenti = Object.keys(corpo).map(k => `${k} => ${letterale(corpo[k])}`).join(', ');
       try {
-        const out = db.come(id).sql(`select public.${rpc[1]}(${argomenti});`);
+        const out = db.come(id).sql(`select to_jsonb(public.${rpc[1]}(${argomenti}));`);   // la risposta in JSON, come PostgREST
         res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
         return res.end(out || 'null');
       } catch (e) {
