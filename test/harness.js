@@ -282,6 +282,8 @@ function loadApp(opts) {
   sandbox.confirm = () => true;   // le richieste di conferma si accettano: il test verifica l'effetto
   sandbox.setTimeout = (fn) => { void fn; return 0; };   // niente code differite nei test
   sandbox.clearTimeout = () => {};                       // globale della piattaforma, assente nei contesti vm
+  sandbox.setInterval = (fn) => { void fn; return 0; };
+  sandbox.clearInterval = () => {};
 
   const ref = name => vm.runInContext(name, ctx);
 

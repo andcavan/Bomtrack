@@ -249,6 +249,7 @@ function allegatoApri(id) {
     else if (esito === 'negato') showToast('Permesso negato sulla cartella d\'archivio', 'error');
     else if (esito === 'assente') showToast(`DOCUMENTO NON TROVATO — "${doc.path}" non è in ${archivioNome() || 'archivio'}`, 'error');
     else if (esito === 'errore') showToast('Documento non apribile', 'error');
+    else if (esito === 'non-pdf') showToast(`"${doc.path}" non è un PDF: dall'archivio si aprono solo i PDF`, 'error');
     return esito;
   });
 }

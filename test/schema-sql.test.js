@@ -203,6 +203,20 @@ describe('Postgres: invio e lettura', () => {
     assert.equal(d.sql(`select count(*) from sync_tombstones where id = '${att.id}'`), '0');
   }));
 
+  // 0.105.3: con la versione di partenza è la modifica di una copia di prima
+  // della cancellazione. Passava perché la sua data batteva la lapide, e il
+  // padre tornava senza le righe che il delete aveva portato via.
+  it('una modifica con la versione di partenza non passa sopra una lapide, per quanto recente', conDb(d => {
+    pieno(d);
+    const att = righe.attachments[0];
+    d.push({ remove: { attachments: [att.id] } });
+    const ritocco = Object.assign({}, att, { name: 'ritoccato', updated_at: new Date(Date.now() + 60000).toISOString() });
+    const r = d.push({ upsert: { attachments: [ritocco] }, base: { attachments: { [att.id]: att.updated_at } } });
+    assert.equal(r.rejected.length, 1, 'la cancellazione vince');
+    assert.equal(d.sql(`select count(*) from attachments where id = '${att.id}'`), '0');
+    assert.deepEqual(d.push({ upsert: { attachments: [ritocco] } }).rejected, [], 'un ripristino, senza versione di partenza, passa');
+  }));
+
   it('il pull da un istante porta solo ciò che è cambiato dopo', conDb(d => {
     pieno(d);
     const da = d.pull(null).now;
@@ -344,7 +358,9 @@ describe('Postgres: permessi per ruolo (D6)', () => {
 
   it('un utente sospeso non legge più niente, anche con la sessione aperta', conDb(d => {
     const p = d.come(SOSP).pull(null);
-    assert.deepEqual(Object.keys(p.tables).filter(t => p.tables[t].length), []);
+    assert.deepEqual(Object.keys(p.tables).filter(t => p.tables[t].length), ['profiles'],
+      'solo il proprio profilo: è così che la sospensione arriva al suo PC');
+    assert.deepEqual(p.tables.profiles.map(x => [x.id, x.active]), [[SOSP, false]]);
     assert.throws(() => d.come(SOSP).push({ upsert: { orders: [ordine()] } }), /nessun profilo attivo/);
   }));
 
@@ -359,6 +375,31 @@ describe('Postgres: permessi per ruolo (D6)', () => {
     assert.equal(d.sql(`select color from profiles where id = '${ACQ}'`), '#123456');
     assert.throws(() => d.come(ACQ).sql(`update profiles set role = 'admin' where id = '${ACQ}'`), /solo la gestione utenti/);
     assert.equal(d.sql(`select role from profiles where id = '${ACQ}'`), 'acquisti');
+  }));
+
+  // 0.105.3: con l'email dell'amministratore nel proprio profilo, il link per
+  // reimpostare la password chiesto «per sé» portava al suo account.
+  it('la propria email non si cambia dall\'API; il SQL Editor ripara un profilo', conDb(d => {
+    assert.throws(() => d.come(LETT).sql(`update profiles set email = 'admin@x.it' where id = '${LETT}'`), /solo la gestione utenti/);
+    d.sql(`update profiles set role = 'acquisti', email = 'nuova@x.it' where id = '${LETT}'`);
+    assert.equal(d.sql(`select role || ' ' || email from profiles where id = '${LETT}'`), 'acquisti nuova@x.it');
+  }));
+
+  it('una lapide la scrive solo chi scrive la sua tabella', conDb(d => {
+    assert.throws(() => d.come(OFF).sql(`insert into sync_tombstones (tab, id) values ('items', '${righe.items[0].id}')`), /row-level security/);
+    assert.equal(d.sql('select count(*) from sync_tombstones'), '0');
+  }));
+
+  it('un updated_at nel futuro non entra: un PC con l\'orologio avanti non blocca i colleghi', conDb(d => {
+    const futuro = Object.assign({}, righe.items[0], { name: 'dal futuro', updated_at: '2099-01-01T00:00:00.000Z' });
+    assert.throws(() => d.come(PROG).push({ upsert: { items: [futuro] } }), /orologio di questo PC è avanti/);
+    assert.throws(() => d.come(PROG).sql(`update items set updated_at = '2099-01-01' where id = '${righe.items[0].id}'`), /orologio/);
+    assert.deepEqual(d.come(PROG).push({ upsert: { items: [articolo()] } }).rejected, []);
+  }));
+
+  it('il tipo di un articolo è uno dei sei', conDb(d => {
+    const strano = dopo(righe.items[0], { type: '<img src=x onerror=alert(1)>' });
+    assert.throws(() => d.come(PROG).push({ upsert: { items: [strano] } }), /items_tipo_noto/);
   }));
 
   it('i registri si leggono e non si scrivono', conDb(d => {

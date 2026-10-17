@@ -350,7 +350,7 @@ function qrSchedaHtml(tipo, rec) {
         <span class="num">${fmtUom(onHandOf(it.id), itemUom(it))}</span>
       </div>`).join('');
     const bottoni = [];
-    if (canWriteShop('catalog')) bottoni.push(qrBtn('Conta questa ubicazione', 'clipboard', `inventarioAvvia({ ambito: 'ubi', ubi: ${jsAttrStr(rec.code)} })`, true));
+    if (canWriteShop('catalog')) bottoni.push(qrBtn('Conta questa ubicazione', 'clipboard', `inventarioAvviaDaQr({ ambito: 'ubi', ubi: ${jsAttrStr(rec.code)} })`, true));
     bottoni.push(qrBtn('Etichetta QR', 'qr', `qrEtichetteModal([${jsAttrStr(rec.code)}], 'ubi')`));
     return `<h3>${ico('pin', 'tinted pill', '')} ${esc(rec.code)}</h3>
       <p>${rec.items.length === 1 ? '1 articolo' : rec.items.length + ' articoli'} in questa ubicazione.</p>
@@ -404,7 +404,12 @@ function qrRiceviTutto(tipo, id) {
   const o = tipo === 'odl' ? getOdl(id) : getOrder(id);
   if (!o) return;
   askConfirm(`Registrare come ricevute tutte le righe di ${o.number}?`, () => {
-    if (tipo === 'odl') odlMarkAllReceived(id); else ordMarkAllReceived(id);
+    const k = tipo === 'odl' ? 'odl' : 'order';
+    if (!(k === 'odl' ? odlMarkAllReceived(id) : ordMarkAllReceived(id))) return;
+    // Dal QR non c'è un editor con «Salva»: si salva subito (dalla 0.105.3).
+    // Restava in memoria con il segno «da salvare», e un telefono chiuso lo
+    // perdeva; nell'archivio condiviso quel segno fermava la ricezione.
+    docLeave(k);
     showToast('Ricevimento registrato');
   });
 }

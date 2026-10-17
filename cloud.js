@@ -254,7 +254,10 @@ function cloudPayload(changes, soglia, puoImpostazioni) {
           const k = Object.keys(figli).find(a => figli[a].table === t);
           if (k && figli[k].merge === 'row') {
             const colPadre = (CLOUD_TABLES[t] && CLOUD_TABLES[t].parent) || 'parent_id';
-            r = r.filter(x => !Store.inBase(c, x[colPadre]) || !x.updated_at || !soglia || x.updated_at >= soglia);
+            // Un padre ripristinato sopra la sua lapide (senzaBase) sul server
+            // non ha più righe: la cancellazione le ha portate via. Partono tutte.
+            r = r.filter(x => !Store.inBase(c, x[colPadre]) || _cloud.senzaBase.has(x[colPadre])
+              || !x.updated_at || !soglia || x.updated_at >= soglia);
           }
         }
         aggiungi(upsert, t, r);
@@ -414,6 +417,10 @@ function cloudProgramma(ms) {
 async function cloudGiro() {
   if (!cloudPronto()) return false;
   if (_cloud.pausa) { cloudProgramma(1000); return false; }
+  if (cloudSchedaSuperata()) {
+    cloudSegna('errore', 'Bomtrack è aperto anche in un\'altra scheda: questa non si sincronizza più. Chiudila, o ricaricala');
+    return false;
+  }
   if (_cloud.inCorso) { _cloud.ancora = true; return false; }
   _cloud.inCorso = true;
   try {
@@ -496,6 +503,12 @@ function cloudNomeDi(rec) { return rec ? (rec.number || rec.code || rec.name || 
 //    collega usa. Le cancellazioni di T si ritirano, e i record tornano dal
 //    server con una ricezione da capo.
 // Restituisce true se ha riparato qualcosa e il lotto va rimandato.
+// I riferimenti che il server, quando il citato se ne va, svuota invece di
+// rifiutare (`on delete set null` in schema.sql): tabella.colonna.
+const CLOUD_RIF_SVUOTABILI = new Set(['rfqs.plan_id', 'item_prices.rfq_id', 'orders.rfq_id', 'orders.plan_id',
+  'production_orders.plan_id', 'production_orders.job_id', 'work_orders.rfq_id', 'work_orders.plan_id',
+  'work_orders.odp_id', 'work_order_lines.odp_id', 'work_order_lines.odp_phase_id',
+  'production_declarations.phase_id', 'stock_movements.decl_id', 'productions.plan_id', 'reminders.job_id']);
 async function cloudRiparaRiferimento(e) {
   const msg = String(e.message || ''), det = String(e.dettagli || '');
   const mancante = /is not present in table "([a-z_]+)"/.exec(det);
@@ -509,9 +522,9 @@ async function cloudRiparaRiferimento(e) {
     // Solo quelli che il lotto cita davvero: il vincolo ha il nome di serie di
     // Postgres, «<tabella>_<colonna>_fkey», e dice quale colonna guardare.
     const v = /on table "([a-z_]+)" violates foreign key constraint "([a-z0-9_]+)"/.exec(msg);
-    let citati = null;
+    let citati = null, col = '';
     if (v && v[2].startsWith(v[1] + '_') && v[2].endsWith('_fkey')) {
-      const col = v[2].slice(v[1].length + 1, -5);
+      col = v[2].slice(v[1].length + 1, -5);
       const { payload } = cloudPayload(Store.takeChanges().changes || {}, null, true);
       citati = new Set(((payload.upsert || {})[v[1]] || []).map(x => x[col]).filter(Boolean).map(String));
     }
@@ -528,6 +541,33 @@ async function cloudRiparaRiferimento(e) {
         riga.updatedAt = nowISO(); touch(rec); _cloud.senzaBase.add(rec.id); nomi.push(cloudNomeDi(rec));
       });
     });
+    // Il citato manca anche qui: l'ha eliminato questo PC, e il pull che ne
+    // avrebbe svuotato i riferimenti non si è ancora applicato (un pannello
+    // aperto, un documento in modifica), oppure l'eliminazione parte in questo
+    // stesso lotto. Il server quei riferimenti li svuota da sé: si fa lo stesso
+    // qui, e il lotto riparte. Senza, ogni giro inciampava nello stesso vincolo
+    // e la coda d'invio restava ferma per sempre. Che manchi anche al server lo
+    // dice il vincolo stesso.
+    if (!nomi.length && citati && CLOUD_RIF_SVUOTABILI.has(v[1] + '.' + col)) {
+      const citante = cloudDove(v[1]);
+      const campo = col.replace(/_([a-z])/g, (_, x) => x.toUpperCase());
+      const qui = new Set((Store.getAll(dove.coll) || []).flatMap(rec => dove.figlio
+        ? (rec[dove.figlio] || []).map(r => r && String(r[dove.rowId])) : [String(rec.id)]));
+      const svuota = id => id != null && citati.has(String(id)) && !qui.has(String(id));
+      let n = 0;
+      if (citante) (Store.getAll(citante.coll) || []).forEach(rec => {
+        if (!citante.figlio) {
+          if (svuota(rec[campo])) { rec[campo] = null; touch(rec); n++; }
+          return;
+        }
+        (rec[citante.figlio] || []).forEach(riga => {
+          if (riga && svuota(riga[campo])) { riga[campo] = null; riga.updatedAt = nowISO(); touch(rec); n++; }
+        });
+      });
+      if (!n) return false;
+      saveDB();
+      return true;
+    }
     if (!nomi.length) return false;
     saveDB();
     showToast(`Un collega aveva eliminato ${nomi.length === 1 ? '«' + nomi[0] + '»' : nomi.length + ' elementi'}, ma qui è ancora usato: è stato ripristinato`, 'error');
@@ -549,6 +589,21 @@ async function cloudRiparaRiferimento(e) {
   }
   return false;
 }
+// L'istante dell'ultimo pull e la fotografia valgono solo insieme all'archivio
+// che descrivono (dalla 0.105.3). Se l'archivio locale non si è salvato (spazio
+// finito, un'altra scheda che ha scritto prima) e si salvassero comunque, al
+// prossimo avvio quel che è arrivato risulterebbe «eliminato qui» e partirebbe
+// come cancellazione verso il server: i record dei colleghi, spariti per tutti.
+// Così invece il prossimo giro richiede le stesse cose.
+function cloudSalvatoDavvero(ok) {
+  if (ok !== false && !Store.isUnsaved()) return true;
+  cloudSegna('errore', 'L\'archivio di questo PC non si è salvato: le modifiche dei colleghi arrivano di nuovo al prossimo giro');
+  return false;
+}
+// Un'altra scheda ha scritto l'archivio dopo che questa l'ha letto: questa è
+// rimasta indietro, e sincronizzare da qui scriverebbe l'istante del pull e la
+// fotografia di un archivio che non è quello salvato.
+function cloudSchedaSuperata() { return typeof Store.superata === 'function' && Store.superata(); }
 async function cloudRicevi() {
   const c = cloudConfig();
   const since = c.since ? new Date(Date.parse(c.since) - CLOUD_MARGINE_MS).toISOString() : null;
@@ -558,8 +613,10 @@ async function cloudRicevi() {
   if (Store.hasPendingChanges() || !cloudPuoApplicare()) return 0;
   let n = 0;
   _cloud.applicando = true;
-  try { Store.applicaRemoto(d => { n = cloudApplica(d, r); }); }
+  let salvato;
+  try { salvato = Store.applicaRemoto(d => { n = cloudApplica(d, r); }); }
   finally { _cloud.applicando = false; }
+  if (!cloudSalvatoDavvero(salvato)) return 0;
   cloudAggiornaConfig({ since: r.now });
   cloudSalvaBase();
   if (n) { cloudNumeriDoppi(db); cloudDopoArrivo(); }
@@ -649,11 +706,29 @@ function cloudGestisciErrore(e) {
     cloudLogout();
     return;
   }
+  // Il server non lascia scrivere: il profilo è stato sospeso, o il ruolo
+  // cambiato, mentre questo PC lavorava. Lo si chiede al server (dalla 0.105.3):
+  // senza, il lotto restava in testa alla coda e il PC lavorava per sempre su
+  // una copia ferma, con ogni salvataggio respinto.
+  if (e && e.cloud === 'permesso') {
+    cloudSegna('errore', ((e && e.message) || String(e)) + '. Se un amministratore ha cambiato il tuo ruolo, usa «Scarta e riscarica»');
+    cloudControllaProfilo();
+    return;
+  }
   console.error('Archivio condiviso:', e);
   // Un riferimento che l'app non è riuscita a riparare: il messaggio di
   // Postgres non dice niente a chi lo legge, la via d'uscita sì.
   if (e && e.codice === '23503') { cloudSegna('errore', 'Una modifica cita un elemento che non c\'è più sul server. Se il problema resta, usa «Scarta e riscarica»'); return; }
   cloudSegna('errore', (e && e.message) || String(e));
+}
+
+async function cloudControllaProfilo() {
+  let p;
+  try { const st = await cloudRpc('archivio_stato', {}); p = st && st.profilo; }
+  catch (x) { return; }
+  if (p && p.active !== false) return;
+  showToast('Il tuo accesso è stato sospeso da un amministratore', 'error');
+  cloudLogout();
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -702,6 +777,7 @@ const _numeriRiservati = {};
 function conNumeri(richiesta, fare) {
   const sigle = Object.keys(richiesta || {}).filter(s => richiesta[s] > 0);
   if (!cloudCondiviso() || !sigle.length) return fare();
+  if (!cloudCreazioneInizia()) return null;
   const giro = _cloud.numeri.then(async () => {
     const prefissi = sigle.map(seriePrefisso);
     try {
@@ -723,10 +799,20 @@ function conNumeri(richiesta, fare) {
     }
     try { return fare(); }
     finally { await cloudRestituisciNumeri(prefissi); }
-  });
+  }).finally(cloudCreazioneFinita);
   _cloud.numeri = giro.catch(() => {});
   return giro;
 }
+// Una creazione alla volta (dalla 0.105.3). In locale «Crea» fa tutto subito e
+// chiude la finestra; con l'archivio condiviso aspetta il server, la finestra
+// resta aperta, e un secondo clic passava le stesse verifiche del primo:
+// due ordini con le stesse righe, una revisione rilasciata due volte.
+function cloudCreazioneInizia() {
+  if (_cloud.creando) { showToast('Un momento: sto chiedendo il numero al server', 'error'); return false; }
+  _cloud.creando = true;
+  return true;
+}
+function cloudCreazioneFinita() { _cloud.creando = false; }
 // Quello che `fare` non ha usato torna al server. Senza rete restano impegnati
 // fino alla scadenza: meglio un buco che un numero dato due volte.
 async function cloudRestituisciNumeri(prefissi) {
@@ -764,6 +850,7 @@ async function cloudLiberaCodici(codici) {
 // chiede di sceglierne un altro. Sincrono senza archivio condiviso.
 function conCodiceImpegnato(it, rigenera, fare) {
   if (!cloudCondiviso() || !it || !it.code) return fare();
+  if (!cloudCreazioneInizia()) return null;
   return (async () => {
     const iniziale = it.code;
     for (let tentativi = 0; tentativi < 8; tentativi++) {
@@ -785,7 +872,7 @@ function conCodiceImpegnato(it, rigenera, fare) {
     }
     showToast(`Il codice ${it.code} l'ha appena preso un collega: scegline un altro`, 'error');
     return null;
-  })();
+  })().finally(cloudCreazioneFinita);
 }
 
 // ── L'indicatore nell'intestazione ──
@@ -877,7 +964,7 @@ async function cloudRiceviForzato() {
   const since = c.since ? new Date(Date.parse(c.since) - CLOUD_MARGINE_MS).toISOString() : null;
   const r = await cloudRpc('pull_changes', { since });
   if (Store.hasPendingChanges()) await cloudInvia();
-  Store.applicaRemoto(d => { cloudApplica(d, r); });
+  if (!cloudSalvatoDavvero(Store.applicaRemoto(d => { cloudApplica(d, r); }))) return;
   cloudAggiornaConfig({ since: r.now });
   cloudSalvaBase();
 }
@@ -959,7 +1046,7 @@ async function cloudScaricaArchivio() {
   const r = await cloudRpc('pull_changes', { since: null });
   const settings = (r.settings && r.settings.data) || {};
   const nuovo = dbDaCloud(r.tables || {}, { settings, schemaVersion: SCHEMA_VERSION });
-  Store.sostituisciDaRemoto(nuovo);
+  if (!cloudSalvatoDavvero(Store.sostituisciDaRemoto(nuovo))) throw cloudErrore('server', 'L\'archivio scaricato non si è salvato su questo PC: libera spazio e riprova');
   cloudAggiornaConfig({ allineato: true, since: r.now, soglia: new Date(Date.now() - CLOUD_MARGINE_FIGLI_MS).toISOString() });
   cloudSalvaBase();
 }
@@ -1048,7 +1135,7 @@ function cloudPannello() {
       <p class="cl-nota">Mettilo anche in Supabase come <strong>Site URL</strong> (Authentication → URL Configuration): gli inviti e il recupero password riportano qui.</p>` : ''}
     <div class="modal-actions">
       ${dentro ? `<button class="btn-outline" onclick="cloudPannelloRiscarica()">Scarta e riscarica</button>` : ''}
-      <button class="btn-outline" style="color:var(--red);border-color:var(--red)" onclick="cloudPannelloScollega()">Scollega questo PC</button>
+      ${!dentro || admin ? `<button class="btn-outline" style="color:var(--red);border-color:var(--red)" onclick="cloudPannelloScollega()">Scollega questo PC</button>` : ''}
       ${dentro ? `<button class="add-btn-sm" onclick="cloudPannelloSincronizza()">${ico('refresh', 'tinted', '')} Sincronizza ora</button>` : `<button class="add-btn-sm" onclick="closeModal()">Chiudi</button>`}
     </div>`);
 }
@@ -1092,7 +1179,11 @@ function cloudPannelloRiscarica() {
     } catch (e) { cloudGestisciErrore(e); showToast(cloudMsgErrore(e), 'error'); }
   });
 }
+// Da dentro lo fa solo un amministratore (dalla 0.105.3): un collega qualsiasi
+// trasformava il PC in una copia locale, con le modifiche in coda orfane. Prima
+// dell'accesso resta la via d'uscita di un PC che non arriva più al server.
 function cloudPannelloScollega() {
+  if (typeof currentUser !== 'undefined' && currentUser && !roleGuardRuolo('manage')) return;
   askConfirm('Scollegare questo PC dall\'archivio condiviso? I dati restano qui, ma da adesso sono una copia locale: le modifiche non arrivano più ai colleghi e quelle dei colleghi non arrivano qui.', () => {
     cloudScollega();
     location.reload();

@@ -394,25 +394,32 @@ function opAvvia(id, faseId, opz) {
     opDecl(o, fase, 'forzatura', { motivo, note: ok.motivo });
   }
   if (opAvviata(o, fase)) { showToast(`La fase ${fase.seq} è già avviata`, 'error'); return false; }
-  opDecl(o, fase, 'avvio', { note: String(opzioni.note || '').trim() });
+  // L'avvio e i suoi prelievi hanno id che nascono dall'ordine e dalla fase
+  // (dalla 0.105.3): nell'archivio condiviso due colleghi che avviano la stessa
+  // fase prima di essersi visti scrivono lo stesso avvio e lo stesso prelievo,
+  // invece di far uscire il materiale due volte.
+  const avvio = opDecl(o, fase, 'avvio', { id: idDaChiaveLibero(`avvio|${o.id}|${fase.id}`, 'prodDecls'),
+    note: String(opzioni.note || '').trim() });
   // Il materiale esce **all'avvio della prima fase**, e solo lì: è il primo dei
   // due estremi del ciclo. Le fasi successive non muovono il magazzino, e non
   // per pigrizia — fra le fasi i pezzi non hanno un codice che li nomini.
-  if (opEPrima(o, fase)) opPrelevaMateriale(o, opzioni.materiali, opzioni.note);
+  if (opEPrima(o, fase)) opPrelevaMateriale(o, opzioni.materiali, opzioni.note, `avvio|${avvio.id}`);
   odpAutoStatus(o); touch(o); saveDB();
   return true;
 }
 // `righe` è [{ itemId, qty }]; senza, si preleva il residuo congelato.
-function opPrelevaMateriale(o, righe, note) {
+// `chiave`, quando c'è, fa nascere gli id dei movimenti da lei (vedi opAvvia).
+function opPrelevaMateriale(o, righe, note, chiave) {
   const kind = opKindUscita(o);
   const fase = opPrima(o);
   const lista = righe && righe.length ? righe
     : opMaterialeResiduo(o).map(m => ({ itemId: m.itemId, qty: m.residuo }));
   let n = 0;
-  lista.forEach(r => {
+  lista.forEach((r, i) => {
     const q = Number(r.qty) || 0;
     if (!(q > 0)) return;                   // una riga a zero non è un movimento
     const extra = { orderId: o.id, lineId: fase ? fase.id : null, declId: r.declId || null };
+    if (chiave) extra.id = idDaChiaveLibero(`${chiave}|${i}|${r.itemId}`, 'movements');
     if (kind === 'clOut') extra.supplierId = fase.supplierId;
     if (addMovement(r.itemId, kind, -q, note || `Materiale per ${o.number}`, extra)) n++;
   });
@@ -640,13 +647,29 @@ function odpSetField(id, field, value) {
 function delOdp(id) {
   const o = getOdp(id); if (!o || !roleGuard('docs')) return;
   if (!guardiaDocumentoUltimo(o, db.prodOrders, 'Annullalo invece di eliminarlo.')) return;
+  // Un ordine di lavoro nato da una sua fase si riceve solo dall'ODP: senza
+  // l'ODP quella riga non si potrebbe più ricevere da nessuna parte.
+  const odl = (db.workOrders || []).find(w => w.status !== 'annullato' && (w.lines || []).some(l => l.odpId === id));
+  if (odl) { showToast(`L'ordine di lavoro ${odl.number || ''} ha righe di questo ordine di produzione: annullalo o eliminalo prima.`, 'error'); return; }
   const mov = (db.movements || []).filter(m => m.orderId === id).length;
   const avviso = mov ? `\n\n⚠ Ha ${mov} ${mov === 1 ? 'movimento' : 'movimenti'} di magazzino: eliminandolo la merce torna com'era prima.` : '';
   askConfirm(`Eliminare l'ordine di produzione ${o.number}?${avviso}`, () => {
-    (db.prodDecls || []).filter(d => d.odpId === id).forEach(d => Store.remove('prodDecls', d.id));
-    (db.movements || []).filter(m => m.orderId === id).forEach(m => Store.remove('movements', m.id));
+    // Dichiarazioni e movimenti se ne vanno con lui, e con lui tornano: un
+    // «Annulla» che rimettesse solo la testata darebbe un ODP completato con le
+    // fasi a zero e il magazzino senza i suoi movimenti.
+    const voci = [];
+    (db.prodDecls || []).filter(d => d.odpId === id).forEach(d => { if (Store.remove('prodDecls', d.id)) voci.push(Store.lastRemoved()); });
+    (db.movements || []).filter(m => m.orderId === id).forEach(m => { if (Store.remove('movements', m.id)) voci.push(Store.lastRemoved()); });
     odpView = 'list'; currentOdpId = null;
-    removeConUndo('prodOrders', id, `Ordine di produzione ${o.number} eliminato`, renderOdp);
+    if (!Store.remove('prodOrders', id)) { renderOdp(); return; }
+    const testa = Store.lastRemoved();
+    renderOdp();
+    toastEliminato(`Ordine di produzione ${o.number} eliminato`, () => {
+      if (!Store.restore(testa)) { showToast(Store.rifiutoRipristino() || 'Non c\'è più niente da ripristinare', 'error'); return; }
+      voci.forEach(v => Store.restore(v));
+      renderOdp();
+      showToast('Ripristinato');
+    });
   }, { title: 'Elimina ordine di produzione', ok: 'Elimina' });
 }
 

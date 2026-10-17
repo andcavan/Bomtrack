@@ -1351,7 +1351,7 @@ function restoreFromTrash(trashId) {
   if (!roleGuard('manage')) return;
   const t = Store.restore(trashId);
   renderManage();
-  showToast(t ? `${TRASH_LABELS[t.coll] || t.coll} "${trashDescr(t)}" ripristinato` : 'Voce non trovata', t ? 'success' : 'error');
+  showToast(t ? `${TRASH_LABELS[t.coll] || t.coll} "${trashDescr(t)}" ripristinato` : (Store.rifiutoRipristino() || 'Voce non trovata'), t ? 'success' : 'error');
 }
 function purgeFromTrash(trashId) {
   if (!roleGuard('manage')) return;

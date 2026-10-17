@@ -260,11 +260,49 @@ function newId() {
   return `${r()}${r()}-${r()}-4${r().slice(1)}-${((8 + Math.floor(Math.random() * 4)).toString(16)) + r().slice(1)}-${r()}${r()}${r()}`;
 }
 function gid() { return newId(); }
+// Un id che nasce da una chiave, uguale su ogni PC: due colleghi che fanno lo
+// stesso gesto prima di essersi visti scrivono lo stesso record, non due.
+// Forma di un uuid v4, perché le colonne sul server sono di quel tipo.
+function idDaChiave(chiave) {
+  const testo = String(chiave);
+  let h = '';
+  [0x811c9dc5, 0x01000193, 0x9e3779b9, 0x85ebca6b].forEach(seme => {
+    let x = seme >>> 0;
+    for (let i = 0; i < testo.length; i++) { x ^= testo.charCodeAt(i); x = Math.imul(x, 0x01000193) >>> 0; }
+    h += x.toString(16).padStart(8, '0');
+  });
+  return `${h.slice(0, 8)}-${h.slice(8, 12)}-4${h.slice(13, 16)}-${'89ab'[parseInt(h[16], 16) & 3]}${h.slice(17, 20)}-${h.slice(20, 32)}`;
+}
+// Lo stesso, ma se quell'id è già stato usato qui (il gesto rifatto dopo averlo
+// annullato) se ne prende uno nuovo: due record con lo stesso id non devono
+// esistere, nemmeno uno vivo e uno nel cestino.
+function idDaChiaveLibero(chiave, coll) {
+  const id = idDaChiave(chiave);
+  const usato = (db[coll] || []).some(r => r.id === id) || (db.trash || []).some(t => t.record && t.record.id === id);
+  return usato ? gid() : id;
+}
 function nowISO() { return new Date().toISOString(); }
 // Autore delle modifiche: impostato al login (Store.setActor), finisce in
 // createdBy/updatedBy di ogni record → created_by/updated_by in cloud.
 let actorId = null;
 let lastTrashId = null;   // ultima voce di cestino creata (per l'annulla immediato)
+let rifiuto = '';          // perché l'ultimo ripristino non è andato (vedi restore)
+// Il campo che numera ogni collezione: un documento ha il suo numero, una
+// modifica tecnica il suo MT, un articolo il codice (che non guarda maiuscole
+// e spazi, come itemCodeKey).
+const NUMERO_DI = { rfqs: 'number', orders: 'number', workOrders: 'number', prodOrders: 'number',
+  plans: 'number', jobs: 'number', revisions: 'ecoNumber', items: 'code' };
+function numeroGiaDato(coll, rec) {
+  const campo = NUMERO_DI[coll];
+  const chiave = v => String(v == null ? '' : v).trim().toLowerCase();
+  const mio = rec && chiave(rec[campo]);
+  if (!campo || !mio) return '';
+  const altro = (db[coll] || []).find(r => r.id !== rec.id && chiave(r[campo]) === mio);
+  if (!altro) return '';
+  return coll === 'items'
+    ? `Il codice ${rec[campo]} è stato dato a un altro articolo dopo l'eliminazione: ripristinarlo darebbe due articoli con lo stesso codice. Resta nel cestino.`
+    : `Il numero ${rec[campo]} è stato dato a un altro documento dopo l'eliminazione: ripristinarlo darebbe due documenti con lo stesso numero. Resta nel cestino.`;
+}
 // L'istante di una modifica: adesso, ma sempre **dopo** quello che il record
 // aveva. Due scritture nello stesso millisecondo producevano la stessa data, e
 // per la sincronizzazione — che riconosce una modifica dal cambio di
@@ -1892,6 +1930,11 @@ const Store = {
   // Vero finché una modifica è rimasta solo in memoria. Chiudere la scheda in
   // questo stato perde tutto il lavoro fatto dal primo errore in poi.
   isUnsaved() { return dbUnsaved; },
+  // Un'altra scheda ha scritto l'archivio dopo che questa l'ha letto.
+  superata() {
+    try { return !!(adapter && adapter.leggiRev) && adapter.leggiRev() !== revVista; }
+    catch (e) { return false; }
+  },
   // Scritture partite e non ancora arrivate (solo IndexedDB). Chiudere la
   // scheda adesso perderebbe l'ultima.
   scrittureInVolo() { return adapter.inVolo ? adapter.inVolo() : 0; },
@@ -2010,14 +2053,23 @@ const Store = {
   // riferimento esplicito: cercare «l'ultima per data» non basta, due
   // eliminazioni nello stesso millisecondo hanno la stessa data.
   lastRemoved() { return lastTrashId; },
+  rifiutoRipristino() { return rifiuto; },
   // Rimette il record dov'era. Best effort: se nel frattempo qualcosa che
   // citava è sparito, torna comunque — meglio un riferimento da sistemare che
   // un dato perso.
+  //
+  // Tranne quando il suo numero o il suo codice è già di un altro: si elimina
+  // solo l'ultimo della serie, e il suo numero torna subito in uso. Rimetterlo
+  // darebbe due ODA-2026-002, e niente nel database lo impedisce. Allora resta
+  // nel cestino e `rifiutoRipristino()` dice perché.
   restore(trashId) {
+    rifiuto = '';
     const i = (db.trash || []).findIndex(t => t.id === trashId);
     if (i < 0) return null;
     const t = db.trash[i];
     if (!Array.isArray(db[t.coll])) db[t.coll] = [];
+    const doppio = numeroGiaDato(t.coll, t.record);
+    if (doppio) { rifiuto = doppio; return null; }
     // Se un record con lo stesso id è tornato nel frattempo (import, ripristino
     // doppio), non si duplica: vince quello vivo.
     //
@@ -2086,8 +2138,10 @@ const Store = {
   // primo collegamento di un PC). Come un ripristino, ma la fotografia è
   // quella giusta: quello che c'è adesso è esattamente ciò che il server ha.
   sostituisciDaRemoto(nuovo) {
+    const prima = db;
     db = nuovo;
-    migrateDB();
+    try { migrateDB(); }
+    catch (e) { db = prima; throw e; }
     _childFp = null;
     _storicoBase = null;   // il registro riparte da qui: non è «tutto nuovo, a nome mio»
     const ok = this.commit();
@@ -2126,8 +2180,14 @@ const Store = {
     const data = typeof json === 'string' ? JSON.parse(json) : json;
     const err = validateSnapshot(data);
     if (err) throw new Error(err);
+    // Prima si migra, poi si sostituisce (dalla 0.105.3): un backup che passa
+    // la validazione ma fa fallire la migrazione restava in memoria come
+    // archivio, mentre l'app diceva «import non riuscito», e il primo
+    // salvataggio qualsiasi lo scriveva sopra quello vero.
+    const prima = db;
     db = data;
-    migrateDB();
+    try { migrateDB(); }
+    catch (e) { db = prima; throw new Error('backup non importabile (' + (e && e.message || e) + ')'); }
     markUnknown();
     this.commit();
   },

@@ -96,14 +96,19 @@ Deno.serve(async (req: Request) => {
   if (azione === "reimposta") {
     const id = String(corpo.id || "");
     const { data: lui } = await servizio.from("profiles").select("id, email, role, active").eq("id", id).maybeSingle();
-    if (!lui || !lui.email) return errore(404, "Utente non trovato");
+    if (!lui) return errore(404, "Utente non trovato");
     // Con il link di un altro amministratore si entrerebbe al suo posto: lui
     // usa «Password dimenticata?» dalla schermata d'accesso.
     if (lui.role === "admin" && lui.id !== io.id) {
       return errore(403, "La password di un altro amministratore non si reimposta da qui: usi «Password dimenticata?» dalla schermata d'accesso");
     }
+    // L'email si prende dall'utente di Supabase Auth, non dal profilo: è
+    // quella che decide chi entra con il link. Un'email del profilo cambiata
+    // con quella dell'amministratore porterebbe il link al suo account.
+    const { data: au, error: auErr } = await servizio.auth.admin.getUserById(id);
+    if (auErr || !au?.user?.email) return errore(404, "Utente non trovato");
     const { data, error } = await servizio.auth.admin.generateLink({
-      type: "recovery", email: lui.email, options: { redirectTo: ritorno },
+      type: "recovery", email: au.user.email, options: { redirectTo: ritorno },
     });
     if (error) return errore(400, error.message);
     return risposta(200, { link: data.properties.action_link });

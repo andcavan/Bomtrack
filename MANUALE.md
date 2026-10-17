@@ -1,6 +1,6 @@
 # Bomtrack — Manuale d'uso
 
-**Versione dell'app documentata: 0.105.2**
+**Versione dell'app documentata: 0.105.3**
 
 📖 **[Leggilo come pagina web](https://claude.ai/code/artifact/726a0963-2db0-4947-999b-d7b5beb91a0b)** — stesso testo, con indice laterale, filtro dei capitoli e tema chiaro/scuro. Comodo da tenere aperto di fianco all'app.
 
@@ -287,7 +287,7 @@ che occupa il centro. Si passa da un documento all'altro con un click, senza tor
 ricercare la riga; la riga aperta resta marcata e i documenti chiusi o annullati si vedono spenti.
 I filtri stanno impilati nella colonna dell'elenco, e i comandi che agiscono sul documento stanno
 nella sua testata. **Le modifiche in sospeso si salvano da sole** quando si apre un altro
-documento. In stampa esce il documento, non l'elenco.
+documento o si passa a un'altra sezione. In stampa esce il documento, non l'elenco.
 
 ### Le schede mobili
 
@@ -468,15 +468,17 @@ articoli che ricorrono in più punti e produce quattro sezioni:
 - **Carico dei centri** — le ore che le fasi interne chiedono ai centri.
 
 **d) Il netto** — con la casella **Fabbisogno netto** attiva, l'app toglie da ogni riga quello che
-è già a magazzino, quello già ordinato, e aggiunge quello che gli **altri piani aperti** hanno già
-impegnato:
+è già a magazzino, quello già ordinato, e aggiunge quello che gli **altri piani aperti che
+consegnano prima** hanno già impegnato:
 
 ```
 netto = lordo + scorta minima + impegnato − esistente − in arrivo
 ```
 
 arrotondato al **lotto di riordino** dell'articolo. Così due piani non si dichiarano coperti con
-la stessa merce. **Il netto non si applica alle lavorazioni**: una fase non sta a scaffale.
+la stessa merce, e nessuno compra la parte degli altri: chi consegna prima prende prima, e ognuno
+compra solo quello che manca a lui. **Il netto non si applica alle lavorazioni**: una fase non sta a
+scaffale.
 
 ### 4.5 Comprare
 
@@ -1578,7 +1580,7 @@ Gli **indicatori di riga**:
 | `⚠ senza prezzo` | L'articolo non ha nessuna quotazione |
 | `↑ lotto` / `↑ minimo` | La quantità è stata alzata al lotto di riordino |
 | `✓ coperto` | Non serve ordinare niente |
-| *(impegno)* | Quanta parte è impegnata da altri piani |
+| *(impegno)* | Quanta parte è impegnata dai piani più urgenti |
 
 **Da far lavorare fuori** — le fasi di ciclo affidate a un terzista. Le quantità sono **al netto
 dei pezzi dichiarati fatti** in *Da fabbricare*: una parte finita ha già attraversato tutte le sue
@@ -1757,9 +1759,17 @@ netto = lordo + scorta minima + impegnato − esistente − in arrivo
 poi arrotondato al **lotto di riordino** dell'articolo, secondo il suo modo (*multiplo esatto* o
 *quantità minima*).
 
-Il termine **impegnato** è quello che fa la differenza: è la merce che **gli altri piani aperti**
-hanno già promesso a sé. Senza quel termine, due piani si dichiarerebbero coperti con lo stesso
-pezzo, e uno dei due resterebbe a mani vuote.
+Il termine **impegnato** è quello che fa la differenza: è la merce che **gli altri piani aperti
+più urgenti** hanno già promesso a sé. Senza quel termine, due piani si dichiarerebbero coperti con
+lo stesso pezzo, e uno dei due resterebbe a mani vuote.
+
+**Chi consegna prima prende prima** (dalla 0.105.3). I piani aperti si mettono in fila come per le
+parti a scaffale: la consegna più vicina, poi la data del piano, poi il numero. Ogni piano conta come
+impegnato solo i piani che gli stanno davanti, e l'impegnato toglie soltanto merce che c'è: se i piani
+davanti ne chiedono più di quanta ne esista, la loro parte scoperta la comprano loro. Così, a
+magazzino vuoto, un piano da 100 e uno da 50 comprano 100 e 50, non 150 ciascuno. Il buco della
+scorta minima lo compra il primo della fila. Prima della 0.105.3 contavano tutti gli altri piani, e
+generare gli ordini da più piani prima di inviarli ordinava la stessa merce più volte.
 
 **L'impegno scende con i prelievi** (dalla 0.98.1). Un piano impegna il suo fabbisogno **meno
 quello che i suoi documenti hanno già prelevato**: quando un ordine di produzione o un ordine di
@@ -2717,7 +2727,8 @@ Il collega che usa un altro PC può anche aprire il **link di collegamento** che
 l'app chiede se collegarsi a quel progetto, mostrandone l'indirizzo, e poi chiede l'accesso.
 
 **Per togliere qualcuno lo si sospende**, non lo si elimina: chi è sospeso non legge più niente,
-anche con la sessione aperta. La password la cambia ognuno dal proprio nome nell'intestazione
+anche con la sessione aperta, e se è dentro l'app lo fa uscire al giro di sincronizzazione
+successivo. La password la cambia ognuno dal proprio nome nell'intestazione
 (**Cambia password**), o dalla schermata d'accesso con **Password dimenticata?**.
 
 ### Come si lavora
@@ -2818,7 +2829,8 @@ Due casi particolari:
 
 ### Scollegare un PC
 
-Dallo stato della nuvola, **Scollega questo PC**. I dati restano nel browser, ma da quel momento
+Dallo stato della nuvola, **Scollega questo PC** (da dentro l'app solo un amministratore; dalla
+schermata d'accesso resta per un PC che non arriva più al server). I dati restano nel browser, ma da quel momento
 sono una copia locale: le modifiche non arrivano più ai colleghi, e quelle dei colleghi non
 arrivano più qui.
 
@@ -2993,9 +3005,9 @@ Attiva la casella **Fabbisogno netto**. Senza, la lista è **lorda**: quanto ser
 cosa c'è.
 
 **Due piani mi chiedono lo stesso materiale.**
-È il termine **impegnato** che li tiene separati: finché entrambi sono **aperti**, ciascuno vede
-la quota dell'altro come già promessa. Il piano che non serve più va **chiuso**: la sua quota torna
-libera.
+È il termine **impegnato** che li tiene separati: finché entrambi sono **aperti**, il piano che
+consegna dopo vede la quota di quello che consegna prima come già promessa, e compra solo la sua
+parte. Il piano che non serve più va **chiuso**: la sua quota torna libera.
 
 **Il Carico centri dice che sono in sovraccarico. Cosa faccio?**
 Bomtrack te lo dice, non lo risolve: **non c'è schedulazione**. La decisione — anticipare, mandare

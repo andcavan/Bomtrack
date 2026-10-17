@@ -98,6 +98,17 @@ function inventarioAvvia(opz) {
   invContaModal();
   return true;
 }
+// Dal QR di uno scaffale (dalla 0.105.3): con un inventario in corso si
+// chiede prima. Contare gli scaffali è proprio quello che si fa durante un
+// inventario, e partire da capo senza dirlo buttava via tutti i conteggi.
+function inventarioAvviaDaQr(opz) {
+  const bozza = invCarica();
+  const n = invContati(bozza);
+  if (!bozza || !n) return inventarioAvvia(opz);
+  askConfirm(`C'è un inventario in corso («${bozza.titolo}», ${n} ${n === 1 ? 'articolo contato' : 'articoli contati'}).\nRicominciare da capo con questa ubicazione? I conteggi fatti si perdono.`,
+    () => inventarioAvvia(opz), { title: 'Inventario in corso', ok: 'Ricomincia da capo' });
+  return false;
+}
 function inventarioRiprendi() {
   _inv = invCarica();
   if (!_inv) { showToast('Nessun inventario da riprendere', 'error'); return; }
@@ -311,7 +322,10 @@ function invRegistra(scelti, nota) {
   return n;
 }
 function invRegistraDaModal() {
-  if (!_inv) return;
+  // La guardia prima di tutto: un rifiuto (ruolo, senza collegamento) chiudeva
+  // la finestra con «Inventario chiuso: nessuna differenza», e i conteggi
+  // restavano lì senza che nessuno lo sapesse.
+  if (!_inv || !roleGuardShop('catalog')) return;
   const righe = invDifferenze();
   const scelti = righe.map((r, i) => {
     const el = document.getElementById('inv-ok-' + i);

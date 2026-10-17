@@ -373,6 +373,13 @@ function setView(v) {
   // La Gestione è riservata agli amministratori: chi non lo è torna alle distinte
   if (v === 'manage' && !isAdmin()) { showToast('Sezione riservata agli amministratori', 'error'); v = 'bom'; }
   scriviHash(v);
+  // Si lascia un documento aperto (dalla 0.105.3): quel che era in sospeso si
+  // salva, come quando si apre un altro documento. Restava «da salvare» anche
+  // fuori dal suo editor, e nell'archivio condiviso fermava la ricezione delle
+  // modifiche dei colleghi senza che niente lo dicesse.
+  if (v !== activeView && typeof docLeave === 'function') {
+    ['rfq', 'order', 'odl'].forEach(k => { if (docKind(k).dirty()) docLeave(k); });
+  }
   activeView = v;
   const g = groupOfView(v);
   if (g) lastViewOfGroup[g.id] = v;

@@ -502,8 +502,20 @@ on conflict (tab) do update set parent_tab = excluded.parent_tab, parent_col = e
 -- domande diverse: un client con l'orologio indietro scrive un updated_at
 -- vecchio, ma la sua riga va comunque mandata a chi fa pull dopo.
 create or replace function public.sync_stamp() returns trigger language plpgsql as $$
+declare quando timestamptz;
 begin
   new.synced_at := clock_timestamp();
+  -- Chi vince fra due modifiche lo decide l'updated_at, scritto dal PC (dalla
+  -- 0.105.3). Un PC con l'orologio avanti (una data del BIOS sbagliata, un
+  -- updated_at scritto a mano dall'API) bloccava per sempre le modifiche dei
+  -- colleghi a ogni cosa che toccava: le loro arrivavano sempre «più vecchie».
+  -- Dall'app e dall'API si rifiuta; dal SQL Editor (utente postgres) no.
+  if current_user in ('authenticated', 'anon') then
+    quando := (to_jsonb(new)->>'updated_at')::timestamptz;
+    if quando > clock_timestamp() + interval '5 minutes' then
+      raise exception 'L''orologio di questo PC è avanti rispetto al server: correggi data e ora del PC, poi le modifiche partono da sole';
+    end if;
+  end if;
   return new;
 end $$;
 
@@ -641,7 +653,12 @@ begin
         select s.* from jsonb_populate_recordset(null::public.%1$I, $1) s
         where not exists (select 1 from public.sync_tombstones t
                           where t.tab = %2$L and t.id = s.id::text
-                            and t.deleted_at >= coalesce(s.updated_at, '-infinity'::timestamptz))
+                            and (t.deleted_at >= coalesce(s.updated_at, '-infinity'::timestamptz)
+                                 -- Con la versione di partenza è la modifica di
+                                 -- una copia di prima della cancellazione, non un
+                                 -- ripristino: la cancellazione vince. Tornava su
+                                 -- senza le sue righe, che il delete aveva portato via.
+                                 or ($2 is not null and $2 ? s.id::text)))
         on conflict (id) do update set %3$s
           where (public.%1$I.updated_at is null
                  or excluded.updated_at >= public.%1$I.updated_at)
@@ -823,11 +840,18 @@ $$;
 
 -- Il proprio profilo si può aggiornare (nome, colore), ma non il proprio ruolo
 -- né il proprio stato: quello resta della gestione utenti.
+--
+-- Vale per chi passa dall'app o dall'API (dalla 0.105.3): dal SQL Editor
+-- l'amministratore del progetto deve poter rimettere a posto un profilo, e lì
+-- auth.uid() è nullo. Anche l'**email** è della gestione utenti: il link per
+-- reimpostare la password parte dall'utente di Supabase Auth, ma un'email del
+-- profilo cambiata a mano farebbe credere all'app di parlare con un altro.
 create or replace function public.profiles_guardia() returns trigger language plpgsql as $$
 begin
-  if not public.puo_scrivere_tabella('profiles')
-     and (new.role is distinct from old.role or new.active is distinct from old.active or new.id <> old.id) then
-    raise exception 'solo la gestione utenti cambia ruolo e stato di un profilo';
+  if current_user in ('authenticated', 'anon') and not public.puo_scrivere_tabella('profiles')
+     and (new.role is distinct from old.role or new.active is distinct from old.active or new.id <> old.id
+          or new.email is distinct from old.email) then
+    raise exception 'solo la gestione utenti cambia ruolo, stato ed email di un profilo';
   end if;
   -- L'ultimo amministratore attivo non si declassa e non si sospende (dalla
   -- 0.105.0): l'app lo impedisce già, qui vale anche per chi passa dall'API.
@@ -853,13 +877,28 @@ begin
     execute format('drop policy if exists provvisoria_autenticati on public.%I', t);
     execute format('drop policy if exists lettura on public.%I', t);
     execute format('drop policy if exists scrittura on public.%I', t);
-    execute format('create policy lettura on public.%I for select to authenticated using (public.ruolo_attivo() is not null)', t);
-    execute format('create policy scrittura on public.%I for all to authenticated using (public.puo_scrivere_tabella(%L)) with check (public.puo_scrivere_tabella(%L))', t, t, t);
+    -- `(select …)`: Postgres calcola la funzione una volta per interrogazione
+    -- invece che una per riga. Su un archivio grande la differenza è fra un
+    -- download che sta nei limiti di tempo di Supabase e uno che non ci sta.
+    execute format('create policy lettura on public.%I for select to authenticated using ((select public.ruolo_attivo()) is not null)', t);
+    execute format('create policy scrittura on public.%I for all to authenticated using ((select public.puo_scrivere_tabella(%L))) with check ((select public.puo_scrivere_tabella(%L)))', t, t, t);
   end loop;
+  -- Le lapidi, riga per riga (dalla 0.105.3): ne scrive una solo chi può
+  -- scrivere la tabella a cui si riferisce. Con la regola generale l'officina
+  -- poteva, dall'API, far sparire un articolo dagli archivi di tutti.
+  drop policy if exists scrittura on public.sync_tombstones;
+  create policy scrittura on public.sync_tombstones for all to authenticated
+    using (public.puo_scrivere_tabella(tab))
+    with check (public.puo_scrivere_tabella(tab) and deleted_at <= clock_timestamp() + interval '5 minutes');
+  -- Il proprio profilo si legge sempre, anche sospeso (dalla 0.105.3): è così
+  -- che la sospensione arriva al PC che la subisce, con il pull, e l'app esce.
+  -- Prima un sospeso non leggeva più niente, nemmeno quella, e restava dentro.
+  drop policy if exists proprio_profilo on public.profiles;
+  create policy proprio_profilo on public.profiles for select to authenticated using (id = (select auth.uid()));
   -- Il proprio profilo, in aggiunta: vedi profiles_guardia.
   drop policy if exists se_stesso on public.profiles;
   create policy se_stesso on public.profiles for update to authenticated
-    using (id = auth.uid() and public.ruolo_attivo() is not null) with check (id = auth.uid());
+    using (id = auth.uid() and (select public.ruolo_attivo()) is not null) with check (id = auth.uid());
   -- I registri si leggono, non si scrivono.
   foreach t in array array['sync_tables', 'role_areas', 'table_areas'] loop
     execute format('alter table public.%I enable row level security', t);
@@ -1074,6 +1113,10 @@ end $$;
 -- Impegna i codici articolo di `codici` ([{"codice": …, "item": id facoltativo}])
 -- e restituisce quelli già presi: da un articolo diverso da `item`, o da un
 -- altro utente nell'ultima ora. Gli altri restano impegnati a nome di chi chiama.
+-- Per quale articolo (dalla 0.105.3): lo stesso utente che reimpegnava un
+-- codice già suo passava sempre, anche per un articolo diverso. Due PC con lo
+-- stesso accesso, o un doppio clic, davano lo stesso codice a due articoli.
+alter table public.codici_impegnati add column if not exists item text;
 create or replace function public.impegna_codici(codici jsonb)
 returns jsonb language plpgsql security definer set search_path = public as $$
 declare x jsonb; k text; preso boolean; presi jsonb := '[]'::jsonb;
@@ -1088,9 +1131,10 @@ begin
     preso := exists (select 1 from public.items i
                       where lower(btrim(i.code)) = k and (x->>'item' is null or i.id::text <> x->>'item'));
     if not preso then
-      insert into public.codici_impegnati as c (chiave, codice, utente, quando)
-        values (k, btrim(x->>'codice'), auth.uid(), now())
-        on conflict (chiave) do update set quando = now() where c.utente = excluded.utente;
+      insert into public.codici_impegnati as c (chiave, codice, utente, quando, item)
+        values (k, btrim(x->>'codice'), auth.uid(), now(), x->>'item')
+        on conflict (chiave) do update set quando = now()
+          where c.utente = excluded.utente and c.item is not distinct from excluded.item;
       preso := not found;
     end if;
     if preso then presi := presi || to_jsonb(x->>'codice'); end if;
@@ -1113,3 +1157,14 @@ begin
   return n;
 end $$;
 grant execute on function public.libera_codici(jsonb) to authenticated;
+
+-- ═══════════════════════════════════════════════════════════
+--  Il tipo di un articolo è uno dei sei (dalla 0.105.3)
+-- ═══════════════════════════════════════════════════════════
+-- L'app lo stampa nelle schermate di tutti: un valore inventato, scritto
+-- dall'API da un collega, arrivava nell'HTML degli altri. L'app ora lo rende
+-- innocuo anche da sé; qui non entra più. `not valid`: le righe che ci sono
+-- non si ricontrollano, quelle nuove sì.
+alter table public.items drop constraint if exists items_tipo_noto;
+alter table public.items add constraint items_tipo_noto
+  check (type is null or type in ('macchina', 'gruppo', 'sottogruppo', 'parte', 'materiale', 'acquistato')) not valid;

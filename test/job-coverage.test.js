@@ -117,16 +117,25 @@ describe('La commessa è una domanda sola, non N piani', () => {
     assert.equal(c.righe[0].qtyOrder, 100, '200 servono, 100 ci sono: ne mancano 100');
   });
 
-  it('un piano di un\'ALTRA commessa resta concorrenza', () => {
-    const c = cov(app({
-      jobs: [{ id: 'j1', number: 'COM-1', status: 'aperta', dueDate: CONSEGNA, active: true },
-        { id: 'j2', number: 'COM-2', status: 'aperta', active: true }],
-      plans: [{ id: 'pl1', number: 'PRD-1', jobId: 'j1', dueDate: SERVE, lines: [{ id: 'a', itemId: 'c1', qty: 100 }], active: true },
-        { id: 'pl2', number: 'PRD-2', jobId: 'j2', lines: [{ id: 'b', itemId: 'c1', qty: 100 }], active: true }],
-      movements: carico(100),
-    }));
+  // L'altra commessa è concorrenza se consegna prima: chi consegna prima prende
+  // prima (commitsOn), e chi viene dopo non le toglie niente.
+  const dueCommesse = altra => ({
+    jobs: [{ id: 'j1', number: 'COM-1', status: 'aperta', dueDate: CONSEGNA, active: true },
+      { id: 'j2', number: 'COM-2', status: 'aperta', active: true }],
+    plans: [{ id: 'pl1', number: 'PRD-1', jobId: 'j1', dueDate: SERVE, lines: [{ id: 'a', itemId: 'c1', qty: 100 }], active: true },
+      Object.assign({ id: 'pl2', number: 'PRD-2', jobId: 'j2', lines: [{ id: 'b', itemId: 'c1', qty: 100 }], active: true }, altra)],
+    movements: carico(100),
+  });
+
+  it('un piano di un\'ALTRA commessa che consegna prima resta concorrenza', () => {
+    const c = cov(app(dueCommesse({ dueDate: '2025-05-01' })));
     assert.equal(c.righe[0].qty, 100, 'il fabbisogno è solo il suo');
     assert.equal(c.righe[0].qtyOrder, 100, 'ma la merce se la sta prendendo l\'altra commessa');
+  });
+
+  it('un piano di un\'ALTRA commessa che consegna dopo non le toglie la merce', () => {
+    const c = cov(app(dueCommesse({})));
+    assert.equal(c.righe[0].qtyOrder, 0, 'i 100 in casa sono della commessa che consegna prima');
   });
 
   it('la riga nomina il piano da cui viene: è lì che si genera il documento', () => {

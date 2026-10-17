@@ -608,6 +608,7 @@ function catApplyItemRow(row, def, ctx, ln, st) {
   }
 
   // ── U.M. e doppia unità (prima del prezzo: la conversione dipende da qui) ──
+  const conversionePrima = [it.uom || '', altUomOf(it) || '', altFactorOf(it)].join('|');
   const um = catCell(row, 'UM *');
   if (um) it.uom = catEnsureUom(um, ctx);
   else if (isNew) it.uom = defaultUom();
@@ -632,6 +633,13 @@ function catApplyItemRow(row, def, ctx, ln, st) {
         }
       }
     }
+  }
+  // Cambiata la conversione, il costo della quotazione in uso va ricalcolato
+  // anche se la riga non porta un prezzo (dalla 0.105.3): restava al valore
+  // vecchio, sbagliato del rapporto fra il fattore vecchio e il nuovo.
+  if (!isNew && activePriceRow(it) && conversionePrima !== [it.uom || '', altUomOf(it) || '', altFactorOf(it)].join('|')) {
+    const s = catStage(ctx, it);
+    if (!s.inline && !s.forced) s.inline = activePriceRow(it);
   }
 
   // ── Famiglia ──
@@ -825,7 +833,13 @@ function catUpsertQuote(it, row, ctx, foglio, ln, prezzo) {
     // qualunque altra verrebbe ignorata in silenzio, e il silenzio qui è un
     // prezzo giusto nell'unità sbagliata.
     if (pu === altUomOf(it)) r.priceUom = pu;
-    else if (pu !== it.uom) rep.warnings.push(`${foglio}, riga ${ln}: "UM prezzo" ${esc(pu)} non è l'unità di acquisto di ${esc(it.code)}: ignorata`);
+    // L'unità di gestione vuol dire «prezzo nella mia unità»: un'unità
+    // d'acquisto rimasta da prima moltiplicherebbe il prezzo per il fattore.
+    else if (pu === it.uom) delete r.priceUom;
+    else rep.warnings.push(`${foglio}, riga ${ln}: "UM prezzo" ${esc(pu)} non è l'unità di acquisto di ${esc(it.code)}: ignorata`);
+  } else if (pu === '') {
+    // Colonna presente e vuota: come per gli altri campi, si svuota (0.105.3).
+    delete r.priceUom;
   }
   for (const [h, campo] of [['Q.tà min', 'minQty'], ['GG consegna', 'leadDays']]) {
     const v = catNum(row, h);
@@ -901,7 +915,7 @@ function catLegacySheets(byName, ctx) {
     const type = resolveType(tipoRaw);
     if (!type) {
       if (Object.values(row).some(v => String(v == null ? '' : v).trim())) {
-        ctx.rep.errors.push(`${primo}, riga ${ln}: tipo non valido ("${esc(tipoRaw)}")`);
+        ctx.rep.errors.push(`${esc(primo)}, riga ${ln}: tipo non valido ("${esc(tipoRaw)}")`);
       } else st.skipped++;
       return;
     }
@@ -918,7 +932,7 @@ function catLegacySheets(byName, ctx) {
   });
   if (altri) {
     const altro = ctx.scope === 'buy' ? 'Progetto' : 'Acquisti';
-    ctx.rep.warnings.push(`${primo}: ${altri} righe sono di tipi che appartengono al file ${altro} — ricarica lo stesso file dal pulsante ${altro}.`);
+    ctx.rep.warnings.push(`${esc(primo)}: ${altri} righe sono di tipi che appartengono al file ${altro} — ricarica lo stesso file dal pulsante ${altro}.`);
   }
   ctx.rep.sheets.push(Object.assign({ name: primo + ' (formato precedente)' }, st));
 }

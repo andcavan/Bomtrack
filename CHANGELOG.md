@@ -2,6 +2,44 @@
 
 Le revisioni seguono il versionamento semantico `0.MINOR.PATCH`: **MINOR** per nuove funzionalità, **PATCH** per correzioni. La versione in cima è quella in `APP_VERSION` (`core.js`) e mostrata nell'header dell'app.
 
+### 0.105.3 — 2026-10-17
+
+**Controllo generale dell'app.** Una rilettura completa, area per area, con ogni difetto riprodotto prima di correggerlo. **Con l'archivio condiviso vanno rieseguiti `supabase/schema.sql` e ripubblicata la funzione `bomtrack-utenti`** (manuale, cap. 31): senza, le correzioni lato server non valgono.
+
+**Fabbisogno**
+- **Chi consegna prima prende prima.** L'impegnato di un piano contava la domanda di *tutti* gli altri piani aperti: a magazzino vuoto, un piano da 100 e uno da 50 mostravano 150 da comprare ciascuno, e generare gli ordini da entrambi prima di inviarli ne ordinava 300. Ora i piani si mettono in fila come già per le parti a scaffale (consegna, poi data, poi numero): ognuno conta come impegnato solo quelli davanti, l'impegnato toglie soltanto merce che c'è, e il buco della scorta minima lo compra il primo della fila. Due piani sulla stessa merce restano separati, ma insieme comprano esattamente quello che manca.
+
+**Sicurezza**
+- **Testo che diventava codice**: il tipo di un articolo arrivato da un import, i campi del selettore di catalogo nei documenti, la sigla nelle modifiche tecniche e il nome del foglio nel resoconto d'import passavano nella pagina senza essere neutralizzati. Ora sono testo.
+- **Dall'archivio allegati si aprono solo PDF.** Un file HTML o SVG si apriva come pagina dell'app, con i suoi dati e la sessione.
+- **Server**: nessuno cambia più la propria email dal profilo; una lapide (la cancellazione che va a tutti) la scrive solo chi può scrivere quella tabella; una modifica datata nel futuro (orologio del PC avanti) viene rifiutata con un messaggio chiaro; il tipo di articolo deve essere uno di quelli dell'app; il link per reimpostare la password usa l'email vera dell'utente e non quella del profilo.
+- **Ruoli**: «Segna come inviato» dopo un PDF lo chiede solo a chi può cambiare lo stato; **Scollega questo PC**, da dentro l'app, solo a un amministratore; modificare una riga o sbloccare un documento controllano il ruolo.
+- **Un collega sospeso esce** al giro di sincronizzazione successivo. Prima restava dentro, su una copia ferma, con ogni salvataggio respinto.
+
+**Archivio condiviso**
+- **Due schede aperte**: la vecchia si ferma e lo dice, invece di continuare a sincronizzare con dati superati.
+- **Un salvataggio locale fallito** durante una ricezione non fa più avanzare il punto di sincronizzazione (al riavvio cancellava sul server i record appena arrivati).
+- **Un documento eliminato qui e ancora citato** (una richiesta citata da un ordine) bloccava la coda d'invio per sempre se la ricezione non si era ancora applicata. Ora il riferimento si svuota come fa il server, e la coda riparte.
+- **Un record eliminato da un collega** non torna più vuoto: una modifica fatta su una copia di prima della cancellazione non lo fa risorgere (vince la cancellazione), e quando torna perché qui è ancora usato porta con sé tutte le sue righe.
+- **Due colleghi che avviano la stessa fase di un ODP** prima di essersi visti scrivono un solo avvio e un solo prelievo: il materiale non esce più due volte.
+- **Una creazione alla volta** mentre il server assegna il numero: un doppio clic creava due documenti. I codici impegnati sono per articolo: due articoli nuovi non si contendono più lo stesso codice.
+- Il service worker scarica i file aggiornati dalla rete e non dalla cache del browser; le policy del server si calcolano una volta per interrogazione (download più veloci sugli archivi grandi).
+
+**Correzioni**
+- **Righe degli ordini di lavoro**: «Salva» sulla riga modificata e «Aggiungi» sulla riga a mano non facevano niente.
+- **Cambiare sezione con un documento in modifica** lo salva. Restava «da salvare» fuori dal suo editor e, con l'archivio condiviso, fermava la ricezione delle modifiche dei colleghi senza che niente lo dicesse.
+- **QR**: «Ricevi tutto» salva davvero e dice «registrato» solo se il ricevimento è passato; il QR di un'ubicazione chiede conferma prima di buttare un inventario con dei conteggi.
+- **Cestino e Annulla**: un documento o un articolo il cui numero (o codice) è stato ridato dopo l'eliminazione resta nel cestino e l'app spiega perché, invece di creare due ODA-2026-002. L'«Annulla» dopo aver eliminato un ODP rimette anche dichiarazioni e movimenti, e un ODP con un ordine di lavoro aperto sulle sue fasi non si elimina.
+- **Storico dei movimenti**: quelli scritti da un ODP o da un montaggio non si eliminano più da lì, ma dal loro documento.
+- **Import di un backup** che non si riesce a migrare: resta l'archivio di prima, invece di uno a metà.
+- **Costi**: «Copia da» un articolo porta anche la seconda unità e il fattore; nell'import del catalogo un'unità di prezzo uguale a quella di gestione, o vuota, si toglie, e un cambio di conversione riapplica la quotazione in uso.
+- **PDF**: quantità con la virgola e senza il rumore dei decimali (0,3 e non 0.30000000000000004); il prezzo unitario esce con i suoi decimali, fino a 4, e torna con l'importo. Lo stesso negli elenchi esportati in PDF.
+- **Inventario**: una registrazione rifiutata (ruolo, senza collegamento) non chiude più la finestra dicendo «nessuna differenza».
+- **Sospendi / Riattiva** di fornitori, clienti e centri di lavoro in *Gestione* non faceva niente.
+
+**Verifica**
+- `test/controllo-generale.test.js` (nuovo): un difetto per prova. `test/stock.test.js` e `test/job-coverage.test.js`: la fila dei piani, magazzino vuoto, scorta minima comprata una volta. `test/cloud.test.js`: la coda che riparte, il record che non torna vuoto, il collega sospeso che esce. `test/schema-sql.test.js`: email, lapidi, date nel futuro, tipo di articolo, modifica sopra una lapide, profilo del sospeso.
+
 ### 0.105.2 — 2026-10-16
 
 **Correzioni**

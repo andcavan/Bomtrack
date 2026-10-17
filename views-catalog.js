@@ -414,17 +414,7 @@ function rfqPriceCandidates(r) {
 // due colleghi che registrano la stessa offerta prima di essersi visti
 // scrivono la stessa quotazione, non due che il server rifiuta (c'è un indice
 // unico su articolo + richiesta + riga) bloccando l'invio di chi arriva dopo.
-function rfqQuoteId(rfqId, lineId) {
-  const testo = String(rfqId) + '|' + String(lineId);
-  let h = '';
-  [0x811c9dc5, 0x01000193, 0x9e3779b9, 0x85ebca6b].forEach(seme => {
-    let x = seme >>> 0;
-    for (let i = 0; i < testo.length; i++) { x ^= testo.charCodeAt(i); x = Math.imul(x, 0x01000193) >>> 0; }
-    h += x.toString(16).padStart(8, '0');
-  });
-  // Forma di un uuid v4: la colonna sul server è di quel tipo.
-  return `${h.slice(0, 8)}-${h.slice(8, 12)}-4${h.slice(13, 16)}-${'89ab'[parseInt(h[16], 16) & 3]}${h.slice(17, 20)}-${h.slice(20, 32)}`;
-}
+function rfqQuoteId(rfqId, lineId) { return idDaChiave(String(rfqId) + '|' + String(lineId)); }
 function rfqRecordPrices(id) {
   if (!roleGuard('catalog')) return;
   const r = getRfq(id); if (!r) return;
@@ -505,7 +495,7 @@ function usageBody(id) {
     <tbody>${diretti.map(r => `<tr>
       <td style="font-family:var(--mono)">${codeLink(r.item.id, r.item.code)}</td>
       <td>${esc(r.item.name)}</td>
-      <td><span class="bom-type-tag tt-${r.item.type}">${typeShort(r.item.type)}</span> ${typeLabel(r.item.type)}</td>
+      <td><span class="bom-type-tag tt-${typeKey(r.item.type)}">${typeShort(r.item.type)}</span> ${typeLabel(r.item.type)}</td>
       <td style="text-align:right;font-family:var(--mono)">${fmtQty(r.qty)}</td>
       <td style="text-align:right"><button class="mini-btn" title="Apri qui" onclick="usageModal('${r.item.id}')">${ico('link', 'tinted', 'Apri qui')}</button></td>
     </tr>`).join('')}</tbody></table>`;
@@ -707,7 +697,7 @@ function catalogRow(i, scope) {
     <td class="col-flags" style="width:1%;white-space:nowrap">${flags}</td>
     <td class="col-code" style="font-family:var(--mono)">${codeLink(i.id, i.code)}</td>
     <td class="col-name">${esc(i.name)}</td>
-    <td class="col-type"><span class="bom-type-tag tt-${i.type}">${typeShort(i.type)}</span> ${typeLabel(i.type)}</td>
+    <td class="col-type"><span class="bom-type-tag tt-${typeKey(i.type)}">${typeShort(i.type)}</span> ${typeLabel(i.type)}</td>
     <td class="col-family" style="color:var(--text-dim)">${esc(codingLabel(i) || familyLabel(i))}</td>
     <td class="col-uom">${esc(i.uom || '')}</td>
     <td class="col-cost" style="font-family:var(--mono)">${fmtN(unit)}</td>
@@ -1277,7 +1267,7 @@ function cycleRowLabel(row) {
   }
   const it = getItem(row.itemId);
   if (!it) return ico('warning', 'tinted') + ' articolo mancante';
-  return `<span class="bom-type-tag tt-${it.type}">${typeShort(it.type)}</span>
+  return `<span class="bom-type-tag tt-${typeKey(it.type)}">${typeShort(it.type)}</span>
     <span class="cycle-code">${codeLink(it.id, it.code)}</span> ${esc(it.name)}${itemBadges(it)}`;
 }
 // ─── Selezione della parte (filtri in cima alla vista) ───
@@ -1850,6 +1840,14 @@ function applyItemSource(id) {
     setVal('it-name', src.name + ' (copia)');
   }
   setVal('it-uom', src.uom || defaultUom());
+  // L'unità alternativa e il fattore viaggiano con le quotazioni copiate (dalla
+  // 0.105.3): una quotazione a kg su una copia senza kg diventava un prezzo al
+  // metro, e il costo usciva sbagliato del fattore (8 volte, su una barra).
+  if (document.getElementById('it-altuom')) {
+    setVal('it-altuom', src.altUom || '');
+    setVal('it-altfactor', src.altFactor != null ? src.altFactor : '');
+    if (typeof itemUomLabelsRefresh === 'function') itemUomLabelsRefresh();
+  }
   if (src.type === 'parte') setVal('it-sourcing', partSourcing(src));
   setVal('it-notes', src.notes || '');
   setVal('it-code', '');
@@ -2012,6 +2010,12 @@ function saveNewItem() {
     it.priceListSeeded = true;
     if (src && hasPriceList(src)) {
       const rimappa = {};
+      // Rete di sicurezza: le quotazioni copiate in un'unità alternativa
+      // vogliono quell'unità anche sulla copia.
+      if (hasAltUom(src) && !hasAltUom(it) && (it.uom || '') === (src.uom || '')
+          && priceRows(src).some(r => r.priceUom && r.priceUom === src.altUom)) {
+        it.altUom = src.altUom; it.altFactor = src.altFactor;
+      }
       it.priceList = priceRows(src).map(r => {
         const n = stampNew(Object.assign({}, r, { id: gid() }));
         rimappa[r.id] = n.id;
@@ -2175,7 +2179,12 @@ function bulkDelete(ids) {
     // gesto, non di una riga.
     showToast(`${cestinati.length} ${cestinati.length === 1 ? 'articolo eliminato' : 'articoli eliminati'}`, 'success', {
       label: '↶ Annulla',
-      fn: () => { cestinati.forEach(v => Store.restore(v)); renderCatalogs(); savedToast('Ripristinati'); },
+      fn: () => {
+        let no = '';
+        cestinati.forEach(v => { if (!Store.restore(v)) no = no || Store.rifiutoRipristino(); });
+        renderCatalogs();
+        if (no) showToast(no, 'error'); else savedToast('Ripristinati');
+      },
     });
   });
 }

@@ -305,9 +305,17 @@ describe('Archivio condiviso — più PC contro Supabase (finto, con Postgres ve
     await assert.rejects(A.eval(`cloudRpc('funzione_che_non_esiste', {})`), /riesegui supabase\/schema\.sql/);
   });
 
-  passo('un utente sospeso dall\'amministratore non entra più', async () => {
+  passo('un utente sospeso dall\'amministratore esce, anche se era dentro, e non entra più', async () => {
+    assert.ok(B.eval('!!currentUser'));
     A.eval(`{ const u = getUser('${bruno}'); u.active = false; touch(u); saveDB(); }`);
     await giro(A);
+    // Bruno è dentro, con una modifica in coda che il server non gli accetta più.
+    B.eval(`Store.update('items', '${ID.item}', { notes: 'da sospeso' })`);
+    B.eval('globalThis.__avvisi = []; showToast = m => __avvisi.push(m);');
+    await giro(B);
+    await new Promise(r => setTimeout(r, 300));   // il controllo del profilo parte dopo l'errore
+    assert.equal(B.eval('!!currentUser'), false, 'restava dentro a lavorare su una copia ferma');
+    assert.match(B.eval('__avvisi.join()'), /sospeso/);
     await assert.rejects(B.eval(`cloudAccediConPassword('b@x.it', 'pw-bruno').then(() => cloudDopoAccesso())`), /non è ancora attivo/);
     await srv.chiudi();
   });
@@ -442,6 +450,76 @@ describe('Archivio condiviso — due colleghi sulla stessa cosa', () => {
     assert.equal(B.eval('Store.hasPendingChanges()'), false);
     assert.equal(srv.db.sql(`select count(*) from item_prices where rfq_id = '${RFQ}'`), '1');
     for (const a of [A, B]) assert.equal(a.eval(`getItem('${C1}').priceList.filter(p => p.rfqId === '${RFQ}').length`), 1);
+  });
+
+  // 0.105.3: Bruno, senza aver ancora ricevuto la cancellazione di Anna, ritocca
+  // il piano. La sua data batteva la lapide e il piano tornava sul server, ma
+  // senza la riga che la cancellazione aveva portato via: per tutti gli altri
+  // un piano vuoto, e nessun avviso.
+  passo('la modifica di una copia di prima della cancellazione non fa tornare il record senza righe', async () => {
+    const PL = U(630), PLL = U(631);
+    A.eval(`Store.insert('plans', { id: '${PL}', number: 'FAB-2026-050', title: 'Da eliminare', date: '2026-10-16', notes: '', active: true,
+      lines: [{ id: '${PLL}', itemId: '${ID.item}', qty: 1 }] })`);
+    await giro(A); await giro(B);
+    assert.equal(srv.db.sql(`select count(*) from production_plan_lines where plan_id = '${PL}'`), '1');
+    A.eval(`Store.remove('plans', '${PL}')`);
+    await giro(A);
+    B.eval(`{ const p = Store.getById('plans', '${PL}'); p.title = 'Ritoccato da Bruno'; touch(p); saveDB(); }`);
+    avvisi(B);
+    await giro(B); await giro(B); await giro(A);
+    // Qui la riga del piano è recente e parte con il ritocco: per il server è
+    // usata, e il piano torna (cloudRiparaRiferimento). Con una riga vecchia
+    // vince la cancellazione (schema-sql.test.js). Mai però un piano vuoto.
+    const sulServer = srv.db.sql(`select count(*) from production_plans where id = '${PL}'`);
+    assert.equal(srv.db.sql(`select count(*) from production_plans p where p.id = '${PL}'
+      and not exists (select 1 from production_plan_lines l where l.plan_id = p.id)`), '0', 'un piano tornato senza la sua riga');
+    for (const a of [A, B]) assert.equal(a.eval(`!!Store.getById('plans', '${PL}')`), sulServer === '1', 'tutti vedono quello che ha il server');
+    assert.equal(B.eval('Store.hasPendingChanges()'), false);
+  });
+
+  // Il padre che torna perché qui è ancora usato porta con sé tutte le sue righe.
+  passo('un record ripristinato perché usato torna con tutte le sue righe', async () => {
+    const PL = U(632), PLL = U(633), ORD3 = U(634);
+    A.eval(`Store.insert('plans', { id: '${PL}', number: 'FAB-2026-051', title: 'Usato da Bruno', date: '2026-10-16', notes: '', active: true,
+      lines: [{ id: '${PLL}', itemId: '${ID.item}', qty: 2 }] })`);
+    await giro(A); await giro(B);
+    A.eval(`Store.remove('plans', '${PL}')`);
+    await giro(A);
+    // Bruno non ha ancora ricevuto, e ci lega un ordine nuovo.
+    B.eval(`Store.insert('orders', { id: '${ORD3}', number: 'ODA-2026-090', status: 'bozza', date: '2026-10-16', supplierId: null, planId: '${PL}', lines: [], active: true })`);
+    // Una riga che da sola non ripartirebbe più: la soglia di cloudPayload è
+    // oltre la sua data.
+    B.eval(`cloudAggiornaConfig({ soglia: new Date(Date.now() + 3600000).toISOString() })`);
+    avvisi(B);
+    await giro(B);
+    assert.equal(srv.db.sql(`select count(*) from production_plans where id = '${PL}'`), '1', 'il piano usato torna');
+    assert.equal(srv.db.sql(`select count(*) from production_plan_lines where plan_id = '${PL}'`), '1', 'e con la sua riga');
+    await giro(A);
+    assert.equal(A.eval(`(Store.getById('plans', '${PL}') || { lines: [] }).lines.length`), 1, 'anche per Anna');
+  });
+
+  // 0.105.3: questo PC elimina una richiesta che un ordine cita ancora, e il
+  // pull che ne svuoterebbe il riferimento non si applica (un pannello aperto).
+  // Ogni giro inciampava nel vincolo, e la modifica dell'ordine non partiva più.
+  passo('un documento eliminato qui e ancora citato non blocca la coda', async () => {
+    const RFQ = U(620);
+    A.eval(`Store.insert('rfqs', { id: '${RFQ}', number: 'RFQ-2026-060', status: 'bozza', date: '2026-10-16', supplierId: null, active: true, lines: [] })`);
+    A.eval(`{ const o = Store.getById('orders', '${ID.ord}'); o.rfqId = '${RFQ}'; touch(o); saveDB(); }`);
+    await giro(A); await giro(B);
+    assert.equal(srv.db.sql(`select rfq_id from orders where id = '${ID.ord}'`), RFQ);
+    A.eval('globalThis.__puo = cloudPuoApplicare; cloudPuoApplicare = () => false;');
+    try {
+      A.eval(`Store.remove('rfqs', '${RFQ}')`);
+      await giro(A);
+      A.eval(`{ const o = Store.getById('orders', '${ID.ord}'); o.notes = 'dopo la richiesta'; touch(o); saveDB(); }`);
+      avvisi(A);
+      await giro(A);
+      assert.equal(srv.db.sql(`select notes from orders where id = '${ID.ord}'`), 'dopo la richiesta', 'la modifica arriva');
+      assert.equal(srv.db.sql(`select coalesce(rfq_id::text, '-') from orders where id = '${ID.ord}'`), '-');
+      assert.equal(A.eval(`Store.getById('orders', '${ID.ord}').rfqId`), null, 'il riferimento si svuota anche qui, come sul server');
+      assert.equal(A.eval('Store.hasPendingChanges()'), false, 'e la coda è vuota');
+    } finally { A.eval('cloudPuoApplicare = __puo;'); }
+    await giro(A); await giro(B);
   });
 
   // 0.105.2: il flag della semina non ha una colonna, e un articolo arrivato

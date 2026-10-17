@@ -13,7 +13,7 @@
 // Revisione in esecuzione, mostrata accanto al logo. Va tenuta allineata alla
 // voce in cima a CHANGELOG.md (l'app si copia a mano tra PC: sapere
 // quale revisione sta girando su una postazione è l'unico modo per capirlo).
-const APP_VERSION = '0.105.2';
+const APP_VERSION = '0.105.3';
 
 let currentUser = null;      // utente della sessione (null = schermata di accesso)
 let currentBomId = null;     // articolo prodotto attualmente aperto nelle Distinte
@@ -63,6 +63,14 @@ function numIt(n, decimali) {
   return (v < 0 && Number(s) !== 0 ? '-' : '') + gruppi + (fraz ? ',' + fraz : '');
 }
 function fmtN(n) { return cur() + ' ' + numIt(n, 2); }
+// Il prezzo unitario di un documento, con i decimali che ha (da 2 a 4): un
+// listino a 4 decimali stampato a 2 è un prezzo diverso da quello concordato, e
+// prezzo × quantità non tornava con l'importo della riga.
+function fmtPrezzo(n) {
+  const v = Number(n) || 0;
+  const fraz = (String(+v.toFixed(4)).split('.')[1] || '').length;
+  return cur() + ' ' + numIt(v, Math.min(4, Math.max(2, fraz)));
+}
 // ─── L'importo di una riga di documento ───
 // Quantità × prezzo, arrotondato ai centesimi **una volta sola**.
 //
@@ -488,7 +496,11 @@ function scopeOf(type) { return CATALOG_SCOPES.buy.types.includes(type) ? 'buy' 
 const CYCLE_CHILD_TYPES = ['acquistato', 'materiale'];
 const TYPE_LABELS = { macchina: 'Macchina', gruppo: 'Gruppo', sottogruppo: 'Sottogruppo', parte: 'Parte', materiale: 'Materia prima', acquistato: 'Commerciale' };
 const TYPE_SHORTS = { macchina: 'MAC', gruppo: 'GRP', sottogruppo: 'SGR', parte: 'PRT', materiale: 'MAT', acquistato: 'CMM' };
-function typeLabel(t) { return TYPE_LABELS[t] || t; }
+// Il tipo arriva dall'archivio, e nell'archivio condiviso lo scrive un collega:
+// un valore fuori elenco non deve mai finire nell'HTML così com'è.
+function typeLabel(t) { return TYPE_LABELS[t] || esc(t); }
+// Per le classi CSS (tt-…): solo i tipi noti.
+function typeKey(t) { return TYPE_LABELS[t] ? t : 'x'; }
 function typeShort(t) { return TYPE_SHORTS[t] || '?'; }
 
 // ─── Unità di misura (elenco gestito in Gestione › Unità di misura) ───
@@ -991,7 +1003,7 @@ function removeConUndo(coll, id, msg, dopo) {
   const voce = Store.lastRemoved();
   if (typeof dopo === 'function') dopo();
   toastEliminato(msg, () => {
-    Store.restore(voce);
+    if (!Store.restore(voce)) { showToast(Store.rifiutoRipristino() || 'Non c\'è più niente da ripristinare', 'error'); return; }
     if (typeof dopo === 'function') dopo();
     showToast('Ripristinato');
   });
