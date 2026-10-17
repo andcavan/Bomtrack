@@ -2188,6 +2188,7 @@ const Store = {
     db = data;
     try { migrateDB(); }
     catch (e) { db = prima; throw new Error('backup non importabile (' + (e && e.message || e) + ')'); }
+    dbLoadError = null;   // da qui in memoria c'è un archivio vero (vedi backupAutoEsegui)
     markUnknown();
     this.commit();
   },

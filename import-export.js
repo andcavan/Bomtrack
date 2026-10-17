@@ -1194,6 +1194,13 @@ function _backupAutoPota(dir, tenere) {
 function backupAutoEsegui(chiedi, forza) {
   if (!backupAutoAttivo()) return Promise.resolve(_backupAuto);
   if (_backupAutoInCorso) return _backupAutoInCorso;
+  // Non quando in memoria non c'è l'archivio vero (dalla 0.105.3): dopo un
+  // archivio illeggibile l'app mostra i dati d'esempio, e una scheda superata da
+  // un'altra ha dati vecchi. Il backup di oggi veniva riscritto con quelli, e il
+  // promemoria dei sette giorni taceva.
+  const finto = (typeof dbLoadError !== 'undefined' && dbLoadError) ? 'archivio non letto: il backup di oggi resta com\'era'
+    : (Store.superata && Store.superata()) ? 'Bomtrack è aperto in un\'altra scheda più recente' : '';
+  if (finto) { _backupAuto = { stato: 'pausa', ora: _oraLocale(), errore: finto }; return Promise.resolve(_backupAuto); }
   let payload;
   try { payload = Store.exportSnapshot(); }
   catch (e) { _backupAuto = { stato: 'errore', ora: _oraLocale(), errore: String(e && e.message || e) }; return Promise.resolve(_backupAuto); }

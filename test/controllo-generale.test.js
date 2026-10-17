@@ -5,7 +5,7 @@
 
 const assert = require('node:assert/strict');
 const { describe, it } = require('./tap.js');
-const { loadApp } = require('./harness.js');
+const { loadApp, makeStorage } = require('./harness.js');
 const { makeDb, mat, parte, wc } = require('./fixtures.js');
 
 function app(db) {
@@ -204,5 +204,20 @@ describe('Due colleghi avviano la stessa fase', () => {
     assert.notEqual(secondo.decl[0], primo.decl[0], 'quell\'id sta nel cestino');
     const ids = secondo.mov;
     assert.equal(new Set(ids).size, ids.length, 'due movimenti con lo stesso id non devono esistere');
+  });
+});
+
+describe('Una richiesta al server che non torna più', () => {
+  it('dopo il limite vale come rete assente, invece di fermare giro e numeri', async () => {
+    const storage = makeStorage();
+    storage.setItem('bomtrack_cloud', JSON.stringify({ url: 'http://x', chiave: 'k', allineato: true }));
+    const a = loadApp({ silent: true, storage });
+    a.ctx.AbortController = AbortController;
+    a.ctx.setTimeout = fn => { fn(); return 1; };   // il limite scade subito
+    a.ctx.fetch = (u, o) => new Promise((res, rej) => {
+      if (o.signal && o.signal.aborted) return rej(new Error('abort'));
+      if (o.signal) o.signal.addEventListener('abort', () => rej(new Error('abort')));
+    });
+    await assert.rejects(a.eval(`cloudHttp('/rest/v1/rpc/prova', {})`), /non raggiungibile/);
   });
 });

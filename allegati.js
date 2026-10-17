@@ -323,8 +323,10 @@ function allegatoElimina(id) {
   const rec = (db.attachments || []).find(a => a.id === id);
   if (!rec) return;
   askConfirm(`Eliminare l'allegato "${rec.name}"?`, () => {
+    // I byte restano (dalla 0.105.3): il record va nel cestino per TRASH_DAYS
+    // giorni, e ripristinarlo dava un allegato senza file. Li toglie la pulizia
+    // dei file orfani in Gestione, quando la voce di cestino non c'è più.
     Store.remove('attachments', id);
-    allegatoCancella(id).catch(e => console.error('File non rimosso dal deposito:', e));
     savedToast('Allegato eliminato');
     // La scheda si ridisegna, così l'allegato sparisce dall'elenco invece di
     // restarci finché non la si chiude e riapre.

@@ -47,6 +47,7 @@ const CLOUD_BASE_KEY = 'bomtrack_cloud_base';       // la fotografia dell'ultimo
 const CLOUD_GIRO_MS = 25000;
 const CLOUD_ATTESA_MS = 1500;
 const CLOUD_RIPROVA_MS = 5000;   // senza collegamento: ogni quanto si riprova
+const CLOUD_LIMITE_MS = 90000;   // una richiesta senza risposta dopo questo vale come rete assente
 // Il pull riparte da un po' prima dell'ultimo: una transazione lunga può
 // scrivere un synced_at più vecchio di un pull già fatto (schema.sql).
 const CLOUD_MARGINE_MS = 5000;
@@ -99,10 +100,18 @@ async function cloudHttp(percorso, opz) {
   const o = opz || {};
   const headers = { apikey: c.chiave, 'Content-Type': 'application/json' };
   if (o.token) headers.Authorization = 'Bearer ' + o.token;
+  // Una richiesta che non torna più (una connessione rimasta a metà dopo uno
+  // standby, il Wi-Fi che cambia) teneva fermo il giro e ogni «Nuovo documento»
+  // in attesa del numero: il browser non mette limiti di tempo a fetch. Dopo
+  // CLOUD_LIMITE_MS vale come rete assente (dalla 0.105.3).
+  const ctrl = typeof AbortController === 'function' ? new AbortController() : null;
+  const scade = ctrl ? setTimeout(() => ctrl.abort(), CLOUD_LIMITE_MS) : null;
   let r;
   try {
-    r = await fetch(c.url + percorso, { method: o.metodo || 'POST', headers, body: o.corpo === undefined ? undefined : JSON.stringify(o.corpo) });
+    r = await fetch(c.url + percorso, { method: o.metodo || 'POST', headers, body: o.corpo === undefined ? undefined : JSON.stringify(o.corpo),
+      signal: ctrl ? ctrl.signal : undefined });
   } catch (e) {
+    clearTimeout(scade);
     // La funzione degli utenti che manca o che si ferma all'avvio risponde
     // senza le intestazioni CORS: il browser lo fa passare per un errore di
     // rete. Il database però c'è, e l'app non va messa in sola lettura.
@@ -111,7 +120,10 @@ async function cloudHttp(percorso, opz) {
     throw cloudErrore('rete', 'Server non raggiungibile');
   }
   cloudCollegato(true);   // ha risposto: anche un errore vuol dire che c'è
-  const testo = await r.text();
+  let testo;
+  try { testo = await r.text(); }
+  catch (e) { cloudCollegato(false); throw cloudErrore('rete', 'Server non raggiungibile'); }
+  finally { clearTimeout(scade); }
   let dati = null;
   try { dati = testo ? JSON.parse(testo) : null; } catch (e) { dati = testo; }
   if (!r.ok) {

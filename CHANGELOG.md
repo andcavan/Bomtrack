@@ -23,6 +23,7 @@ Le revisioni seguono il versionamento semantico `0.MINOR.PATCH`: **MINOR** per n
 - **Un record eliminato da un collega** non torna più vuoto: una modifica fatta su una copia di prima della cancellazione non lo fa risorgere (vince la cancellazione), e quando torna perché qui è ancora usato porta con sé tutte le sue righe.
 - **Due colleghi che avviano la stessa fase di un ODP** prima di essersi visti scrivono un solo avvio e un solo prelievo: il materiale non esce più due volte.
 - **Una creazione alla volta** mentre il server assegna il numero: un doppio clic creava due documenti. I codici impegnati sono per articolo: due articoli nuovi non si contendono più lo stesso codice.
+- **Una richiesta al server che non torna più** (una connessione rimasta a metà dopo uno standby, il Wi-Fi che cambia) dopo 90 secondi vale come rete assente. Prima fermava la sincronizzazione e ogni «Nuovo documento» in attesa del numero.
 - Il service worker scarica i file aggiornati dalla rete e non dalla cache del browser; le policy del server si calcolano una volta per interrogazione (download più veloci sugli archivi grandi).
 
 **Correzioni**
@@ -34,11 +35,13 @@ Le revisioni seguono il versionamento semantico `0.MINOR.PATCH`: **MINOR** per n
 - **Import di un backup** che non si riesce a migrare: resta l'archivio di prima, invece di uno a metà.
 - **Costi**: «Copia da» un articolo porta anche la seconda unità e il fattore; nell'import del catalogo un'unità di prezzo uguale a quella di gestione, o vuota, si toglie, e un cambio di conversione riapplica la quotazione in uso.
 - **PDF**: quantità con la virgola e senza il rumore dei decimali (0,3 e non 0.30000000000000004); il prezzo unitario esce con i suoi decimali, fino a 4, e torna con l'importo. Lo stesso negli elenchi esportati in PDF.
+- **Allegati**: un allegato eliminato e poi ripristinato dal cestino ha ancora il suo file (i byte si toglievano subito).
+- **Backup automatico**: con l'archivio non letto, o in una scheda superata da un'altra, non riscrive più il backup del giorno con i dati d'esempio.
 - **Inventario**: una registrazione rifiutata (ruolo, senza collegamento) non chiude più la finestra dicendo «nessuna differenza».
 - **Sospendi / Riattiva** di fornitori, clienti e centri di lavoro in *Gestione* non faceva niente.
 
 **Verifica**
-- `test/controllo-generale.test.js` (nuovo): un difetto per prova. `test/stock.test.js` e `test/job-coverage.test.js`: la fila dei piani, magazzino vuoto, scorta minima comprata una volta. `test/cloud.test.js`: la coda che riparte, il record che non torna vuoto, il collega sospeso che esce. `test/schema-sql.test.js`: email, lapidi, date nel futuro, tipo di articolo, modifica sopra una lapide, profilo del sospeso.
+- `test/controllo-generale.test.js` (nuovo): un difetto per prova. `test/allegati.test.js` e `test/backup-auto.test.js`: il file che resta, il backup che non si riscrive. `test/stock.test.js` e `test/job-coverage.test.js`: la fila dei piani, magazzino vuoto, scorta minima comprata una volta. `test/cloud.test.js`: la coda che riparte, il record che non torna vuoto, il collega sospeso che esce. `test/schema-sql.test.js`: email, lapidi, date nel futuro, tipo di articolo, modifica sopra una lapide, profilo del sospeso.
 
 ### 0.105.2 — 2026-10-16
 
