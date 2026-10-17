@@ -202,8 +202,11 @@ function exportListPdf(spec) {
     doc.autoTable({
       startY: y,
       head: [s.colonne.map(c => c.h)],
+      // Un numero con la virgola, e senza il rumore dei float (0,3 e non
+      // 0.30000000000000004): è un foglio che si legge, non un dato.
       body: (s.righe || []).map(r => r.map((v, k) => (v == null ? ''
-        : (s.colonne[k] && s.colonne[k].data ? fmtDateIt(v) : v)))),
+        : (s.colonne[k] && s.colonne[k].data ? fmtDateIt(v)
+          : (typeof v === 'number' && !Number.isInteger(v) ? String(+v.toFixed(4)).replace('.', ',') : v))))),
       foot: s.totali ? [s.totali.map(v => (v == null ? '' : v))] : undefined,
       styles: { fontSize: 8 },
       headStyles: { fillColor: [58, 123, 232] },

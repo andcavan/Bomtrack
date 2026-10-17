@@ -95,7 +95,7 @@ describe('Ubicazioni — il QR dello scaffale', () => {
     const h = a.eval("qrSchedaHtml('ubi', ubicazioneRec('A-2'))");
     assert.match(h, /2 articoli/);
     assert.match(h, /Conta questa ubicazione/);
-    assert.match(h, /inventarioAvvia\(\{ ambito: 'ubi', ubi: 'A-2' \}\)/);
+    assert.match(h, /inventarioAvviaDaQr\(\{ ambito: 'ubi', ubi: 'A-2' \}\)/);
   });
   it('un\'ubicazione con un apice non rompe il pulsante', () => {
     const a = app();

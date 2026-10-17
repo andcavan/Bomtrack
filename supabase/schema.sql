@@ -502,8 +502,20 @@ on conflict (tab) do update set parent_tab = excluded.parent_tab, parent_col = e
 -- domande diverse: un client con l'orologio indietro scrive un updated_at
 -- vecchio, ma la sua riga va comunque mandata a chi fa pull dopo.
 create or replace function public.sync_stamp() returns trigger language plpgsql as $$
+declare quando timestamptz;
 begin
   new.synced_at := clock_timestamp();
+  -- Chi vince fra due modifiche lo decide l'updated_at, scritto dal PC (dalla
+  -- 0.105.3). Un PC con l'orologio avanti (una data del BIOS sbagliata, un
+  -- updated_at scritto a mano dall'API) bloccava per sempre le modifiche dei
+  -- colleghi a ogni cosa che toccava: le loro arrivavano sempre «più vecchie».
+  -- Dall'app e dall'API si rifiuta; dal SQL Editor (utente postgres) no.
+  if current_user in ('authenticated', 'anon') then
+    quando := (to_jsonb(new)->>'updated_at')::timestamptz;
+    if quando > clock_timestamp() + interval '5 minutes' then
+      raise exception 'L''orologio di questo PC è avanti rispetto al server: correggi data e ora del PC, poi le modifiche partono da sole';
+    end if;
+  end if;
   return new;
 end $$;
 
@@ -520,13 +532,22 @@ end $$;
 -- payload = {
 --   "upsert":   { tabella: [righe di dbVersoCloud] },
 --   "remove":   { tabella: [id] },
---   "settings": { "data": {...}, "updated_at": "...", "updated_by": "..." }   -- facoltativo
+--   "settings": { "data": {...}, "updated_at": "...", "updated_by": "..." },  -- facoltativo
+--   "base":     { tabella: { id: updated_at } }                                -- facoltativo
 -- }
 -- Tutto in una transazione: se una riga viola un vincolo, non entra niente.
 --
 -- Regole:
 --  - root e row: last-write-wins su updated_at. Una riga più vecchia di quella
 --    che c'è non passa, e torna in `rejected` — l'app deve dirlo all'utente.
+--  - base: per le righe che il client ha modificato partendo da una versione
+--    nota, l'updated_at di quella versione. Se intanto sul server la riga è
+--    cambiata (un collega l'ha salvata dopo), la modifica è fatta su una copia
+--    vecchia: passerebbe per più recente e cancellerebbe in silenzio quella del
+--    collega. Viene respinta, come una più vecchia. Il confronto è al
+--    millesimo: le date che il server scrive da sé (now()) hanno i
+--    microsecondi, quelle che il browser rimanda no. Senza `base` vale il solo
+--    last-write-wins (client di prima della 0.103.2).
 --  - replace: per ogni padre **accettato** in questo invio, l'insieme dei figli
 --    si sostituisce con quello inviato, vuoto compreso. Il client manda sempre
 --    l'insieme completo di ogni padre che invia (dbVersoCloud lo fa). Un padre
@@ -632,12 +653,21 @@ begin
         select s.* from jsonb_populate_recordset(null::public.%1$I, $1) s
         where not exists (select 1 from public.sync_tombstones t
                           where t.tab = %2$L and t.id = s.id::text
-                            and t.deleted_at >= coalesce(s.updated_at, '-infinity'::timestamptz))
+                            and (t.deleted_at >= coalesce(s.updated_at, '-infinity'::timestamptz)
+                                 -- Con la versione di partenza è la modifica di
+                                 -- una copia di prima della cancellazione, non un
+                                 -- ripristino: la cancellazione vince. Tornava su
+                                 -- senza le sue righe, che il delete aveva portato via.
+                                 or ($2 is not null and $2 ? s.id::text)))
         on conflict (id) do update set %3$s
-          where public.%1$I.updated_at is null
-             or excluded.updated_at >= public.%1$I.updated_at
+          where (public.%1$I.updated_at is null
+                 or excluded.updated_at >= public.%1$I.updated_at)
+            and ($2 is null or not ($2 ? public.%1$I.id::text)
+                 or date_trunc('milliseconds', public.%1$I.updated_at)
+                    = date_trunc('milliseconds', ($2->>public.%1$I.id::text)::timestamptz)
+                 or public.%1$I.updated_at is not distinct from excluded.updated_at)
       $q$, reg.tab, reg.tab, agg)
-      using righe;
+      using righe, payload->'base'->reg.tab;
       -- Chi è passato: le righe che ora portano l'updated_at inviato. Una
       -- respinta (più vecchia, o sotto una lapide) ne ha un altro, o non c'è.
       execute format(
@@ -651,9 +681,18 @@ begin
 
     accettati := accettati || jsonb_build_object(reg.tab, to_jsonb(applicati));
     conteggio := conteggio || jsonb_build_object(reg.tab, coalesce(array_length(applicati, 1), 0));
+    select coalesce(array_agg(d), '{}') into ids from unnest(dati) d where d is not null and not (d = any(applicati));
     select respinti || coalesce(jsonb_agg(jsonb_build_object('tab', reg.tab, 'id', d)), '[]')
-      into respinti
-      from unnest(dati) d where d is not null and not (d = any(applicati));
+      into respinti from unnest(ids) d;
+    -- Chi è stato respinto deve ricevere la versione che ha vinto. Quella riga
+    -- però non è cambiata in questo invio, e il suo synced_at può essere più
+    -- vecchio dell'ultimo pull del mittente: senza questo ritocco il pull non
+    -- gliela riporterebbe mai, e il suo archivio terrebbe la versione perdente.
+    -- Lo stesso per una lapide che ha vinto.
+    if array_length(ids, 1) > 0 then
+      execute format('update public.%I set synced_at = clock_timestamp() where id::text = any($1)', reg.tab) using ids;
+      update sync_tombstones t set synced_at = clock_timestamp() where t.tab = reg.tab and t.id = any(ids);
+    end if;
   end loop;
 
   -- Cancellazioni, con la lapide.
@@ -801,11 +840,26 @@ $$;
 
 -- Il proprio profilo si può aggiornare (nome, colore), ma non il proprio ruolo
 -- né il proprio stato: quello resta della gestione utenti.
+--
+-- Vale per chi passa dall'app o dall'API (dalla 0.105.3): dal SQL Editor
+-- l'amministratore del progetto deve poter rimettere a posto un profilo, e lì
+-- auth.uid() è nullo. Anche l'**email** è della gestione utenti: il link per
+-- reimpostare la password parte dall'utente di Supabase Auth, ma un'email del
+-- profilo cambiata a mano farebbe credere all'app di parlare con un altro.
 create or replace function public.profiles_guardia() returns trigger language plpgsql as $$
 begin
-  if not public.puo_scrivere_tabella('profiles')
-     and (new.role is distinct from old.role or new.active is distinct from old.active or new.id <> old.id) then
-    raise exception 'solo la gestione utenti cambia ruolo e stato di un profilo';
+  if current_user in ('authenticated', 'anon') and not public.puo_scrivere_tabella('profiles')
+     and (new.role is distinct from old.role or new.active is distinct from old.active or new.id <> old.id
+          or new.email is distinct from old.email) then
+    raise exception 'solo la gestione utenti cambia ruolo, stato ed email di un profilo';
+  end if;
+  -- L'ultimo amministratore attivo non si declassa e non si sospende (dalla
+  -- 0.105.0): l'app lo impedisce già, qui vale anche per chi passa dall'API.
+  if old.role = 'admin' and old.active is not false
+     and (new.role is distinct from 'admin' or new.active is false)
+     and not exists (select 1 from public.profiles p
+                      where p.id <> old.id and p.role = 'admin' and p.active is not false) then
+    raise exception 'deve restare almeno un amministratore attivo';
   end if;
   return new;
 end $$;
@@ -823,13 +877,28 @@ begin
     execute format('drop policy if exists provvisoria_autenticati on public.%I', t);
     execute format('drop policy if exists lettura on public.%I', t);
     execute format('drop policy if exists scrittura on public.%I', t);
-    execute format('create policy lettura on public.%I for select to authenticated using (public.ruolo_attivo() is not null)', t);
-    execute format('create policy scrittura on public.%I for all to authenticated using (public.puo_scrivere_tabella(%L)) with check (public.puo_scrivere_tabella(%L))', t, t, t);
+    -- `(select …)`: Postgres calcola la funzione una volta per interrogazione
+    -- invece che una per riga. Su un archivio grande la differenza è fra un
+    -- download che sta nei limiti di tempo di Supabase e uno che non ci sta.
+    execute format('create policy lettura on public.%I for select to authenticated using ((select public.ruolo_attivo()) is not null)', t);
+    execute format('create policy scrittura on public.%I for all to authenticated using ((select public.puo_scrivere_tabella(%L))) with check ((select public.puo_scrivere_tabella(%L)))', t, t, t);
   end loop;
+  -- Le lapidi, riga per riga (dalla 0.105.3): ne scrive una solo chi può
+  -- scrivere la tabella a cui si riferisce. Con la regola generale l'officina
+  -- poteva, dall'API, far sparire un articolo dagli archivi di tutti.
+  drop policy if exists scrittura on public.sync_tombstones;
+  create policy scrittura on public.sync_tombstones for all to authenticated
+    using (public.puo_scrivere_tabella(tab))
+    with check (public.puo_scrivere_tabella(tab) and deleted_at <= clock_timestamp() + interval '5 minutes');
+  -- Il proprio profilo si legge sempre, anche sospeso (dalla 0.105.3): è così
+  -- che la sospensione arriva al PC che la subisce, con il pull, e l'app esce.
+  -- Prima un sospeso non leggeva più niente, nemmeno quella, e restava dentro.
+  drop policy if exists proprio_profilo on public.profiles;
+  create policy proprio_profilo on public.profiles for select to authenticated using (id = (select auth.uid()));
   -- Il proprio profilo, in aggiunta: vedi profiles_guardia.
   drop policy if exists se_stesso on public.profiles;
   create policy se_stesso on public.profiles for update to authenticated
-    using (id = auth.uid() and public.ruolo_attivo() is not null) with check (id = auth.uid());
+    using (id = auth.uid() and (select public.ruolo_attivo()) is not null) with check (id = auth.uid());
   -- I registri si leggono, non si scrivono.
   foreach t in array array['sync_tables', 'role_areas', 'table_areas'] loop
     execute format('alter table public.%I enable row level security', t);
@@ -840,3 +909,262 @@ begin
 end $$;
 grant execute on function public.push_changes(jsonb) to authenticated;
 grant execute on function public.pull_changes(timestamptz) to authenticated;
+
+-- ─── Profili: nascono da Supabase Auth (dalla 0.103.0) ──────
+-- Un collega entra in Bomtrack perché l'amministratore lo **invita** dal
+-- pannello di Supabase (Authentication → Users → Invite user): l'invito crea
+-- la riga in auth.users, e questo trigger le affianca il profilo. Nasce
+-- **sospeso**, come lettore: finché un amministratore non lo attiva da
+-- Gestione → Utenti non legge niente. Così anche una registrazione lasciata
+-- aperta per sbaglio nel pannello di Supabase non apre l'archivio a nessuno.
+--
+-- L'unica eccezione è il primo: se non c'è ancora un amministratore attivo,
+-- chi arriva lo diventa. È l'utente che si crea a mano nel pannello prima di
+-- tutti gli altri, ed è lui a caricare l'archivio.
+create or replace function public.profilo_crea(uid uuid, mail text, nome text)
+returns void language plpgsql security definer set search_path = public as $$
+declare primo boolean;
+begin
+  primo := not exists (select 1 from public.profiles where role = 'admin' and active is not false);
+  insert into public.profiles (id, email, name, role, active, created_at, updated_at)
+    values (uid, mail, coalesce(nullif(nome, ''), split_part(coalesce(mail, ''), '@', 1)),
+            case when primo then 'admin' else 'lettore' end, primo, now(), now())
+    on conflict (id) do nothing;
+end $$;
+revoke execute on function public.profilo_crea(uuid, text, text) from public, anon, authenticated;
+
+create or replace function public.profilo_da_utente() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  perform public.profilo_crea(new.id, new.email, new.raw_user_meta_data->>'name');
+  return new;
+end $$;
+drop trigger if exists profilo_da_utente on auth.users;
+create trigger profilo_da_utente after insert on auth.users
+  for each row execute function public.profilo_da_utente();
+
+-- Gli utenti creati prima di questo schema: stessa regola, nell'ordine in cui
+-- sono nati. Rieseguire il file non tocca chi un profilo ce l'ha già.
+select public.profilo_crea(a.id, a.email, a.raw_user_meta_data->>'name')
+  from (select * from auth.users a
+         where not exists (select 1 from public.profiles p where p.id = a.id)
+         order by a.created_at nulls last, a.id) a;
+
+-- ─── Chi sono e che cosa c'è (dalla 0.103.0) ────────────────
+-- La prima domanda che l'app fa dopo l'accesso, prima di scaricare qualunque
+-- cosa: il proprio profilo (anche sospeso: l'app deve poter dire «chiedi
+-- all'amministratore di attivarti» invece di un generico errore) e se
+-- l'archivio è ancora vuoto, cioè se tocca a questo PC caricarlo.
+-- `security definer` perché un profilo sospeso non legge niente per policy;
+-- restituisce solo la propria riga e un sì/no, nient'altro.
+create or replace function public.archivio_stato() returns jsonb
+language sql stable security definer set search_path = public as $$
+  select jsonb_build_object(
+    'profilo', (select jsonb_build_object('id', p.id, 'email', p.email, 'name', p.name, 'role', p.role, 'active', p.active)
+                  from public.profiles p where p.id = auth.uid()),
+    'vuoto', not (exists (select 1 from public.items) or exists (select 1 from public.suppliers)
+                  or exists (select 1 from public.orders) or exists (select 1 from public.rfqs)
+                  or exists (select 1 from public.families)),
+    'ora', clock_timestamp())
+$$;
+grant execute on function public.archivio_stato() to authenticated;
+
+-- ─── Numeri e codici si prendono dal server (dalla 0.104.0) ──
+-- Con l'archivio condiviso un PC senza collegamento consulta soltanto: chi
+-- crea un documento o un articolo è per forza in linea, e il numero o il
+-- codice lo chiede qui prima di usarlo. Così due colleghi che creano insieme
+-- un ordine non si trovano mai lo stesso ODA-2026-014, e la serie non ha buchi.
+--
+-- `numeri_impegnati`: i numeri dati e non ancora visti nella tabella dei
+-- documenti (il documento è in viaggio). Il prossimo numero è il più alto fra
+-- documenti, impegni e quello che il PC ha in locale (`minimo`, i documenti
+-- ancora in coda), più uno: eliminare l'ultimo documento libera il suo numero.
+-- `numeri_liberi`: i numeri impegnati e poi restituiti perché il documento non
+-- è nato, quando nel frattempo un collega ne aveva preso uno più alto. Il
+-- prossimo che chiede li riprende per primi: è così che non restano buchi.
+-- Un impegno mai chiuso (un PC spento a metà) scade dopo sette giorni.
+drop function if exists public.riserva_numeri(text, int, int);
+drop table if exists public.contatori;   -- la prima stesura della 0.104.0
+create table if not exists public.numeri_impegnati (
+  serie text not null, numero int not null, utente uuid, quando timestamptz not null default now(),
+  primary key (serie, numero)
+);
+create table if not exists public.numeri_liberi (
+  serie text not null, numero int not null, primary key (serie, numero)
+);
+-- `codici_impegnati`: i codici articolo appena presi, nell'ora in cui
+-- l'articolo che li porta potrebbe non essere ancora arrivato in `items`.
+-- Un codice è libero se nessun articolo lo porta e nessun altro utente l'ha
+-- impegnato nell'ultima ora. Il confronto ignora maiuscole e spazi, come
+-- itemCodeKey() nell'app.
+create table if not exists public.codici_impegnati (
+  chiave text primary key,
+  codice text not null,
+  utente uuid not null,
+  quando timestamptz not null default now()
+);
+-- Nessuna policy: le tabelle si toccano solo dalle funzioni qui sotto.
+alter table public.numeri_impegnati enable row level security;
+alter table public.numeri_liberi enable row level security;
+alter table public.codici_impegnati enable row level security;
+
+-- La tabella e la colonna di una serie «SIGLA-ANNO-», controllando che chi
+-- chiama possa scriverci (un lettore non prenota numeri). Ritorna i numeri già
+-- usati dai documenti della serie.
+create or replace function public.numeri_serie_usati(prefisso text) returns setof int
+language plpgsql stable security definer set search_path = public as $$
+declare tab text; col text := 'number';
+begin
+  tab := case split_part(prefisso, '-', 1)
+    when 'RFQ' then 'rfqs' when 'ODA' then 'orders' when 'ODL' then 'work_orders'
+    when 'ODP' then 'production_orders' when 'FAB' then 'production_plans' when 'COM' then 'jobs'
+    when 'MT' then 'item_revisions' end;
+  if tab = 'item_revisions' then col := 'eco_number'; end if;   -- le modifiche tecniche MT-…
+  if tab is null or prefisso !~ '^[A-Z]{2,3}-[0-9]{4}-$' then
+    raise exception 'serie non valida: %', prefisso;
+  end if;
+  if not public.puo_scrivere_tabella(tab) then
+    raise exception 'il ruolo non scrive %', tab using errcode = '42501';
+  end if;
+  return query execute format('select substr(%I, %s)::int from public.%I where %I ~ %L',
+    col, length(prefisso) + 1, tab, col, '^' || prefisso || '[0-9]{1,9}$');
+end $$;
+revoke execute on function public.numeri_serie_usati(text) from public, anon, authenticated;
+
+-- Riserva `quanti` numeri della serie e li restituisce in ordine: prima quelli
+-- restituiti da altri (i buchi), poi i successivi al più alto. Una richiesta
+-- alla volta per serie (il lucchetto), così due colleghi non escono mai con lo
+-- stesso numero.
+create or replace function public.riserva_numeri(prefisso text, quanti int default 1, minimo int default 0)
+returns int[] language plpgsql security definer set search_path = public as $$
+declare usati int[]; alto int; presi int[] := '{}'; n int;
+begin
+  if quanti is null or quanti < 1 or quanti > 500 then raise exception 'quantità non valida: %', quanti; end if;
+  usati := array(select public.numeri_serie_usati(prefisso));
+  perform pg_advisory_xact_lock(hashtext('bomtrack-numeri:' || prefisso));
+  -- Gli impegni chiusi (il documento è arrivato) o scaduti non contano più.
+  delete from public.numeri_impegnati
+   where serie = prefisso and (numero = any(usati) or quando < now() - interval '7 days');
+  alto := greatest(coalesce((select max(x) from unnest(usati) x), 0),
+                   coalesce((select max(numero) from public.numeri_impegnati where serie = prefisso), 0),
+                   coalesce(minimo, 0));
+  -- Un numero restituito ormai usato, o più alto di tutto il resto, non è un buco.
+  delete from public.numeri_liberi
+   where serie = prefisso and (numero = any(usati) or numero > alto
+         or numero in (select numero from public.numeri_impegnati where serie = prefisso));
+  for n in select numero from public.numeri_liberi where serie = prefisso order by numero limit quanti loop
+    delete from public.numeri_liberi where serie = prefisso and numero = n;
+    presi := presi || n;
+  end loop;
+  while coalesce(array_length(presi, 1), 0) < quanti loop
+    alto := alto + 1;
+    presi := presi || alto;
+  end loop;
+  insert into public.numeri_impegnati (serie, numero, utente, quando)
+    select prefisso, x, auth.uid(), now() from unnest(presi) x;
+  return presi;
+end $$;
+grant execute on function public.riserva_numeri(text, int, int) to authenticated;
+
+-- Restituisce i numeri impegnati e non usati (il documento alla fine non è
+-- nato): tornano disponibili, e il prossimo che chiede li riprende.
+drop function if exists public.libera_numeri(text, int[]);
+create or replace function public.libera_numeri(prefisso text, numeri int[])
+returns int language plpgsql security definer set search_path = public as $$
+declare usati int[]; n int;
+begin
+  usati := array(select public.numeri_serie_usati(prefisso));
+  perform pg_advisory_xact_lock(hashtext('bomtrack-numeri:' || prefisso));
+  with tolti as (
+    delete from public.numeri_impegnati
+     where serie = prefisso and numero = any(coalesce(numeri, '{}')) and utente is not distinct from auth.uid()
+    returning numero)
+  insert into public.numeri_liberi (serie, numero)
+    select prefisso, numero from tolti where not (numero = any(usati))
+    on conflict do nothing;
+  get diagnostics n = row_count;
+  return n;
+end $$;
+grant execute on function public.libera_numeri(text, int[]) to authenticated;
+
+-- Il documento è arrivato: il suo numero non è più un impegno ma un fatto.
+-- Senza chiuderlo qui, eliminare l'ultimo documento non libererebbe il suo
+-- numero, perché l'impegno lo terrebbe occupato fino alla scadenza.
+create or replace function public.numeri_chiudi_impegno() returns trigger
+language plpgsql security definer set search_path = public as $$
+declare v text;
+begin
+  v := to_jsonb(new)->>(case when TG_TABLE_NAME = 'item_revisions' then 'eco_number' else 'number' end);
+  if v ~ '^[A-Z]{2,3}-[0-9]{4}-[0-9]{1,9}$' then
+    delete from public.numeri_impegnati
+     where serie = substring(v from '^([A-Z]{2,3}-[0-9]{4}-)') and numero = substring(v from '([0-9]+)$')::int;
+  end if;
+  return null;
+end $$;
+do $$
+declare t text;
+begin
+  foreach t in array array['rfqs', 'orders', 'work_orders', 'production_orders', 'production_plans', 'jobs', 'item_revisions'] loop
+    execute format('drop trigger if exists numeri_chiudi_impegno on public.%I', t);
+    execute format('create trigger numeri_chiudi_impegno after insert or update on public.%I for each row execute function public.numeri_chiudi_impegno()', t);
+  end loop;
+end $$;
+
+-- Impegna i codici articolo di `codici` ([{"codice": …, "item": id facoltativo}])
+-- e restituisce quelli già presi: da un articolo diverso da `item`, o da un
+-- altro utente nell'ultima ora. Gli altri restano impegnati a nome di chi chiama.
+-- Per quale articolo (dalla 0.105.3): lo stesso utente che reimpegnava un
+-- codice già suo passava sempre, anche per un articolo diverso. Due PC con lo
+-- stesso accesso, o un doppio clic, davano lo stesso codice a due articoli.
+alter table public.codici_impegnati add column if not exists item text;
+create or replace function public.impegna_codici(codici jsonb)
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare x jsonb; k text; preso boolean; presi jsonb := '[]'::jsonb;
+begin
+  if not public.puo_scrivere_tabella('items') then
+    raise exception 'il ruolo non scrive items' using errcode = '42501';
+  end if;
+  delete from public.codici_impegnati where quando < now() - interval '1 hour';
+  for x in select * from jsonb_array_elements(coalesce(codici, '[]'::jsonb)) loop
+    k := lower(btrim(coalesce(x->>'codice', '')));
+    continue when k = '';
+    preso := exists (select 1 from public.items i
+                      where lower(btrim(i.code)) = k and (x->>'item' is null or i.id::text <> x->>'item'));
+    if not preso then
+      insert into public.codici_impegnati as c (chiave, codice, utente, quando, item)
+        values (k, btrim(x->>'codice'), auth.uid(), now(), x->>'item')
+        on conflict (chiave) do update set quando = now()
+          where c.utente = excluded.utente and c.item is not distinct from excluded.item;
+      preso := not found;
+    end if;
+    if preso then presi := presi || to_jsonb(x->>'codice'); end if;
+  end loop;
+  return presi;
+end $$;
+grant execute on function public.impegna_codici(jsonb) to authenticated;
+
+-- Restituisce codici impegnati e non usati: un collega può prenderli subito,
+-- invece di saltarli e lasciare un buco nella codifica.
+drop function if exists public.libera_codici(jsonb);
+create or replace function public.libera_codici(codici jsonb)
+returns int language plpgsql security definer set search_path = public as $$
+declare n int;
+begin
+  delete from public.codici_impegnati
+   where utente = auth.uid()
+     and chiave in (select lower(btrim(v)) from jsonb_array_elements_text(coalesce(codici, '[]'::jsonb)) v);
+  get diagnostics n = row_count;
+  return n;
+end $$;
+grant execute on function public.libera_codici(jsonb) to authenticated;
+
+-- ═══════════════════════════════════════════════════════════
+--  Il tipo di un articolo è uno dei sei (dalla 0.105.3)
+-- ═══════════════════════════════════════════════════════════
+-- L'app lo stampa nelle schermate di tutti: un valore inventato, scritto
+-- dall'API da un collega, arrivava nell'HTML degli altri. L'app ora lo rende
+-- innocuo anche da sé; qui non entra più. `not valid`: le righe che ci sono
+-- non si ricontrollano, quelle nuove sì.
+alter table public.items drop constraint if exists items_tipo_noto;
+alter table public.items add constraint items_tipo_noto
+  check (type is null or type in ('macchina', 'gruppo', 'sottogruppo', 'parte', 'materiale', 'acquistato')) not valid;

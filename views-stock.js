@@ -187,7 +187,7 @@ function stockIndex() {
   _stockIdx = idx;
   return idx;
 }
-function invalidateStock() { _stockIdx = null; _commitIdx = null; _prelIdx = null; _clIdx = null; _scaffaleIdx = null; }
+function invalidateStock() { _stockIdx = null; _commitIdx = null; _prelIdx = null; _clIdx = null; _scaffaleIdx = null; _ordinePiani = null; }
 function stockOf(itemId) { return stockIndex().get(itemId) || { onHand: 0, incoming: 0, arrivi: [] }; }
 function onHandOf(itemId) { return stockOf(itemId).onHand; }
 function incomingOf(itemId) { return stockOf(itemId).incoming; }
@@ -303,15 +303,24 @@ function planUrgenza(p) {
   const date = (p.lines || []).map(l => l.dueDate || p.dueDate || '').filter(Boolean).sort();
   return date[0] || '9999-12-31';
 }
+// I piani aperti in ordine di urgenza, gli stessi e nello stesso ordine per
+// chiunque li chieda: lo scaffale e l'impegnato si spartiscono con questo.
+let _ordinePiani = null;
+function pianiInOrdine() {
+  if (_ordinePiani) return _ordinePiani;
+  const piani = (db.plans || []).filter(p => p.active !== false && (p.lines || []).length)
+    .sort((a, b) => planUrgenza(a).localeCompare(planUrgenza(b))
+      || String(a.date || '').localeCompare(String(b.date || ''))
+      || String(a.number || '').localeCompare(String(b.number || '')));
+  _ordinePiani = { piani, posto: new Map(piani.map((p, i) => [p.id, i])) };
+  return _ordinePiani;
+}
 function scaffaleIndex() {
   if (_scaffaleIdx) return _scaffaleIdx;
   const idx = new Map();
   _scaffaleIdx = idx;                   // prima del calcolo: niente rientri
   if (typeof mrpExplode !== 'function') return idx;
-  const piani = (db.plans || []).filter(p => p.active !== false && (p.lines || []).length)
-    .sort((a, b) => planUrgenza(a).localeCompare(planUrgenza(b))
-      || String(a.date || '').localeCompare(String(b.date || ''))
-      || String(a.number || '').localeCompare(String(b.number || '')));
+  const piani = pianiInOrdine().piani;
   // Versato dagli ODP di ciascun piano, per parte.
   const versato = new Map();
   if (typeof opVersato === 'function') {
@@ -428,10 +437,25 @@ function prelevatoPer(itemId, piani) {
 // della stessa commessa non si fanno concorrenza, sono la stessa domanda scritta
 // su due fogli. Senza questo, con 100 pz a magazzino e due piani che ne chiedono
 // 100 a testa, ognuno dei due si vedrebbe scoperto per colpa dell'altro.
+//
+// E dei piani rimasti contano solo quelli **più urgenti** (pianiInOrdine), come
+// per lo scaffale: chi consegna prima prende prima. Fino alla 0.105.2 contavano
+// tutti, e senza merce ogni piano comprava anche la domanda degli altri: due
+// piani da 100 e 50 a magazzino vuoto mostravano 150 da comprare ciascuno, e
+// generare gli ordini da entrambi ne ordinava 300. Un piano chiuso, o che non
+// è in fila, guarda dopo tutti gli aperti. Senza esclusione (`null`) contano
+// tutti: è l'impegnato totale che mostrano la scheda e il magazzino.
 function commitsOn(itemId, except) {
   const escl = except instanceof Set ? except
     : new Set(Array.isArray(except) ? except : (except ? [except] : []));
-  return (commitIndex().get(itemId) || []).filter(c => !escl.has(c.planId));
+  const tutti = (commitIndex().get(itemId) || []).filter(c => !escl.has(c.planId));
+  if (!escl.size) return tutti;
+  const posto = pianiInOrdine().posto;
+  // Una commessa guarda dal suo piano meno urgente: un piano che le sta in mezzo
+  // prende prima di quello.
+  let mio = -1;
+  escl.forEach(id => { mio = Math.max(mio, posto.has(id) ? posto.get(id) : Infinity); });
+  return tutti.filter(c => posto.has(c.planId) && posto.get(c.planId) < mio);
 }
 function committedOf(itemId, exceptPlanId) {
   return commitsOn(itemId, exceptPlanId).reduce((s, c) => s + c.qty, 0);
@@ -460,10 +484,16 @@ function lotModeOf(it) { return (it && it.lotMode === 'min') ? 'min' : 'multiple
 // dalla parte del magazzino: sono entrambi merce che c'è ma non si può usare.
 // Scriverlo come sottrazione dall'esistente darebbe lo stesso numero e la
 // domanda sbagliata — «quanto ne ho» invece di «quanto me ne serve».
+//
+// L'impegnato però toglie solo merce che c'è: quando i piani più urgenti ne
+// chiedono più di quanta ne esista, la loro parte scoperta la comprano loro, e
+// questo piano compra la sua e basta. Il buco della scorta minima lo copre il
+// primo della fila, quello senza impegnato davanti; agli altri non si ricarica.
 function netRequirement(lordo, onHand, incoming, safety, lotSize, committed, lotMode) {
   const l = Number(lordo) || 0;
-  const mancante = l + (Number(safety) || 0) + (Number(committed) || 0)
-    - (Number(onHand) || 0) - (Number(incoming) || 0);
+  const imp = Number(committed) || 0;
+  const disp = (Number(onHand) || 0) + (Number(incoming) || 0) - (Number(safety) || 0) - imp;
+  const mancante = l - (imp > 0 ? Math.max(0, disp) : disp);
   if (!(mancante > 0)) return 0;
   const lot = Number(lotSize) || 0;
   if (!(lot > 0)) return mancante;
@@ -512,7 +542,7 @@ function addMovement(itemId, kind, qty, note, extra) {
   const q = Number(qty) || 0;
   if (!q) return null;                       // un movimento da zero non è un movimento
   const e = extra || {};
-  const rec = { id: gid(), itemId, kind: MOVEMENT_KINDS[kind] ? kind : 'rettifica',
+  const rec = { id: e.id || gid(), itemId, kind: MOVEMENT_KINDS[kind] ? kind : 'rettifica',
     qty: q, date: nowISO(), note: String(note || '').trim(),
     supplierId: e.supplierId || null, fromSupplierId: e.fromSupplierId || null,
     orderId: e.orderId || null, lineId: e.lineId || null,
@@ -832,7 +862,8 @@ function stockMovementsModal(itemId) {
       <span class="empty-text" style="padding:0;width:90px">${esc(String(m.date || '').slice(0, 10))}</span>
       <span style="flex:1">${m.supplierId ? `<strong>${esc(supplierName(m.supplierId) || '')}</strong>${m.orderId ? ' · ' + esc((clDocById(m.orderId) || {}).number || '') : ''}${m.note ? ' — ' : ''}` : ''}${esc(m.note || '')}</span>
       <span style="font-family:var(--mono);color:${m.qty < 0 ? 'var(--red)' : 'var(--green)'}">${m.qty > 0 ? '+' : ''}${fmtUom(m.qty, u)}</span>
-      <button class="mini-btn danger" onclick="delMovement('${m.id}','${it.id}')" title="Elimina movimento">${ico('trash', 'tinted', 'Elimina movimento')}</button>
+      ${movimentoDiDocumento(m) ? `<span class="empty-text" style="padding:0" title="${esc(movimentoDiDocumento(m))}">dal documento</span>`
+    : `<button class="mini-btn danger" onclick="delMovement('${m.id}','${it.id}')" title="Elimina movimento">${ico('trash', 'tinted', 'Elimina movimento')}</button>`}
     </div>`).join('');
   const righeOrd = ordini.map(o => {
     const q = (o.lines || []).filter(l => l.itemId === it.id).reduce((s, l) => s + (Number(l.received) || 0), 0);
@@ -1174,8 +1205,22 @@ function contoLavoroExportSpec() {
     }],
   };
 }
+// I movimenti che un ordine di produzione o un montaggio ha scritto sono suoi:
+// si annullano da lì (Annulla dichiarazione), che tiene d'accordo stato, fasi e
+// impegni. Eliminarli da qui lasciava il documento a dire una cosa e il
+// magazzino un'altra. → il motivo, o '' se il movimento si può eliminare.
+function movimentoDiDocumento(m) {
+  if (!m) return '';
+  if (m.declId || (typeof opMovimentoDiOdp === 'function' && opMovimentoDiOdp(m)))
+    return 'Scritto da un ordine di produzione: si annulla dall\'ordine, con «Annulla dichiarazione»';
+  if (m.orderId && (db.productions || []).some(d => d.id === m.orderId))
+    return 'Scritto da una dichiarazione di montaggio: si annulla da lì';
+  return '';
+}
 function delMovement(id, itemId) {
   if (!roleGuardShop('catalog')) return;
+  const perche = movimentoDiDocumento((db.movements || []).find(m => m.id === id));
+  if (perche) { showToast(perche, 'error'); return; }
   askConfirm('Eliminare questo movimento? La giacenza cambia di conseguenza.', () => {
     removeConUndo('movements', id, 'Movimento eliminato', () => stockMovementsModal(itemId));
   });
@@ -1285,7 +1330,7 @@ function stockRow(it) {
     <td class="col-flags" style="width:1%;white-space:nowrap">${flags}</td>
     <td class="col-code" style="font-family:var(--mono)">${codeLink(it.id, it.code)}</td>
     <td class="col-name">${esc(it.name)}</td>
-    <td class="col-type"><span class="bom-type-tag tt-${it.type}">${typeShort(it.type)}</span> ${typeLabel(it.type)}</td>
+    <td class="col-type"><span class="bom-type-tag tt-${typeKey(it.type)}">${typeShort(it.type)}</span> ${typeLabel(it.type)}</td>
     <td class="col-family" style="color:var(--text-dim)">${esc(codingLabel(it) || familyLabel(it))}</td>
     <td class="col-uom">${esc(u)}</td>
     <td class="col-location" style="font-family:var(--mono)${ubicazioneOf(it) ? '' : ';color:var(--text-dim)'}">${esc(ubicazioneOf(it) || '—')}</td>
@@ -1495,14 +1540,18 @@ function riordinoProposte() {
 // Una bozza d'ordine per fornitore, con le righe scelte. Le righe senza
 // fornitore restano fuori: un ordine senza intestatario non si manda a
 // nessuno, e il modale lo dice prima. Torna gli ordini creati.
-function riordinoGenera(itemIds) {
-  if (!roleGuard('docs')) return [];
+function riordinoPerFornitore(itemIds) {
   const scelti = new Set(itemIds || []);
   const perFornitore = new Map();
   riordinoProposte().filter(p => scelti.has(p.it.id) && p.supplierId).forEach(p => {
     if (!perFornitore.has(p.supplierId)) perFornitore.set(p.supplierId, []);
     perFornitore.get(p.supplierId).push(p);
   });
+  return perFornitore;
+}
+function riordinoGenera(itemIds) {
+  if (!roleGuard('docs')) return [];
+  const perFornitore = riordinoPerFornitore(itemIds);
   const oggi = oggiISO();
   const creati = [];
   perFornitore.forEach((ps, supplierId) => {
@@ -1557,10 +1606,13 @@ function riordinoModal() {
 function riordinoConferma() {
   const ids = Array.prototype.map.call(document.querySelectorAll('.riordino-sel'), el => (el.checked ? el.value : null)).filter(Boolean);
   if (!ids.length) { showToast('Nessun articolo scelto', 'error'); return; }
-  const creati = riordinoGenera(ids);
-  closeModal();
-  if (!creati.length) return;
-  showToast(creati.length === 1 ? `Creato l'ordine ${creati[0].number} in bozza` : `Creati ${creati.length} ordini in bozza: ${creati.map(o => o.number).join(', ')}`);
-  setView('orders');
-  openOrderEdit(creati[0].id);
+  if (!roleGuard('docs')) return;
+  return conNumeri({ ODA: riordinoPerFornitore(ids).size }, () => {
+    const creati = riordinoGenera(ids);
+    closeModal();
+    if (!creati.length) return;
+    showToast(creati.length === 1 ? `Creato l'ordine ${creati[0].number} in bozza` : `Creati ${creati.length} ordini in bozza: ${creati.map(o => o.number).join(', ')}`);
+    setView('orders');
+    openOrderEdit(creati[0].id);
+  });
 }

@@ -260,11 +260,49 @@ function newId() {
   return `${r()}${r()}-${r()}-4${r().slice(1)}-${((8 + Math.floor(Math.random() * 4)).toString(16)) + r().slice(1)}-${r()}${r()}${r()}`;
 }
 function gid() { return newId(); }
+// Un id che nasce da una chiave, uguale su ogni PC: due colleghi che fanno lo
+// stesso gesto prima di essersi visti scrivono lo stesso record, non due.
+// Forma di un uuid v4, perché le colonne sul server sono di quel tipo.
+function idDaChiave(chiave) {
+  const testo = String(chiave);
+  let h = '';
+  [0x811c9dc5, 0x01000193, 0x9e3779b9, 0x85ebca6b].forEach(seme => {
+    let x = seme >>> 0;
+    for (let i = 0; i < testo.length; i++) { x ^= testo.charCodeAt(i); x = Math.imul(x, 0x01000193) >>> 0; }
+    h += x.toString(16).padStart(8, '0');
+  });
+  return `${h.slice(0, 8)}-${h.slice(8, 12)}-4${h.slice(13, 16)}-${'89ab'[parseInt(h[16], 16) & 3]}${h.slice(17, 20)}-${h.slice(20, 32)}`;
+}
+// Lo stesso, ma se quell'id è già stato usato qui (il gesto rifatto dopo averlo
+// annullato) se ne prende uno nuovo: due record con lo stesso id non devono
+// esistere, nemmeno uno vivo e uno nel cestino.
+function idDaChiaveLibero(chiave, coll) {
+  const id = idDaChiave(chiave);
+  const usato = (db[coll] || []).some(r => r.id === id) || (db.trash || []).some(t => t.record && t.record.id === id);
+  return usato ? gid() : id;
+}
 function nowISO() { return new Date().toISOString(); }
 // Autore delle modifiche: impostato al login (Store.setActor), finisce in
 // createdBy/updatedBy di ogni record → created_by/updated_by in cloud.
 let actorId = null;
 let lastTrashId = null;   // ultima voce di cestino creata (per l'annulla immediato)
+let rifiuto = '';          // perché l'ultimo ripristino non è andato (vedi restore)
+// Il campo che numera ogni collezione: un documento ha il suo numero, una
+// modifica tecnica il suo MT, un articolo il codice (che non guarda maiuscole
+// e spazi, come itemCodeKey).
+const NUMERO_DI = { rfqs: 'number', orders: 'number', workOrders: 'number', prodOrders: 'number',
+  plans: 'number', jobs: 'number', revisions: 'ecoNumber', items: 'code' };
+function numeroGiaDato(coll, rec) {
+  const campo = NUMERO_DI[coll];
+  const chiave = v => String(v == null ? '' : v).trim().toLowerCase();
+  const mio = rec && chiave(rec[campo]);
+  if (!campo || !mio) return '';
+  const altro = (db[coll] || []).find(r => r.id !== rec.id && chiave(r[campo]) === mio);
+  if (!altro) return '';
+  return coll === 'items'
+    ? `Il codice ${rec[campo]} è stato dato a un altro articolo dopo l'eliminazione: ripristinarlo darebbe due articoli con lo stesso codice. Resta nel cestino.`
+    : `Il numero ${rec[campo]} è stato dato a un altro documento dopo l'eliminazione: ripristinarlo darebbe due documenti con lo stesso numero. Resta nel cestino.`;
+}
 // L'istante di una modifica: adesso, ma sempre **dopo** quello che il record
 // aveva. Due scritture nello stesso millisecondo producevano la stessa data, e
 // per la sincronizzazione — che riconosce una modifica dal cambio di
@@ -583,6 +621,26 @@ function loadDB() {
 const CAL_FESTIVI_IT = ['01-01', '01-06', '04-25', '05-01', '06-02', '08-15', '11-01', '12-08', '12-25', '12-26'];
 function calDefault() {
   return { workDays: [1, 2, 3, 4, 5], holidays: CAL_FESTIVI_IT.slice(), easter: true, closures: [] };
+}
+// Le copie lasciate da quella semina ripetuta (fino alla 0.105.1): stessa
+// quotazione a mano, identica in tutto tranne l'id. Resta quella in uso, se è
+// fra le copie, altrimenti la prima. Le quotazioni da una richiesta d'offerta
+// non c'entrano: quelle non sono mai state seminate.
+function togliQuotazioniDoppie(it) {
+  const viste = new Map();
+  const via = new Set();
+  const chiave = r => JSON.stringify([r.supplierId || null, Number(r.price) || 0, r.priceUom || '',
+    r.minQty == null ? '' : String(r.minQty), r.leadDays == null ? '' : String(r.leadDays),
+    r.code || '', r.desc || '', r.date || '', r.note || '']);
+  it.priceList.forEach(r => {
+    if (r.rfqId) return;
+    const k = chiave(r);
+    const prima = viste.get(k);
+    if (!prima) { viste.set(k, r); return; }
+    if (r.id === it.activePriceId) { via.add(prima.id); viste.set(k, r); }
+    else via.add(r.id);
+  });
+  if (via.size) it.priceList = it.priceList.filter(r => !via.has(r.id));
 }
 function migrateDB() {
   // Normalizzazioni legacy (idempotenti, sempre eseguite)
@@ -930,8 +988,14 @@ function migrateDB() {
         // Anche un prezzo senza fornitore diventa una quotazione "a mano": ora
         // che i prezzi si toccano solo dal listino, altrimenti resterebbe un
         // valore nella costificazione che nessuna schermata può più correggere.
+        //
+        // Nell'archivio condiviso mai: il flag resta su questo PC (non ha una
+        // colonna), e un articolo che arriva dal server ne è senza. La semina
+        // ripartiva su ogni PC, a ogni download e a ogni ricarica dopo una
+        // modifica altrui, e il listino si riempiva di copie della stessa
+        // quotazione. Un archivio arriva sul server già seminato.
         const prezzo = it.type === 'acquistato' ? it.purchasePrice : it.unitCost;
-        if (it.supplierId || Number(prezzo) > 0) {
+        if (!modoCondiviso && (it.supplierId || Number(prezzo) > 0)) {
           const riga = stampNew({
             id: newId(), supplierId: it.supplierId || null, price: Number(prezzo) || 0,
             minQty: '', leadDays: '', code: it.supplierCode || '', desc: it.supplierDesc || '',
@@ -942,6 +1006,7 @@ function migrateDB() {
         }
         it.priceListSeeded = true;
       }
+      if (modoCondiviso) togliQuotazioniDoppie(it);
     }
     // Approvvigionamento della parte: si produce in casa o si compra. Ha preso il
     // posto del vecchio modo di calcolo (costMode), che rispondeva alla stessa
@@ -1752,10 +1817,14 @@ function storicoDiff(prima, dopo) {
   });
   return out;
 }
+// Vero mentre si salvano le modifiche arrivate dall'archivio condiviso: nel
+// registro l'autore è chi le ha fatte (updatedBy del record), non chi le
+// riceve. Le metterebbe tutte a nome di chi ha la finestra aperta.
+let _storicoDaRemoto = false;
 function storicoRegistra() {
   if (!db) return;
   if (!_storicoBase) { storicoFotografa(); return; }
-  const t = nowISO(), u = actorId || null;
+  const t = nowISO(), u = _storicoDaRemoto ? null : (actorId || null);
   const nuove = [];
   const dopo = new Map();
   COLLECTIONS.forEach(c => {
@@ -1783,7 +1852,7 @@ function storicoRegistra() {
       let vecchio = null;
       try { vecchio = v.p ? JSON.parse(v.p) : null; } catch (e) { vecchio = null; }
       const rec = v.r || vecchio || {};
-      const e = { t, u, c, id: rec.id, op: v.op, n: storicoEtichetta(rec) };
+      const e = { t, u: _storicoDaRemoto ? (rec.updatedBy || null) : u, c, id: rec.id, op: v.op, n: storicoEtichetta(rec) };
       if (v.op === 'm') {
         e.d = storicoDiff(vecchio, v.r);
         if (!e.d.length) return;   // solo date e autore: nessuna modifica vera
@@ -1852,6 +1921,7 @@ const Store = {
       revVista = revAttuale + 1;
       try { if (adapter.scriviRev) adapter.scriviRev(revVista); } catch (e) { /* il blob è salvo: il contatore si riallinea al prossimo caricamento */ }
       if (!adapter.asincrono) scritturaRiuscita();
+      if (typeof Store.dopoCommit === 'function') { try { Store.dopoCommit(); } catch (e) { console.error(e); } }
       return true;
     } catch (e) {
       return commitFailed(isQuotaError(e) ? 'quota' : 'storage', e, payload.length);
@@ -1860,6 +1930,11 @@ const Store = {
   // Vero finché una modifica è rimasta solo in memoria. Chiudere la scheda in
   // questo stato perde tutto il lavoro fatto dal primo errore in poi.
   isUnsaved() { return dbUnsaved; },
+  // Un'altra scheda ha scritto l'archivio dopo che questa l'ha letto.
+  superata() {
+    try { return !!(adapter && adapter.leggiRev) && adapter.leggiRev() !== revVista; }
+    catch (e) { return false; }
+  },
   // Scritture partite e non ancora arrivate (solo IndexedDB). Chiudere la
   // scheda adesso perderebbe l'ultima.
   scrittureInVolo() { return adapter.inVolo ? adapter.inVolo() : 0; },
@@ -1978,14 +2053,23 @@ const Store = {
   // riferimento esplicito: cercare «l'ultima per data» non basta, due
   // eliminazioni nello stesso millisecondo hanno la stessa data.
   lastRemoved() { return lastTrashId; },
+  rifiutoRipristino() { return rifiuto; },
   // Rimette il record dov'era. Best effort: se nel frattempo qualcosa che
   // citava è sparito, torna comunque — meglio un riferimento da sistemare che
   // un dato perso.
+  //
+  // Tranne quando il suo numero o il suo codice è già di un altro: si elimina
+  // solo l'ultimo della serie, e il suo numero torna subito in uso. Rimetterlo
+  // darebbe due ODA-2026-002, e niente nel database lo impedisce. Allora resta
+  // nel cestino e `rifiutoRipristino()` dice perché.
   restore(trashId) {
+    rifiuto = '';
     const i = (db.trash || []).findIndex(t => t.id === trashId);
     if (i < 0) return null;
     const t = db.trash[i];
     if (!Array.isArray(db[t.coll])) db[t.coll] = [];
+    const doppio = numeroGiaDato(t.coll, t.record);
+    if (doppio) { rifiuto = doppio; return null; }
     // Se un record con lo stesso id è tornato nel frattempo (import, ripristino
     // doppio), non si duplica: vince quello vivo.
     //
@@ -2010,12 +2094,101 @@ const Store = {
   getSettings() { return db.settings; },
   setSettings(patch) { Object.assign(db.settings, patch); this.commit(); },
   exportSnapshot() { return JSON.stringify(db, null, 2); },
+  // ── Per l'archivio condiviso (cloud.js, dalla 0.103.0) ──
+  // La fotografia dell'ultimo invio riuscito, in una forma che si salva: senza,
+  // chiudere la finestra con una modifica non ancora partita la perderebbe —
+  // al riavvio il caricamento rifotografa l'adesso e la modifica non risulta
+  // più da mandare. `null` = nessuna fotografia.
+  baseSalvabile() {
+    if (!_baseIds) return null;
+    const ids = {}, children = {};
+    _baseIds.forEach((m, c) => { ids[c] = Object.fromEntries(m); });
+    if (_baseChildren) _baseChildren.forEach((m, k) => { children[k] = Object.fromEntries(m); });
+    return { ids, children: _baseChildren ? children : null, settings: _baseSettings };
+  },
+  // L'inverso. Una fotografia vuota ({}) dice «il server non ha visto niente
+  // di questo archivio»: tutto risulta da mandare, e niente da cancellare.
+  ripristinaBase(b) {
+    const o = b || {};
+    const ids = new Map();
+    COLLECTIONS.forEach(c => { ids.set(c, new Map(Object.entries((o.ids || {})[c] || {}))); });
+    const children = new Map();
+    Object.keys(o.children || {}).forEach(k => { children.set(k, new Map(Object.entries(o.children[k]))); });
+    _baseIds = ids; _baseChildren = children; _baseSettings = o.settings == null ? '' : o.settings;
+  },
+  // Le modifiche che arrivano dal server: si applicano a `db` e si salvano in
+  // locale, ma **non** sono modifiche di questo PC e non vanno rimandate.
+  // Due cose da evitare: che stampChildRows() le scambi per righe modificate e
+  // le dati con l'adesso (vincerebbero a torto al prossimo invio), e che il
+  // conto delle modifiche le veda. Si chiama solo senza modifiche in sospeso:
+  // la fotografia finale le dà tutte per inviate.
+  applicaRemoto(fn) {
+    fn(db);
+    // I ricevuti delle righe arrivate si ricalcolano dagli eventi: il campo è
+    // derivato, e dal server torna senza.
+    if (modoCondiviso) riallineaRicevuti(false);
+    _childFp = null;
+    _storicoDaRemoto = true;
+    let ok;
+    try { ok = this.commit(); } finally { _storicoDaRemoto = false; }
+    markSynced();
+    return ok;
+  },
+  // Un archivio intero che arriva dal server sostituisce quello locale (il
+  // primo collegamento di un PC). Come un ripristino, ma la fotografia è
+  // quella giusta: quello che c'è adesso è esattamente ciò che il server ha.
+  sostituisciDaRemoto(nuovo) {
+    const prima = db;
+    db = nuovo;
+    try { migrateDB(); }
+    catch (e) { db = prima; throw e; }
+    _childFp = null;
+    _storicoBase = null;   // il registro riparte da qui: non è «tutto nuovo, a nome mio»
+    const ok = this.commit();
+    markSynced();
+    return ok;
+  },
+  // Chi vuole sapere che un salvataggio è andato a buon fine: l'archivio
+  // condiviso ci aggancia l'invio. Una funzione sola, di proposito.
+  dopoCommit: null,
+  // Il record era già nella fotografia dell'ultimo invio? Un padre nuovo
+  // manda tutte le sue righe; uno già noto solo quelle cambiate.
+  inBase(coll, id) { return !!(_baseIds && _baseIds.get(coll) && _baseIds.get(coll).has(id)); },
+  // La versione da cui è partita la modifica: l'updatedAt del record nella
+  // fotografia (la firma lo porta in testa). Il server la confronta con la
+  // sua, per non lasciar passare una modifica fatta su una copia vecchia.
+  baseUpdatedAt(coll, id) {
+    const m = _baseIds && _baseIds.get(coll);
+    const firma = m && m.get(id);
+    return firma ? String(firma).split('|')[0] || null : null;
+  },
+  // Toglie dalla fotografia un record o una riga figlia: la sua cancellazione
+  // non risulta più da mandare. Serve quando il server la rifiuta (un collega
+  // lo usa ancora) e il record deve tornare dal server.
+  dimenticaInBase(coll, id, figlio) {
+    if (figlio) { const m = _baseChildren && _baseChildren.get(coll + '|' + figlio); if (m) m.delete(id); return; }
+    const m = _baseIds && _baseIds.get(coll);
+    if (m) m.delete(id);
+    // E le sue righe: senza padre nella fotografia risulterebbero tolte una
+    // per una, e il server le cancellerebbe al record che resta.
+    if (_baseChildren) _baseChildren.forEach((righe, k) => {
+      if (k.split('|')[0] !== coll) return;
+      righe.forEach((padre, r) => { if (padre === id) righe.delete(r); });
+    });
+  },
   importSnapshot(json) {
     const data = typeof json === 'string' ? JSON.parse(json) : json;
     const err = validateSnapshot(data);
     if (err) throw new Error(err);
+    // Prima si migra, poi si sostituisce (dalla 0.105.3): un backup che passa
+    // la validazione ma fa fallire la migrazione restava in memoria come
+    // archivio, mentre l'app diceva «import non riuscito», e il primo
+    // salvataggio qualsiasi lo scriveva sopra quello vero.
+    const prima = db;
     db = data;
-    migrateDB();
+    try { migrateDB(); }
+    catch (e) { db = prima; throw new Error('backup non importabile (' + (e && e.message || e) + ')'); }
+    dbLoadError = null;   // da qui in memoria c'è un archivio vero (vedi backupAutoEsegui)
     markUnknown();
     this.commit();
   },

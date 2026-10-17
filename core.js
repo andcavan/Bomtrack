@@ -13,7 +13,7 @@
 // Revisione in esecuzione, mostrata accanto al logo. Va tenuta allineata alla
 // voce in cima a CHANGELOG.md (l'app si copia a mano tra PC: sapere
 // quale revisione sta girando su una postazione è l'unico modo per capirlo).
-const APP_VERSION = '0.102.0';
+const APP_VERSION = '0.105.3';
 
 let currentUser = null;      // utente della sessione (null = schermata di accesso)
 let currentBomId = null;     // articolo prodotto attualmente aperto nelle Distinte
@@ -63,6 +63,14 @@ function numIt(n, decimali) {
   return (v < 0 && Number(s) !== 0 ? '-' : '') + gruppi + (fraz ? ',' + fraz : '');
 }
 function fmtN(n) { return cur() + ' ' + numIt(n, 2); }
+// Il prezzo unitario di un documento, con i decimali che ha (da 2 a 4): un
+// listino a 4 decimali stampato a 2 è un prezzo diverso da quello concordato, e
+// prezzo × quantità non tornava con l'importo della riga.
+function fmtPrezzo(n) {
+  const v = Number(n) || 0;
+  const fraz = (String(+v.toFixed(4)).split('.')[1] || '').length;
+  return cur() + ' ' + numIt(v, Math.min(4, Math.max(2, fraz)));
+}
 // ─── L'importo di una riga di documento ───
 // Quantità × prezzo, arrotondato ai centesimi **una volta sola**.
 //
@@ -441,14 +449,30 @@ function canWriteShop(oppure) { return canWrite('shop') || canWrite(oppure); }
 function roleGuardShop(oppure) { return canWriteShop(oppure) || roleGuard(oppure); }
 const AREA_LABELS = { catalog: 'anagrafiche articoli', bom: 'distinte base', docs: 'richieste e ordini', manage: 'gestione', agenda: 'promemoria', shop: 'avanzamento, ricevimenti e giacenze' };
 function roleLabel(r) { return ROLES[r] || r || '—'; }
-function canWrite(area) {
+// Il ruolo dice che cosa si può scrivere; il collegamento, se si può adesso.
+// Con l'archivio condiviso un PC senza collegamento consulta soltanto
+// (cloudSolaLettura): numeri e codici li assegna il server, e una modifica
+// fatta al buio arriverebbe ai colleghi chissà quando, magari su un documento
+// che nel frattempo hanno cambiato loro.
+function canWriteRuolo(area) {
   if (!currentUser) return false;
   return (ROLE_WRITE[currentUser.role] || []).includes(area);
+}
+function canWrite(area) {
+  return canWriteRuolo(area) && !(typeof cloudSolaLettura === 'function' && cloudSolaLettura());
 }
 function isAdmin() { return !!currentUser && currentUser.role === 'admin'; }
 // Guardia dei mutatori, sul modello di rfqGuard: blocca e spiega.
 function roleGuard(area) {
   if (canWrite(area)) return true;
+  if (canWriteRuolo(area)) { showToast(CLOUD_SOLA_LETTURA_MSG, 'error'); return false; }
+  showToast(`Il ruolo "${roleLabel(currentUser && currentUser.role)}" non può modificare ${AREA_LABELS[area] || area}`, 'error');
+  return false;
+}
+// La guardia dei gesti che leggono soltanto (esportare, fare un backup) ma
+// sono riservati a un ruolo: valgono anche senza collegamento.
+function roleGuardRuolo(area) {
+  if (canWriteRuolo(area)) return true;
   showToast(`Il ruolo "${roleLabel(currentUser && currentUser.role)}" non può modificare ${AREA_LABELS[area] || area}`, 'error');
   return false;
 }
@@ -472,7 +496,11 @@ function scopeOf(type) { return CATALOG_SCOPES.buy.types.includes(type) ? 'buy' 
 const CYCLE_CHILD_TYPES = ['acquistato', 'materiale'];
 const TYPE_LABELS = { macchina: 'Macchina', gruppo: 'Gruppo', sottogruppo: 'Sottogruppo', parte: 'Parte', materiale: 'Materia prima', acquistato: 'Commerciale' };
 const TYPE_SHORTS = { macchina: 'MAC', gruppo: 'GRP', sottogruppo: 'SGR', parte: 'PRT', materiale: 'MAT', acquistato: 'CMM' };
-function typeLabel(t) { return TYPE_LABELS[t] || t; }
+// Il tipo arriva dall'archivio, e nell'archivio condiviso lo scrive un collega:
+// un valore fuori elenco non deve mai finire nell'HTML così com'è.
+function typeLabel(t) { return TYPE_LABELS[t] || esc(t); }
+// Per le classi CSS (tt-…): solo i tipi noti.
+function typeKey(t) { return TYPE_LABELS[t] ? t : 'x'; }
 function typeShort(t) { return TYPE_SHORTS[t] || '?'; }
 
 // ─── Unità di misura (elenco gestito in Gestione › Unità di misura) ───
@@ -701,9 +729,84 @@ function prefixIndex() {
   return m;
 }
 function nextCodeForPrefix(prefix) {
-  const max = prefixIndex().get(prefix) || 0;
-  return prefix + String(max + 1).padStart(codeDigits(), '0');
+  let n = (prefixIndex().get(prefix) || 0) + 1;
+  while (codicePresoAltrove(prefix + String(n).padStart(codeDigits(), '0'))) n++;
+  return prefix + String(n).padStart(codeDigits(), '0');
 }
+// I codici che l'archivio condiviso ha detto già presi da un collega, anche se
+// il suo articolo qui non è ancora arrivato (cloud.js, _codiciAltrui): la
+// generazione automatica li salta come salta quelli che vede.
+function codicePresoAltrove(code) {
+  return typeof _codiciAltrui !== 'undefined' && _codiciAltrui.has(itemCodeKey(code));
+}
+// Le code numeriche dei codici presi altrove con quel prefisso.
+function numeriPresiAltrove(prefisso) {
+  if (typeof _codiciAltrui === 'undefined' || !_codiciAltrui.size) return [];
+  const p = itemCodeKey(prefisso), out = [];
+  _codiciAltrui.forEach(k => { if (k.startsWith(p) && /^\d+$/.test(k.slice(p.length))) out.push(parseInt(k.slice(p.length), 10)); });
+  return out;
+}
+// ─── Numeri dei documenti ───
+// Progressivo per anno: <SIGLA>-<anno>-NNN, una serie per tipo di documento.
+// Con l'archivio condiviso il numero lo dà il server (conNumeri in cloud.js
+// lo riserva prima di creare il documento e lo lascia in _numeriRiservati);
+// in locale, o se una serie non ne ha di riservati, si continua dal più alto
+// che c'è qui.
+const SERIE_DOCUMENTI = {
+  RFQ: () => db.rfqs || [], ODA: () => db.orders || [], ODL: () => db.workOrders || [],
+  ODP: () => db.prodOrders || [], FAB: () => db.plans || [], COM: () => db.jobs || [],
+  MT: () => (db.revisions || []).map(r => ({ id: r.id, number: r.ecoNumber })),   // le modifiche tecniche
+};
+const SERIE_COLLEZIONE = { RFQ: 'rfqs', ODA: 'orders', ODL: 'workOrders', ODP: 'prodOrders', FAB: 'plans', COM: 'jobs', MT: 'revisions' };
+function seriePrefisso(sigla) { return `${sigla}-${new Date().getFullYear()}-`; }
+function serieMassimo(prefisso, lista) {
+  return (lista || []).reduce((m, d) => {
+    const n = (d.number || '').startsWith(prefisso) ? (parseInt(d.number.slice(prefisso.length), 10) || 0) : 0;
+    return n > m ? n : m;
+  }, 0);
+}
+function numeroProgressivo(sigla) {
+  const prefisso = seriePrefisso(sigla);
+  const riservati = typeof _numeriRiservati !== 'undefined' ? _numeriRiservati[prefisso] : null;
+  const n = riservati && riservati.length ? riservati.shift() : serieMassimo(prefisso, SERIE_DOCUMENTI[sigla]()) + 1;
+  return prefisso + String(n).padStart(3, '0');
+}
+// ─── Niente buchi: si elimina solo l'ultimo della serie ───
+// Un documento o un codice in mezzo alla serie, eliminato, lascerebbe un buco
+// nella numerazione. Si elimina solo l'ultimo, il cui numero torna al
+// prossimo; gli altri si annullano, si chiudono o si segnano obsoleti.
+function serieDiNumero(s) {
+  const m = /^(.*?)(\d+)$/.exec(String(s == null ? '' : s).trim());
+  return m ? { prefisso: m[1].toLowerCase(), n: parseInt(m[2], 10) } : null;
+}
+function documentoUltimo(doc, lista) {
+  const x = serieDiNumero(doc && doc.number);
+  if (!x) return true;
+  return !(lista || []).some(d => {
+    if (d === doc || d.id === doc.id) return false;
+    const s = serieDiNumero(d.number);
+    return s && s.prefisso === x.prefisso && s.n > x.n;
+  });
+}
+function guardiaDocumentoUltimo(doc, lista, invece) {
+  if (documentoUltimo(doc, lista)) return true;
+  showToast(`${doc.number} non è l'ultimo della serie: eliminandolo resterebbe un buco nella numerazione. ${invece}`, 'error');
+  return false;
+}
+// I sottogruppi contano a scendere (da 999), tutti gli altri a salire: l'ultimo
+// è quello più in là nella propria direzione. `via`: gli id che se ne vanno
+// insieme a questo (un'eliminazione di più articoli).
+function articoloUltimo(it, via) {
+  const x = serieDiNumero(it && it.code);
+  if (!x) return true;
+  const giu = it.type === 'sottogruppo';
+  return !(db.items || []).some(o => {
+    if (o.id === it.id || (via && via.has(o.id)) || (o.type === 'sottogruppo') !== giu) return false;
+    const s = serieDiNumero(o.code);
+    return s && s.prefisso === x.prefisso && (giu ? s.n < x.n : s.n > x.n);
+  });
+}
+const ARTICOLO_NON_ULTIMO = c => `Il codice ${c} non è l'ultimo della sua serie: eliminandolo resterebbe un buco nella codifica. Segnalo come obsoleto invece di eliminarlo.`;
 // Codice per famiglia: materie prime, commerciali e parti non legate a una macchina
 function genFamilyCode(type, familyId, subFamilyId) {
   let base = '';
@@ -766,9 +869,9 @@ function usedCodeNumbers(items) {
 // blocchi si incontravano l'app generava un codice già preso — per poi
 // rifiutarlo da sé con «codice già in uso», sullo stesso codice a ogni
 // tentativo. Un vicolo cieco da cui si usciva solo scrivendolo a mano.
-function nextCodeNumber(type, siblings, sm, altri) {
+function nextCodeNumber(type, siblings, sm, altri, prefisso) {
   const used = usedCodeNumbers(siblings);
-  const presi = new Set(usedCodeNumbers((siblings || []).concat(altri || [])));
+  const presi = new Set(usedCodeNumbers((siblings || []).concat(altri || [])).concat(prefisso ? numeriPresiAltrove(prefisso) : []));
   const max = 10 ** sm.incrN - 1;
   // Si continua nella direzione del proprio blocco finché non si trova un
   // numero che nessuno dei due sta usando.
@@ -786,7 +889,7 @@ function nextCodeNumber(type, siblings, sm, altri) {
   }
   // macchina e gruppo: progressivo S## a salire da 0
   const n = used.length ? Math.max(...used) + 1 : 0;
-  return n > 10 ** sm.incrS - 1 ? null : n;
+  return libero(n, 1, 10 ** sm.incrS - 1);
 }
 // ─── Perché il codice non è stato generato ───
 // genItemCode() è logica di dominio e non deve parlare all'interfaccia: durante
@@ -816,7 +919,7 @@ function genItemCode(it) {
     const sm = machineScheme(it);
     // Progressivo tra le macchine che condividono la stessa sigla (esclusa se stessa in modifica)
     const siblings = machineItems().filter(m => m.sigla === it.sigla && m.id !== it.id);
-    const n = nextCodeNumber('macchina', siblings, sm);
+    const n = nextCodeNumber('macchina', siblings, sm, null, `${it.sigla}-S`);
     if (n == null) return codeFallito('Numerazione macchine esaurita');
     return `${it.sigla}-S${String(n).padStart(sm.incrS, '0')}`;
   }
@@ -826,7 +929,7 @@ function genItemCode(it) {
     if (!mac || !it.sigla) return '';
     const sm = machineScheme(mac);
     const siblings = groupItemsFor(mac.id).filter(g => g.sigla === it.sigla && g.id !== it.id);
-    const n = nextCodeNumber('gruppo', siblings, sm);
+    const n = nextCodeNumber('gruppo', siblings, sm, null, `${mac.sigla}-${it.sigla}-S`);
     if (n == null) return codeFallito('Numerazione gruppi esaurita');
     return `${mac.sigla}-${it.sigla}-S${String(n).padStart(sm.incrS, '0')}`;
   }
@@ -842,7 +945,7 @@ function genItemCode(it) {
     // i sottogruppi per una parte. Vedi il commento su nextCodeNumber.
     const altroTipo = type === 'parte' ? 'sottogruppo' : 'parte';
     const altri = (db.items || []).filter(i => i.type === altroTipo && stessoGruppo(i));
-    const n = nextCodeNumber(type, siblings, sm, altri);
+    const n = nextCodeNumber(type, siblings, sm, altri, `${mac.sigla}-${grp.sigla}-`);
     if (n == null) return codeFallito(`Numerazione ${type === 'parte' ? 'parti' : 'sottogruppi'} esaurita`);
     return `${mac.sigla}-${grp.sigla}-${String(n).padStart(sm.incrN, '0')}`;
   }
@@ -900,7 +1003,7 @@ function removeConUndo(coll, id, msg, dopo) {
   const voce = Store.lastRemoved();
   if (typeof dopo === 'function') dopo();
   toastEliminato(msg, () => {
-    Store.restore(voce);
+    if (!Store.restore(voce)) { showToast(Store.rifiutoRipristino() || 'Non c\'è più niente da ripristinare', 'error'); return; }
     if (typeof dopo === 'function') dopo();
     showToast('Ripristinato');
   });

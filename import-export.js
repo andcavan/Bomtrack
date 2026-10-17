@@ -532,7 +532,7 @@ function settingsInfoAoa() {
 // ─── Esporta ───
 function exportSettingsXlsx() {
   // Il foglio Utenti elenca nomi, email e ruoli: come il backup, solo agli amministratori
-  if (!roleGuard('manage')) return;
+  if (!roleGuardRuolo('manage')) return;
   if (!requireXlsx()) return;
   const wb = XLSX.utils.book_new();
   settingsSheets().forEach(sh => {
@@ -1141,7 +1141,7 @@ function backupAutoHandle() {
 // Va chiamata da un clic. Scelta la cartella, il primo backup parte subito:
 // è la prova, sotto gli occhi di chi l'ha appena configurato, che funziona.
 function backupAutoScegli() {
-  if (!roleGuard('manage')) return Promise.resolve(false);
+  if (!roleGuardRuolo('manage')) return Promise.resolve(false);
   if (!archivioSupportato()) {
     showToast('Questo browser non consente di collegare una cartella: servono Chrome o Edge', 'error');
     return Promise.resolve(false);
@@ -1165,7 +1165,7 @@ function backupAutoScegli() {
     });
 }
 function backupAutoDisattiva() {
-  if (!roleGuard('manage')) return Promise.resolve(false);
+  if (!roleGuardRuolo('manage')) return Promise.resolve(false);
   try { localStorage.removeItem(BACKUP_AUTO_NOME_KEY); } catch (e) { /* niente da rompere */ }
   _backupAuto = { stato: null }; _backupAutoScritto = '';
   return _archivioTx('readwrite', st => st.delete(BACKUP_AUTO_KEY)).catch(() => null).then(() => {
@@ -1194,6 +1194,13 @@ function _backupAutoPota(dir, tenere) {
 function backupAutoEsegui(chiedi, forza) {
   if (!backupAutoAttivo()) return Promise.resolve(_backupAuto);
   if (_backupAutoInCorso) return _backupAutoInCorso;
+  // Non quando in memoria non c'è l'archivio vero (dalla 0.105.3): dopo un
+  // archivio illeggibile l'app mostra i dati d'esempio, e una scheda superata da
+  // un'altra ha dati vecchi. Il backup di oggi veniva riscritto con quelli, e il
+  // promemoria dei sette giorni taceva.
+  const finto = (typeof dbLoadError !== 'undefined' && dbLoadError) ? 'archivio non letto: il backup di oggi resta com\'era'
+    : (Store.superata && Store.superata()) ? 'Bomtrack è aperto in un\'altra scheda più recente' : '';
+  if (finto) { _backupAuto = { stato: 'pausa', ora: _oraLocale(), errore: finto }; return Promise.resolve(_backupAuto); }
   let payload;
   try { payload = Store.exportSnapshot(); }
   catch (e) { _backupAuto = { stato: 'errore', ora: _oraLocale(), errore: String(e && e.message || e) }; return Promise.resolve(_backupAuto); }
@@ -1224,7 +1231,7 @@ function backupAutoEsegui(chiedi, forza) {
 }
 // Il pulsante «Riprendi» del Riepilogo e «Salva ora» della scheda Backup.
 function backupAutoOra() {
-  if (!roleGuard('manage')) return Promise.resolve(null);
+  if (!roleGuardRuolo('manage')) return Promise.resolve(null);
   return backupAutoEsegui(true, true).then(e => {
     if (e.stato === 'ok') showToast('Backup salvato in ' + backupAutoNome());
     else if (e.stato === 'pausa') showToast('Il browser non ha concesso di scrivere nella cartella dei backup', 'error');
@@ -1272,7 +1279,7 @@ function backupAutoLine() {
     </div>`;
 }
 function renderBackup() {
-  return `<div class="cloud-section">
+  return `${renderArchivioCondiviso()}<div class="cloud-section">
     <div style="flex:1">
       <strong>${ico('save', 'tinted', '')} Backup locale</strong>
       <p>I dati sono salvati nel browser (${inIndexedDb() ? 'IndexedDB' : 'localStorage'}). Esporta un file JSON per conservare un backup o trasferire i dati su un altro PC. L'import sovrascrive i dati attuali.</p>
@@ -1351,7 +1358,7 @@ function restoreFromTrash(trashId) {
   if (!roleGuard('manage')) return;
   const t = Store.restore(trashId);
   renderManage();
-  showToast(t ? `${TRASH_LABELS[t.coll] || t.coll} "${trashDescr(t)}" ripristinato` : 'Voce non trovata', t ? 'success' : 'error');
+  showToast(t ? `${TRASH_LABELS[t.coll] || t.coll} "${trashDescr(t)}" ripristinato` : (Store.rifiutoRipristino() || 'Voce non trovata'), t ? 'success' : 'error');
 }
 function purgeFromTrash(trashId) {
   if (!roleGuard('manage')) return;
@@ -1401,9 +1408,20 @@ function renderDuplicateCodes() {
     </div></div>`;
 }
 
+// Il riquadro dell'archivio condiviso, in testa al Backup: dice dove stanno
+// i dati e porta alla scheda del collegamento (cloud.js).
+function renderArchivioCondiviso() {
+  const c = cloudConfig();
+  return `<div class="cloud-section" style="margin-bottom:16px"><div style="flex:1">
+    <strong>${ico('cloud', 'tinted', '')} Archivio condiviso</strong>
+    ${c ? `<p>Questo PC lavora sull'archivio condiviso di <strong>${esc(c.url)}</strong>. I dati di questo browser sono la sua copia: le modifiche partono da sole, e quelle dei colleghi arrivano ogni 25 secondi.</p>`
+      : `<p>Oggi i dati stanno solo in questo browser. Con un progetto Supabase diventano un archivio unico per tutti i colleghi, con i permessi dei ruoli applicati dal server. Prima di collegare: un PC solo porta i dati buoni, gli altri li scaricano.</p>`}
+    <div style="margin-top:8px"><button class="${c ? 'btn-outline' : 'add-btn-sm'}" onclick="cloudPannello()">${ico('cloud', 'tinted', '')} ${c ? 'Stato e collegamento' : 'Collega un archivio condiviso'}</button></div>
+  </div></div>`;
+}
 function exportBackup() {
   // Il backup contiene tutto, utenti e hash compresi: solo agli amministratori
-  if (!roleGuard('manage')) return;
+  if (!roleGuardRuolo('manage')) return;
   const blob = new Blob([Store.exportSnapshot()], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -1414,6 +1432,7 @@ function exportBackup() {
 }
 function importBackup(ev) {
   if (!roleGuard('manage')) return;
+  if (cloudBlocca(ev)) return;
   const file = ev.target.files[0]; if (!file) return;
   const reader = new FileReader();
   reader.onload = () => {
@@ -1444,6 +1463,7 @@ function importBackup(ev) {
   ev.target.value = '';
 }
 function resetDB() {
+  if (cloudBlocca()) return;
   if (!roleGuard('manage')) return;
   askConfirm('Ripristinare i dati di esempio? Tutti i dati attuali saranno persi.', () => {
     Store.reset();
@@ -1472,6 +1492,7 @@ function reconcileSession() {
 // Azzeramento totale: doppia conferma, la seconda va digitata (il click distratto non basta).
 function wipeAll() {
   if (!roleGuard('manage')) return;
+  if (cloudBlocca()) return;
   const size = Store.sizeInfo();
   openModal(`<h3>${ico('warning', 'tinted pill', '')} Azzera tutto</h3>
     <p class="confirm-text">Il database verrà svuotato <strong>completamente</strong> e in modo <strong>irreversibile</strong>:
@@ -1520,12 +1541,16 @@ async function init() {
   await Store.preparaArchivio();
   if (Store.archivio === 'indexeddb') aggiornaStimaSpazio();
   Store.load();
+  cloudAvvio();
   const ver = 'v' + APP_VERSION;
   ['app-version', 'app-version-login'].forEach(id => {
     const el = document.getElementById(id); if (el) el.textContent = ver;
   });
   // Sessione salvata → si rientra diretti; altrimenti accesso (o setup del primo admin)
-  if (!restoreSession()) renderLogin();
+  // Un link d'invito, di recupero password o di collegamento prende lui la
+  // schermata d'accesso (cloud.js).
+  if (cloudAllAvvio()) renderLogin();
+  else if (!restoreSession()) renderLogin();
   richiediPersistenza();
   backupAutoAvvia();
 }

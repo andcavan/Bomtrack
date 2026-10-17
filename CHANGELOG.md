@@ -2,6 +2,156 @@
 
 Le revisioni seguono il versionamento semantico `0.MINOR.PATCH`: **MINOR** per nuove funzionalità, **PATCH** per correzioni. La versione in cima è quella in `APP_VERSION` (`core.js`) e mostrata nell'header dell'app.
 
+### 0.105.3 — 2026-10-17
+
+**Controllo generale dell'app.** Una rilettura completa, area per area, con ogni difetto riprodotto prima di correggerlo. **Con l'archivio condiviso vanno rieseguiti `supabase/schema.sql` e ripubblicata la funzione `bomtrack-utenti`** (manuale, cap. 31): senza, le correzioni lato server non valgono.
+
+**Fabbisogno**
+- **Chi consegna prima prende prima.** L'impegnato di un piano contava la domanda di *tutti* gli altri piani aperti: a magazzino vuoto, un piano da 100 e uno da 50 mostravano 150 da comprare ciascuno, e generare gli ordini da entrambi prima di inviarli ne ordinava 300. Ora i piani si mettono in fila come già per le parti a scaffale (consegna, poi data, poi numero): ognuno conta come impegnato solo quelli davanti, l'impegnato toglie soltanto merce che c'è, e il buco della scorta minima lo compra il primo della fila. Due piani sulla stessa merce restano separati, ma insieme comprano esattamente quello che manca.
+
+**Sicurezza**
+- **Testo che diventava codice**: il tipo di un articolo arrivato da un import, i campi del selettore di catalogo nei documenti, la sigla nelle modifiche tecniche e il nome del foglio nel resoconto d'import passavano nella pagina senza essere neutralizzati. Ora sono testo.
+- **Dall'archivio allegati si aprono solo PDF.** Un file HTML o SVG si apriva come pagina dell'app, con i suoi dati e la sessione.
+- **Server**: nessuno cambia più la propria email dal profilo; una lapide (la cancellazione che va a tutti) la scrive solo chi può scrivere quella tabella; una modifica datata nel futuro (orologio del PC avanti) viene rifiutata con un messaggio chiaro; il tipo di articolo deve essere uno di quelli dell'app; il link per reimpostare la password usa l'email vera dell'utente e non quella del profilo.
+- **Ruoli**: «Segna come inviato» dopo un PDF lo chiede solo a chi può cambiare lo stato; **Scollega questo PC**, da dentro l'app, solo a un amministratore; modificare una riga o sbloccare un documento controllano il ruolo.
+- **Un collega sospeso esce** al giro di sincronizzazione successivo. Prima restava dentro, su una copia ferma, con ogni salvataggio respinto.
+
+**Archivio condiviso**
+- **Due schede aperte**: la vecchia si ferma e lo dice, invece di continuare a sincronizzare con dati superati.
+- **Un salvataggio locale fallito** durante una ricezione non fa più avanzare il punto di sincronizzazione (al riavvio cancellava sul server i record appena arrivati).
+- **Un documento eliminato qui e ancora citato** (una richiesta citata da un ordine) bloccava la coda d'invio per sempre se la ricezione non si era ancora applicata. Ora il riferimento si svuota come fa il server, e la coda riparte.
+- **Un record eliminato da un collega** non torna più vuoto: una modifica fatta su una copia di prima della cancellazione non lo fa risorgere (vince la cancellazione), e quando torna perché qui è ancora usato porta con sé tutte le sue righe.
+- **Due colleghi che avviano la stessa fase di un ODP** prima di essersi visti scrivono un solo avvio e un solo prelievo: il materiale non esce più due volte.
+- **Una creazione alla volta** mentre il server assegna il numero: un doppio clic creava due documenti. I codici impegnati sono per articolo: due articoli nuovi non si contendono più lo stesso codice.
+- **Una richiesta al server che non torna più** (una connessione rimasta a metà dopo uno standby, il Wi-Fi che cambia) dopo 90 secondi vale come rete assente. Prima fermava la sincronizzazione e ogni «Nuovo documento» in attesa del numero.
+- Il service worker scarica i file aggiornati dalla rete e non dalla cache del browser; le policy del server si calcolano una volta per interrogazione (download più veloci sugli archivi grandi).
+
+**Correzioni**
+- **Righe degli ordini di lavoro**: «Salva» sulla riga modificata e «Aggiungi» sulla riga a mano non facevano niente.
+- **Cambiare sezione con un documento in modifica** lo salva. Restava «da salvare» fuori dal suo editor e, con l'archivio condiviso, fermava la ricezione delle modifiche dei colleghi senza che niente lo dicesse.
+- **QR**: «Ricevi tutto» salva davvero e dice «registrato» solo se il ricevimento è passato; il QR di un'ubicazione chiede conferma prima di buttare un inventario con dei conteggi.
+- **Cestino e Annulla**: un documento o un articolo il cui numero (o codice) è stato ridato dopo l'eliminazione resta nel cestino e l'app spiega perché, invece di creare due ODA-2026-002. L'«Annulla» dopo aver eliminato un ODP rimette anche dichiarazioni e movimenti, e un ODP con un ordine di lavoro aperto sulle sue fasi non si elimina.
+- **Storico dei movimenti**: quelli scritti da un ODP o da un montaggio non si eliminano più da lì, ma dal loro documento.
+- **Import di un backup** che non si riesce a migrare: resta l'archivio di prima, invece di uno a metà.
+- **Costi**: «Copia da» un articolo porta anche la seconda unità e il fattore; nell'import del catalogo un'unità di prezzo uguale a quella di gestione, o vuota, si toglie, e un cambio di conversione riapplica la quotazione in uso.
+- **PDF**: quantità con la virgola e senza il rumore dei decimali (0,3 e non 0.30000000000000004); il prezzo unitario esce con i suoi decimali, fino a 4, e torna con l'importo. Lo stesso negli elenchi esportati in PDF.
+- **Allegati**: un allegato eliminato e poi ripristinato dal cestino ha ancora il suo file (i byte si toglievano subito).
+- **Backup automatico**: con l'archivio non letto, o in una scheda superata da un'altra, non riscrive più il backup del giorno con i dati d'esempio.
+- **Inventario**: una registrazione rifiutata (ruolo, senza collegamento) non chiude più la finestra dicendo «nessuna differenza».
+- **Sospendi / Riattiva** di fornitori, clienti e centri di lavoro in *Gestione* non faceva niente.
+
+**Verifica**
+- `test/controllo-generale.test.js` (nuovo): un difetto per prova. `test/allegati.test.js` e `test/backup-auto.test.js`: il file che resta, il backup che non si riscrive. `test/stock.test.js` e `test/job-coverage.test.js`: la fila dei piani, magazzino vuoto, scorta minima comprata una volta. `test/cloud.test.js`: la coda che riparte, il record che non torna vuoto, il collega sospeso che esce. `test/schema-sql.test.js`: email, lapidi, date nel futuro, tipo di articolo, modifica sopra una lapide, profilo del sospeso.
+
+### 0.105.2 — 2026-10-16
+
+**Correzioni**
+- **Quotazioni doppie nel listino con l'archivio condiviso.** Al caricamento, un articolo comprato con un prezzo ma senza il segno «listino già creato» riceveva una quotazione a mano ricavata dal prezzo. Quel segno resta sul PC e non va sul server: ogni PC, a ogni download e a ogni ricarica dopo una modifica di un collega, aggiungeva un'altra copia della stessa quotazione. Con l'archivio condiviso la semina non si fa più, e le copie identiche già create si tolgono da sole alla prossima apertura, anche dal server. Resta quella in uso.
+- **Due colleghi che registravano a listino la stessa richiesta d'offerta** prima di essersi sincronizzati bloccavano per sempre l'invio di chi arrivava secondo (il server rifiuta la stessa offerta due volte). Ora la quotazione ha lo stesso id su ogni PC, e le due registrazioni sono la stessa.
+- **Un prezzo corretto sulla richiesta dopo averlo registrato** restava al valore vecchio nel listino, con il pulsante spento. Ora il pulsante torna attivo e la quotazione si aggiorna; se è quella in uso, il costo la segue.
+- **La funzione `bomtrack-utenti` con il codice d'esempio di Supabase** dava una finestra con il link vuoto. Ora l'app dice che il codice della funzione va sostituito.
+
+**Verifica**
+- `test/cloud.test.js`: due PC registrano la stessa offerta; un articolo arrivato dal server non si semina e le copie spariscono anche dal server; la funzione con il codice d'esempio. `test/pricelist.test.js`: il prezzo corretto aggiorna la quotazione e il costo in uso, l'id stabile.
+
+### 0.105.1 — 2026-10-16
+
+**Correzioni**
+- **«Server non raggiungibile» generando un link.** Quando la funzione `bomtrack-utenti` non è pubblicata, o si ferma all'avvio, Supabase risponde senza le intestazioni che il browser chiede, e l'app lo scambiava per la rete assente: diceva «server non raggiungibile» e passava in sola lettura. Ora dice che è la funzione a non rispondere e dove guardare (Edge Functions e i suoi Logs), e l'app resta collegata.
+
+**Verifica**
+- `test/cloud.test.js`: una funzione che non risponde dà il suo messaggio e non mette l'app in sola lettura.
+
+### 0.105.0 — 2026-10-16
+
+**I colleghi si creano dall'app.** Prima un collega si invitava dal pannello di Supabase, nasceva lettore sospeso e poi gli si davano ruolo e stato. Ora, in *Gestione → Utenti*, l'amministratore scrive nome, email e ruolo e riceve un link d'invito da girare. **Va pubblicata la funzione `supabase/functions/bomtrack-utenti`** (manuale, cap. 31, passo 9) e **va rieseguito `supabase/schema.sql`**.
+
+**Nuovo**
+- **Crea e genera link**: il collega nasce attivo, con il suo ruolo; aprendo il link sceglie la password. Nessuna email parte da sola.
+- **Link per reimpostare la password** (la chiave accanto al collega). Non vale per un altro amministratore, che usa «Password dimenticata?»: nessuno può entrare al posto di un altro amministratore.
+- La funzione `bomtrack-utenti` gira su Supabase con la chiave di servizio, che non arriva mai al browser, e risponde solo a un amministratore attivo. Il ruolo **non** passa dai metadati dell'utente (che chi si registra da solo può scrivere): il profilo nasce lettore sospeso dal trigger, e ruolo e stato li scrive l'amministratore con il suo accesso, sotto le stesse policy di ogni altra modifica.
+
+**Sicurezza**
+- **L'ultimo amministratore attivo** non si declassa e non si sospende nemmeno passando dall'API: prima lo impediva solo l'app.
+
+**Verifica**
+- `test/cloud.test.js`: creare un collega (ruolo, stato, nessun ruolo nei metadati, accesso col link), l'email già usata, il link di reimpostazione e il suo divieto per un altro amministratore, un non amministratore respinto, l'ultimo amministratore, la funzione non pubblicata. Il Supabase finto riproduce il contratto della funzione.
+
+### 0.104.1 — 2026-10-16
+
+**Numeri e codici senza buchi.** Nella 0.104.0 un numero riservato e non usato restava un buco nella serie. **Va rieseguito `supabase/schema.sql`.**
+- Un numero preso per un documento che non nasce torna al server (`libera_numeri`), e il prossimo che chiede lo riprende per primo, anche se intanto un collega è andato avanti (`numeri_liberi`). Il contatore fisso è sostituito dagli impegni: il prossimo numero è il più alto fra documenti e impegni aperti, così eliminare l'ultimo documento libera il suo numero. Un impegno si chiude da sé quando il documento arriva sul server, e scade dopo sette giorni se il PC non lo manda mai.
+- Il PC passa come minimo solo i documenti ancora in coda, non tutti quelli che ha: un documento che un collega ha appena eliminato non fa più saltare un numero.
+- **Si elimina solo l'ultimo della serie**, anche senza archivio condiviso: un documento in mezzo si annulla (ordini, ODL, ODP, commesse) o si chiude (richieste, piani), un articolo in mezzo alla sua codifica si segna obsoleto. L'eliminazione in blocco toglie quelli in coda e dice quanti restano e perché.
+- Un codice articolo impegnato e non usato torna libero (`libera_codici`): dopo un salvataggio che non va in porto e dopo un import, per i codici delle righe scartate. I codici visti presi da un collega si dimenticano a ogni giro, così uno restituito si riprende.
+
+**Verifica**
+- `test/serie-senza-buchi.test.js` (nuovo): l'ultimo documento e l'ultimo codice, i sottogruppi a scendere, l'eliminazione in blocco.
+- `test/cloud.test.js`: il numero non usato che torna al collega, il buco riempito dal prossimo, il numero dell'ultimo documento eliminato, il codice restituito. Il Supabase finto risponde in JSON anche per le funzioni che tornano un intero o un elenco, come PostgREST.
+
+### 0.104.0 — 2026-10-16
+
+**Con l'archivio condiviso numeri e codici li dà il server.** Prima ogni PC calcolava il prossimo numero dal suo archivio, e due colleghi che creavano un ordine insieme prendevano lo stesso ODA; la 0.103.2 lo rinumerava dopo. Ora il numero si chiede al server e si segna come preso prima che il documento nasca. **Va rieseguito `supabase/schema.sql`.**
+
+**Nuovo**
+- **Senza collegamento si consulta soltanto.** Con l'archivio condiviso, quando il server non risponde (e all'avvio, fino alla prima risposta) l'app è in sola lettura: un banner lo dice, i comandi per creare spariscono, le guardie bloccano il resto. Si riprova ogni 5 secondi e si torna a lavorare da soli. Esportare e fare un backup restano possibili. Le modifiche già in coda partono al ritorno, come prima.
+- **I numeri dei documenti dal server**: richieste, ordini, ordini di lavoro e di produzione, piani, commesse e modifiche tecniche MT. Un contatore per serie e per anno, che non scende mai sotto il numero più alto già presente (sul server o in coda su questo PC). Chi genera più documenti insieme (da un piano, dal riordino, da una richiesta divisa) prende tutti i numeri in una chiamata. (Corretto nella 0.104.1: un numero preso e non usato restava un buco.)
+- **I codici articolo impegnati prima di salvare**, dalla scheda e dall'import Excel. Un codice preso da un collega da meno di un'ora, anche se il suo articolo non è ancora arrivato, non si dà: quello automatico si ricalcola saltandolo, quello scritto a mano va cambiato.
+- Senza archivio condiviso non cambia niente: numeri e codici si calcolano sul PC, subito, come sempre.
+
+**Schema**
+- Tabelle `contatori` e `codici_impegnati` (RLS attiva, nessuna policy: si toccano solo dalle funzioni) e le funzioni `riserva_numeri(prefisso, quanti, minimo)` e `impegna_codici(codici)`, che controllano il diritto di scrivere la tabella dei documenti o degli articoli.
+
+**Verifica**
+- `test/cloud.test.js`: sola lettura senza server e all'avvio; due ordini creati insieme da due PC; numeri consecutivi per più documenti; un codice preso dal collega saltato o rifiutato; l'import che impegna i suoi codici; un lettore che non prenota. Il Supabase finto passa gli interi come interi, come PostgREST.
+
+### 0.103.2 — 2026-10-16
+
+**Correzioni all'archivio condiviso**, da un controllo dei casi in cui due colleghi lavorano sulla stessa cosa. Tre erano rotti, provati contro Postgres prima di correggerli.
+- **Una modifica fatta su una copia vecchia cancellava in silenzio quella del collega.** Anna cambia il costo di un articolo; Bruno, che ha la scheda aperta da prima, salva una nota: la sua versione era più recente e vinceva intera, costo vecchio compreso, senza avvisi per nessuno. Ora ogni invio dice da quale versione è partito, e il server la respinge se intanto è cambiata: Bruno riceve l'avviso e la versione di Anna. Vale anche per distinta, ciclo e lavorazioni, che viaggiano con l'articolo. **Va rieseguito `supabase/schema.sql`**; finché non lo si fa vale il comportamento di prima.
+- **Un riferimento a un record eliminato bloccava la coda per sempre.** Se un collega eliminava un fornitore mentre qui lo si metteva in un ordine (o il contrario), il server rifiutava l'invio, e con lui ogni modifica successiva: la nuvola restava rossa e non arrivava più niente. Ora l'app capisce quale tabella non regge, fa vincere chi usa (la regola che vale anche in locale: non si elimina ciò che è citato) e rimanda il lotto: il record eliminato torna, o la cancellazione si ritira.
+- **Due documenti creati nello stesso momento prendevano lo stesso numero.** Ora, quando si incontrano, il più recente si rinumera sul PC di chi l'ha creato, se è ancora una bozza nata da poco; altrimenti l'app avvisa.
+
+**Verifica**
+- `test/cloud.test.js`: i tre casi, con due PC contro il Supabase finto. Il Supabase finto ora passa il codice e il dettaglio degli errori di Postgres come PostgREST.
+- `test/cloud-browser.js`: aspetta il profilo del collega invece di contare i giri, che sotto carico tornavano subito.
+
+### 0.103.1 — 2026-10-15
+
+**Correzioni**
+- **Un PC scollegato dall'archivio condiviso restava chiuso fuori**: gli utenti arrivati da Supabase non hanno password locali, e nessuno poteva più entrare, nemmeno per ricollegarlo. Ora, finché nessuno ha una password su quel PC, un amministratore entra con la sua email e la password che sceglie, che diventa la sua.
+- **Uno schema Supabase più vecchio dell'app** (`PGRST202`, funzione non trovata) ora dice di rieseguire `supabase/schema.sql`, invece di mostrare l'errore di PostgREST.
+
+**Verifica**
+- `test/genera-dati-prova.js` (nuovo, fuori dalla suite): scrive un backup corposo da importare, un'officina inventata con 474 articoli e sette mesi di commesse, ordini, produzione e magazzino, generati dall'app stessa.
+
+### 0.103.0 — 2026-10-15
+
+**L'archivio condiviso su Supabase.** Ogni PC aveva il suo archivio, e due colleghi si allineavano passandosi il backup. Lo schema, le funzioni di sincronizzazione e i permessi erano pronti da tempo: mancava la parte dell'app che si collega.
+
+**Nuovo**
+- **Collegare un PC** a un progetto Supabase dalla schermata d'accesso o da *Gestione → Backup → Archivio condiviso*: indirizzo e chiave pubblica, con **Prova**. Restano in questo browser, non nel codice. Il **link di collegamento** (`?supabase=…&chiave=…`) porta un collega già puntato al progetto, dopo una conferma che mostra a quale.
+- **Accesso con Supabase Auth**: email e password di Supabase, sessione che si rinnova da sola, **Password dimenticata?**, **Cambia password**. Gli inviti e i recuperi tornano all'app, che chiede la password nuova.
+- **Primo collegamento**: l'amministratore **carica** l'archivio del suo PC nel progetto vuoto (gli utenti passano per email e prendono l'id di Supabase, con tutti i campi d'autore; chi non ha un utente resta fuori, e l'app dice chi); gli altri lo **scaricano**. Un caricamento interrotto si riprende.
+- **Sincronizzazione** (`cloud.js`, nuovo, senza librerie): ogni salvataggio programma un invio, e un lotto di modifiche è una chiamata sola a `push_changes()`, cioè una transazione. Ogni 25 secondi, al ritorno sulla finestra e al ritorno della rete arrivano le modifiche dei colleghi, mai in mezzo a una scheda aperta o a un campo in scrittura. Senza rete si lavora; la coda resta anche chiudendo la finestra.
+- La **nuvola** nell'intestazione dice lo stato (sincronizzato, da inviare, senza rete, errore, accesso scaduto) e apre il pannello: **Sincronizza ora**, **Scarta e riscarica**, **Scollega questo PC**, il link per i colleghi.
+- **Conflitti**: chi aveva salvato una versione più vecchia riceve un avviso e vede quella che ha vinto. Il registro delle modifiche attribuisce quelle arrivate a chi le ha fatte.
+- **Utenti**: con l'archivio condiviso si invitano da Supabase; nascono **sospesi**, e l'amministratore dà il ruolo e li attiva in *Gestione → Utenti*. Non si eliminano, si sospendono. Chi è sospeso non entra.
+- Con l'archivio condiviso **import di un backup, dati d'esempio e azzeramento** sono bloccati: toccherebbero tutti.
+
+**Database** (`supabase/schema.sql`, da rieseguire)
+- Il **profilo nasce dall'utente di Supabase Auth** (trigger su `auth.users`): il primo è amministratore attivo, gli altri lettori sospesi. Chi esisteva già prende il profilo alla prima esecuzione.
+- `archivio_stato()`: il proprio profilo, anche sospeso, e se l'archivio è ancora vuoto.
+- `push_changes()`: una riga respinta perché più vecchia viene ridatata, così il pull la riporta a chi l'aveva persa. Prima il suo archivio avrebbe tenuto la versione perdente.
+
+**Documentazione**
+- MANUALE: il cap. 31 riscritto, da «progettato» a «come si mette in piedi e come si lavora»: il progetto, il primo caricamento, gli inviti, la nuvola, chi vince, quello che il server non lascia fare, il backup che resta. Riferimenti aggiornati nei cap. 1, 26, 30, nelle domande frequenti e nell'appendice (le chiavi `bomtrack_cloud*`).
+
+**Verifica**
+- `test/supabase-finto.js` (nuovo): un Supabase finto (Auth e RPC) con dietro Postgres e lo schema vero.
+- `test/cloud.test.js` (nuovo, 23 casi): il lotto da inviare e la risposta da applicare, senza rete; poi tre PC contro il server: caricamento e scaricamento, modifiche nei due versi, quotazioni concorrenti, conflitto, cancellazione, ruolo che non scrive, impostazioni, rete che cade e riavvio, token scaduto, utente sospeso.
+- `test/cloud-ui.test.js` e `test/cloud-browser.js` (nuovi): il giro dall'interfaccia in Chromium, al PC e al telefono.
+
 ### 0.102.0 — 2026-10-15
 
 **I fornitori si cercano scrivendo.** Nei menu dei fornitori, che sono decine, si cercava scorrendo.

@@ -613,7 +613,7 @@ function buyLeadDays(it) { return leadDaysOfRow(buyDocRow(it)); }
 //   qty      = fabbisogno lordo, quanto serve. Non cambia mai: è la proprietà
 //              del prodotto, e serve per l'analisi di costo.
 //   net      = quanto manca comprare, tolto l'esistente e l'in arrivo, e tolto
-//              quello che gli altri piani aperti hanno già promesso.
+//              quello che i piani aperti più urgenti hanno già promesso.
 //   qtyOrder = quella con cui si fanno i conti e nascono i documenti.
 //
 // `planId` dice **da quale piano si sta guardando**: serve a non contare come
@@ -670,7 +670,7 @@ function mrpBuyRow(entry, netMode, planId) {
     due, leadDays, orderBy, urgenza: urgenzaOrdine(orderBy),
     priceDoc, amountDoc: priceDoc * qtyOrder,
     onHand: st.onHand, incoming: st.incoming, safety: st.safety, lotSize: st.lotSize, lotMode: st.lotMode,
-    // Impegnato dagli **altri** piani aperti, e il dettaglio di chi lo impegna:
+    // Impegnato dai piani aperti **più urgenti**, e il dettaglio di chi lo impegna:
     // un numero che toglie merce senza dire chi se l'è presa è un numero che non
     // si può contestare, e quindi neanche credere.
     committed: st.committed, impegni, libero: st.libero, prelevato,
@@ -1347,30 +1347,30 @@ function planDocGroups(rows, kind) {
 // ─── Piani: CRUD ───
 function getPlan(id) { return (db.plans || []).find(p => p.id === id); }
 // Progressivo per anno: FAB-<anno>-NNN
-function nextPlanNumber() {
-  const prefix = `FAB-${new Date().getFullYear()}-`;
-  const seqs = (db.plans || []).filter(p => (p.number || '').startsWith(prefix))
-    .map(p => parseInt((p.number || '').slice(prefix.length), 10) || 0);
-  return prefix + String((seqs.length ? Math.max(...seqs) : 0) + 1).padStart(3, '0');
-}
+function nextPlanNumber() { return numeroProgressivo('FAB'); }
 function newPlan() {
   if (!roleGuard('docs')) return;
-  const p = Store.insert('plans', { id: gid(), number: nextPlanNumber(), title: '', date: oggiISO(),
-    notes: '', lines: [], active: true });
-  currentPlanId = p.id; mrpView = 'edit'; renderMrp();
+  return conNumeri({ FAB: 1 }, () => {
+    const p = Store.insert('plans', { id: gid(), number: nextPlanNumber(), title: '', date: oggiISO(),
+      notes: '', lines: [], active: true });
+    currentPlanId = p.id; mrpView = 'edit'; renderMrp();
+  });
 }
 function duplicatePlan(id) {
   if (!roleGuard('docs')) return;
   const src = getPlan(id); if (!src) return;
-  const p = Store.insert('plans', { id: gid(), number: nextPlanNumber(), title: (src.title || src.number) + ' (copia)',
-    date: oggiISO(), notes: src.notes || '',
-    lines: (src.lines || []).map(l => ({ id: gid(), itemId: l.itemId, qty: l.qty })), active: true });
-  currentPlanId = p.id; mrpView = 'edit'; renderMrp();
-  showToast('Piano ' + p.number + ' creato dalla copia');
+  return conNumeri({ FAB: 1 }, () => {
+    const p = Store.insert('plans', { id: gid(), number: nextPlanNumber(), title: (src.title || src.number) + ' (copia)',
+      date: oggiISO(), notes: src.notes || '',
+      lines: (src.lines || []).map(l => ({ id: gid(), itemId: l.itemId, qty: l.qty })), active: true });
+    currentPlanId = p.id; mrpView = 'edit'; renderMrp();
+    showToast('Piano ' + p.number + ' creato dalla copia');
+  });
 }
 function delPlan(id) {
   if (!roleGuard('docs')) return;
   const p = getPlan(id); if (!p) return;
+  if (!guardiaDocumentoUltimo(p, db.plans, 'Chiudilo invece di eliminarlo.')) return;
   askConfirm(`Eliminare il piano ${p.number}?`, () => {
     if (currentPlanId === id) { currentPlanId = null; mrpView = 'list'; }
     removeConUndo('plans', id, `Piano ${p.number} eliminato`, renderMrp);
@@ -1601,7 +1601,7 @@ function planDocsModal(id, kind) {
     odl: ico('wrench', 'tinted pill', '') + ' Genera ordini di lavoro',
     odp: ico('factory', 'tinted pill', '') + ' Genera ordini di produzione' }[k];
   openModal(`<h3>${titoloModale} — ${esc(p.number)}</h3>
-    <p class="empty-text" style="text-align:left;padding:0 0 8px">${k === 'odp' ? 'Quantità <strong>lorde</strong> — il netto non si applica a una parte da fabbricare' : `Quantità <strong>${mrpNet ? 'nette' : 'lorde'}</strong>`}${mrpNet ? ' — tolti esistente e in arrivo, e tolto quello che gli altri piani aperti hanno già impegnato' : ' — l\'intero fabbisogno del piano'}. Si cambia col pulsante <em>Fabbisogno netto</em> nell\'elenco.</p>
+    <p class="empty-text" style="text-align:left;padding:0 0 8px">${k === 'odp' ? 'Quantità <strong>lorde</strong> — il netto non si applica a una parte da fabbricare' : `Quantità <strong>${mrpNet ? 'nette' : 'lorde'}</strong>`}${mrpNet ? ' — tolti esistente e in arrivo, e tolto quello che i piani aperti più urgenti hanno già impegnato' : ' — l\'intero fabbisogno del piano'}. Si cambia col pulsante <em>Fabbisogno netto</em> nell\'elenco.</p>
     <p class="empty-text" style="text-align:left;padding:0 0 12px">${planDocsHint(k)}</p>
     <div id="plandoc-body">${planDocsBody(gruppi, id, k)}</div>
     <div class="modal-actions">
@@ -1778,7 +1778,7 @@ function planCreateDocs() {
   // stare accanto alla scrittura, non solo nell'interfaccia.
   const gia = planDocumentedKeys(p.id);
   const bloccato = chiave => planBloccata(gia.get(chiave), kind);
-  const creati = [];
+  const gruppi = [];
   let scartate = 0;
   sel.forEach((chiavi, chiaveGruppo) => {
     // La chiave del gruppo può portare la passata (ordini di lavoro): il
@@ -1787,18 +1787,26 @@ function planCreateDocs() {
     const supplierId = String(chiaveGruppo).split('#')[0];
     const ammesse = chiavi.filter(k => { if (bloccato(k)) { scartate++; return false; } return true; });
     const righe = ammesse.map(k => index.get(k)).filter(Boolean);
-    if (!righe.length) return;
-    // Un ordine di produzione è **di una parte sola**: da un gruppo ne escono
-    // tanti quante sono le righe, non uno solo con dentro tutto. È l'unica
-    // differenza strutturale fra questo tipo e gli altri tre.
+    if (righe.length) gruppi.push({ supplierId, righe });
+  });
+  if (!gruppi.length) {
+    showToast(scartate ? 'Quelle righe sono già in un documento di questo tipo' : 'Nessun documento generato', 'error');
+    return;
+  }
+  // Un ordine di produzione è **di una parte sola**: da un gruppo ne escono
+  // tanti quante sono le righe, non uno solo con dentro tutto. È l'unica
+  // differenza strutturale fra questo tipo e gli altri tre.
+  const quanti = kind === 'odp' ? gruppi.reduce((n, g) => n + g.righe.length, 0) : gruppi.length;
+  return conNumeri({ [PLAN_DOC_SERIE[kind]]: quanti }, () => planCreateDocsFatto(p, kind, gruppi));
+}
+const PLAN_DOC_SERIE = { rfq: 'RFQ', order: 'ODA', odl: 'ODL', odp: 'ODP' };
+function planCreateDocsFatto(p, kind, gruppi) {
+  const creati = [];
+  gruppi.forEach(({ supplierId, righe }) => {
     if (kind === 'odp') { righe.forEach(r => creati.push(planNewOdp(p, r))); return; }
     creati.push(kind === 'rfq' ? planNewRfq(p, supplierId, righe)
       : (kind === 'odl' ? planNewOdl(p, supplierId, righe) : planNewOrder(p, supplierId, righe)));
   });
-  if (!creati.length) {
-    showToast(scartate ? 'Quelle righe sono già in un documento di questo tipo' : 'Nessun documento generato', 'error');
-    return;
-  }
   saveDB(); closeModal();
   // Un documento solo: si apre. Più d'uno: si va all'elenco, non c'è una scelta
   // sensata su quale aprire per primo.
@@ -2094,7 +2102,7 @@ function renderPlanEdit(id) {
       <td class="line-actions"><button class="mini-btn danger" onclick="planDelLine('${id}','${l.id}')" title="Togli dal piano">${ico('trash', 'tinted', 'Togli dal piano')}</button></td></tr>`;
     return `<tr>
       <td style="font-family:var(--mono)">${codeLink(it.id, it.code)}</td>
-      <td>${esc(it.name)}<span class="bom-type-tag tt-${it.type}" style="margin-left:6px">${typeShort(it.type)}</span></td>
+      <td>${esc(it.name)}<span class="bom-type-tag tt-${typeKey(it.type)}" style="margin-left:6px">${typeShort(it.type)}</span></td>
       <td>${esc(it.uom || '')}</td>
       <td><input type="number" class="rfq-qty-input" min="0" step="any" value="${Number(l.qty) || 0}"
         onchange="planSetLineQty('${id}','${l.id}',this.value)"></td>
@@ -2168,10 +2176,10 @@ function renderPlanEdit(id) {
         <div class="mrp-section">
           <div class="cycle-section-head">
             <h3>${ico('cart', 'tinted pill', '')} Da acquistare</h3>
-            <button class="btn-outline${mrpNet ? ' active' : ''}" onclick="toggleMrpNet()" title="Toglie dal fabbisogno quello che è già a magazzino, quello già ordinato e quello già impegnato da altri piani aperti">${mrpNet ? '☑' : '☐'} Fabbisogno netto</button>
+            <button class="btn-outline${mrpNet ? ' active' : ''}" onclick="toggleMrpNet()" title="Toglie dal fabbisogno quello che è già a magazzino, quello già ordinato e quello già impegnato dai piani aperti più urgenti">${mrpNet ? '☑' : '☐'} Fabbisogno netto</button>
             <button class="btn-outline${mrpGrouped ? ' active' : ''}" onclick="toggleMrpGroup()">${mrpGrouped ? '☑' : '☐'} Raggruppa per fornitore</button>
           </div>
-          ${mrpNet ? `<p class="empty-text" style="text-align:left;padding:0 0 8px">Netto = <strong>lordo + scorta minima + impegnato − esistente − in arrivo</strong>, arrotondato al lotto di riordino. L'esistente è calcolato da ricevimenti e movimenti; l'in arrivo è ciò che è stato ordinato e non è ancora entrato; l'<strong>impegnato</strong> è quanto gli <em>altri piani aperti</em> hanno già promesso — senza toglierlo, due piani sugli stessi articoli si direbbero coperti entrambi con la stessa merce. Il lordo resta in colonna: serve a capire il prodotto, il netto a capire cosa comprare.</p>
+          ${mrpNet ? `<p class="empty-text" style="text-align:left;padding:0 0 8px">Netto = <strong>lordo + scorta minima + impegnato − esistente − in arrivo</strong>, arrotondato al lotto di riordino. L'esistente è calcolato da ricevimenti e movimenti; l'in arrivo è ciò che è stato ordinato e non è ancora entrato; l'<strong>impegnato</strong> è quanto hanno già promesso gli <em>altri piani aperti che consegnano prima</em> — senza toglierlo, due piani sugli stessi articoli si direbbero coperti entrambi con la stessa merce. Chi consegna prima prende prima, e ogni piano compra solo la sua parte scoperta: se i più urgenti chiedono più merce di quanta ce ne sia, il resto lo comprano loro. Il lordo resta in colonna: serve a capire il prodotto, il netto a capire cosa comprare.</p>
           ${nImpegnate ? `<p class="empty-text" style="text-align:left;padding:0 0 8px">${ico('lock', 'tinted', '')} ${nImpegnate} ${nImpegnate === 1 ? 'riga contende' : 'righe contendono'} materiale con altri piani aperti. Un piano che non serve più si chiude dall'elenco: la sua quota torna libera.</p>` : ''}` : ''}
           ${mrpBuyTable(buy)}
         </div>` },
@@ -2523,7 +2531,7 @@ function mrpBuyLineHtml(r) {
   // quel toggle non l'ha acceso.
   if (r.committed > 0) {
     const chi = r.impegni.map(c => `${c.number}${c.title ? ' — ' + c.title : ''}: ${fmtQty(c.qty)} ${r.uom}`.trim()).join('\n');
-    seg.push(`<span class="mrp-warn" title="Già promesso ad altri piani aperti:\n${esc(chi)}\n\nLibero = esistente + in arrivo − impegnato = ${fmtUom(r.libero, r.uom)}">🔒 impegnato ${fmtUom(r.committed, r.uom)}</span>`);
+    seg.push(`<span class="mrp-warn" title="Già promesso ai piani aperti più urgenti:\n${esc(chi)}\n\nLibero = esistente + in arrivo − impegnato = ${fmtUom(r.libero, r.uom)}">🔒 impegnato ${fmtUom(r.committed, r.uom)}</span>`);
   }
   const urg = URGENZA_LABEL[r.urgenza];
   if (urg && urg.txt) seg.push(`<span class="${urg.cls}" title="${esc(urg.desc)}: ordinare entro il ${fmtDateIt(r.orderBy)}">${urg.txt}</span>`);
@@ -2559,7 +2567,7 @@ function mrpBuyTable(rows) {
   const colonneStock = mrpNet
     ? `<th scope="col" style="text-align:right" title="Quanto serve in tutto">Lordo</th>
        <th scope="col" style="text-align:right" title="Calcolato da ricevimenti e movimenti">Esistente</th>
-       <th scope="col" style="text-align:right" title="Già promesso agli altri piani di fabbisogno aperti: esistente meno questo è quello di cui si può disporre">Impegnato</th>
+       <th scope="col" style="text-align:right" title="Già promesso ai piani di fabbisogno aperti più urgenti: esistente meno questo è quello di cui si può disporre">Impegnato</th>
        <th scope="col" style="text-align:right" title="Ordinato e non ancora ricevuto">In arrivo</th>` : '';
   const nCol = (mrpNet ? 11 : 7) + 2;   // + le due colonne di data
   const head = `<thead><tr><th scope="col">Codice</th><th scope="col">Articolo</th><th scope="col">Fornitore</th>
@@ -2722,7 +2730,7 @@ function mrpAsmTable(asm, planId) {
       : '';
     return `<tr>
       <td style="font-family:var(--mono)">${codeLink(e.item.id, e.item.code)}</td>
-      <td>${esc(e.item.name)}<span class="bom-type-tag tt-${e.item.type}" style="margin-left:6px">${typeShort(e.item.type)}</span></td>
+      <td>${esc(e.item.name)}<span class="bom-type-tag tt-${typeKey(e.item.type)}" style="margin-left:6px">${typeShort(e.item.type)}</span></td>
       <td style="font-family:var(--mono);text-align:right">${fmtQty(e.qty)}</td>
       <td>${e.start && e.due && e.start < e.due ? `${fmtDateIt(e.start)} → ${fmtDateIt(e.due)}` : (e.due ? fmtDateIt(e.due) : '—')}</td>
       <td style="text-align:right">${nComp}</td>

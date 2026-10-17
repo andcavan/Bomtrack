@@ -1,6 +1,6 @@
 # Bomtrack — Manuale d'uso
 
-**Versione dell'app documentata: 0.102.0**
+**Versione dell'app documentata: 0.105.3**
 
 📖 **[Leggilo come pagina web](https://claude.ai/code/artifact/726a0963-2db0-4947-999b-d7b5beb91a0b)** — stesso testo, con indice laterale, filtro dei capitoli e tema chiaro/scuro. Comodo da tenere aperto di fianco all'app.
 
@@ -62,7 +62,7 @@ ciascuna sua tappa.
 28. [Export di elenchi e documenti](#28-export-di-elenchi-e-documenti)
 29. [Stampa](#29-stampa)
 30. [Backup e manutenzione](#30-backup-e-manutenzione)
-31. [Quando l'archivio è condiviso (Supabase)](#31-quando-larchivio-è-condiviso-supabase)
+31. [L'archivio condiviso (Supabase)](#31-larchivio-condiviso-supabase)
 
 **Parte VII — Riferimenti**
 
@@ -116,20 +116,20 @@ Vale la pena dirlo subito, perché evita di cercare funzioni che non ci sono.
 - **Non archivia i documenti nel database.** Disegni e schede tecniche si allegano agli articoli
   (dalla 0.77.0), ma i file stanno **su questo computer**, fuori dall'archivio: il backup JSON ne
   porta l'elenco e non il contenuto. Prima di trasferirti su un altro PC vanno riscaricati a mano.
-- **Non è multi-utente in tempo reale.** Ogni PC ha il suo archivio. Due colleghi che lavorano su
-  due PC lavorano su due copie diverse: si allineano con un backup
-  (→ [cap. 30](#30-backup-e-manutenzione)). L'archivio condiviso è progettato ma non ancora
-  attivo: cosa cambierà, e cosa conviene già fare adesso, sta nel
-  [cap. 31](#31-quando-larchivio-è-condiviso-supabase).
-- **I ruoli non sono sicurezza.** Servono a separare le responsabilità tra colleghi, non a
-  proteggere i dati (→ [cap. 26](#26-utenti-e-ruoli)).
+- **Da solo, ogni PC ha il suo archivio.** Due colleghi che lavorano su due PC lavorano su due
+  copie diverse, e si allineano con un backup (→ [cap. 30](#30-backup-e-manutenzione)). Per
+  lavorare tutti sullo stesso archivio si collega un progetto Supabase: è il
+  [cap. 31](#31-larchivio-condiviso-supabase).
+- **Senza archivio condiviso i ruoli non sono sicurezza.** Servono a separare le responsabilità
+  tra colleghi, non a proteggere i dati (→ [cap. 26](#26-utenti-e-ruoli)). Con l'archivio
+  condiviso li applica il server.
 
-> ⚠️ **I dati risiedono in questo browser, su questo PC.** Non c'è un server. Svuotare i dati del
+> ⚠️ **Senza archivio condiviso i dati risiedono in questo browser, su questo PC.** Non c'è un server. Svuotare i dati del
 > sito, cambiare browser o cambiare PC significa non trovare più l'archivio. Fai backup regolari:
 > *Gestione → Backup → Esporta JSON*, o meglio ancora attiva il **backup automatico** in una
 > cartella (→ [cap. 30](#30-backup-e-manutenzione)). È l'unica cosa di questo manuale che, se la salti, ti costa
-> davvero cara — e resterà vera anche il giorno in cui l'archivio sarà condiviso
-> (→ [cap. 31](#31-quando-larchivio-è-condiviso-supabase)).
+> davvero cara, e resta vera anche con l'archivio condiviso
+> (→ [cap. 31](#31-larchivio-condiviso-supabase)).
 
 ---
 
@@ -287,7 +287,7 @@ che occupa il centro. Si passa da un documento all'altro con un click, senza tor
 ricercare la riga; la riga aperta resta marcata e i documenti chiusi o annullati si vedono spenti.
 I filtri stanno impilati nella colonna dell'elenco, e i comandi che agiscono sul documento stanno
 nella sua testata. **Le modifiche in sospeso si salvano da sole** quando si apre un altro
-documento. In stampa esce il documento, non l'elenco.
+documento o si passa a un'altra sezione. In stampa esce il documento, non l'elenco.
 
 ### Le schede mobili
 
@@ -468,15 +468,17 @@ articoli che ricorrono in più punti e produce quattro sezioni:
 - **Carico dei centri** — le ore che le fasi interne chiedono ai centri.
 
 **d) Il netto** — con la casella **Fabbisogno netto** attiva, l'app toglie da ogni riga quello che
-è già a magazzino, quello già ordinato, e aggiunge quello che gli **altri piani aperti** hanno già
-impegnato:
+è già a magazzino, quello già ordinato, e aggiunge quello che gli **altri piani aperti che
+consegnano prima** hanno già impegnato:
 
 ```
 netto = lordo + scorta minima + impegnato − esistente − in arrivo
 ```
 
 arrotondato al **lotto di riordino** dell'articolo. Così due piani non si dichiarano coperti con
-la stessa merce. **Il netto non si applica alle lavorazioni**: una fase non sta a scaffale.
+la stessa merce, e nessuno compra la parte degli altri: chi consegna prima prende prima, e ognuno
+compra solo quello che manca a lui. **Il netto non si applica alle lavorazioni**: una fase non sta a
+scaffale.
 
 ### 4.5 Comprare
 
@@ -918,7 +920,9 @@ quotazione si modifica** e si mette in uso.
 
 - **Vale per tutto**: commerciali, materie prime **e parti** acquistate.
 - **Le richieste di offerta alimentano il listino**: il pulsante **Registra a listino** di una RFQ
-  trasforma i prezzi tornati in quotazioni, con il riferimento alla richiesta da cui vengono.
+  trasforma i prezzi tornati in quotazioni, con il riferimento alla richiesta da cui vengono. Se
+  dopo averli registrati correggi un prezzo sulla richiesta, il pulsante torna attivo e la
+  quotazione si **aggiorna** (non se ne aggiunge un'altra); se è quella in uso, il costo la segue.
 - **Il prezzo che entra nella costificazione si sceglie esplicitamente.** Più quotazioni possono
   convivere; una sola è quella in uso. Il Riepilogo segnala quanto si risparmierebbe scegliendo
   ovunque la più bassa.
@@ -1423,7 +1427,7 @@ per ogni ubicazione. Inquadrata, apre la scheda dell'ubicazione: gli articoli ch
 l'esistente, ciascuno cliccabile, e il pulsante **Conta questa ubicazione** che avvia l'inventario
 di quel posto.
 
-> Con il cloud attivo, la colonna `location` va aggiunta al database: si rilancia
+> Con l'archivio condiviso, la colonna `location` va aggiunta al database: si rilancia
 > `supabase/schema.sql`, che la aggiunge senza toccare il resto.
 
 ### L'inventario guidato
@@ -1576,7 +1580,7 @@ Gli **indicatori di riga**:
 | `⚠ senza prezzo` | L'articolo non ha nessuna quotazione |
 | `↑ lotto` / `↑ minimo` | La quantità è stata alzata al lotto di riordino |
 | `✓ coperto` | Non serve ordinare niente |
-| *(impegno)* | Quanta parte è impegnata da altri piani |
+| *(impegno)* | Quanta parte è impegnata dai piani più urgenti |
 
 **Da far lavorare fuori** — le fasi di ciclo affidate a un terzista. Le quantità sono **al netto
 dei pezzi dichiarati fatti** in *Da fabbricare*: una parte finita ha già attraversato tutte le sue
@@ -1755,9 +1759,17 @@ netto = lordo + scorta minima + impegnato − esistente − in arrivo
 poi arrotondato al **lotto di riordino** dell'articolo, secondo il suo modo (*multiplo esatto* o
 *quantità minima*).
 
-Il termine **impegnato** è quello che fa la differenza: è la merce che **gli altri piani aperti**
-hanno già promesso a sé. Senza quel termine, due piani si dichiarerebbero coperti con lo stesso
-pezzo, e uno dei due resterebbe a mani vuote.
+Il termine **impegnato** è quello che fa la differenza: è la merce che **gli altri piani aperti
+più urgenti** hanno già promesso a sé. Senza quel termine, due piani si dichiarerebbero coperti con
+lo stesso pezzo, e uno dei due resterebbe a mani vuote.
+
+**Chi consegna prima prende prima** (dalla 0.105.3). I piani aperti si mettono in fila come per le
+parti a scaffale: la consegna più vicina, poi la data del piano, poi il numero. Ogni piano conta come
+impegnato solo i piani che gli stanno davanti, e l'impegnato toglie soltanto merce che c'è: se i piani
+davanti ne chiedono più di quanta ne esista, la loro parte scoperta la comprano loro. Così, a
+magazzino vuoto, un piano da 100 e uno da 50 comprano 100 e 50, non 150 ciascuno. Il buco della
+scorta minima lo compra il primo della fila. Prima della 0.105.3 contavano tutti gli altri piani, e
+generare gli ordini da più piani prima di inviarli ordinava la stessa merce più volte.
 
 **L'impegno scende con i prelievi** (dalla 0.98.1). Un piano impegna il suo fabbisogno **meno
 quello che i suoi documenti hanno già prelevato**: quando un ordine di produzione o un ordine di
@@ -2392,10 +2404,11 @@ il record e chi l'ha aggiornato per ultimo**, con data e ora.
 > Di conseguenza: **il backup JSON contiene gli utenti con i loro hash.** Trattalo come un file
 > riservato.
 >
-> I permessi diventeranno reali quando l'archivio sarà condiviso, perché lì vivranno sul server
-> e non su questo PC. La matrice qui sopra è già quella che verrà applicata: assegnare i ruoli
-> con criterio adesso non è un esercizio a vuoto
-> (→ [cap. 31](#31-quando-larchivio-è-condiviso-supabase)).
+> I permessi diventano reali con l'archivio condiviso, perché lì vivono sul server e non su
+> questo PC: la matrice qui sopra è quella che il server applica
+> (→ [cap. 31](#31-larchivio-condiviso-supabase)). Lì un collega si crea da questa scheda con
+> nome, email e ruolo, e riceve un link per scegliere la password; la chiave genera un link per
+> reimpostarla.
 
 ---
 
@@ -2575,9 +2588,9 @@ sostituisce il backup: protegge dal browser, non da un disco che si guasta o da 
 I backup di versioni vecchie si **migrano da soli** all'import: un file esportato mesi fa si
 ricarica senza conversioni.
 
-Questo comando non andrà in pensione con l'archivio condiviso: lì servirà a tenere una copia
-**fuori** dal servizio che ospita i dati, che è l'unico backup che protegga davvero
-(→ [cap. 31](#31-quando-larchivio-è-condiviso-supabase)).
+Con l'archivio condiviso questo comando serve ancora: tiene una copia **fuori** dal servizio che
+ospita i dati, che è l'unico backup che protegga davvero
+(→ [cap. 31](#31-larchivio-condiviso-supabase)). L'**import**, invece, lì è bloccato.
 
 ### Cestino
 
@@ -2628,87 +2641,212 @@ Svuota completamente l'archivio, dati di esempio compresi.
 
 ---
 
-## 31. Quando l'archivio è condiviso (Supabase)
+## 31. L'archivio condiviso (Supabase)
 
-> ⚠️ **Questo capitolo descrive una condizione che non è ancora attiva.** Oggi Bomtrack lavora
-> **solo in locale**: ogni PC ha il suo archivio, e non c'è nessun collegamento a un server.
-> Sta qui perché quello che si fa adesso conta già: i codici puliti, i ruoli assegnati davvero,
-> l'abitudine al backup e la disciplina dei piani aperti sono le stesse cose che reggeranno il
-> lavoro in squadra. Chi legge il resto del manuale non deve cercare queste funzioni: non le
-> troverà.
+Dalla 0.103.0 Bomtrack può lavorare su un **archivio unico per tutti i colleghi**, ospitato da
+[Supabase](https://supabase.com) (piano gratuito). Finché non lo colleghi, niente cambia: ogni PC
+ha il suo archivio, come prima. Collegato, ogni PC tiene la sua copia e la allinea da solo con
+quella condivisa.
 
 ### Cosa cambia
 
-| | Oggi (locale) | Con l'archivio condiviso |
+| | Senza archivio condiviso | Con l'archivio condiviso |
 |---|---|---|
-| **Dove stanno i dati** | Nel browser di questo PC | In un database condiviso, uno per azienda |
-| **I colleghi** | Ognuno la sua copia; ci si allinea passandosi il backup | Tutti sullo stesso archivio, ciascuno dal suo PC |
-| **L'accesso** | Separa le responsabilità, non protegge i dati | Autenticazione vera; i permessi vivono **sul server** |
-| **I ruoli** | Chi apre gli strumenti di sviluppo li aggira | Il server rifiuta la scrittura, e non c'è modo di convincerlo |
-| **Le password** | Conservate qui come hash | Le possiede il servizio di autenticazione |
-| **Nuovo utente** | L'amministratore digita una password iniziale | L'amministratore **invita**, e la password se la fa la persona |
-| **Il backup** | L'unica copia che esiste | Resta, e serve ancora: fuori sede |
-| **Senza rete** | Non serve mai | Si continua a lavorare; le modifiche partono al ritorno |
+| **Dove stanno i dati** | Nel browser di questo PC | In un database unico; ogni PC ne tiene una copia |
+| **I colleghi** | Ognuno la sua copia; ci si allinea passandosi il backup | Tutti sullo stesso archivio, ciascuno dal suo PC o telefono |
+| **L'accesso** | Separa le responsabilità, non protegge i dati | Autenticazione vera: email e password di Supabase |
+| **I ruoli** | Chi apre gli strumenti di sviluppo li aggira | Li applica il server: una scrittura non permessa viene rifiutata |
+| **Le password** | Conservate qui come hash | Le tiene Supabase; Bomtrack non le vede |
+| **Nuovo utente** | L'amministratore lo crea con una password iniziale | L'amministratore lo crea dall'app e gli gira un **link**: la password se la sceglie la persona |
+| **Il backup** | L'unica copia che esiste | Resta, e serve ancora: fuori dal servizio |
+| **Senza rete** | Non serve mai | Si consulta soltanto; si torna a lavorare appena il server risponde |
+| **Numeri dei documenti e codici** | Li calcola il PC | Li dà il server: due colleghi non prendono mai lo stesso |
 
-### Come si lavorerà
+### Mettere in piedi il progetto (l'amministratore, una volta)
 
-**L'app non diventa più lenta.** Si continua a scrivere sul proprio PC e il salvataggio parte da
-solo, in sottofondo: nessuna schermata che aspetta la rete. Il badge **modifiche non salvate**
-nell'intestazione dice se c'è ancora qualcosa da mandare.
+1. Su [supabase.com](https://supabase.com) crea un progetto gratuito, con la regione **Europa**.
+2. Nel progetto apri **SQL Editor**, incolla tutto il file `supabase/schema.sql` e premi **Run**.
+   Si può rieseguire quando vuoi: aggiunge quello che manca e non tocca i dati.
+3. **Authentication → Users → Add user**: la tua email e una password, con *Auto Confirm User*.
+   Sei il primo utente, quindi diventi **amministratore**.
+4. **Authentication → Sign In / Providers**: spegni *Allow new users to sign up*. I colleghi
+   arrivano solo su invito; anche chi riuscisse a registrarsi da solo nascerebbe **sospeso**, e non
+   leggerebbe niente.
+5. **Project Settings → API**: copia l'indirizzo del progetto (*Project URL*) e la chiave
+   **pubblica** (*anon* o *publishable*). La chiave di servizio (*service_role*, *secret*) non va
+   mai in Bomtrack.
+6. Sul PC che ha i dati buoni apri Bomtrack: dalla schermata d'accesso **Collega un archivio
+   condiviso…**, oppure da dentro *Gestione → Backup → Archivio condiviso*. Incolla indirizzo e
+   chiave, premi **Prova** e poi **Collega questo PC**. L'app si ricarica.
+7. Accedi con **l'email e la password di Supabase**. Si apre **Primo collegamento**: esporta un
+   backup, poi **Carica questo archivio**.
+8. Clicca il **simbolo della nuvola** nell'intestazione: c'è il **link di collegamento** per i
+   colleghi. Mettilo anche in Supabase, in **Authentication → URL Configuration → Site URL**: è lì
+   che riportano gli inviti e il recupero della password.
 
-**Le modifiche dei colleghi arrivano da sole**, ogni venti o trenta secondi e quando si torna
-sulla finestra. Non arrivano mai in mezzo a una scheda aperta a metà: se stai compilando un
-ordine, l'aggiornamento aspetta che tu abbia finito.
+9. **Pubblica la funzione degli utenti**, per creare i colleghi dall'app: in Supabase **Edge
+   Functions → Deploy a new function → Via Editor**, nome `bomtrack-utenti`, incolla tutto il file
+   `supabase/functions/bomtrack-utenti/index.ts` e premi **Deploy**. Va ripubblicata quando una
+   versione nuova la cambia (lo dice il changelog). Nello stesso pannello, in **Authentication →
+   URL Configuration → Redirect URLs**, aggiungi l'indirizzo dell'app: è lì che riportano i link.
+   Se l'app risponde «la funzione bomtrack-utenti non risponde», la funzione non c'è con quel nome
+   esatto oppure si ferma all'avvio: guardala in **Edge Functions**, e nei suoi **Logs** c'è il
+   motivo.
 
-**Senza rete si continua a lavorare.** L'archivio locale non sparisce: diventa lo specchio di
-quello condiviso e la coda di quello che non è ancora partito. Tornata la linea, parte tutto.
+> **L'app va aperta da un indirizzo web** (`https://…`), non con un doppio clic sul file: un link
+> d'invito non può tornare a un file sul disco di qualcuno.
+
+**Gli utenti al primo caricamento.** Passano quelli che hanno su Supabase un utente con la
+**stessa email**: se li inviti prima di caricare, arrivano già con il loro ruolo. Chi non ce l'ha
+resta fuori (l'app dice chi), e si invita dopo. I record che ha creato restano, con il suo nome.
+Le password non passano: ognuno usa quella di Supabase.
+
+### Aggiungere un collega
+
+1. In *Gestione → Utenti* scrivi nome, email e ruolo e premi **Crea e genera link**. Il collega
+   nasce già **attivo**, con quel ruolo.
+2. Si apre il **link d'invito**: copialo e mandalo tu al collega (WhatsApp, Teams, email). Nessuna
+   email parte da sola. Il link vale una volta e scade in circa un giorno.
+3. Il collega apre il link, sceglie la password e si ritrova in Bomtrack. Al primo accesso il suo
+   PC **scarica l'archivio condiviso**: se ci aveva dei dati suoi, vengono sostituiti, e prima
+   glielo si dice.
+
+**Una password dimenticata**: la chiave accanto al collega genera un **link per reimpostarla**,
+da girargli allo stesso modo. Chi apre quel link entra come lui, quindi va mandato solo a lui. Per
+un altro amministratore la chiave non funziona: lui usa **Password dimenticata?** dalla schermata
+d'accesso, così nessun amministratore può entrare al posto di un altro.
+
+**Senza la funzione pubblicata** (passo 9 qui sopra) l'app lo dice, e il collega si invita
+ancora dal pannello di Supabase: **Authentication → Users → Invite user**. In quel caso nasce
+**lettore sospeso**, e in *Gestione → Utenti* gli dai il ruolo (✏) e lo riattivi (✓).
+
+**L'ultimo amministratore attivo** non si declassa e non si sospende: lo impedisce l'app e lo
+impedisce il server.
+
+Il collega che usa un altro PC può anche aprire il **link di collegamento** che gli mandi tu:
+l'app chiede se collegarsi a quel progetto, mostrandone l'indirizzo, e poi chiede l'accesso.
+
+**Per togliere qualcuno lo si sospende**, non lo si elimina: chi è sospeso non legge più niente,
+anche con la sessione aperta, e se è dentro l'app lo fa uscire al giro di sincronizzazione
+successivo. La password la cambia ognuno dal proprio nome nell'intestazione
+(**Cambia password**), o dalla schermata d'accesso con **Password dimenticata?**.
+
+### Come si lavora
+
+**L'app non diventa più lenta.** Si scrive sul proprio PC come prima, e l'invio parte da solo un
+attimo dopo ogni salvataggio. Le modifiche dei colleghi arrivano **ogni 25 secondi**, quando si
+torna sulla finestra e quando torna la rete. Non arrivano mai in mezzo a un lavoro: se una scheda
+è aperta, se un documento ha modifiche non salvate o se il cursore è in un campo, l'aggiornamento
+aspetta il giro dopo.
+
+La **nuvola** nell'intestazione dice a che punto è; cliccandola si apre lo stato, con
+**Sincronizza ora**.
+
+| La nuvola | Vuol dire |
+|---|---|
+| verde, senza scritte | Tutto inviato e ricevuto |
+| **Invio…** · **Da inviare** | Sta mandando, o ha qualcosa in coda |
+| **Senza rete** | Il server non si raggiunge: **si consulta soltanto** (vedi sotto). Quello che era già in coda parte al ritorno, anche dopo aver chiuso la finestra |
+| **Errore di sincronizzazione** | Il server ha rifiutato l'invio: il motivo è nello stato |
+| **Accesso scaduto** | Va rifatto l'accesso; i dati del PC restano |
+
+### Senza collegamento si consulta
+
+Con l'archivio condiviso **si lavora solo collegati**. Quando il server non risponde (manca la
+rete, il progetto è sospeso) l'app passa in **sola lettura**: si apre tutto, si cerca, si stampa e
+si esporta, ma non si crea e non si modifica niente. Un banner in cima a ogni vista lo dice, e i
+pulsanti per creare spariscono. L'app riprova da sola ogni pochi secondi, e appena il server
+risponde si torna a lavorare senza fare niente. Anche all'avvio, per il tempo della prima
+risposta, la vista resta in sola lettura.
+
+Il motivo è nel paragrafo che segue: numeri e codici li assegna il server, e un PC al buio non
+potrebbe chiederli. In più, una modifica fatta al buio arriverebbe ai colleghi chissà quando,
+magari su un documento che nel frattempo hanno cambiato loro.
+
+### Numeri e codici li dà il server
+
+**I numeri dei documenti** (richieste, ordini, ordini di lavoro e di produzione, piani, commesse,
+modifiche tecniche MT) non li calcola più il PC: quando premi **+ Nuovo ordine** l'app chiede al
+server il prossimo numero della serie, il server lo segna come preso, e solo allora l'ordine
+nasce. Due colleghi che creano un ordine nello stesso istante ricevono due numeri diversi, sempre.
+Chi genera più documenti insieme (da un piano, dal riordino sotto scorta, da una richiesta divisa
+in ordine d'acquisto e ordini di lavoro) prende tutti i numeri in una volta.
+
+**La serie non ha buchi.** Un numero preso per un documento che alla fine non nasce torna subito
+al server, e il prossimo che crea un documento lo riprende, anche se nel frattempo un collega è
+andato avanti. La serie non riparte mai sotto il numero più alto che c'è già.
+
+**Si elimina solo l'ultimo** documento della serie, e il suo numero torna al prossimo. Gli altri
+non si eliminano: ordini, ordini di lavoro e di produzione e commesse si **annullano**, richieste
+d'offerta e piani si **chiudono**, e il numero resta occupato. Lo stesso per gli articoli: si
+elimina solo l'ultimo codice della sua serie (per i sottogruppi, che contano a scendere, il più
+basso); gli altri si segnano **obsoleti**. Un codice senza numero in fondo non fa parte di una
+serie e si elimina come sempre. La regola vale anche senza archivio condiviso.
+
+**I codici degli articoli** si impegnano sul server al salvataggio. Se un collega ha appena preso
+lo stesso codice, anche se il suo articolo non è ancora arrivato qui:
+
+- un codice **automatico** si ricalcola da solo saltando il suo, e l'app dice quale è stato dato;
+- un codice **scritto a mano** non si cambia di nascosto: l'app chiede di sceglierne un altro.
+
+Un codice impegnato e poi non usato (un salvataggio che non va in porto, una riga d'import
+scartata) torna libero subito, e un collega lo prende invece di saltarlo: nemmeno la codifica ha
+buchi.
+
+Anche l'**import del catalogo da Excel** impegna i codici degli articoli nuovi prima di scriverli.
+Quelli automatici si ricalcolano allo stesso modo; una riga con un codice scritto nel foglio e
+appena preso da un collega finisce fra gli errori dell'import.
 
 ### Chi vince quando due persone toccano la stessa cosa
 
-È la domanda che conta davvero in una squadra, e la risposta non è la stessa dappertutto.
-
 | Cosa | Cosa succede |
 |---|---|
-| **Aggiunte a un elenco** — quotazioni di listino, righe di documento, movimenti, righe di piano, sottofamiglie | **Convivono.** Due colleghi che registrano due quotazioni sullo stesso articolo non sono in conflitto: restano entrambe |
-| **Distinta base, ciclo e lavorazioni di un articolo** | **L'ultimo che salva sostituisce tutto**, e l'altro viene avvisato. Metà distinta di uno e metà dell'altro sarebbe un prodotto che nessuno ha progettato |
-| **Il prezzo in uso di un articolo** | Vince l'ultimo che salva, e **l'app avvisa**: cambiando il prezzo in uso cambia il costo di ogni macchina che lo contiene |
+| **Aggiunte a un elenco**: quotazioni di listino, righe di documento, movimenti, righe di piano, sottofamiglie | **Convivono.** Due colleghi che registrano due quotazioni sullo stesso articolo non sono in conflitto: restano entrambe |
+| **Lo stesso record modificato da due persone** (un articolo, la sua distinta, la testata di un ordine) | Vince **chi salva per primo**. Il secondo stava lavorando su una copia che nel frattempo era cambiata: la sua modifica non entra, riceve un avviso e vede comparire quella del collega, su cui può rifare la sua. Senza questo controllo avrebbe cancellato in silenzio il lavoro dell'altro |
+| **Distinta base, ciclo e lavorazioni di un articolo** | Seguono l'articolo: **si tiene intera** quella di chi ha salvato per primo. Metà distinta di uno e metà dell'altro sarebbe un prodotto che nessuno ha progettato |
 | **Cancellazione contro modifica** | Vince la **cancellazione**: un articolo mezzo cancellato non esiste |
+| **Cancellazione contro uso** (uno elimina un fornitore, l'altro intanto lo mette in un ordine) | Vince **chi usa**, come in locale, dove non si elimina ciò che è citato. Il fornitore torna, e chi l'aveva eliminato riceve un avviso |
+| **Lo stesso numero di documento** | Non succede più: il numero lo dà il server (vedi sopra). Resta una rete di sicurezza per i documenti creati prima della 0.104.0 o con uno schema non aggiornato: il **più recente si rinumera** da solo, se è ancora una bozza nata da poco, altrimenti l'app avvisa |
 
 > **La regola pratica**: mettersi d'accordo su chi tiene in mano una distinta. Non perché l'app si
-> rompa — non si rompe, e avvisa — ma perché su una distinta il lavoro di due persone non si somma.
-> Sulle righe di un listino o di un ordine sì, e lì si può lavorare insieme senza pensarci.
+> rompa (non si rompe, e avvisa), ma perché su una distinta il lavoro di due persone non si
+> somma. Sulle righe di un listino o di un ordine sì, e lì si può lavorare insieme senza pensarci.
 
-### Cosa non cambia
+### Quello che il server non lascia fare
 
-Quasi tutto. Vale la pena dirlo, perché è il motivo per cui questo manuale non andrà riscritto:
+I ruoli sono quelli del [cap. 26](#26-utenti-e-ruoli), ma ora li applica il server. Se un invio
+contiene qualcosa che il tuo ruolo non scrive, **il server lo rifiuta intero** e la nuvola
+diventa rossa con il motivo. Le modifiche restano su questo PC. Se non c'è altro modo di uscirne,
+dallo stato: **Scarta e riscarica** butta le modifiche non inviate e riscarica l'archivio.
 
-- **Le schermate, i comandi e il flusso di lavoro** sono gli stessi. Tutto quello che sta nei
-  capitoli da 1 a 29 continua a valere parola per parola.
-- **I codici articolo, le famiglie, i concetti, le unità di misura**: restano quelli. Niente si
-  rinumera.
-- **I quattro ruoli** — Amministratore, Ufficio acquisti, Progettazione, Lettore — restano quelli,
-  con la stessa matrice di permessi. Cambia solo che diventano veri.
-- **Il cestino a 30 giorni**, l'export JSON, gli export Excel e PDF, la stampa.
-- **La giacenza e il materiale presso terzi restano calcolati**, non scritti da nessuna parte:
-  è la stessa regola, applicata su un database invece che su un file.
+Due casi particolari:
 
-### Quello che va deciso prima di passare
+- **Le impostazioni** (*Gestione → Impostazioni*, unità di misura, condizioni d'offerta…) le
+  cambia solo l'amministratore. Una modifica fatta da un altro ruolo resta sul suo PC, e glielo
+  si dice.
+- **Importare un backup JSON, rimettere i dati d'esempio e azzerare** sono bloccati: su un
+  archivio condiviso toccherebbero tutti. Per farlo si scollega prima il PC.
 
-Sono cinque cose, e quattro si possono già preparare oggi.
+### Scollegare un PC
 
-1. **Un archivio solo.** Si sceglie quale PC porta i dati buoni, si esporta il suo JSON, e da lì
-   si riparte. **Due archivi divergenti non si fondono**: se in due officine si è lavorato in
-   parallelo per mesi, uno dei due lavori va rifatto. Meglio saperlo prima.
-2. **Le password non migrano.** Ognuno rifà la sua al primo accesso, su invito. Gli utenti, i
-   nomi, le email e i ruoli invece passano.
-3. **I codici duplicati vanno ripuliti prima.** *Gestione → Backup → Codici articolo duplicati*.
-   Su un PC solo sono un fastidio; in condivisione diventano il problema di tutti.
-4. **Il backup fuori sede.** Il piano gratuito **non ha backup automatici**: se il progetto si
-   perde, si perde. L'export JSON resta l'unica risposta, e va fatto con regolarità **fuori** dal
-   servizio che si sta cercando di proteggere.
-5. **La chiusura estiva.** Un progetto lasciato inattivo sette giorni viene sospeso, e va
-   riacceso a mano. Un'officina che chiude due settimane ad agosto lo scopre il 25 agosto, con
-   l'app che non risponde. Si predispone prima.
+Dallo stato della nuvola, **Scollega questo PC** (da dentro l'app solo un amministratore; dalla
+schermata d'accesso resta per un PC che non arriva più al server). I dati restano nel browser, ma da quel momento
+sono una copia locale: le modifiche non arrivano più ai colleghi, e quelle dei colleghi non
+arrivano più qui.
+
+Gli utenti restano, ma **senza password**: quelle le teneva Supabase. Al primo accesso dopo lo
+scollegamento un **amministratore** entra con la sua email e una password a scelta (almeno 4
+caratteri), che diventa la sua password su questo PC. Gli altri utenti la ricevono poi da lui, in
+*Gestione → Utenti*. Questa strada si chiude appena qualcuno ha una password locale.
+
+### Il backup resta
+
+1. **Il piano gratuito non ha backup automatici**: se il progetto si perde, si perde. L'export
+   JSON (*Gestione → Backup*) o il backup automatico in una cartella restano l'unica risposta, e
+   vanno tenuti **fuori** dal servizio che si sta proteggendo.
+2. **Un progetto inattivo per sette giorni viene sospeso**, e va riacceso a mano dal pannello di
+   Supabase. Un'officina che chiude due settimane ad agosto lo scopre al rientro, con la nuvola
+   rossa. Basta riaccenderlo: i dati ci sono.
 
 ### Quanto regge il piano gratuito
 
@@ -2716,25 +2854,12 @@ Sono cinque cose, e quattro si possono già preparare oggi.
 |---|---|
 | **Spazio utile** | ~430 MB dei 500 dichiarati (il resto lo occupa il servizio) |
 | **Officina piccola, 3 anni** | ~25% dello spazio: sta larga |
-| **Il primo limite che si incontra** | Non è lo spazio, è la **banda**. Si risolve scaricando a ogni giro solo quello che è cambiato, non tutto |
+| **Il primo limite che si incontra** | Non è lo spazio, è la **banda**. Per questo a ogni giro si scarica solo quello che è cambiato |
 | **Cosa cresce davvero** | I **movimenti di magazzino** e le **revisioni** rilasciate. Il catalogo, per quanto grande, pesa poco |
 
-> ✅ **Gli allegati non pesano su questo conto.** Era la voce che più di ogni altra avrebbe
-> portato Bomtrack fuori dal piano gratuito — 1 GB sono circa **mille PDF da 1 MB**, cioè poche
-> centinaia di articoli con un disegno — e dalla 0.78.0 non lo fa più: i PDF stanno in una
-> cartella fuori dall'app (→ [cap. 8](#8-la-scheda-articolo-campo-per-campo)), e di essi il
-> database porta il **percorso**, che pesa quanto una riga di testo. Restano da contare solo i
-> file caricati dentro l'app prima di quella versione.
-
-### Fino ad allora
-
-Quattro abitudini che valgono già adesso e che il giorno del passaggio si riveleranno le uniche
-che contavano:
-
-- **un PC solo è quello «di verità»**, e gli altri lo consultano;
-- **l'export JSON a fine giornata**, tenuto fuori da quel PC;
-- **i ruoli assegnati davvero**, non tutti amministratori;
-- **i codici puliti**, controllati ogni tanto dal pannello dei duplicati.
+> ✅ **Gli allegati non pesano su questo conto.** Dalla 0.78.0 i PDF stanno in una cartella fuori
+> dall'app (→ [cap. 8](#8-la-scheda-articolo-campo-per-campo)), e il database ne porta solo il
+> **percorso**. Ogni PC ha la sua copia della cartella.
 
 ---
 
@@ -2835,7 +2960,7 @@ dentro**: uscendo e rientrando, il documento torna bloccato.
 | **Articolo fermo** | Un articolo con giacenza e nessun movimento da 3, 6 o 12 mesi: denaro immobilizzato a scaffale |
 | **Valore giacenza** | Esistente × costo unitario, sommato su tutto il magazzino |
 | **IndexedDB** | Il database interno del browser dove sta l'archivio dalla 0.87.0. Prima stava in `localStorage`, limitato a circa 5 MB |
-| **Archivio condiviso** | Il database unico su cui lavorano tutti i colleghi, al posto di una copia per PC. Progettato, non ancora attivo (→ [cap. 31](#31-quando-larchivio-è-condiviso-supabase)) |
+| **Archivio condiviso** | Il database unico su cui lavorano tutti i colleghi, al posto di una copia per PC; ogni PC ne tiene una copia e la allinea da solo (→ [cap. 31](#31-larchivio-condiviso-supabase)) |
 | **Supabase** | Il servizio scelto per ospitare l'archivio condiviso: database, autenticazione e permessi |
 | **Permessi sul server** | I ruoli applicati dal database invece che dall'app. È la differenza fra separare le responsabilità e proteggere davvero i dati |
 
@@ -2880,9 +3005,9 @@ Attiva la casella **Fabbisogno netto**. Senza, la lista è **lorda**: quanto ser
 cosa c'è.
 
 **Due piani mi chiedono lo stesso materiale.**
-È il termine **impegnato** che li tiene separati: finché entrambi sono **aperti**, ciascuno vede
-la quota dell'altro come già promessa. Il piano che non serve più va **chiuso**: la sua quota torna
-libera.
+È il termine **impegnato** che li tiene separati: finché entrambi sono **aperti**, il piano che
+consegna dopo vede la quota di quello che consegna prima come già promessa, e compra solo la sua
+parte. Il piano che non serve più va **chiuso**: la sua quota torna libera.
 
 **Il Carico centri dice che sono in sovraccarico. Cosa faccio?**
 Bomtrack te lo dice, non lo risolve: **non c'è schedulazione**. La decisione — anticipare, mandare
@@ -2917,10 +3042,10 @@ solo se il disco stesso è quasi pieno. Su un browser senza IndexedDB il limite 
 esporta un backup, svuota il cestino e recupera lo spazio degli allegati (*Gestione → Backup*).
 
 **Come lavoriamo in due sullo stesso archivio?**
-Oggi non si può in tempo reale: ogni PC ha la sua copia. Ci si allinea passandosi il **backup
-JSON**. Gli utenti e i ruoli servono a separare le responsabilità su uno stesso PC. L'archivio
-condiviso è progettato — come funzionerà, e cosa conviene preparare da ora, sta nel
-[cap. 31](#31-quando-larchivio-è-condiviso-supabase).
+Collegando un **archivio condiviso** su Supabase: ogni PC tiene la sua copia e la allinea da
+solo, e i ruoli li applica il server. Come si mette in piedi, e chi vince quando due persone
+toccano la stessa cosa, sta nel [cap. 31](#31-larchivio-condiviso-supabase). Senza, ogni PC ha
+la sua copia, e ci si allinea passandosi il **backup JSON**.
 
 **L'app non genera il PDF.**
 I pulsanti **Genera documento** sono **disabilitati finché ci sono modifiche non salvate**: premi
@@ -2947,9 +3072,9 @@ Le librerie di terze parti sono **incluse nella cartella**, in `vendor/`:
 | `xlsx.full.min.js` (SheetJS) | Lettura e scrittura degli Excel |
 
 Sono lì apposta: l'app deve funzionare **completamente offline**, anche aperta da `file://`.
-L'unica risorsa di rete sono i font di Google Fonts, e senza di quelli l'app funziona lo stesso.
-
-Non c'è backend e non c'è database remoto.
+Le risorse di rete sono i font di Google Fonts, senza i quali l'app funziona lo stesso, e, solo
+se lo si collega, l'**archivio condiviso** su Supabase (→ [cap. 31](#31-larchivio-condiviso-supabase)).
+Senza, non c'è backend e non c'è database remoto.
 
 ## A.2 Dove risiedono i dati
 
@@ -2982,7 +3107,16 @@ Senza IndexedDB le prime due stanno in `localStorage`, come `bomtrack_v1` e
 | *(chiave email)* | L'email ricordata da «Ricordami su questo PC» |
 
 Le ultime otto sono **preferenze personali di questa macchina**, non dati aziendali: non entrano
-nel backup e non si condividono. Le due cartelle, archivio e backup, stanno fra queste di proposito: ogni PC ha la
+nel backup e non si condividono.
+
+Con l'**archivio condiviso** se ne aggiungono altre, sempre di questo PC:
+
+| Chiave | Contenuto |
+|---|---|
+| `bomtrack_cloud` | Indirizzo del progetto e chiave pubblica, se il PC ha finito il primo collegamento, e da che punto chiedere le novità |
+| `bomtrack_cloud_sessione` | La sessione di Supabase Auth: si chiude uscendo dall'app |
+| `bomtrack_cloud_base` | La fotografia dell'ultimo invio riuscito, da cui l'app sa che cosa resta da mandare anche dopo un riavvio |
+| `bomtrack_cloud_nuovapassword` | Solo fra l'apertura di un invito e la scelta della password | Le due cartelle, archivio e backup, stanno fra queste di proposito: ogni PC ha la
 sua, e importarla da un backup imporrebbe a tutti la lettera di unità del primo che l'ha scelta.
 
 **Fuori dall'archivio** stanno due cose, entrambe fatte di file. In **IndexedDB**, in un database
@@ -3077,20 +3211,28 @@ indicato dalla variabile `BOMTRACK_PG`. In CI, a ogni push, ci sono entrambi e g
 
 ## A.6 I limiti architetturali
 
-- **Un archivio per browser.** Niente concorrenza, niente sincronizzazione, niente storico
-  condiviso. Ci si allinea con i backup JSON.
-- **Il controllo dei permessi è sul client.** Chi apre gli strumenti di sviluppo lo aggira.
+- **Senza archivio condiviso, un archivio per browser.** Niente sincronizzazione; ci si allinea
+  con i backup JSON. Il registro delle modifiche resta di ogni PC anche con l'archivio condiviso.
+- **Senza archivio condiviso, il controllo dei permessi è sul client.** Chi apre gli strumenti di
+  sviluppo lo aggira. Con l'archivio condiviso lo fanno le policy RLS di Postgres.
 - **La dimensione dell'archivio è limitata** da quanto il browser concede al sito: con IndexedDB
   (dalla 0.87.0) di solito gigabyte, senza qualche megabyte. *Gestione → Backup* mostra la
   dimensione corrente e lo spazio disponibile.
 
-La direzione presa per superarli è un backend con autenticazione e permessi sul server;
-`cloud-map.js` e `docs/cloud-schema.md` sono la preparazione a quel passaggio, e **non**
-contengono codice di rete. Il [cap. 31](#31-quando-larchivio-è-condiviso-supabase) racconta la
-stessa cosa dal lato di chi userà l'app; qui sotto, cosa esiste già nel codice per arrivarci:
-gli id sono UUID e non contatori locali, ogni record porta `createdAt`/`updatedAt` e
-`createdBy`/`updatedBy`, il registro dello schema dichiara per ogni collezione come andrà
-fusa, e il punto in cui si sostituisce la destinazione dei dati è uno solo.
+**L'archivio condiviso** (dalla 0.103.0, [cap. 31](#31-larchivio-condiviso-supabase)) poggia
+su quattro pezzi: `supabase/schema.sql` (tabelle, le due funzioni `push_changes()` e
+`pull_changes()`, i permessi per ruolo, i profili nati dagli inviti), `cloud-map.js` (la
+traduzione fra il documento locale e le righe delle tabelle), il conto delle modifiche in
+`store.js` (`takeChanges()`, `markSynced()`) e `cloud.js`, l'unico file con codice di rete:
+l'accesso a Supabase Auth, l'invio e la ricezione, il primo collegamento. Non usa librerie:
+bastano `fetch()` e quattro indirizzi. L'archivio locale resta quello che le viste leggono e
+scrivono, in modo sincrono come prima, e diventa lo specchio di quello condiviso e la coda di
+quello che non è ancora partito. Il contratto è in `docs/cloud-schema.md`.
+
+**Le prove.** `test/supabase-finto.js` è un Supabase finto, con dietro un Postgres vero e lo
+schema vero: `test/cloud.test.js` ci fa lavorare tre PC (caricamento, scaricamento, conflitti,
+cancellazioni, permessi, rete che cade, token che scade) e `test/cloud-ui.test.js` rifà il giro
+dall'interfaccia, in Chromium.
 
 ---
 

@@ -246,7 +246,11 @@ function archivioNomeLibero(nome) {
 //
 // Torna il motivo, non un booleano: chi chiama deve poter dire *quale* delle
 // tre cose è andata storta, che è metà di ciò che l'utente chiede.
+// Solo PDF (dalla 0.105.3): il file si apre come pagina dell'app, e un HTML o un
+// SVG aperto così eseguirebbe i suoi script con i dati e la sessione di
+// Bomtrack. Il percorso viaggia con l'archivio condiviso: lo scrive chiunque.
 function archivioApri(path, pagina) {
+  if (!/\.pdf$/i.test(String(path || ''))) return Promise.resolve('non-pdf');
   if (!archivioSupportato()) return Promise.resolve('non-supportato');
   if (!archivioNome()) return Promise.resolve('non-configurato');
   return archivioFile(path, true).then(f => {

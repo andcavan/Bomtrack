@@ -396,15 +396,25 @@ function priceDelRow(rowId) {
 // ─── Dalla richiesta di offerta al listino ───
 // Le righe da catalogo con un prezzo compilato diventano quotazioni. Una riga
 // già registrata non si duplica: la coppia richiesta + riga è la chiave.
+// Se dopo la registrazione il prezzo sulla richiesta cambia (un errore di
+// battitura, un'offerta rivista), la quotazione si aggiorna invece di restare
+// al prezzo vecchio senza che niente lo dica.
+function rfqQuoteRow(it, r, l) { return priceRows(it).find(p => p.rfqId === r.id && p.lineId === l.id) || null; }
 function rfqPriceCandidates(r) {
   if (!r || !r.supplierId) return [];
   return (r.lines || []).filter(l => {
     if (!l.itemId || l.price === '' || l.price == null) return false;
     const it = getItem(l.itemId);
     if (!hasPriceList(it)) return false;
-    return !priceRows(it).some(p => p.rfqId === r.id && p.lineId === l.id);
+    const fatta = rfqQuoteRow(it, r, l);
+    return !fatta || Number(fatta.price) !== (Number(l.price) || 0);
   });
 }
+// L'id della quotazione nasce dalla richiesta e dalla riga, uguale su ogni PC:
+// due colleghi che registrano la stessa offerta prima di essersi visti
+// scrivono la stessa quotazione, non due che il server rifiuta (c'è un indice
+// unico su articolo + richiesta + riga) bloccando l'invio di chi arriva dopo.
+function rfqQuoteId(rfqId, lineId) { return idDaChiave(String(rfqId) + '|' + String(lineId)); }
 function rfqRecordPrices(id) {
   if (!roleGuard('catalog')) return;
   const r = getRfq(id); if (!r) return;
@@ -412,18 +422,33 @@ function rfqRecordPrices(id) {
   const righe = rfqPriceCandidates(r);
   if (!righe.length) { showToast('Nessun prezzo nuovo da registrare', 'error'); return; }
   const data = (r.date || oggiISO()).slice(0, 10);
+  let nuove = 0, aggiornate = 0;
   righe.forEach(l => {
     const it = getItem(l.itemId);
-    const si = rfqLineSupInfo(r, l);
-    it.priceList.push(stampNew({
-      id: gid(), supplierId: r.supplierId, price: Number(l.price) || 0,
-      minQty: '', leadDays: '', code: (si && si.code) || '', desc: (si && si.desc) || '',
-      date: data, rfqId: r.id, lineId: l.id, note: '',
-    }));
+    const prezzo = Number(l.price) || 0;
+    const fatta = rfqQuoteRow(it, r, l);
+    if (fatta) {
+      fatta.price = prezzo;
+      // Quella in uso porta il prezzo nel costo: si riapplica, come quando lo
+      // si corregge dal listino (priceSetField).
+      if (it.activePriceId === fatta.id) applyPriceRow(it, fatta);
+      aggiornate++;
+    } else {
+      const si = rfqLineSupInfo(r, l);
+      it.priceList.push(stampNew({
+        id: rfqQuoteId(r.id, l.id), supplierId: r.supplierId, price: prezzo,
+        minQty: '', leadDays: '', code: (si && si.code) || '', desc: (si && si.desc) || '',
+        date: data, rfqId: r.id, lineId: l.id, note: '',
+      }));
+      nuove++;
+    }
     touch(it);
   });
   saveDB(); renderRfq(); renderCatalogs();
-  showToast(righe.length + (righe.length === 1 ? ' prezzo registrato a listino' : ' prezzi registrati a listino'));
+  const parti = [];
+  if (nuove) parti.push(nuove + (nuove === 1 ? ' prezzo registrato' : ' prezzi registrati'));
+  if (aggiornate) parti.push(aggiornate + (aggiornate === 1 ? ' prezzo aggiornato' : ' prezzi aggiornati'));
+  showToast(parti.join(', ') + ' a listino');
 }
 
 function usageModal(id) {
@@ -470,7 +495,7 @@ function usageBody(id) {
     <tbody>${diretti.map(r => `<tr>
       <td style="font-family:var(--mono)">${codeLink(r.item.id, r.item.code)}</td>
       <td>${esc(r.item.name)}</td>
-      <td><span class="bom-type-tag tt-${r.item.type}">${typeShort(r.item.type)}</span> ${typeLabel(r.item.type)}</td>
+      <td><span class="bom-type-tag tt-${typeKey(r.item.type)}">${typeShort(r.item.type)}</span> ${typeLabel(r.item.type)}</td>
       <td style="text-align:right;font-family:var(--mono)">${fmtQty(r.qty)}</td>
       <td style="text-align:right"><button class="mini-btn" title="Apri qui" onclick="usageModal('${r.item.id}')">${ico('link', 'tinted', 'Apri qui')}</button></td>
     </tr>`).join('')}</tbody></table>`;
@@ -672,7 +697,7 @@ function catalogRow(i, scope) {
     <td class="col-flags" style="width:1%;white-space:nowrap">${flags}</td>
     <td class="col-code" style="font-family:var(--mono)">${codeLink(i.id, i.code)}</td>
     <td class="col-name">${esc(i.name)}</td>
-    <td class="col-type"><span class="bom-type-tag tt-${i.type}">${typeShort(i.type)}</span> ${typeLabel(i.type)}</td>
+    <td class="col-type"><span class="bom-type-tag tt-${typeKey(i.type)}">${typeShort(i.type)}</span> ${typeLabel(i.type)}</td>
     <td class="col-family" style="color:var(--text-dim)">${esc(codingLabel(i) || familyLabel(i))}</td>
     <td class="col-uom">${esc(i.uom || '')}</td>
     <td class="col-cost" style="font-family:var(--mono)">${fmtN(unit)}</td>
@@ -1242,7 +1267,7 @@ function cycleRowLabel(row) {
   }
   const it = getItem(row.itemId);
   if (!it) return ico('warning', 'tinted') + ' articolo mancante';
-  return `<span class="bom-type-tag tt-${it.type}">${typeShort(it.type)}</span>
+  return `<span class="bom-type-tag tt-${typeKey(it.type)}">${typeShort(it.type)}</span>
     <span class="cycle-code">${codeLink(it.id, it.code)}</span> ${esc(it.name)}${itemBadges(it)}`;
 }
 // ─── Selezione della parte (filtri in cima alla vista) ───
@@ -1815,6 +1840,14 @@ function applyItemSource(id) {
     setVal('it-name', src.name + ' (copia)');
   }
   setVal('it-uom', src.uom || defaultUom());
+  // L'unità alternativa e il fattore viaggiano con le quotazioni copiate (dalla
+  // 0.105.3): una quotazione a kg su una copia senza kg diventava un prezzo al
+  // metro, e il costo usciva sbagliato del fattore (8 volte, su una barra).
+  if (document.getElementById('it-altuom')) {
+    setVal('it-altuom', src.altUom || '');
+    setVal('it-altfactor', src.altFactor != null ? src.altFactor : '');
+    if (typeof itemUomLabelsRefresh === 'function') itemUomLabelsRefresh();
+  }
   if (src.type === 'parte') setVal('it-sourcing', partSourcing(src));
   setVal('it-notes', src.notes || '');
   setVal('it-code', '');
@@ -1977,6 +2010,12 @@ function saveNewItem() {
     it.priceListSeeded = true;
     if (src && hasPriceList(src)) {
       const rimappa = {};
+      // Rete di sicurezza: le quotazioni copiate in un'unità alternativa
+      // vogliono quell'unità anche sulla copia.
+      if (hasAltUom(src) && !hasAltUom(it) && (it.uom || '') === (src.uom || '')
+          && priceRows(src).some(r => r.priceUom && r.priceUom === src.altUom)) {
+        it.altUom = src.altUom; it.altFactor = src.altFactor;
+      }
       it.priceList = priceRows(src).map(r => {
         const n = stampNew(Object.assign({}, r, { id: gid() }));
         rimappa[r.id] = n.id;
@@ -1988,12 +2027,16 @@ function saveNewItem() {
       }
     }
   }
-  Store.insert('items', it);
-  closeModal(); renderCatalogs(); savedToast(src ? 'Copia creata' : 'Articolo creato');
-  // Un articolo appena creato non ha modo di ricevere un prezzo: la scheda non
-  // lo chiede più. Il listino si apre da solo, ma solo se non è già arrivato
-  // dalla copia — lì il prezzo c'è già.
-  if (hasPriceList(it) && !priceRows(it).length) priceListModal(it.id);
+  // Con l'archivio condiviso il codice si impegna sul server prima di salvare:
+  // se un collega l'ha appena preso, quello automatico si ricalcola.
+  return conCodiceImpegnato(it, itemCodeAuto ? () => genItemCode(it) : null, () => {
+    Store.insert('items', it);
+    closeModal(); renderCatalogs(); savedToast(src ? 'Copia creata' : 'Articolo creato');
+    // Un articolo appena creato non ha modo di ricevere un prezzo: la scheda non
+    // lo chiede più. Il listino si apre da solo, ma solo se non è già arrivato
+    // dalla copia — lì il prezzo c'è già.
+    if (hasPriceList(it) && !priceRows(it).length) priceListModal(it.id);
+  });
 }
 // La scheda articolo ricorda chi si sta modificando: chiusa, non deve
 // ricordarlo più — itemDraftFromForm legge questa variabile.
@@ -2021,9 +2064,15 @@ function saveItemEdit(id) {
   if (codErr) { showToast(codErr, 'error'); return; }
   const dupErr = validateItemCode(val('it-code'), id, it.code);
   if (dupErr) { showToast(dupErr, 'error'); return; }
-  readItemForm(it);
-  touch(it);
-  saveDB(); closeModal(); renderCatalogs(); savedToast('Articolo aggiornato');
+  const fare = () => {
+    readItemForm(it);
+    touch(it);
+    saveDB(); closeModal(); renderCatalogs(); savedToast('Articolo aggiornato');
+  };
+  // Solo un codice cambiato va impegnato: quello che l'articolo ha già è suo.
+  const nuovo = val('it-code');
+  if (!nuovo || itemCodeKey(nuovo) === itemCodeKey(it.code) || itemLockState(it).structLocked) return fare();
+  return conCodiceImpegnato({ id: it.id, code: nuovo }, null, fare);
 }
 function delItem(id) {
   if (!roleGuard('catalog')) return;
@@ -2041,6 +2090,7 @@ function delItem(id) {
     showToast('Articolo già movimentato (magazzino, cicli, documenti o piani): non può essere eliminato. Segnalo come obsoleto per impedirne il riuso.', 'error');
     return;
   }
+  if (!articoloUltimo(it)) { showToast(ARTICOLO_NON_ULTIMO(it.code), 'error'); return; }
   askConfirm(`Eliminare "${it.name}"?`, () => {
     if (currentBomId === id) currentBomId = null;
     removeConUndo('items', id, `"${it.name}" eliminato`, renderCatalogs);
@@ -2095,14 +2145,29 @@ function bulkDelete(ids) {
   // facendo fallire l'intero invio.
   const inUso = it => usedBy(it.id).length > 0 || isItemUsedAnywhere(it.id);
   const usati = items.filter(inUso);
-  const liberi = items.filter(it => !inUso(it));
+  // Senza buchi nella codifica: se ne vanno solo quelli in coda alla propria
+  // serie, contando che anche gli altri scelti se ne vanno.
+  const candidati = items.filter(it => !inUso(it));
+  const via = new Set(candidati.map(it => it.id));
+  let liberi = candidati;
+  for (;;) {
+    const restano = liberi.filter(it => articoloUltimo(it, via));
+    if (restano.length === liberi.length) break;
+    liberi = restano;
+    via.clear(); liberi.forEach(it => via.add(it.id));
+  }
+  const inMezzo = candidati.length - liberi.length;
   if (!liberi.length) {
-    showToast(`${usati.length === 1 ? 'L\'articolo è usato' : 'Sono tutti usati'} in distinte, documenti o magazzino: rimuovili prima, o segnali come obsoleti.`, 'error');
+    showToast(usati.length
+      ? `${usati.length === 1 ? 'L\'articolo è usato' : 'Sono tutti usati'} in distinte, documenti o magazzino: rimuovili prima, o segnali come obsoleti.`
+      : (inMezzo === 1 ? ARTICOLO_NON_ULTIMO(candidati[0].code) : 'Nessuno di questi codici è l\'ultimo della sua serie: eliminandoli resterebbero buchi nella codifica. Segnali come obsoleti invece di eliminarli.'), 'error');
     return;
   }
-  const avviso = usati.length
+  const avviso = (usati.length
     ? `\n\n${usati.length} ${usati.length === 1 ? 'articolo resta' : 'articoli restano'} dov'${usati.length === 1 ? 'è' : 'erano'}: ${usati.length === 1 ? 'è usato' : 'sono usati'} in distinte, documenti o magazzino.`
-    : '';
+    : '') + (inMezzo
+    ? `\n\n${inMezzo} ${inMezzo === 1 ? 'articolo resta' : 'articoli restano'}: ${inMezzo === 1 ? 'non è l\'ultimo' : 'non sono gli ultimi'} della serie, e ${inMezzo === 1 ? 'il suo codice lascerebbe' : 'i loro codici lascerebbero'} un buco. ${inMezzo === 1 ? 'Segnalo' : 'Segnali'} come obsolet${inMezzo === 1 ? 'o' : 'i'}.`
+    : '');
   askConfirm(`Eliminare ${liberi.length} ${liberi.length === 1 ? 'articolo' : 'articoli'}?${avviso}`, () => {
     const cestinati = [];
     liberi.forEach(it => {
@@ -2114,7 +2179,12 @@ function bulkDelete(ids) {
     // gesto, non di una riga.
     showToast(`${cestinati.length} ${cestinati.length === 1 ? 'articolo eliminato' : 'articoli eliminati'}`, 'success', {
       label: '↶ Annulla',
-      fn: () => { cestinati.forEach(v => Store.restore(v)); renderCatalogs(); savedToast('Ripristinati'); },
+      fn: () => {
+        let no = '';
+        cestinati.forEach(v => { if (!Store.restore(v)) no = no || Store.rifiutoRipristino(); });
+        renderCatalogs();
+        if (no) showToast(no, 'error'); else savedToast('Ripristinati');
+      },
     });
   });
 }

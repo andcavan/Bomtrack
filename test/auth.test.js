@@ -203,6 +203,37 @@ describe('Accesso', () => {
   });
 });
 
+describe('Un PC scollegato dall\'archivio condiviso', () => {
+  // Gli utenti arrivano da Supabase senza password: quelle le teneva Supabase.
+  const scollegato = () => app(makeDb({ users: [
+    { id: 'u1', name: 'Anna', email: 'anna@ditta.it', role: 'admin', active: true, passwordHash: '', passwordSalt: '' },
+    { id: 'u2', name: 'Bruno', email: 'bruno@ditta.it', role: 'acquisti', active: true, passwordHash: '', passwordSalt: '' }] }));
+
+  it('l\'amministratore entra, e la password che scrive diventa quella del PC', () => {
+    const a = scollegato();
+    accedi(a, 'anna@ditta.it', 'nuova-pw');
+    assert.equal(a.eval('currentUser && currentUser.id'), 'u1');
+    a.eval('logout()');
+    accedi(a, 'anna@ditta.it', 'altra');
+    assert.equal(a.eval('currentUser'), null, 'da lì in poi vale solo quella');
+    accedi(a, 'anna@ditta.it', 'nuova-pw');
+    assert.equal(a.eval('currentUser && currentUser.id'), 'u1');
+  });
+
+  it('chi non è amministratore no: aspetta che l\'amministratore gli dia una password', () => {
+    const a = scollegato();
+    accedi(a, 'bruno@ditta.it', 'qualsiasi');
+    assert.equal(a.eval('currentUser'), null);
+  });
+
+  it('se qualcuno ha già una password, la strada è chiusa', () => {
+    const a = app(); conUtente(a, { id: 'u9', email: 'zeta@ditta.it' });
+    a.eval(`db.users.push(stampNew({ id: 'u1', name: 'Anna', email: 'anna@ditta.it', role: 'admin', active: true, passwordHash: '', passwordSalt: '' }))`);
+    accedi(a, 'anna@ditta.it', 'nuova-pw');
+    assert.equal(a.eval('currentUser'), null);
+  });
+});
+
 describe('Sessione salvata', () => {
   function conSessione(a, ts, userId) {
     a.storage.setItem('bomtrack_session', JSON.stringify({ userId: userId || 'u1', ts }));

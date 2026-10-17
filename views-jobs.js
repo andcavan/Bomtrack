@@ -25,12 +25,7 @@ function jobList() { return db.jobs || []; }
 function getJob(id) { return jobList().find(j => j.id === id); }
 function jobLabel(j) { return j ? (j.number + (j.customer ? ' — ' + j.customer : '')) : ''; }
 // Progressivo per anno, come richieste, ordini e piani: COM-<anno>-NNN
-function nextJobNumber() {
-  const prefix = `COM-${new Date().getFullYear()}-`;
-  const seqs = jobList().filter(j => (j.number || '').startsWith(prefix))
-    .map(j => parseInt((j.number || '').slice(prefix.length), 10) || 0);
-  return prefix + String((seqs.length ? Math.max(...seqs) : 0) + 1).padStart(3, '0');
-}
+function nextJobNumber() { return numeroProgressivo('COM'); }
 function jobOptions(selectedId) {
   // Le commesse chiuse restano selezionabili solo se già scelte: non si
   // aggancia lavoro nuovo a una commessa finita, ma i piani vecchi non devono
@@ -433,9 +428,11 @@ function apriOdlDaCommessa(id) { docLeave('odl'); currentOdlId = id; odlView = '
 // ─── Mutatori ───
 function newJob() {
   if (!roleGuard('docs')) return;
-  const j = Store.insert('jobs', { id: gid(), number: nextJobNumber(), customer: '', title: '',
-    customerRef: '', status: 'aperta', date: oggiISO(), dueDate: '', notes: '', active: true });
-  currentJobId = j.id; jobView = 'edit'; renderJobs();
+  return conNumeri({ COM: 1 }, () => {
+    const j = Store.insert('jobs', { id: gid(), number: nextJobNumber(), customer: '', title: '',
+      customerRef: '', status: 'aperta', date: oggiISO(), dueDate: '', notes: '', active: true });
+    currentJobId = j.id; jobView = 'edit'; renderJobs();
+  });
 }
 function openJobEdit(id) { currentJobId = id; jobView = 'edit'; renderJobs(); }
 function jobBackToList() { jobView = 'list'; currentJobId = null; renderJobs(); }
@@ -480,6 +477,7 @@ function jobApplyField(id, field, value) {
 function delJob(id) {
   if (!roleGuard('docs')) return;
   const j = getJob(id); if (!j) return;
+  if (!guardiaDocumentoUltimo(j, jobList(), 'Annullala invece di eliminarla.')) return;
   const piani = jobPlans(id);
   const { rfqs, orders, workOrders } = jobDocs(id);
   // Non si cancella una commessa che regge del lavoro: si lascerebbero piani e

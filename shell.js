@@ -373,6 +373,13 @@ function setView(v) {
   // La Gestione è riservata agli amministratori: chi non lo è torna alle distinte
   if (v === 'manage' && !isAdmin()) { showToast('Sezione riservata agli amministratori', 'error'); v = 'bom'; }
   scriviHash(v);
+  // Si lascia un documento aperto (dalla 0.105.3): quel che era in sospeso si
+  // salva, come quando si apre un altro documento. Restava «da salvare» anche
+  // fuori dal suo editor, e nell'archivio condiviso fermava la ricezione delle
+  // modifiche dei colleghi senza che niente lo dicesse.
+  if (v !== activeView && typeof docLeave === 'function') {
+    ['rfq', 'order', 'odl'].forEach(k => { if (docKind(k).dirty()) docLeave(k); });
+  }
   activeView = v;
   const g = groupOfView(v);
   if (g) lastViewOfGroup[g.id] = v;
@@ -420,6 +427,9 @@ function showReadOnlyBanner(panel, area) {
   b.className = 'ro-banner';
   // innerHTML e non textContent: il testo porta un'icona, e i due pezzi che
   // vengono dai dati passano da esc() come ovunque.
-  b.innerHTML = `${ico('eye', 'tinted', '')} Sola lettura — il ruolo "${esc(roleLabel(currentUser && currentUser.role))}" non modifica ${esc(AREA_LABELS[area])}.`;
+  // Il ruolo scriverebbe: manca il collegamento all'archivio condiviso.
+  b.innerHTML = canWriteRuolo(area)
+    ? `${ico('cloud', 'tinted', '')} Sola lettura — senza collegamento all'archivio condiviso si consulta soltanto. Si torna a lavorare appena il server risponde.`
+    : `${ico('eye', 'tinted', '')} Sola lettura — il ruolo "${esc(roleLabel(currentUser && currentUser.role))}" non modifica ${esc(AREA_LABELS[area])}.`;
   panel.insertBefore(b, panel.firstChild);
 }
